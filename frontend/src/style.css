@@ -37,9 +37,21 @@ a { color: var(--accent); }
 .topbar button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .topbar select { padding: 0.3rem 0.4rem; }
 
-.timeline { display: flex; gap: 0.25rem; align-items: center; }
-.timeline .phase { font-size: 0.75rem; padding: 0.15rem 0.5rem; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; }
-.timeline .phase.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.timeline { display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; max-width: 34rem; }
+.timeline .ph-label { font-size: 0.75rem; color: var(--muted); }
+.ph-chip { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.ph-chip.active { background: var(--accent); border-color: var(--accent); }
+.ph-chip button { border: none; background: transparent; padding: 0.15rem 0.55rem; font-size: 0.78rem; border-radius: 0; }
+.ph-chip.active button { color: #fff; }
+.ph-chip [data-delph] { padding: 0.15rem 0.35rem; opacity: 0.6; }
+.ph-chip [data-delph]:hover { opacity: 1; color: #ff6b6b; }
+#ph-add { padding: 0.15rem 0.5rem; font-size: 0.9rem; }
+.ph-op { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: var(--muted); }
+.ph-op input[type="range"] { width: 6rem; padding: 0; }
+
+/* Kompass in der Topbar */
+.compass { width: 2rem; height: 2rem; padding: 0; border-radius: 999px; display: grid; place-items: center; }
+.compass span { display: block; font-weight: 700; line-height: 1; transform: rotate(var(--rot, 0deg)); transition: transform 0.15s linear; color: #ff6b6b; }
 
 .toolbar { position: absolute; left: 0.6rem; top: 4rem; display: flex; flex-direction: column; gap: 0.3rem; z-index: 5; }
 .toolbar button { width: 2.4rem; height: 2.4rem; font-size: 1.1rem; padding: 0; }
@@ -66,9 +78,12 @@ a { color: var(--accent); }
 
 .fav-panel, .edit-panel { position: absolute; left: 3.4rem; top: 4rem; width: 15rem; z-index: 6;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; max-height: 70vh; overflow-y: auto; }
-.edit-panel { left: auto; right: 0.6rem; top: 7rem; }
-.edit-panel label, .fav-head { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.4rem 0 0.15rem; }
-.edit-panel input { width: 100%; }
+/* Bearbeitungs-UI ~50% größer */
+.edit-panel { left: auto; right: 0.6rem; top: 7rem; width: 23rem; padding: 0.9rem; font-size: 1.05rem; }
+.edit-panel label, .fav-head { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.55rem 0 0.2rem; }
+.edit-panel .fav-head { font-size: 1.05rem; }
+.edit-panel input, .edit-panel select { width: 100%; padding: 0.55rem 0.7rem; }
+.edit-panel .row button { padding: 0.55rem 0.7rem; }
 .fav-head { font-weight: 600; color: var(--fg); margin-top: 0; }
 .fav { display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem; border-radius: 5px; cursor: pointer; }
 .fav:hover { background: rgba(255,255,255,0.06); }

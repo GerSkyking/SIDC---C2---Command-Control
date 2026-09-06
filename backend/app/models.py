@@ -241,6 +241,8 @@ class Favorite(Base):
     rotation_degrees: Mapped[int] = mapped_column(Integer, default=-1)
     unit_text: Mapped[str] = mapped_column(String(255), default="")
     ai_text: Mapped[str] = mapped_column(String(255), default="")
+    is_multipoint: Mapped[bool] = mapped_column(Boolean, default=False)
+    max_line_points: Mapped[int] = mapped_column(Integer, default=0)
     ordering: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

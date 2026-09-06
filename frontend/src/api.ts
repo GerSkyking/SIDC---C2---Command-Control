@@ -50,6 +50,13 @@ export interface Favorite {
   rotation_degrees: number;
   unit_text: string;
   ai_text: string;
+  is_multipoint: boolean;
+  max_line_points: number;
+}
+export interface Phase {
+  id: string;
+  name: string;
+  ordering: number;
 }
 export interface AdminUser {
   id: string;
@@ -184,6 +191,12 @@ export const api = {
     req<PlanItem>("POST", "/plans", { name, map_id }),
   snapshot: (planId: string) => req<any>("GET", `/plans/${planId}/snapshot`),
   deletePlan: (planId: string) => req<void>("DELETE", `/plans/${planId}`),
+  createPhase: (planId: string, name: string) =>
+    req<Phase>("POST", `/plans/${planId}/phases`, { name }),
+  renamePhase: (planId: string, phaseId: string, name: string) =>
+    req<Phase>("PATCH", `/plans/${planId}/phases/${phaseId}`, { name }),
+  deletePhase: (planId: string, phaseId: string) =>
+    req<void>("DELETE", `/plans/${planId}/phases/${phaseId}`),
   planAcl: (planId: string) => req<AclEntry[]>("GET", `/plans/${planId}/acl`),
   planAclCandidates: (planId: string) => req<AclCandidate[]>("GET", `/plans/${planId}/acl/candidates`),
   putPlanAcl: (planId: string, entries: Omit<AclEntry, "id">[]) =>

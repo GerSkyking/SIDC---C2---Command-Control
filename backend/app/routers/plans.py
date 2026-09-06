@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .. import audit
@@ -89,6 +90,7 @@ def create_plan(body: PlanCreateIn, request: Request, user: CurrentUser, db: DbD
     db.flush()
     db.add(PlanACL(plan_id=plan.id, subject_type="user", subject_id=user.id, level="owner"))
     db.add(Layer(plan_id=plan.id, name="Allgemein", is_default=True))
+    db.add(Phase(plan_id=plan.id, name="Base", ordering=0))
     db.commit()
     audit.record(db, "plan.create", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request, name=plan.name, map_id=plan.map_id)
@@ -118,7 +120,13 @@ def delete_plan(plan: OwnerPlan, request: Request, user: CurrentUser, db: DbDep)
 
 @router.get("/{plan_id}/snapshot")
 def get_snapshot(plan: ViewerPlan, db: DbDep) -> dict:
-    phases = db.scalars(select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering))
+    phase_rows = list(db.scalars(select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering)))
+    if not phase_rows:  # Altbestand: fehlende Standard-Phase nachziehen
+        base = Phase(plan_id=plan.id, name="Base", ordering=0)
+        db.add(base)
+        db.commit()
+        phase_rows = [base]
+    phases = phase_rows
     layers = db.scalars(select(Layer).where(Layer.plan_id == plan.id).order_by(Layer.ordering))
     from ..models import Map
 
@@ -138,6 +146,59 @@ def get_snapshot(plan: ViewerPlan, db: DbDep) -> dict:
         ],
         **_snapshot(db, plan),
     }
+
+
+# ─── Phasen (Zeitstrahl) ───────────────────────────────────────────────────
+
+class PhaseBody(BaseModel):
+    name: str
+    ordering: int | None = None
+
+
+def _phase_out(p: Phase) -> dict:
+    return {"id": p.id, "name": p.name, "ordering": p.ordering}
+
+
+@router.get("/{plan_id}/phases")
+def list_phases(plan: ViewerPlan, db: DbDep) -> list[dict]:
+    rows = db.scalars(select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering))
+    return [_phase_out(p) for p in rows]
+
+
+@router.post("/{plan_id}/phases", status_code=status.HTTP_201_CREATED)
+def create_phase(body: PhaseBody, plan: EditorPlan, db: DbDep) -> dict:
+    nxt = db.scalar(
+        select(func.coalesce(func.max(Phase.ordering), -1)).where(Phase.plan_id == plan.id)
+    )
+    p = Phase(plan_id=plan.id, name=(body.name or "").strip() or "Phase", ordering=int(nxt) + 1)
+    db.add(p)
+    db.commit()
+    return _phase_out(p)
+
+
+@router.patch("/{plan_id}/phases/{phase_id}")
+def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, db: DbDep) -> dict:
+    p = db.get(Phase, phase_id)
+    if p is None or p.plan_id != plan.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if body.name is not None and body.name.strip():
+        p.name = body.name.strip()
+    if body.ordering is not None:
+        p.ordering = body.ordering
+    db.commit()
+    return _phase_out(p)
+
+
+@router.delete("/{plan_id}/phases/{phase_id}")
+def delete_phase(phase_id: str, plan: EditorPlan, db: DbDep) -> dict:
+    p = db.get(Phase, phase_id)
+    if p is None or p.plan_id != plan.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    db.execute(update(Marker).where(Marker.phase_id == phase_id).values(phase_id=None))
+    db.execute(update(Stroke).where(Stroke.phase_id == phase_id).values(phase_id=None))
+    db.delete(p)
+    db.commit()
+    return {"ok": True}
 
 
 # ─── ACL ───────────────────────────────────────────────────────────────────

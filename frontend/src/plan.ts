@@ -61,12 +61,27 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let myChannel = channels?.currentChannel ?? "";
   let is3D = false;
 
+  // Phasen / Zeitstrahl
+  interface PhaseT {
+    id: string;
+    name: string;
+    ordering: number;
+  }
+  const phases: PhaseT[] = [...(snap.phases ?? [])].sort((a: PhaseT, b: PhaseT) => a.ordering - b.ordering);
+  let currentPhaseId: string = phases[0]?.id ?? "";
+  let outOpacity = Number(localStorage.getItem("sidc_phaseopacity") ?? "20"); // % fremde Phasen
+  if (!Number.isFinite(outOpacity)) outOpacity = 20;
+  const phaseOpacity = (m: Marker): number =>
+    m.phase_id == null || m.phase_id === currentPhaseId ? 1 : Math.max(0, Math.min(100, outOpacity)) / 100;
+
   root.innerHTML = `
     <div class="topbar">
       <a href="#/">←</a>
       <strong>${snap.plan.name}</strong>
       <span class="badge">${myPlan?.level ?? "?"}</span>
       <button id="t3d">3D</button>
+      <button id="compass" class="compass" title="${t("map.compass")}"><span>↑</span></button>
+      <button id="shot" title="${t("map.screenshot")}">📷</button>
       <select id="chan" title="${t('map.channel')}">${(channels?.channels ?? [])
         .map((c) => `<option value="${c.name}" ${c.name === myChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
         .join("")}</select>
@@ -111,6 +126,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     container: "map",
     style: `/api/maps/${mapId}/style.json`,
     maxPitch: 0, // 2D: nur Drehen, kein Kippen — der 3D-Schalter hebt das an
+    canvasContextAttributes: { preserveDrawingBuffer: true }, // für Screenshots (toDataURL)
+    attributionControl: false, // kein MapLibre-Logo / Attribution-Box
     transformRequest: (url) =>
       url.startsWith("/") || url.startsWith(location.origin) ? { url, credentials: "include" } : { url },
   });
@@ -161,9 +178,87 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         rot: m.icon_rotation || 0,
         locked: m.locked,
         dot: missingIcons.has(m.sidc),
+        opacity: phaseOpacity(m),
       },
     })),
   });
+
+  // Richtungspfeile (rotation_degrees, 8 Richtungen à 45°, -1 = stationär) —
+  // als Vektor-Geometrie nachgebaut wie in ATAKmaps (markersLayer.ts).
+  const ICON_PX = 34;
+  const isAir = (sidc: string) => sidc.slice(4, 6) === "01";
+  const dirFC = (): { lines: GeoJSON.FeatureCollection; heads: GeoJSON.FeatureCollection } => {
+    const lines: GeoJSON.Feature[] = [];
+    const heads: GeoJSON.Feature[] = [];
+    const p2ll = (x: number, y: number): [number, number] => {
+      const ll = map.unproject([x, y]);
+      return [ll.lng, ll.lat];
+    };
+    const headPoly = (tx: number, ty: number, dx: number, dy: number): GeoJSON.Feature => {
+      const len = ICON_PX * 0.35;
+      const wid = ICON_PX * 0.3;
+      const bx = tx - dx * len;
+      const by = ty - dy * len;
+      const px = -dy;
+      const py = dx;
+      return {
+        type: "Feature",
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              p2ll(tx, ty),
+              p2ll(bx + px * (wid / 2), by + py * (wid / 2)),
+              p2ll(bx - px * (wid / 2), by - py * (wid / 2)),
+              p2ll(tx, ty),
+            ],
+          ],
+        },
+        properties: {},
+      };
+    };
+    for (const m of markers.values()) {
+      const deg = m.rotation_degrees;
+      if (deg == null || deg < 0) continue;
+      const c = map.project([m.world_x, m.world_y]);
+      const a = (deg * Math.PI) / 180;
+      const dx = Math.sin(a);
+      const dy = -Math.cos(a);
+      if (isAir(m.sidc)) {
+        const len = ICON_PX * 1.75;
+        const ex = c.x + dx * len;
+        const ey = c.y + dy * len;
+        lines.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: [p2ll(c.x, c.y), p2ll(ex, ey)] },
+          properties: {},
+        });
+        heads.push(headPoly(ex, ey, dx, dy));
+      } else {
+        const gx = c.x;
+        const gy = c.y + ICON_PX * 0.65;
+        const sx = gx;
+        const sy = gy + ICON_PX;
+        lines.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: [p2ll(gx, gy), p2ll(sx, sy)] },
+          properties: {},
+        });
+        const ex = sx + dx * ICON_PX;
+        const ey = sy + dy * ICON_PX;
+        lines.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: [p2ll(sx, sy), p2ll(ex, ey)] },
+          properties: {},
+        });
+        heads.push(headPoly(ex, ey, dx, dy));
+      }
+    }
+    return {
+      lines: { type: "FeatureCollection", features: lines },
+      heads: { type: "FeatureCollection", features: heads },
+    };
+  };
   const strokeFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
     features: [...strokes.values()].map((s) => ({
@@ -244,6 +339,23 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       paint: { "circle-radius": 4, "circle-color": "#4c8dff", "circle-stroke-color": "#fff", "circle-stroke-width": 1 },
     });
 
+    // Richtungspfeile (unter den Markern)
+    map.addSource("dir-lines", { type: "geojson", data: emptyFC() });
+    map.addSource("dir-heads", { type: "geojson", data: emptyFC() });
+    map.addLayer({
+      id: "dir-lines",
+      type: "line",
+      source: "dir-lines",
+      paint: { "line-color": "#e6e9ee", "line-width": 2 },
+      layout: { "line-cap": "round" },
+    });
+    map.addLayer({
+      id: "dir-heads",
+      type: "fill",
+      source: "dir-heads",
+      paint: { "fill-color": "#e6e9ee" },
+    });
+
     map.addSource("markers", { type: "geojson", data: markerFC() });
     map.addLayer({
       id: "marker-dot",
@@ -255,6 +367,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "circle-color": ["case", ["get", "locked"], "#8a8f98", "#4c8dff"],
         "circle-stroke-color": "#fff",
         "circle-stroke-width": 1.5,
+        "circle-opacity": ["get", "opacity"],
+        "circle-stroke-opacity": ["get", "opacity"],
       },
     });
     map.addLayer({
@@ -276,7 +390,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "text-color": "#e6e9ee",
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
-        "icon-opacity": ["case", ["get", "locked"], 0.6, 1],
+        "text-opacity": ["get", "opacity"],
+        "icon-opacity": ["*", ["case", ["get", "locked"], 0.6, 1], ["get", "opacity"]],
       },
     });
 
@@ -302,13 +417,28 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   });
 
+  const refreshDir = () => {
+    const d = dirFC();
+    (map.getSource("dir-lines") as GeoJSONSource)?.setData(d.lines);
+    (map.getSource("dir-heads") as GeoJSONSource)?.setData(d.heads);
+  };
   const refreshMarkers = async () => {
     await Promise.all([...new Set([...markers.values()].map((m) => m.sidc))].map(ensureIcon));
     (map.getSource("markers") as GeoJSONSource)?.setData(markerFC());
     (map.getSource("chains") as GeoJSONSource)?.setData(chainFC());
+    refreshDir();
   };
   const refreshStrokes = () => (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
   const refreshPeers = () => (map.getSource("peers") as GeoJSONSource)?.setData(peerFC());
+  let dirRaf = 0;
+  map.on("move", () => {
+    if (dirRaf) return;
+    dirRaf = requestAnimationFrame(() => {
+      dirRaf = 0;
+      refreshDir();
+    });
+  });
+  map.on("load", refreshDir);
 
   // ── WebSocket ──────────────────────────────────────────────────────────
   const socket = new PlanSocket(planId);
@@ -401,12 +531,92 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   });
 
-  // ── Channel ───────────────────────────────────────────────────────────
-  root.querySelector<HTMLSelectElement>("#chan")!.addEventListener("change", (e) => {
-    myChannel = (e.target as HTMLSelectElement).value;
+  // ── Kompass + Nach-Norden-Button ──────────────────────────────────────
+  const compass = root.querySelector<HTMLButtonElement>("#compass")!;
+  const syncCompass = () => {
+    compass.style.setProperty("--rot", `${-map.getBearing()}deg`);
+  };
+  map.on("rotate", syncCompass);
+  map.on("load", syncCompass);
+  compass.addEventListener("click", () => map.easeTo({ bearing: 0, duration: 400 }));
+
+  // ── Screenshot (nur Karteninhalt, keine Bedienelemente) ───────────────
+  root.querySelector("#shot")!.addEventListener("click", () => {
+    map.once("idle", () => {
+      const mc = map.getCanvas();
+      const out = document.createElement("canvas");
+      out.width = mc.width;
+      out.height = mc.height;
+      const ctx = out.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(mc, 0, 0);
+      if (baseLayerVisible.grid !== false) ctx.drawImage(gridCanvas, 0, 0, out.width, out.height);
+      const a = document.createElement("a");
+      a.href = out.toDataURL("image/png");
+      a.download = `${snap.plan.name}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`;
+      a.click();
+    });
+    map.triggerRepaint();
   });
 
   root.querySelector("#acl")?.addEventListener("click", () => openAclEditor(planId, snap.plan.name));
+
+  // ── Zeitstrahl / Phasen ───────────────────────────────────────────────
+  const timelineEl = root.querySelector<HTMLDivElement>("#timeline")!;
+  function renderTimeline(): void {
+    const chips = phases
+      .map(
+        (p) =>
+          `<span class="ph-chip ${p.id === currentPhaseId ? "active" : ""}" data-ph="${p.id}">` +
+          `<button data-pick="${p.id}">${p.name}</button>` +
+          (canEdit && phases.length > 1 ? `<button data-delph="${p.id}" title="✕">✕</button>` : "") +
+          `</span>`,
+      )
+      .join("");
+    timelineEl.innerHTML =
+      `<span class="ph-label">${t("phase.heading")}:</span>${chips}` +
+      (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+</button>` : "") +
+      `<label class="ph-op" title="${t("phase.outOpacity")}">` +
+      `<input type="range" id="ph-op" min="0" max="100" step="5" value="${outOpacity}"/>` +
+      `<span id="ph-op-v">${outOpacity}%</span></label>`;
+
+    timelineEl.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((b) =>
+      b.addEventListener("click", () => {
+        currentPhaseId = b.dataset.pick!;
+        renderTimeline();
+        void refreshMarkers();
+      }),
+    );
+    timelineEl.querySelectorAll<HTMLButtonElement>("[data-delph]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        if (!confirm(t("phase.confirmDelete"))) return;
+        await api.deletePhase(planId, b.dataset.delph!);
+        const i = phases.findIndex((p) => p.id === b.dataset.delph);
+        if (i >= 0) phases.splice(i, 1);
+        for (const m of markers.values()) if (m.phase_id === b.dataset.delph) m.phase_id = null;
+        if (currentPhaseId === b.dataset.delph) currentPhaseId = phases[0]?.id ?? "";
+        renderTimeline();
+        void refreshMarkers();
+      }),
+    );
+    timelineEl.querySelector("#ph-add")?.addEventListener("click", async () => {
+      const name = prompt(t("phase.namePrompt"), `Phase ${phases.length}`);
+      if (!name) return;
+      const p = await api.createPhase(planId, name);
+      phases.push(p);
+      currentPhaseId = p.id;
+      renderTimeline();
+    });
+    const op = timelineEl.querySelector<HTMLInputElement>("#ph-op")!;
+    const opv = timelineEl.querySelector<HTMLSpanElement>("#ph-op-v")!;
+    op.addEventListener("input", () => {
+      outOpacity = Number(op.value);
+      opv.textContent = `${outOpacity}%`;
+      localStorage.setItem("sidc_phaseopacity", String(outOpacity));
+      void refreshMarkers();
+    });
+  }
+  renderTimeline();
 
   // ── Ebenen: Basiskarte-Layer + Topo-Vektor + Map-Locations ─────────────
   interface LocGroup {
@@ -839,6 +1049,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       locked: tpl.locked,
       timestamp_visible: tpl.timestamp_visible,
       rotation_degrees: tpl.rotation_degrees,
+      phase_id: currentPhaseId || null,
     };
     if (chainGroup != null) {
       data.linked_group_id = chainGroup;
@@ -926,9 +1137,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       el.addEventListener("click", (ev) => {
         if ((ev.target as HTMLElement).dataset.delfav) return;
         const f = favs.find((x) => x.id === el.dataset.fav)!;
-        chainGroup = null;
         setMode("place");
         awaitingPos = false; // Favorit direkt per Klick platzieren
+        chainGroup = f.is_multipoint ? Math.floor(Math.random() * 1e9) : null;
+        chainIndex = 0;
         pending = {
           sidc: f.sidc,
           unit_text: f.unit_text,
@@ -937,8 +1149,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           locked: false,
           timestamp_visible: true,
           rotation_degrees: f.rotation_degrees,
-          is_multipoint: false,
-          max_line_points: 0,
+          is_multipoint: f.is_multipoint,
+          max_line_points: f.max_line_points,
         };
       }),
     );
@@ -972,6 +1184,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (mode === "line") {
       e.preventDefault();
       finishLine();
+    }
+  });
+
+  // Rechtsklick beendet: gezeichnete Linie ODER eine laufende Marker-Linie (Multipoint)
+  map.on("contextmenu", (e) => {
+    if (mode === "line" && linePts.length) {
+      e.preventDefault();
+      finishLine();
+    } else if (mode === "place" && chainGroup != null && chainIndex > 0) {
+      e.preventDefault();
+      setMode("move");
     }
   });
 
@@ -1040,6 +1263,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <label>${t("marker.unitText")}</label><input data-unit value="${m.unit_text}" />
       <label>${t("marker.aiText")}</label><input data-ai value="${m.ai_text}" />
       <label>${t("marker.iconRot")}</label><input data-rot type="number" value="${m.icon_rotation || 0}" />
+      <label>${t("phase.assign")}</label>
+      <select data-phase>
+        <option value="">${t("phase.global")}</option>
+        ${phases
+          .map((ph) => `<option value="${ph.id}" ${ph.id === m.phase_id ? "selected" : ""}>${ph.name}</option>`)
+          .join("")}
+      </select>
       <label><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> ${t("marker.locked")}</label>
       <div class="row">
         <button class="primary" data-apply>${t("common.apply")}</button>
@@ -1056,6 +1286,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           unit_text: p.querySelector<HTMLInputElement>("[data-unit]")!.value,
           ai_text: p.querySelector<HTMLInputElement>("[data-ai]")!.value,
           icon_rotation: Number(p.querySelector<HTMLInputElement>("[data-rot]")!.value) || 0,
+          phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || null,
         },
       });
       socket.send({ type: "marker.lock", id: m.id, locked: p.querySelector<HTMLInputElement>("[data-lock]")!.checked });
@@ -1091,6 +1322,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         rotation_degrees: m.rotation_degrees,
         unit_text: m.unit_text,
         ai_text: m.ai_text,
+        is_multipoint: m.linked_group_id != null && m.linked_group_id >= 0,
+        max_line_points: 0,
       });
       favs = await api.favorites();
       renderFavs();

@@ -38,6 +38,15 @@ def test_plan_lifecycle_and_permissions(admin):
 
     snap = admin.get(f"/plans/{pid}/snapshot").json()
     assert snap["markers"] == [] and len(snap["layers"]) == 1
+    # Standard-Phase "Base" wird beim Anlegen erzeugt
+    assert [p["name"] for p in snap["phases"]] == ["Base"]
+
+    ph = admin.post(f"/plans/{pid}/phases", json={"name": "Angriff"})
+    assert ph.status_code == 201
+    phid = ph.json()["id"]
+    assert len(admin.get(f"/plans/{pid}/phases").json()) == 2
+    assert admin.delete(f"/plans/{pid}/phases/{phid}").status_code == 200
+    assert len(admin.get(f"/plans/{pid}/phases").json()) == 1
 
 
 def test_live_marker_authority(admin):
