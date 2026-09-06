@@ -3,7 +3,7 @@
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
 import { channelLabel, loadChannels, loadPhaseLineStyle } from "./sidc/catalog";
-import { iconUrl, lngLatToWorld, niceStep, worldToLngLat, type Calibration } from "./sidc/sidc";
+import { iconUrl, lngLatToWorld, worldToLngLat, type Calibration } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { openAclEditor } from "./acl";
 import { t } from "./i18n";
@@ -146,7 +146,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     features: [...strokes.values()].map((s) => ({
       type: "Feature",
       geometry: { type: "LineString", coordinates: s.points },
-      properties: { color: packedToHex(s.color), width: s.width > 0 ? s.width : 2 },
+      properties: { id: s.id, color: packedToHex(s.color), width: s.width > 0 ? s.width : 2 },
     })),
   });
   // Verbindungslinien für Multipoint-Marker (gleiche linked_group_id, nach point_index)
@@ -259,6 +259,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       layout: { "text-field": ["get", "name"], "text-size": 11, "text-offset": [0, 1.2] },
       paint: { "text-color": "#ff9be4", "text-halo-color": "#000", "text-halo-width": 1 },
     });
+
+    // Terrain immer aktiv (falls DEM vorhanden), damit die Cursor-Höhe auch in 2D
+    // abgefragt werden kann. Der 2D/3D-Schalter ändert nur Pitch + Überhöhung.
+    if (map.getSource("terrain-dem")) {
+      map.setTerrain({ source: "terrain-dem", exaggeration: 1 });
+    }
   });
 
   const refreshMarkers = async () => {
@@ -330,7 +336,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     let h = "–";
     try {
       const el = map.queryTerrainElevation(e.lngLat);
-      if (el != null) h = `${el.toFixed(0)} m`;
+      if (el != null) h = `${(el / (is3D ? 1.5 : 1)).toFixed(0)} m`;
     } catch {
       /* kein Terrain */
     }
@@ -345,13 +351,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   root.querySelector("#t3d")!.addEventListener("click", () => {
     is3D = !is3D;
     root.querySelector("#t3d")!.classList.toggle("active", is3D);
-    if (is3D && map.getSource("terrain-dem")) {
-      map.setTerrain({ source: "terrain-dem", exaggeration: 1.5 });
-      map.easeTo({ pitch: 60, duration: 700 });
-    } else {
-      map.setTerrain(null);
-      map.easeTo({ pitch: 0, bearing: 0, duration: 700 });
+    // Terrain bleibt gesetzt (für die Höhenabfrage) — nur Überhöhung + Kamera ändern sich.
+    if (map.getSource("terrain-dem")) {
+      map.setTerrain({ source: "terrain-dem", exaggeration: is3D ? 1.5 : 1 });
     }
+    map.easeTo({ pitch: is3D ? 60 : 0, bearing: is3D ? map.getBearing() : 0, duration: 700 });
   });
 
   // ── Channel ───────────────────────────────────────────────────────────
@@ -365,7 +369,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   interface LocGroup {
     key: string;
     label: string;
-    items: { x: number; y: number; names: Record<string, string>; color: number[]; bold: boolean; italic: boolean; size: number }[];
+    items: {
+      x: number;
+      y: number;
+      lon: number;
+      lat: number;
+      names: Record<string, string>;
+      color: number[];
+      bold: boolean;
+      italic: boolean;
+      size: number;
+    }[];
   }
   let locData: { langs: string[]; groups: LocGroup[] } | null = null;
   let mapLang = "en_us";
@@ -379,7 +393,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       .flatMap((g) =>
         g.items.map((it) => ({
           type: "Feature" as const,
-          geometry: { type: "Point" as const, coordinates: [it.x, it.y] },
+          geometry: { type: "Point" as const, coordinates: [it.lon, it.lat] },
           properties: {
             label: it.names[mapLang] || it.names.en_us || Object.values(it.names)[0] || "",
             color: `rgb(${Math.round(it.color[0] * 255)},${Math.round(it.color[1] * 255)},${Math.round(it.color[2] * 255)})`,
@@ -420,15 +434,30 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           (locData!.langs.includes("en_us") ? "en_us" : locData!.langs[0]);
         for (const g of locData!.groups) groupVisible.set(g.key, true);
         map.addSource("locations", { type: "geojson", data: locFC() });
+        // Punkt + Beschriftung getrennt: der Punkt bleibt immer sichtbar, auch wenn
+        // sich Labels bei kleinem Zoom gegenseitig verdrängen.
         map.addLayer({
-          id: "locations",
+          id: "locations-dots",
+          type: "circle",
+          source: "locations",
+          paint: {
+            "circle-radius": 3,
+            "circle-color": ["get", "color"],
+            "circle-stroke-color": "#000",
+            "circle-stroke-width": 1,
+          },
+        });
+        map.addLayer({
+          id: "locations-labels",
           type: "symbol",
           source: "locations",
           layout: {
             "text-field": ["get", "label"],
             "text-size": ["get", "size"],
-            "text-anchor": "center",
+            "text-anchor": "top",
+            "text-offset": [0, 0.5],
             "text-allow-overlap": false,
+            "text-optional": true,
           },
           paint: { "text-color": ["get", "color"], "text-halo-color": "#000", "text-halo-width": 1.6 },
         });
@@ -465,6 +494,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       cb.addEventListener("change", () => {
         baseLayerVisible[cb.dataset.base!] = cb.checked;
         map.setLayoutProperty(cb.dataset.base!, "visibility", cb.checked ? "visible" : "none");
+        if (cb.dataset.base === "grid") updateGrid();
       }),
     );
     layersPanel.querySelector<HTMLInputElement>("[data-topo]")?.addEventListener("change", (e) =>
@@ -491,47 +521,244 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     });
   }
 
-  // ── Koordinaten-Grid mit Randbeschriftung (wie ATAKmaps) ───────────────
+  // ── Koordinaten-Grid (wie ATAKmaps) ───────────────────────────────────
+  // Die Linien selbst kommen aus dem gebackenen 'grid'-Raster-Layer (style.json),
+  // das Canvas zeichnet nur noch die bildschirmrand-verankerte Beschriftung.
   const gridCanvas = root.querySelector<HTMLCanvasElement>("#gridCanvas")!;
   const gctx = gridCanvas.getContext("2d")!;
-  function drawGrid(): void {
+  const GRID_LEVELS = [10, 100, 1000, 10000];
+  const GRID_MIN_PX = 55;
+  const GRID_MAX_LINES = 400;
+  type GridLine = { axis: "x" | "y"; value: number; major: boolean; p0: [number, number]; p1: [number, number] };
+  let gridLines: GridLine[] = [];
+
+  const gridOn = () => baseLayerVisible.grid !== false;
+
+  function resizeGridCanvas(): void {
+    const r = map.getContainer().getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    gridCanvas.width = Math.round(r.width * dpr);
+    gridCanvas.height = Math.round(r.height * dpr);
+    gridCanvas.style.width = r.width + "px";
+    gridCanvas.style.height = r.height + "px";
+    gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function clipSeg(
+    p0: [number, number],
+    p1: [number, number],
+    w: number,
+    h: number,
+  ): [[number, number], [number, number]] | null {
+    let t0 = 0;
+    let t1 = 1;
+    const dx = p1[0] - p0[0];
+    const dy = p1[1] - p0[1];
+    const checks: [number, number][] = [
+      [-dx, p0[0]],
+      [dx, w - p0[0]],
+      [-dy, p0[1]],
+      [dy, h - p0[1]],
+    ];
+    for (const [p, q] of checks) {
+      if (p === 0) {
+        if (q < 0) return null;
+        continue;
+      }
+      const rr = q / p;
+      if (p < 0) {
+        if (rr > t1) return null;
+        if (rr > t0) t0 = rr;
+      } else {
+        if (rr < t0) return null;
+        if (rr < t1) t1 = rr;
+      }
+    }
+    return [
+      [p0[0] + t0 * dx, p0[1] + t0 * dy],
+      [p0[0] + t1 * dx, p0[1] + t1 * dy],
+    ];
+  }
+
+  function edgeOf(pt: [number, number], w: number, h: number, eps = 1.5): string | null {
+    if (pt[1] <= eps) return "top";
+    if (pt[1] >= h - eps) return "bottom";
+    if (pt[0] <= eps) return "left";
+    if (pt[0] >= w - eps) return "right";
+    return null;
+  }
+
+  function drawEdgeLabel(text: string, pt: [number, number], edge: string, major: boolean): void {
     const w = gridCanvas.clientWidth;
     const h = gridCanvas.clientHeight;
-    if (gridCanvas.width !== w) gridCanvas.width = w;
-    if (gridCanvas.height !== h) gridCanvas.height = h;
-    gctx.clearRect(0, 0, w, h);
-    if (!cal) return;
-    const b = map.getBounds();
-    const [x0, y0] = lngLatToWorld(cal, b.getWest(), b.getSouth());
-    const [x1, y1] = lngLatToWorld(cal, b.getEast(), b.getNorth());
-    const span = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
-    const step = niceStep(span / 8);
-    gctx.strokeStyle = "rgba(255,255,255,0.18)";
-    gctx.fillStyle = "rgba(255,255,255,0.85)";
-    gctx.font = "11px system-ui";
-    gctx.lineWidth = 1;
-    for (let gx = Math.ceil(Math.min(x0, x1) / step) * step; gx <= Math.max(x0, x1); gx += step) {
-      const ll = worldToLngLat(cal, gx, y0);
-      const px = map.project(ll).x;
-      gctx.beginPath();
-      gctx.moveTo(px, 0);
-      gctx.lineTo(px, h);
-      gctx.stroke();
-      gctx.fillText(String(Math.round(gx)), px + 2, 12);
+    gctx.font = major ? "600 11px monospace" : "500 10px monospace";
+    const tw = gctx.measureText(text).width;
+    let x = pt[0];
+    let y = pt[1];
+    if (edge === "top") {
+      y += 11;
+      x = Math.min(Math.max(x, tw / 2 + 4), w - tw / 2 - 4);
+    } else if (edge === "bottom") {
+      y -= 8;
+      x = Math.min(Math.max(x, tw / 2 + 4), w - tw / 2 - 4);
+    } else if (edge === "left") {
+      x += 4 + tw / 2;
+      y = Math.min(Math.max(y, 12), h - 8);
+    } else {
+      x -= 4 + tw / 2;
+      y = Math.min(Math.max(y, 12), h - 8);
     }
-    for (let gy = Math.ceil(Math.min(y0, y1) / step) * step; gy <= Math.max(y0, y1); gy += step) {
-      const ll = worldToLngLat(cal, x0, gy);
-      const py = map.project(ll).y;
-      gctx.beginPath();
-      gctx.moveTo(0, py);
-      gctx.lineTo(w, py);
-      gctx.stroke();
-      gctx.fillText(String(Math.round(gy)), 2, py - 2);
+    gctx.textAlign = "center";
+    gctx.textBaseline = "middle";
+    gctx.fillStyle = "rgba(0,0,0,0.55)";
+    gctx.fillRect(x - tw / 2 - 3, y - 8, tw + 6, 16);
+    gctx.fillStyle = major ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.7)";
+    gctx.fillText(text, x, y);
+  }
+
+  function safeGame(px: number, py: number): [number, number] | null {
+    const ll = map.unproject([px, py]);
+    if (!isFinite(ll.lng) || !isFinite(ll.lat)) return null;
+    const g = lngLatToWorld(cal, ll.lng, ll.lat);
+    return isFinite(g[0]) && isFinite(g[1]) ? g : null;
+  }
+
+  // Horizon-sicher: bei gepitchter 3D-Ansicht landen Ecken oberhalb des Horizonts
+  // auf riesigen/NaN-Koordinaten — dann per Bisektion zum Zentrum den sichtbaren
+  // Schnittpunkt suchen.
+  function visibleGame(
+    px: number,
+    py: number,
+    center: [number, number, number, number],
+    maxDist: number,
+  ): [number, number] {
+    const tooFar = (p: [number, number] | null) =>
+      !p || Math.hypot(p[0] - center[0], p[1] - center[1]) > maxDist;
+    const direct = safeGame(px, py);
+    if (!tooFar(direct)) return direct as [number, number];
+    let lo = 0;
+    let hi = 1;
+    let best: [number, number] = [center[0], center[1]];
+    for (let i = 0; i < 12; i++) {
+      const tt = (lo + hi) / 2;
+      const p = safeGame(center[2] + (px - center[2]) * tt, center[3] + (py - center[3]) * tt);
+      if (!tooFar(p)) {
+        best = p as [number, number];
+        lo = tt;
+      } else {
+        hi = tt;
+      }
+    }
+    return best;
+  }
+
+  function updateGrid(): void {
+    if (map.getLayer("grid")) {
+      map.setLayoutProperty("grid", "visibility", gridOn() ? "visible" : "none");
+    }
+    if (!cal || !gridOn()) {
+      gridLines = [];
+      drawGridLabels();
+      return;
+    }
+    const w = map.getContainer().clientWidth;
+    const h = map.getContainer().clientHeight;
+    if (!w || !h) return;
+
+    const c0 = map.unproject([w / 2, h / 2]);
+    const c1 = map.unproject([w / 2 + 1, h / 2]);
+    const g0 = lngLatToWorld(cal, c0.lng, c0.lat);
+    const g1 = lngLatToWorld(cal, c1.lng, c1.lat);
+    const mpp = Math.hypot(g1[0] - g0[0], g1[1] - g0[1]) || 1;
+
+    let mi = GRID_LEVELS.findIndex((lvl) => lvl / mpp >= GRID_MIN_PX);
+    if (mi === -1) mi = GRID_LEVELS.length - 1;
+    const minor = GRID_LEVELS[mi];
+    const major = GRID_LEVELS[Math.min(mi + 1, GRID_LEVELS.length - 1)];
+    const labelMinor = minor >= 100;
+
+    const center: [number, number, number, number] = [g0[0], g0[1], w / 2, h / 2];
+    const maxDist = Math.max(minor * 200, 5000);
+    const corners = ([[0, 0], [w, 0], [0, h], [w, h]] as [number, number][]).map(([px, py]) =>
+      visibleGame(px, py, center, maxDist),
+    );
+    const m2 = minor * 2;
+    const minX = Math.min(...corners.map((c) => c[0])) - m2;
+    const maxX = Math.max(...corners.map((c) => c[0])) + m2;
+    const minY = Math.min(...corners.map((c) => c[1])) - m2;
+    const maxY = Math.max(...corners.map((c) => c[1])) + m2;
+    if (minX > maxX || minY > maxY) {
+      gridLines = [];
+      drawGridLabels();
+      return;
+    }
+
+    const lines: GridLine[] = [];
+    const collect = (axis: "x" | "y", spacing: number, isMajor: boolean) => {
+      const lo = axis === "x" ? minX : minY;
+      const hi = axis === "x" ? maxX : maxY;
+      const tLo = axis === "x" ? minY : minX;
+      const tHi = axis === "x" ? maxY : maxX;
+      let drawn = 0;
+      for (let v = Math.floor(lo / spacing) * spacing; v <= hi; v += spacing) {
+        if (++drawn > GRID_MAX_LINES) break;
+        if (!isMajor && spacing !== major && Math.abs(v % major) < 1e-6) continue;
+        if (!isMajor && !labelMinor) continue;
+        const a = axis === "x" ? worldToLngLat(cal, v, tLo) : worldToLngLat(cal, tLo, v);
+        const b = axis === "x" ? worldToLngLat(cal, v, tHi) : worldToLngLat(cal, tHi, v);
+        lines.push({ axis, value: v, major: isMajor, p0: a, p1: b });
+      }
+    };
+    if (minor !== major) {
+      collect("x", minor, false);
+      collect("y", minor, false);
+    }
+    collect("x", major, true);
+    collect("y", major, true);
+    gridLines = lines;
+    drawGridLabels();
+  }
+
+  function drawGridLabels(): void {
+    const w = gridCanvas.clientWidth;
+    const h = gridCanvas.clientHeight;
+    if (!w || !h) return;
+    gctx.clearRect(0, 0, w, h);
+    if (!gridOn() || !gridLines.length) return;
+    for (const line of gridLines) {
+      const s0 = map.project(line.p0);
+      const s1 = map.project(line.p1);
+      const seg = clipSeg([s0.x, s0.y], [s1.x, s1.y], w, h);
+      if (!seg) continue;
+      const label = (line.axis === "x" ? "X " : "Y ") + Math.round(line.value);
+      for (const pt of seg) {
+        const edge = edgeOf(pt, w, h);
+        if (edge) drawEdgeLabel(label, pt, edge, line.major);
+      }
     }
   }
-  map.on("move", drawGrid);
-  map.on("resize", drawGrid);
-  map.once("idle", drawGrid);
+
+  let gridRaf = 0;
+  const scheduleGridLabels = () => {
+    if (gridRaf) return;
+    gridRaf = requestAnimationFrame(() => {
+      gridRaf = 0;
+      drawGridLabels();
+    });
+  };
+  resizeGridCanvas();
+  map.on("moveend", updateGrid);
+  map.on("move", scheduleGridLabels);
+  map.on("resize", () => {
+    resizeGridCanvas();
+    updateGrid();
+  });
+  window.addEventListener("resize", () => {
+    resizeGridCanvas();
+    updateGrid();
+  });
+  map.on("style.load", updateGrid);
+  map.once("idle", updateGrid);
 
   if (!canEdit) return;
 
@@ -541,6 +768,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let linePts: [number, number][] = [];
   let chainGroup: number | null = null;
   let chainIndex = 0;
+  // Marker-Workflow wie im ATAK: erst Position auf der Karte klicken, dann öffnet
+  // sich der Wizard. awaitingPos = warte auf den Positions-Klick.
+  let awaitingPos = false;
+  let pendingPos: [number, number] | null = null;
 
   const refreshLineDraft = () =>
     (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts));
@@ -569,18 +800,43 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (m !== "place") {
       pending = null;
       chainGroup = null;
+      awaitingPos = false;
+      pendingPos = null;
     }
   };
   toolbar.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => setMode(b.dataset.mode as Mode)),
   );
+
+  function placeMarker(pos: [number, number], tpl: MarkerTemplate): void {
+    const data: Record<string, unknown> = {
+      sidc: tpl.sidc,
+      world_x: pos[0],
+      world_y: pos[1],
+      unit_text: tpl.unit_text,
+      ai_text: tpl.ai_text,
+      channel: tpl.channel || myChannel,
+      locked: tpl.locked,
+      timestamp_visible: tpl.timestamp_visible,
+      rotation_degrees: tpl.rotation_degrees,
+    };
+    if (chainGroup != null) {
+      data.linked_group_id = chainGroup;
+      data.point_index = chainIndex;
+      if (chainIndex === 0) {
+        data.line_color = lineColor;
+        data.line_width = lineWidth;
+      }
+      chainIndex++;
+    }
+    socket.send({ type: "marker.create", cid: cid(), data });
+  }
+
   root.querySelector("#tool-marker")!.addEventListener("click", () => {
-    openWizard(root, (tpl) => {
-      chainGroup = tpl.is_multipoint ? Math.floor(Math.random() * 1e9) : null;
-      chainIndex = 0;
-      setMode("place");
-      pending = tpl; // nach setMode setzen (setMode('place') fasst pending nicht an)
-    });
+    pending = null;
+    pendingPos = null;
+    setMode("place"); // Karte fixiert, Fadenkreuz — jetzt Position klicken
+    awaitingPos = true;
   });
 
   // Linien-Stil-Panel
@@ -652,6 +908,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         const f = favs.find((x) => x.id === el.dataset.fav)!;
         chainGroup = null;
         setMode("place");
+        awaitingPos = false; // Favorit direkt per Klick platzieren
         pending = {
           sidc: f.sidc,
           unit_text: f.unit_text,
@@ -699,37 +956,47 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("click", (e) => {
     if ((e as { defaultPrevented?: boolean }).defaultPrevented) return;
 
+    if (mode === "erase") {
+      // Linien haben eine schmale Trefferfläche — mit etwas Toleranz suchen.
+      const pad = 6;
+      const hits = map.queryRenderedFeatures(
+        [
+          [e.point.x - pad, e.point.y - pad],
+          [e.point.x + pad, e.point.y + pad],
+        ],
+        { layers: ["strokes"] },
+      );
+      const id = hits[0]?.properties?.id as string | undefined;
+      if (id && caps.draw) socket.send({ type: "stroke.delete", id });
+      return;
+    }
+
     if (mode === "line") {
       linePts.push([e.lngLat.lng, e.lngLat.lat]);
       refreshLineDraft();
       return;
     }
 
-    if (mode === "place" && pending) {
-      const data: Record<string, unknown> = {
-        sidc: pending.sidc,
-        world_x: e.lngLat.lng,
-        world_y: e.lngLat.lat,
-        unit_text: pending.unit_text,
-        ai_text: pending.ai_text,
-        channel: pending.channel || myChannel,
-        locked: pending.locked,
-        timestamp_visible: pending.timestamp_visible,
-        rotation_degrees: pending.rotation_degrees,
-      };
-      if (chainGroup != null) {
-        data.linked_group_id = chainGroup;
-        data.point_index = chainIndex;
-        if (chainIndex === 0) {
-          data.line_color = lineColor;
-          data.line_width = lineWidth;
-        }
-        chainIndex++;
+    if (mode === "place") {
+      const pos: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+      if (awaitingPos) {
+        awaitingPos = false;
+        pendingPos = pos;
+        openWizard(root, (tpl) => {
+          pending = tpl;
+          chainGroup = tpl.is_multipoint ? Math.floor(Math.random() * 1e9) : null;
+          chainIndex = 0;
+          placeMarker(pendingPos ?? pos, tpl); // sofort an der geklickten Position
+          if (!tpl.is_multipoint) setMode("move");
+        });
+        return;
       }
-      socket.send({ type: "marker.create", cid: cid(), data });
-
-      const done = !pending.is_multipoint || (pending.max_line_points > 0 && chainIndex >= pending.max_line_points);
-      if (done) setMode("move");
+      if (pending) {
+        placeMarker(pos, pending);
+        const done =
+          !pending.is_multipoint || (pending.max_line_points > 0 && chainIndex >= pending.max_line_points);
+        if (done) setMode("move");
+      }
     }
   });
 
@@ -779,6 +1046,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     p.querySelector("[data-clone]")!.addEventListener("click", () => {
       chainGroup = null;
       setMode("place");
+      awaitingPos = false;
       pending = {
         sidc: m.sidc,
         unit_text: m.unit_text,

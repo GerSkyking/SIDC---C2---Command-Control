@@ -80,8 +80,70 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     })),
   });
 
+  async function loadExtras(): Promise<void> {
+    try {
+      const r = await fetch(`/public/plans/${token}/topo.geojson`, { credentials: "include" });
+      if (r.ok) {
+        map.addSource("topo", { type: "geojson", data: await r.json() });
+        map.addLayer({
+          id: "topo",
+          type: "line",
+          source: "topo",
+          paint: { "line-color": "#d8c37a", "line-width": 1.3, "line-opacity": 0.8 },
+        });
+      }
+    } catch {
+      /* kein Topo */
+    }
+    try {
+      const r = await fetch(`/public/plans/${token}/locations.json`, { credentials: "include" });
+      if (r.ok) {
+        const doc = await r.json();
+        let lang = navigator.language.slice(0, 2);
+        lang = doc.langs.find((l: string) => l.startsWith(lang)) ?? (doc.langs.includes("en_us") ? "en_us" : doc.langs[0]);
+        const fc: GeoJSON.FeatureCollection = {
+          type: "FeatureCollection",
+          features: doc.groups.flatMap((g: any) =>
+            g.items.map((it: any) => ({
+              type: "Feature" as const,
+              geometry: { type: "Point" as const, coordinates: [it.lon, it.lat] },
+              properties: {
+                label: it.names[lang] || it.names.en_us || "",
+                color: `rgb(${Math.round(it.color[0] * 255)},${Math.round(it.color[1] * 255)},${Math.round(it.color[2] * 255)})`,
+                size: 11 + (it.size - 0.75) * 6,
+              },
+            })),
+          ),
+        };
+        map.addSource("locations", { type: "geojson", data: fc });
+        map.addLayer({
+          id: "locations-dots",
+          type: "circle",
+          source: "locations",
+          paint: { "circle-radius": 3, "circle-color": ["get", "color"], "circle-stroke-color": "#000", "circle-stroke-width": 1 },
+        });
+        map.addLayer({
+          id: "locations-labels",
+          type: "symbol",
+          source: "locations",
+          layout: {
+            "text-field": ["get", "label"],
+            "text-size": ["get", "size"],
+            "text-anchor": "top",
+            "text-offset": [0, 0.5],
+            "text-optional": true,
+          },
+          paint: { "text-color": ["get", "color"], "text-halo-color": "#000", "text-halo-width": 1.6 },
+        });
+      }
+    } catch {
+      /* keine Locations */
+    }
+  }
+
   map.on("load", async () => {
     await Promise.all([...new Set([...markers.values()].map((m) => m.sidc))].map(ensureIcon));
+    void loadExtras();
     map.addSource("s", { type: "geojson", data: sFC() });
     map.addLayer({
       id: "s",
