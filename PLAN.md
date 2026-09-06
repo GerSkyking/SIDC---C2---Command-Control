@@ -29,11 +29,28 @@ Später Open Source (AGPL-3.0).
 - **Karten-Sichtbarkeit** (optional): pro Gruppe/User einschränkbar, welche Karten als Plan-Basis erlaubt sind.
 - **Objekt-Lock:** Marker sperrbar (wie ATAKmaps `locked`); gesperrte Marker nur von Plan-`owner` änderbar.
 
+## Zeitstrahl · Phasen · Layer
+
+- **Zeitstrahl** oben in der UI. Start = **global**; der User kann **Phasen** anlegen
+  (optional mit Zeitpunkt).
+- Jeder Marker/Stroke gehört zu **einer Phase** (oder global, `phase_id = NULL`).
+- Innerhalb einer Phase gibt es **Layer** (z. B. je Platoon). Ein Layer kann an eine
+  **Gruppe** gebunden sein → nur diese Gruppe (plus Plan-`owner`/`admin`) sieht/bearbeitet
+  ihn. Zusätzlich blendet jeder User Layer clientseitig ein/aus.
+- Datenmodell steht bereits (`phases`, `layers`, `markers.phase_id/layer_id`,
+  `strokes.phase_id/layer_id`); UI + CRUD + Live-Events folgen in Phase 7.
+
 ---
 
 ## Stufenplan
 
-### Phase 0 – Repo & Grundgerüst
+**Stand 2026-09-06:** Phasen 0–2 ✅, Phase 3 teilweise (Verwaltung ✅, Tile-Routen offen),
+Phasen 5 & 6 als minimaler Durchstich ✅ (CRUD/ACL/Klonen/Versionen + Live-Marker mit
+Server-Autorität, 5 pytest grün). **Bereit für ersten Deploy-Test auf dem Server.**
+Offen bis „fertig": Alembic-Baseline (aktuell `create_all`), Tile-/style.json-Portierung,
+volles sidc-marker-Frontend, Zeitstrahl/Phasen/Layer-UI, Admin-UI, Hardening.
+
+### Phase 0 – Repo & Grundgerüst  ✅
 - [ ] Monorepo-Struktur: `backend/`, `frontend/`, `deploy/`, `data/` (gemountet, im Repo leer).
 - [ ] `docker-compose.yml`-Skelett: `db` (Postgres), `redis`, `backend`. Portmapping `${HTTP_PORT:-8080}:8080`.
 - [ ] `deploy/.env.example` vollständig: `HTTP_PORT`, `POSTGRES_*`, `DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`, `BOOTSTRAP_ADMIN_USER/PASSWORD`, `FORWARDED_ALLOW_IPS`, `COOKIE_SECURE=auto|true|false`, `OIDC_*` (optional), `MAP_IMPORT_MAX_MB`.

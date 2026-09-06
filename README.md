@@ -53,6 +53,12 @@ cd backend && python -m venv .venv && .venv/bin/pip install -r requirements.txt
 cd frontend && npm install && npm run dev
 ```
 
+Tests: `cd backend && pip install -r requirements-dev.txt && pytest -q`
+
+> Hinweis: Enthält der lokale Repo-Pfad ein `&` (wie „SIDC - C2 - Command & Control"),
+> brechen npm-Scripts unter Windows. Dann `npm run build` durch
+> `node ./node_modules/vite/bin/vite.js build` ersetzen — der Docker-Build ist nicht betroffen.
+
 ## Lizenz
 
 [AGPL-3.0](LICENSE)

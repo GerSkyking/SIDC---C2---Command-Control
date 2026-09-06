@@ -1,0 +1,221 @@
+"""ORM-Modelle. Marker-Felder spiegeln ATAKmaps (server/app.py: SidcMarkerCreate)."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
+
+from .db import Base, UuidPk, uuid_str
+
+
+def now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+# ─── Identität / Rechte ─────────────────────────────────────────────────────
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255))  # None = nur OIDC
+    role: Mapped[str] = mapped_column(String(16), default="user")   # 'admin' | 'user'
+    can_create_plans: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+    groups: Mapped[list["Group"]] = relationship(secondary="group_members", back_populates="members")
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == "admin"
+
+
+class OidcIdentity(Base):
+    __tablename__ = "oidc_identities"
+    __table_args__ = (UniqueConstraint("issuer", "subject", name="uq_oidc_issuer_subject"),)
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    issuer: Mapped[str] = mapped_column(String(255))
+    subject: Mapped[str] = mapped_column(String(255))
+
+
+class Group(Base):
+    __tablename__ = "groups"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    can_create_plans: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+    members: Mapped[list[User]] = relationship(secondary="group_members", back_populates="groups")
+
+
+class GroupMember(Base):
+    __tablename__ = "group_members"
+
+    group_id: Mapped[str] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+
+
+# ─── Karten ─────────────────────────────────────────────────────────────────
+
+class Map(Base):
+    __tablename__ = "maps"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # slug / Verzeichnisname
+    name: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(16), default="importing")  # importing|ready|error
+    source_url: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)  # bounds, min/maxzoom …
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ─── Pläne ──────────────────────────────────────────────────────────────────
+
+class Plan(Base):
+    __tablename__ = "plans"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    name: Mapped[str] = mapped_column(String(128))
+    map_id: Mapped[str] = mapped_column(ForeignKey("maps.id", ondelete="RESTRICT"), index=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+    acl: Mapped[list["PlanACL"]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan"
+    )
+
+
+class PlanACL(Base):
+    __tablename__ = "plan_acl"
+    __table_args__ = (
+        UniqueConstraint("plan_id", "subject_type", "subject_id", name="uq_plan_acl_subject"),
+    )
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
+    subject_type: Mapped[str] = mapped_column(String(8))  # 'user' | 'group'
+    subject_id: Mapped[str] = mapped_column(UuidPk)
+    level: Mapped[str] = mapped_column(String(8))         # 'viewer' | 'editor' | 'owner'
+
+    plan: Mapped[Plan] = relationship(back_populates="acl")
+
+
+class Phase(Base):
+    """Abschnitt auf dem Zeitstrahl. phase_id NULL an einem Marker = 'global'."""
+
+    __tablename__ = "phases"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    ordering: Mapped[int] = mapped_column(Integer, default=0)
+    start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # optionale Zeit
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Layer(Base):
+    """Sicht-/Bearbeitungs-Ebene innerhalb eines Plans (z. B. je Platoon).
+
+    group_id gesetzt = nur diese Gruppe (plus Plan-owner/admin) sieht/bearbeitet die Ebene.
+    """
+
+    __tablename__ = "layers"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    color: Mapped[int] = mapped_column(Integer, default=-1)
+    ordering: Mapped[int] = mapped_column(Integer, default=0)
+    group_id: Mapped[str | None] = mapped_column(ForeignKey("groups.id", ondelete="SET NULL"))
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Marker(Base):
+    __tablename__ = "markers"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
+    phase_id: Mapped[str | None] = mapped_column(
+        ForeignKey("phases.id", ondelete="SET NULL"), index=True
+    )  # NULL = global
+    layer_id: Mapped[str | None] = mapped_column(
+        ForeignKey("layers.id", ondelete="SET NULL"), index=True
+    )
+
+    sidc: Mapped[str] = mapped_column(String(64))
+    world_x: Mapped[float] = mapped_column(Float)
+    world_y: Mapped[float] = mapped_column(Float)
+    rotation_degrees: Mapped[int] = mapped_column(Integer, default=-1)
+    unit_text: Mapped[str] = mapped_column(String(255), default="")
+    ai_text: Mapped[str] = mapped_column(String(255), default="")
+    channel: Mapped[str] = mapped_column(String(64), default="")
+    locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    timestamp_visible: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Phase-Line-/Zeichnen-Ketten (ATAKmaps Doku SIDC-Data-Interface.md 1a)
+    linked_group_id: Mapped[int] = mapped_column(Integer, default=-1)
+    point_index: Mapped[int] = mapped_column(Integer, default=-1)
+    line_color: Mapped[int] = mapped_column(Integer, default=-1)
+    line_width: Mapped[float] = mapped_column(Float, default=-1)
+
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class Stroke(Base):
+    __tablename__ = "strokes"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
+    phase_id: Mapped[str | None] = mapped_column(ForeignKey("phases.id", ondelete="SET NULL"), index=True)
+    layer_id: Mapped[str | None] = mapped_column(ForeignKey("layers.id", ondelete="SET NULL"), index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="freehand")  # freehand | phaseline
+    points: Mapped[list] = mapped_column(JSON, default=list)           # [[x, y], ...]
+    color: Mapped[int] = mapped_column(Integer, default=-1)
+    width: Mapped[float] = mapped_column(Float, default=-1)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class PlanVersion(Base):
+    __tablename__ = "plan_versions"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
+    label: Mapped[str] = mapped_column(String(128), default="")
+    snapshot: Mapped[dict] = mapped_column(JSON)  # {markers: [...], strokes: [...]}
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(32))
+    action: Mapped[str] = mapped_column(String(64))
+    target_type: Mapped[str | None] = mapped_column(String(32))
+    target_id: Mapped[str | None] = mapped_column(String(64))
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
