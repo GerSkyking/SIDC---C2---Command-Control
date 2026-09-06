@@ -96,12 +96,21 @@ a { color: var(--accent); }
 
 .fav-panel, .edit-panel { position: absolute; left: 3.4rem; top: 4rem; width: 15rem; z-index: 6;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; max-height: 70vh; overflow-y: auto; }
-/* Bearbeitungs-UI ~50% größer */
-.edit-panel { left: auto; right: 0.6rem; top: 7rem; width: 23rem; padding: 0.9rem; font-size: 1.05rem; }
+/* Marker-Bearbeiten: zentriertes Fenster mit Backdrop */
+.edit-modal { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,0.45); display: grid; place-items: center; padding: 1rem; }
+.edit-modal .edit-panel {
+  position: static; left: auto; right: auto; top: auto;
+  width: min(27rem, 96vw); max-height: 88vh;
+  overflow-y: auto; overflow-x: hidden;
+  padding: 1rem; font-size: 1.05rem;
+}
 .edit-panel label, .fav-head { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.55rem 0 0.2rem; }
 .edit-panel .fav-head { font-size: 1.05rem; }
-.edit-panel input, .edit-panel select { width: 100%; padding: 0.55rem 0.7rem; }
-.edit-panel .row button { padding: 0.55rem 0.7rem; }
+.edit-panel input, .edit-panel select { width: 100%; min-width: 0; padding: 0.55rem 0.7rem; }
+.edit-panel label.chk { display: flex; align-items: center; gap: 0.5rem; color: var(--fg); font-size: 0.95rem; }
+.edit-panel label.chk input { width: auto; min-width: 0; }
+.edit-panel .row { flex-wrap: wrap; }
+.edit-panel .row button { padding: 0.55rem 0.7rem; flex: 1 1 auto; }
 .fav-head { font-weight: 600; color: var(--fg); margin-top: 0; }
 .fav { display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem; border-radius: 5px; cursor: pointer; }
 .fav:hover { background: rgba(255,255,255,0.06); }

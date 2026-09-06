@@ -34,7 +34,7 @@ interface Stroke {
   color: number;
   width: number;
 }
-type Mode = "move" | "point" | "line" | "erase" | "place";
+type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure";
 
 export async function openPlanView(root: HTMLElement, planId: string, me: Me): Promise<void> {
   const snap = await api.snapshot(planId);
@@ -99,8 +99,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       canEdit
         ? `<div class="toolbar" id="toolbar">
              <button data-mode="move" class="active" title="${t("tool.move")}">✋</button>
+             <button data-mode="markermove" title="${t("tool.markermove")}">✥</button>
              <button data-mode="point" title="${t("tool.point")}">👉</button>
-             <button data-mode="line" title="${t("tool.line")}">📏</button>
+             <button data-mode="line" title="${t("tool.line")}">✏️</button>
+             <button data-mode="measure" title="${t("tool.measure")}">📏</button>
              <button data-mode="erase" title="${t("tool.erase")}">🧽</button>
              <button id="tool-marker" title="${t("tool.marker")}">📍</button>
              <button id="tool-fav" title="${t("tool.fav")}">★</button>
@@ -338,6 +340,31 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       source: "linedraft",
       filter: ["==", ["geometry-type"], "Point"],
       paint: { "circle-radius": 4, "circle-color": "#4c8dff", "circle-stroke-color": "#fff", "circle-stroke-width": 1 },
+    });
+
+    // Messwerkzeug (Lineal): gestrichelte Linie + Distanz-Label
+    map.addSource("measure", { type: "geojson", data: emptyFC() });
+    map.addLayer({
+      id: "measure-line",
+      type: "line",
+      source: "measure",
+      filter: ["==", ["get", "kind"], "line"],
+      paint: { "line-color": "#ffd166", "line-width": 2, "line-dasharray": [2, 2] },
+    });
+    map.addLayer({
+      id: "measure-pts",
+      type: "circle",
+      source: "measure",
+      filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "kind"], "label"]],
+      paint: { "circle-radius": 4, "circle-color": "#ffd166", "circle-stroke-color": "#000", "circle-stroke-width": 1 },
+    });
+    map.addLayer({
+      id: "measure-label",
+      type: "symbol",
+      source: "measure",
+      filter: ["==", ["get", "kind"], "label"],
+      layout: { "text-field": ["get", "label"], "text-size": 13, "text-offset": [0, -0.8], "text-allow-overlap": true },
+      paint: { "text-color": "#ffd166", "text-halo-color": "#000", "text-halo-width": 1.8 },
     });
 
     // Richtungspfeile (unter den Markern)
@@ -1040,18 +1067,54 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // sich der Wizard. awaitingPos = warte auf den Positions-Klick.
   let awaitingPos = false;
   let pendingPos: [number, number] | null = null;
+  let measurePts: [number, number][] = [];
 
   const refreshLineDraft = () =>
     (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts));
+
+  const fmtDist = (mtr: number) => (mtr < 1000 ? `${Math.round(mtr)} m` : `${(mtr / 1000).toFixed(2)} km`);
+  const redrawMeasure = () => {
+    const src = map.getSource("measure") as GeoJSONSource | undefined;
+    if (!src) return;
+    const feats: GeoJSON.Feature[] = measurePts.map((p) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: p },
+      properties: {},
+    }));
+    if (measurePts.length === 2) {
+      const [a, b] = measurePts;
+      const [ax, ay] = lngLatToWorld(cal, a[0], a[1]);
+      const [bx, by] = lngLatToWorld(cal, b[0], b[1]);
+      const dist = Math.hypot(bx - ax, by - ay);
+      feats.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: [a, b] },
+        properties: { kind: "line" },
+      });
+      feats.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] },
+        properties: { kind: "label", label: fmtDist(dist) },
+      });
+    }
+    src.setData({ type: "FeatureCollection", features: feats });
+  };
 
   const setMode = (m: Mode) => {
     mode = m;
     toolbar.querySelectorAll("[data-mode]").forEach((b) =>
       b.classList.toggle("active", (b as HTMLElement).dataset.mode === m),
     );
-    map.getCanvas().style.cursor = m === "place" || m === "line" ? "crosshair" : m === "erase" ? "not-allowed" : "";
-    // Zeigen + Linie + Radierer: Karte fixieren (kein Greifen)
-    if (m === "point" || m === "line" || m === "erase") {
+    map.getCanvas().style.cursor =
+      m === "place" || m === "line" || m === "measure"
+        ? "crosshair"
+        : m === "erase"
+          ? "not-allowed"
+          : m === "markermove"
+            ? "move"
+            : "";
+    // Zeigen + Linie + Radierer + Messen + Marker-Verschieben: Karte fixieren
+    if (m === "point" || m === "line" || m === "erase" || m === "measure" || m === "markermove") {
       map.dragPan.disable();
       map.dragRotate.disable();
     } else {
@@ -1064,6 +1127,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (m !== "line") {
       linePts = [];
       refreshLineDraft();
+    }
+    if (m !== "measure") {
+      measurePts = [];
+      redrawMeasure();
     }
     if (m !== "place") {
       pending = null;
@@ -1150,6 +1217,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const tb = root.querySelector("#toolbar");
     if (!tb) return;
     tb.querySelector<HTMLButtonElement>('[data-mode="line"]')?.toggleAttribute("disabled", !caps.draw);
+    tb.querySelector<HTMLButtonElement>('[data-mode="markermove"]')?.toggleAttribute("disabled", !caps.move);
     tb.querySelector<HTMLButtonElement>('[data-mode="erase"]')?.toggleAttribute("disabled", !caps.delete);
     tb.querySelector<HTMLButtonElement>("#tool-marker")?.toggleAttribute("disabled", !caps.place);
     tb.querySelector<HTMLButtonElement>("#tool-fav")?.toggleAttribute("disabled", !caps.place);
@@ -1204,19 +1272,71 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   root.querySelector("#tool-fav")!.addEventListener("click", () => (favPanel.hidden = !favPanel.hidden));
 
   // ── Karten-Interaktion ────────────────────────────────────────────────
+  const redrawMarkersOnly = () => {
+    (map.getSource("markers") as GeoJSONSource)?.setData(markerFC());
+    (map.getSource("chains") as GeoJSONSource)?.setData(chainFC());
+    refreshDir();
+  };
+
+  let suppressClick = false;
   const onMarkerClick = (e: maplibregl.MapLayerMouseEvent) => {
+    if (dragId || suppressClick) return; // gerade verschoben
     e.preventDefault();
     const id = e.features?.[0]?.properties?.id as string;
     const m = markers.get(id);
     if (!m) return;
     if (mode === "erase") {
       if (caps.delete) socket.send({ type: "marker.delete", id: m.id });
-    } else if (mode === "move") {
+    } else if (mode === "move" || mode === "markermove") {
       openEditPanel(m);
     }
   };
   map.on("click", "marker-icon", onMarkerClick);
   map.on("click", "marker-dot", onMarkerClick); // Marker ohne PNG-Icon klickbar halten
+
+  // Marker ziehen: im Modus "markermove" (linke Taste) ODER im Karten-Modus mit
+  // gehaltener mittlerer Maustaste.
+  let dragId: string | null = null;
+  const onMarkerMouseDown = (e: maplibregl.MapLayerMouseEvent) => {
+    const midBtn = e.originalEvent.button === 1;
+    const wantDrag = caps.move && (mode === "markermove" || (mode === "move" && midBtn));
+    if (!wantDrag) return;
+    const id = e.features?.[0]?.properties?.id as string;
+    const m = id ? markers.get(id) : undefined;
+    if (!m || m.locked) return;
+    e.preventDefault();
+    e.originalEvent.preventDefault(); // Mittelklick-Autoscroll unterdrücken
+    dragId = id;
+    map.dragPan.disable();
+    map.getCanvas().style.cursor = "grabbing";
+    const onMove = (ev: maplibregl.MapMouseEvent) => {
+      const mm = markers.get(dragId!);
+      if (!mm) return;
+      mm.world_x = ev.lngLat.lng;
+      mm.world_y = ev.lngLat.lat;
+      redrawMarkersOnly();
+    };
+    const onUp = (ev: maplibregl.MapMouseEvent) => {
+      map.off("mousemove", onMove);
+      const finished = dragId;
+      dragId = null;
+      suppressClick = true;
+      setTimeout(() => (suppressClick = false), 0);
+      if (mode === "move") map.dragPan.enable();
+      map.getCanvas().style.cursor = mode === "markermove" ? "move" : "";
+      if (finished) {
+        socket.send({ type: "marker.move", id: finished, world_x: ev.lngLat.lng, world_y: ev.lngLat.lat });
+      }
+    };
+    map.on("mousemove", onMove);
+    map.once("mouseup", onUp);
+  };
+  map.on("mousedown", "marker-icon", onMarkerMouseDown);
+  map.on("mousedown", "marker-dot", onMarkerMouseDown);
+  // Mittelklick auf dem Canvas nie als Browser-Autoscroll interpretieren
+  map.getCanvas().addEventListener("mousedown", (ev) => {
+    if (ev.button === 1) ev.preventDefault();
+  });
 
   map.on("dblclick", (e) => {
     if (mode === "line") {
@@ -1260,6 +1380,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       return;
     }
 
+    if (mode === "measure") {
+      if (measurePts.length >= 2) measurePts = []; // dritter Klick: löschen
+      else measurePts.push([e.lngLat.lng, e.lngLat.lat]);
+      redrawMeasure();
+      return;
+    }
+
     if (mode === "place") {
       const pos: [number, number] = [e.lngLat.lng, e.lngLat.lat];
       if (awaitingPos) {
@@ -1290,12 +1417,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   });
 
-  // ── Marker-Edit-Panel ─────────────────────────────────────────────────
+  // ── Marker-Edit-Panel (zentriertes Fenster, Klick außerhalb schließt) ──
   function openEditPanel(m: Marker): void {
-    root.querySelector("#editPanel")?.remove();
+    root.querySelector("#editModal")?.remove();
+    const back = document.createElement("div");
+    back.className = "edit-modal";
+    back.id = "editModal";
     const p = document.createElement("div");
     p.className = "edit-panel";
-    p.id = "editPanel";
     p.innerHTML = `
       <div class="fav-head"><img src="${iconSrc(m.sidc)}" width="26" height="26" onerror="this.style.visibility='hidden'"/> ${t("marker.heading")}</div>
       <label>${t("marker.unitText")}</label><input data-unit value="${m.unit_text}" />
@@ -1308,14 +1437,26 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           .map((ph) => `<option value="${ph.id}" ${ph.id === m.phase_id ? "selected" : ""}>${ph.name}</option>`)
           .join("")}
       </select>
-      <label><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> ${t("marker.locked")}</label>
+      <label class="chk"><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> <span>${t("marker.locked")}</span></label>
       <div class="row">
         <button class="primary" data-apply>${t("common.apply")}</button>
         <button data-fav>${t("fav.add")}</button>
         <button data-clone>${t("marker.clone")}</button>
         <button data-del>${t("common.delete")}</button>
       </div>`;
-    root.appendChild(p);
+    back.appendChild(p);
+    root.appendChild(back);
+    const close = () => back.remove();
+    back.addEventListener("mousedown", (e) => {
+      if (e.target === back) close();
+    });
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        close();
+        document.removeEventListener("keydown", onEsc);
+      }
+    };
+    document.addEventListener("keydown", onEsc);
     p.querySelector("[data-apply]")!.addEventListener("click", () => {
       socket.send({
         type: "marker.modify",
@@ -1328,11 +1469,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         },
       });
       socket.send({ type: "marker.lock", id: m.id, locked: p.querySelector<HTMLInputElement>("[data-lock]")!.checked });
-      p.remove();
+      close();
     });
     p.querySelector("[data-del]")!.addEventListener("click", () => {
       socket.send({ type: "marker.delete", id: m.id });
-      p.remove();
+      close();
     });
     p.querySelector("[data-clone]")!.addEventListener("click", () => {
       chainGroup = null;
@@ -1349,7 +1490,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         is_multipoint: false,
         max_line_points: 0,
       };
-      p.remove();
+      close();
     });
     p.querySelector("[data-fav]")!.addEventListener("click", async () => {
       const label = prompt(t("fav.labelPrompt"), m.unit_text || m.sidc.slice(0, 8));
