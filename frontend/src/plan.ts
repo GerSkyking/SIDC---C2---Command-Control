@@ -109,13 +109,38 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const map = new maplibregl.Map({
     container: "map",
     style: `/api/maps/${mapId}/style.json`,
+    maxPitch: 0, // 2D: nur Drehen, kein Kippen — der 3D-Schalter hebt das an
     transformRequest: (url) =>
       url.startsWith("/") || url.startsWith(location.origin) ? { url, credentials: "include" } : { url },
   });
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
+  // Kamera-Grenzen: nicht endlos von der Karte wegscrollen/-zoomen (wie ATAKmaps).
+  function applyCameraBounds(): void {
+    const src = (map.getStyle()?.sources ?? {}) as Record<string, { bounds?: number[] }>;
+    const b = src.sat?.bounds ?? src.grid?.bounds;
+    if (!b || b.length !== 4) return;
+    const padX = (b[2] - b[0]) * 0.12;
+    const padY = (b[3] - b[1]) * 0.12;
+    map.setMaxBounds([
+      [b[0] - padX, b[1] - padY],
+      [b[2] + padX, b[3] + padY],
+    ]);
+    const cam = map.cameraForBounds(
+      [
+        [b[0], b[1]],
+        [b[2], b[3]],
+      ],
+      { padding: 20 },
+    );
+    if (cam?.zoom) map.setMinZoom(Math.max(0, cam.zoom - 0.5));
+  }
+  map.on("load", applyCameraBounds);
+  map.on("style.load", applyCameraBounds);
+
   const loadedIcons = new Set<string>();
+  const missingIcons = new Set<string>(); // SIDC ohne vorgerendertes PNG → Ersatzpunkt
   async function ensureIcon(sidc: string): Promise<void> {
     if (loadedIcons.has(sidc) || map.hasImage(sidc)) return;
     loadedIcons.add(sidc);
@@ -123,7 +148,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const img = await map.loadImage(iconUrl(sidc));
       if (!map.hasImage(sidc)) map.addImage(sidc, img.data);
     } catch {
-      /* fehlendes Icon: Symbol-Layer zeigt dann nichts */
+      missingIcons.add(sidc); // Symbol-Layer zeigt nichts → marker-dot springt ein
     }
   }
 
@@ -138,6 +163,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         label: m.unit_text || m.ai_text || "",
         rot: m.icon_rotation || 0,
         locked: m.locked,
+        dot: missingIcons.has(m.sidc),
       },
     })),
   });
@@ -222,6 +248,18 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     });
 
     map.addSource("markers", { type: "geojson", data: markerFC() });
+    map.addLayer({
+      id: "marker-dot",
+      type: "circle",
+      source: "markers",
+      filter: ["==", ["get", "dot"], true],
+      paint: {
+        "circle-radius": 5,
+        "circle-color": ["case", ["get", "locked"], "#8a8f98", "#4c8dff"],
+        "circle-stroke-color": "#fff",
+        "circle-stroke-width": 1.5,
+      },
+    });
     map.addLayer({
       id: "marker-icon",
       type: "symbol",
@@ -355,7 +393,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (map.getSource("terrain-dem")) {
       map.setTerrain({ source: "terrain-dem", exaggeration: is3D ? 1.5 : 1 });
     }
-    map.easeTo({ pitch: is3D ? 60 : 0, bearing: is3D ? map.getBearing() : 0, duration: 700 });
+    if (is3D) {
+      map.setMaxPitch(85);
+      map.easeTo({ pitch: 60, duration: 700 });
+    } else {
+      map.easeTo({ pitch: 0, duration: 700 });
+      map.once("moveend", () => {
+        if (!is3D) map.setMaxPitch(0); // Kippen wieder sperren, Drehung bleibt
+      });
+    }
   });
 
   // ── Channel ───────────────────────────────────────────────────────────
@@ -405,26 +451,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const refreshLoc = () => (map.getSource("locations") as GeoJSONSource)?.setData(locFC());
 
   map.on("load", async () => {
-    // Topo-Vektor
-    try {
-      const r = await fetch(`/api/maps/${mapId}/topo.geojson`, { credentials: "include" });
-      if (r.ok) {
-        map.addSource("topo", { type: "geojson", data: await r.json() });
-        map.addLayer(
-          {
-            id: "topo",
-            type: "line",
-            source: "topo",
-            layout: { visibility: "none", "line-cap": "round" },
-            paint: { "line-color": "#d8c37a", "line-width": 1.4, "line-opacity": 0.85 },
-          },
-          "strokes",
-        );
-      }
-    } catch {
-      /* kein Topo */
-    }
-    // Map-Locations
+    // Map-Locations  (Topo/Straßen-Overlay ist derzeit deaktiviert)
     try {
       const r = await fetch(`/api/maps/${mapId}/locations.json`, { credentials: "include" });
       if (r.ok) {
@@ -480,7 +507,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         `<label><input type="checkbox" data-base="${ly}" ${baseLayerVisible[ly] !== false ? "checked" : ""}/> ${ly}</label>`,
       );
     }
-    if (map.getLayer("topo")) rows.push(`<label><input type="checkbox" data-topo /> ${t('layers.topo')}</label>`);
     if (locData) {
       rows.push(`<div class="fav-head">${t('layers.places')}</div>`);
       for (const g of locData.groups) {
@@ -496,9 +522,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         map.setLayoutProperty(cb.dataset.base!, "visibility", cb.checked ? "visible" : "none");
         if (cb.dataset.base === "grid") updateGrid();
       }),
-    );
-    layersPanel.querySelector<HTMLInputElement>("[data-topo]")?.addEventListener("change", (e) =>
-      map.setLayoutProperty("topo", "visibility", (e.target as HTMLInputElement).checked ? "visible" : "none"),
     );
     layersPanel.querySelectorAll<HTMLInputElement>("[data-group]").forEach((cb) =>
       cb.addEventListener("change", () => {
@@ -934,7 +957,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   root.querySelector("#tool-fav")!.addEventListener("click", () => (favPanel.hidden = !favPanel.hidden));
 
   // ── Karten-Interaktion ────────────────────────────────────────────────
-  map.on("click", "marker-icon", (e) => {
+  const onMarkerClick = (e: maplibregl.MapLayerMouseEvent) => {
     e.preventDefault();
     const id = e.features?.[0]?.properties?.id as string;
     const m = markers.get(id);
@@ -944,7 +967,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     } else if (mode === "move") {
       openEditPanel(m);
     }
-  });
+  };
+  map.on("click", "marker-icon", onMarkerClick);
+  map.on("click", "marker-dot", onMarkerClick); // Marker ohne PNG-Icon klickbar halten
 
   map.on("dblclick", (e) => {
     if (mode === "line") {

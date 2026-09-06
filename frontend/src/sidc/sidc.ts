@@ -33,22 +33,21 @@ export interface AffiliationOption {
   digit: string;
   label: string;
 }
+// Nur die vier tatsächlich genutzten Zugehörigkeiten (kein "Assumed").
 export const AFFILIATIONS: AffiliationOption[] = [
   { digit: "1", label: "Unknown" },
-  { digit: "2", label: "Assumed Friend" },
   { digit: "3", label: "Friend (BLUFOR)" },
   { digit: "4", label: "Neutral (INDFOR/Civilian)" },
-  { digit: "5", label: "Assumed Hostile" },
   { digit: "6", label: "Hostile (OPFOR)" },
 ];
 
 export const IDENTITY_TO_AFFILIATION: Record<string, string> = {
   UNKNOWN: "1",
-  ASSUMED_BLUFOR: "2",
+  ASSUMED_BLUFOR: "3",
   BLUFOR: "3",
   INDFOR: "4",
   CIVILIAN: "4",
-  ASSUMED_OPFOR: "5",
+  ASSUMED_OPFOR: "6",
   OPFOR: "6",
 };
 

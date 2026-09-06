@@ -51,6 +51,25 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   map.addControl(new maplibregl.NavigationControl(), "bottom-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
+  const applyCameraBounds = () => {
+    const src = (map.getStyle()?.sources ?? {}) as Record<string, { bounds?: number[] }>;
+    const b = src.sat?.bounds ?? src.grid?.bounds;
+    if (!b || b.length !== 4) return;
+    const padX = (b[2] - b[0]) * 0.12;
+    const padY = (b[3] - b[1]) * 0.12;
+    map.setMaxBounds([
+      [b[0] - padX, b[1] - padY],
+      [b[2] + padX, b[3] + padY],
+    ]);
+    const cam = map.cameraForBounds([
+      [b[0], b[1]],
+      [b[2], b[3]],
+    ]);
+    if (cam?.zoom) map.setMinZoom(Math.max(0, cam.zoom - 0.5));
+  };
+  map.on("load", applyCameraBounds);
+  map.on("style.load", applyCameraBounds);
+
   const loaded = new Set<string>();
   const ensureIcon = async (sidc: string) => {
     if (loaded.has(sidc) || map.hasImage(sidc)) return;
@@ -81,20 +100,6 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   });
 
   async function loadExtras(): Promise<void> {
-    try {
-      const r = await fetch(`/public/plans/${token}/topo.geojson`, { credentials: "include" });
-      if (r.ok) {
-        map.addSource("topo", { type: "geojson", data: await r.json() });
-        map.addLayer({
-          id: "topo",
-          type: "line",
-          source: "topo",
-          paint: { "line-color": "#d8c37a", "line-width": 1.3, "line-opacity": 0.8 },
-        });
-      }
-    } catch {
-      /* kein Topo */
-    }
     try {
       const r = await fetch(`/public/plans/${token}/locations.json`, { credentials: "include" });
       if (r.ok) {
