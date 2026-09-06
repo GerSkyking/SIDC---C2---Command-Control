@@ -130,8 +130,58 @@ Ziel: **UI und Marker-Workflow so identisch wie möglich zu ATAKmaps** (`D:\Mods
 - [ ] Zeitstrahl oben für Phasen (global + Phasen, optional Zeit) — siehe Abschnitt „Zeitstrahl".
 - [ ] Oben rechts: Cursor-Position X/Y (Welt-Koordinaten via Kalibrierung aus Karten-Meta).
 - [ ] Grid-Layer (aus `grid.mbtiles`) ein/aus, `maplibregl.ScaleControl` + `NavigationControl`.
+- [ ] **Koordinaten-Grid mit Beschriftung an den Bildschirmrändern** (wie ATAKmaps
+  `#grid-canvas` / `updateGrid()`): Gitterlinien + X/Y-Beschriftung am Rand, mitlaufend
+  beim Pan/Zoom, in 2D und 3D.
+- [ ] **Sprachauswahl oben rechts:**
+  - global **EN / DE** (UI-Sprache + eigene Labels)
+  - separat **Karten-Sprache** (13 Sprachen) für Map-Location-Labels (`_translations.json`)
+
+### Phase 7f – Karten-Import erweitern
+- [ ] **Direkt-Upload vom Rechner** (Limit 10 GB) — gestreamt auf Platte, kein Voll-Puffer;
+  **plus** weiterhin Download-Link. NPM: `client_max_body_size 10g`.
+  ⚠️ Server hat aktuell nur 32 GB Platte — 10-GB-Packs passen nicht (ZIP + Entpackt).
+- [ ] **DLC-Zoomstufen:** ZIP kann `mbtiles/dlc/<layer>_z<N>.mbtiles` mitbringen;
+  `tiles.py` liefert für Zoom > Basis-maxzoom aus den DLC-mbtiles (ATAKmaps `_effective_maxzoom`).
+  DLC auch einzeln nachladbar (`atakmaps-dlc`-ZIP).
+- [ ] **`topo` + Map-Locations** in die Mappack-ZIP. Zusammenstellen/Verarbeiten passiert in
+  `D:\Mods\ATAKmaps` (`pipeline/map_packages.py` erweitern): raw `.topo` + `mapLocations_*.json`
+  mit ins `*_mappack_v*.zip`. `.topo`→GeoJSON und Locations-Parsing dann in **unserem** Backend
+  beim Import (Parser testbar an einem Ort).
 
 - [ ] Undo/Redo pro User (lokaler Stack, sendet inverse Server-Kommandos).
+
+**7e – Sammlung (noch offen, Feedback aus dem Test)**
+- [ ] **Zeigen-Modus:** Karte fixieren (kein Pan/Zoom-Drag), nur Cursor an andere senden.
+- [ ] **Radierer-Werkzeug:** eigener Modus nur zum schnellen Löschen — Klick (oder Ziehen)
+  auf einen Marker löscht ihn sofort ohne Rückfrage (braucht `can_delete`).
+- [ ] **Stift = gerade Linien:** Klick-für-Klick Stützpunkte statt Freihand; „Linie fertig"-Button;
+  vor/beim Zeichnen Farbe + Stärke wählen (aus `SIDC_PhaseLineStyleCatalog.json`).
+- [ ] **Verbindungs-Marker:** Markertypen mit `isMultiPointLine=true` (steht in
+  `SIDC_AllMarkersCatalog.json`) ziehen eine Linie zwischen den gesetzten Instanzen —
+  Kette über `linked_group_id`/`point_index`, `maxLinePoints` beachtet, Linienstil am Anker (pointIndex 0).
+- [ ] **`.topo` → Vektor (Option B, gewählt):** Parser für die Enfusion-Binärdatei
+  (Magic `TOPO`, Chunks `ROAD`/… , float32-Polylinien in Weltkoordinaten, Export-Modus
+  „Geometry 2D") → GeoJSON → MapLibre-Vektor-Layer je Feature-Typ (Straßen/Gewässer/Küste),
+  einzeln ein-/ausblendbar, scharf bei jedem Zoom. Kommt als `topo`-Datei mit der Karten-ZIP.
+- [ ] **Map Locations:** `mapLocations_locations.json` (+ `_translations.json`) aus dem
+  World-Editor-Export → beschriftete Punkte auf der Karte. Felder: `name`/`nameLocalized`,
+  `gameCoords [x,y]`, `baseType` (Enum: Harbour/Field/Hill/Bay/Military/Infrastructure/…),
+  `commentColor`/`commentBold`/`commentItalic`/`commentSizeCoef` fürs Label-Styling.
+  **Nach `baseType` gruppiert**, pro Gruppe ein-/ausblendbar. Kommt mit der Karten-ZIP.
+
+### Phase 8a – Öffentliche Freigaben
+- [ ] Owner erzeugt einen öffentlichen Link (Token) für einen Plan → **nur Ansehen**,
+  ohne Login. Read-only WS oder statischer Snapshot + Polling. Widerrufbar; optional
+  Ablaufdatum. `GET /public/plans/{token}` + `/public/plans/{token}/live` (nur Empfang).
+
+### Phase 9a – Audit-Log (Admin)
+- [ ] `AuditLog` befüllen bei: Login-Versuch (Erfolg/Fehlschlag + IP), Logout, User/Gruppe
+  angelegt/geändert/gelöscht, Katalog-Upload, Karte importiert/gelöscht, Plan
+  erstellt/geklont/gelöscht, ACL geändert, Version gespeichert/wiederhergestellt.
+  (Marker-Einzelaktionen optional — sonst wird das Log riesig; ggf. nur „Plan X bearbeitet".)
+- [ ] Admin-UI: Reiter „Log" mit Filter (User, Aktion, Zeitraum) + Pagination.
+- [ ] `GET /api/admin/audit?…` (nur Admin).
 
 ### Phase 8 – Plan-Lifecycle
 - [ ] Klonen: `POST /plans/<id>/clone` (ACL übernehmen/leeren wählbar).

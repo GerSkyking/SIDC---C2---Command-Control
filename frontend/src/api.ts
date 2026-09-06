@@ -92,6 +92,28 @@ export const api = {
   importMap: (id: string, name: string, url: string) =>
     req<MapItem>("POST", "/api/maps", { id, name, url }),
   reimportMap: (id: string) => req<MapItem>("POST", `/api/maps/${id}/reimport`),
+  uploadMapFile: (id: string, name: string, file: File, onProgress?: (pct: number) => void) =>
+    new Promise<MapItem>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/api/maps/${id}/upload?name=${encodeURIComponent(name)}`);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader("content-type", "application/zip");
+      xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.((e.loaded / e.total) * 100);
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText));
+        else {
+          let d = xhr.statusText;
+          try {
+            d = JSON.parse(xhr.responseText).detail ?? d;
+          } catch {
+            /* nicht-JSON */
+          }
+          reject(new ApiError(xhr.status, d || `HTTP ${xhr.status}`));
+        }
+      };
+      xhr.onerror = () => reject(new ApiError(0, "Netzwerkfehler beim Upload"));
+      xhr.send(file);
+    }),
   deleteMap: (id: string) => req<void>("DELETE", `/api/maps/${id}`),
   restartBackend: () => req<{ message: string }>("POST", "/api/admin/restart"),
 

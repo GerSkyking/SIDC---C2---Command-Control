@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 
 from ..deps import CurrentUser, DbDep
 from ..models import Map
-from ..services.maps_import import map_dir
+from ..services.maps_import import effective_maxzoom, map_dir
 
 router = APIRouter(prefix="/api/maps/{map_id}", tags=["tiles"])
 
@@ -38,8 +38,18 @@ def _meta(map_id: str, layer: str) -> dict:
     return dict(con.execute("SELECT name, value FROM metadata").fetchall())
 
 
-def _tile(map_id: str, layer: str, z: int, x: int, y: int) -> bytes | None:
-    con = _conn(map_id, layer)
+def _dlc_conn(map_id: str, layer: str, zoom: int) -> sqlite3.Connection | None:
+    key = f"{map_id}:{layer}:dlc{zoom}"
+    if key not in _conn_cache:
+        path = map_dir(map_id) / "mbtiles" / "dlc" / f"{layer}_z{zoom}.mbtiles"
+        if not path.is_file():
+            return None
+        _conn_cache[key] = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
+    return _conn_cache[key]
+
+
+def _tile(map_id: str, layer: str, z: int, x: int, y: int, base_maxzoom: int) -> bytes | None:
+    con = _conn(map_id, layer) if z <= base_maxzoom else _dlc_conn(map_id, layer, z)
     if con is None:
         return None
     tms_y = (2 ** z - 1) - y  # MBTiles speichert TMS-Reihenfolge
@@ -54,10 +64,29 @@ def _tile(map_id: str, layer: str, z: int, x: int, y: int) -> bytes | None:
 def tile(map_id: str, layer: str, z: int, x: int, y: int, user: CurrentUser) -> Response:
     if layer not in _LAYERS:
         raise HTTPException(404, "Unbekannte Ebene")
-    data = _tile(map_id, layer, z, x, y)
+    base_maxzoom = int(_meta(map_id, layer).get("maxzoom", 18))
+    data = _tile(map_id, layer, z, x, y, base_maxzoom)
     if data is None:
         raise HTTPException(404)
     return Response(data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.get("/topo.geojson")
+def topo(map_id: str, user: CurrentUser) -> Response:
+    p = map_dir(map_id) / "topo.geojson"
+    if not p.is_file():
+        raise HTTPException(404, "Kein Topo-Layer")
+    return Response(p.read_bytes(), media_type="application/geo+json",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.get("/locations.json")
+def locations(map_id: str, user: CurrentUser) -> Response:
+    p = map_dir(map_id) / "locations.json"
+    if not p.is_file():
+        raise HTTPException(404, "Keine Map-Locations")
+    return Response(p.read_bytes(), media_type="application/json",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/style.json")
@@ -73,7 +102,7 @@ def style_json(map_id: str, user: CurrentUser, db: DbDep) -> JSONResponse:
     bounds = [float(v) for v in bounds_str.split(",")]
     cx, cy = (bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2
     min_z = int(sat.get("minzoom", 8))
-    max_z = int(sat.get("maxzoom", 18))
+    max_z = effective_maxzoom(map_id, "sat", int(sat.get("maxzoom", 18)))
     base = f"/api/maps/{map_id}/tiles"
 
     doc: dict = {

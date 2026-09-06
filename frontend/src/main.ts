@@ -144,15 +144,28 @@ async function renderPlanList(): Promise<void> {
   app.querySelectorAll<HTMLButtonElement>("[data-acl]").forEach((b) =>
     b.addEventListener("click", () => openAclEditor(b.dataset.acl!, b.dataset.name ?? "")),
   );
+  const mapId = () => app.querySelector<HTMLInputElement>("#mid")!.value.trim();
+  const mapName = () => app.querySelector<HTMLInputElement>("#mname")!.value.trim();
   app.querySelector("#mi")?.addEventListener("click", async () => {
-    const id = app.querySelector<HTMLInputElement>("#mid")!.value.trim();
-    const name = app.querySelector<HTMLInputElement>("#mname")!.value.trim();
     const url = app.querySelector<HTMLInputElement>("#murl")!.value.trim();
-    if (!id || !name || !url) return;
+    if (!mapId() || !mapName() || !url) return;
     try {
-      await api.importMap(id, name, url);
+      await api.importMap(mapId(), mapName(), url);
       setTimeout(route, 500);
     } catch (e) {
+      alert(e instanceof ApiError ? e.message : "Fehler");
+    }
+  });
+  app.querySelector("#mu")?.addEventListener("click", async () => {
+    const f = app.querySelector<HTMLInputElement>("#mfile")!.files?.[0];
+    const prog = app.querySelector<HTMLDivElement>("#mprogress")!;
+    if (!mapId() || !mapName() || !f) return;
+    try {
+      await api.uploadMapFile(mapId(), mapName(), f, (p) => (prog.textContent = `Upload ${p.toFixed(0)} %`));
+      prog.textContent = "Upload fertig – Verarbeitung läuft…";
+      setTimeout(route, 1500);
+    } catch (e) {
+      prog.textContent = "";
       alert(e instanceof ApiError ? e.message : "Fehler");
     }
   });
@@ -210,9 +223,16 @@ function adminMapsBlock(maps: { id: string; name: string; status: string; error:
     <div class="row">
       <input id="mid" placeholder="karten-id" />
       <input id="mname" placeholder="Anzeigename" />
+    </div>
+    <div class="row">
       <input id="murl" placeholder="Download-URL (.zip)" style="flex:1" />
-      <button id="mi">Importieren</button>
-    </div>`;
+      <button id="mi">Per Link</button>
+    </div>
+    <div class="row">
+      <input type="file" id="mfile" accept=".zip,application/zip" style="flex:1" />
+      <button id="mu">Hochladen</button>
+    </div>
+    <div id="mprogress" class="muted"></div>`;
 }
 
 window.addEventListener("hashchange", route);
