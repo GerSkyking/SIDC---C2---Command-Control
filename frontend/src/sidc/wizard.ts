@@ -18,10 +18,10 @@ import {
   AMPLIFIERS,
   DIRECTIONS,
   IDENTITY_TO_AFFILIATION,
-  iconUrl,
   withAffiliation,
   withAffiliationAndEchelon,
 } from "./sidc";
+import { iconSrc } from "./symbol";
 
 export interface MarkerTemplate {
   sidc: string;
@@ -92,7 +92,7 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
       config.hidden = false;
       config.innerHTML = `
         <div class="wiz-cfg-title">
-          <img src="${iconUrl(
+          <img src="${iconSrc(
             isLandUnit ? withAffiliationAndEchelon(entry.sidc, aff, echelon) : withAffiliation(entry.sidc, aff),
           )}" width="34" height="34" onerror="this.style.visibility='hidden'"/>
           <strong>${entry.name}</strong>
@@ -182,7 +182,7 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
         for (const e of hits) {
           const row = document.createElement("button");
           row.className = "wiz-entry";
-          row.innerHTML = `<img src="${iconUrl(withAffiliation(e.sidc, "1"))}" width="22" height="22" onerror="this.style.visibility='hidden'"/> ${e.name}`;
+          row.innerHTML = `<img src="${iconSrc(withAffiliation(e.sidc, "1"))}" width="22" height="22" onerror="this.style.visibility='hidden'"/> ${e.name}`;
           row.addEventListener("click", () => configure(e, null));
           list.appendChild(row);
         }

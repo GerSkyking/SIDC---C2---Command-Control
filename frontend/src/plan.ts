@@ -3,8 +3,9 @@
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
 import { channelLabel, loadChannels, loadPhaseLineStyle } from "./sidc/catalog";
-import { iconUrl, lngLatToWorld, worldToLngLat, type Calibration } from "./sidc/sidc";
+import { lngLatToWorld, worldToLngLat, type Calibration } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
+import { ensureMapIcon, iconSrc } from "./sidc/symbol";
 import { openAclEditor } from "./acl";
 import { t } from "./i18n";
 import { cid, PlanSocket, type WsMessage } from "./ws";
@@ -140,16 +141,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("style.load", applyCameraBounds);
 
   const loadedIcons = new Set<string>();
-  const missingIcons = new Set<string>(); // SIDC ohne vorgerendertes PNG → Ersatzpunkt
+  const missingIcons = new Set<string>(); // weder milsymbol noch PNG → Ersatzpunkt
   async function ensureIcon(sidc: string): Promise<void> {
     if (loadedIcons.has(sidc) || map.hasImage(sidc)) return;
     loadedIcons.add(sidc);
-    try {
-      const img = await map.loadImage(iconUrl(sidc));
-      if (!map.hasImage(sidc)) map.addImage(sidc, img.data);
-    } catch {
-      missingIcons.add(sidc); // Symbol-Layer zeigt nichts → marker-dot springt ein
-    }
+    const ok = await ensureMapIcon(map, sidc);
+    if (!ok) missingIcons.add(sidc);
   }
 
   const markerFC = (): GeoJSON.FeatureCollection => ({
@@ -920,7 +917,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ? favs
             .map(
               (f) => `<div class="fav" data-fav="${f.id}">
-                <img src="${iconUrl(f.sidc)}" width="24" height="24" onerror="this.style.visibility='hidden'"/>
+                <img src="${iconSrc(f.sidc)}" width="24" height="24" onerror="this.style.visibility='hidden'"/>
                 <span>${f.label}</span><button data-delfav="${f.id}">✕</button></div>`,
             )
             .join("")
@@ -1039,7 +1036,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     p.className = "edit-panel";
     p.id = "editPanel";
     p.innerHTML = `
-      <div class="fav-head"><img src="${iconUrl(m.sidc)}" width="26" height="26" onerror="this.style.visibility='hidden'"/> ${t("marker.heading")}</div>
+      <div class="fav-head"><img src="${iconSrc(m.sidc)}" width="26" height="26" onerror="this.style.visibility='hidden'"/> ${t("marker.heading")}</div>
       <label>${t("marker.unitText")}</label><input data-unit value="${m.unit_text}" />
       <label>${t("marker.aiText")}</label><input data-ai value="${m.ai_text}" />
       <label>${t("marker.iconRot")}</label><input data-rot type="number" value="${m.icon_rotation || 0}" />

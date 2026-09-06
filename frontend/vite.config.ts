@@ -10,5 +10,17 @@ export default defineConfig({
       "/plans": { target: "http://localhost:8080", ws: true },
     },
   },
-  build: { outDir: "dist", emptyOutDir: true },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 2200,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          maplibre: ["maplibre-gl"],
+          milsymbol: ["milsymbol"],
+        },
+      },
+    },
+  },
 });

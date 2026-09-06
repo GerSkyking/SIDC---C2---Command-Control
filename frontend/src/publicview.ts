@@ -2,7 +2,7 @@
 // Live-Updates über den Empfangs-WebSocket. Keine Werkzeuge.
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import { api } from "./api";
-import { iconUrl } from "./sidc/sidc";
+import { ensureMapIcon } from "./sidc/symbol";
 import { t } from "./i18n";
 
 interface M {
@@ -71,15 +71,11 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   map.on("style.load", applyCameraBounds);
 
   const loaded = new Set<string>();
+  const missingIcons = new Set<string>();
   const ensureIcon = async (sidc: string) => {
-    if (loaded.has(sidc) || map.hasImage(sidc)) return;
+    if (loaded.has(sidc)) return;
     loaded.add(sidc);
-    try {
-      const img = await map.loadImage(iconUrl(sidc));
-      if (!map.hasImage(sidc)) map.addImage(sidc, img.data);
-    } catch {
-      /* fehlendes Icon */
-    }
+    if (!(await ensureMapIcon(map, sidc))) missingIcons.add(sidc);
   };
 
   const mFC = (): GeoJSON.FeatureCollection => ({
@@ -87,7 +83,12 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     features: [...markers.values()].map((m) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [m.world_x, m.world_y] },
-      properties: { sidc: m.sidc, label: m.unit_text || m.ai_text || "", rot: m.icon_rotation || 0 },
+      properties: {
+        sidc: m.sidc,
+        label: m.unit_text || m.ai_text || "",
+        rot: m.icon_rotation || 0,
+        dot: missingIcons.has(m.sidc),
+      },
     })),
   });
   const sFC = (): GeoJSON.FeatureCollection => ({
@@ -158,6 +159,18 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       layout: { "line-cap": "round", "line-join": "round" },
     });
     map.addSource("m", { type: "geojson", data: mFC() });
+    map.addLayer({
+      id: "m-dot",
+      type: "circle",
+      source: "m",
+      filter: ["==", ["get", "dot"], true],
+      paint: {
+        "circle-radius": 5,
+        "circle-color": "#4c8dff",
+        "circle-stroke-color": "#fff",
+        "circle-stroke-width": 1.5,
+      },
+    });
     map.addLayer({
       id: "m",
       type: "symbol",
