@@ -22,6 +22,24 @@ export function withAffiliationAndEchelon(base: string, affDigit: string, echelo
   return s.slice(0, IDX_AFF) + affDigit + s.slice(IDX_AFF + 1, IDX_ECH) + echelon + s.slice(IDX_ECH + 2);
 }
 
+export interface SidcModifiers {
+  m1?: number; // Modifier 1  → Stellen 17-18 (0-idx 16)
+  m2?: number; // Modifier 2  → Stellen 19-20 (0-idx 18)
+  m3?: number; // HQ/TF/Dummy → Stelle 8 (0-idx 7)
+  m4?: number; // Status/Zustand → Stelle 7 (0-idx 6)
+}
+function put(s: string, at: number, val: string): string {
+  return s.slice(0, at) + val + s.slice(at + val.length);
+}
+export function withModifiers(base: string, m: SidcModifiers): string {
+  let s = normalize(base);
+  if (m.m4 != null) s = put(s, 6, String(m.m4 % 10));
+  if (m.m3 != null) s = put(s, 7, String(m.m3 % 10));
+  if (m.m1 != null) s = put(s, 16, String(m.m1 % 100).padStart(2, "0"));
+  if (m.m2 != null) s = put(s, 18, String(m.m2 % 100).padStart(2, "0"));
+  return s;
+}
+
 export function iconUrl(sidc: string): string {
   return `/assets/app6d-icons/${sidc}.png`;
 }

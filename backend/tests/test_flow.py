@@ -45,6 +45,8 @@ def test_plan_lifecycle_and_permissions(admin):
     assert ph.status_code == 201
     phid = ph.json()["id"]
     assert len(admin.get(f"/plans/{pid}/phases").json()) == 2
+    admin.patch(f"/plans/{pid}/phases/{phid}", json={"notes": "# Plan\n- 1 Zug hält"})
+    assert "1 Zug" in admin.get(f"/plans/{pid}/snapshot").json()["phases"][1]["notes"]
     assert admin.delete(f"/plans/{pid}/phases/{phid}").status_code == 200
     assert len(admin.get(f"/plans/{pid}/phases").json()) == 1
 

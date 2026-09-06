@@ -7,6 +7,7 @@ const CATALOGS: { key: string; label: string; file: string }[] = [
   { key: "quick-menu", label: "QuickMenü", file: "SIDC_QuickMarkerMenuCatalog.json" },
   { key: "phaseline-style", label: "Phase-Line-Stil", file: "SIDC_PhaseLineStyleCatalog.json" },
   { key: "channels", label: "Channels", file: "SIDC_ChannelSettings.json" },
+  { key: "modifiers", label: "Modifikatoren", file: "SIDC_ModifierCatalog.json" },
 ];
 
 export async function renderAdmin(app: HTMLElement): Promise<void> {

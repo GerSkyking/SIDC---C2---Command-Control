@@ -229,7 +229,7 @@ def get_snapshot(plan: ViewerPlan, db: DbDep) -> dict:
         "plan": PlanOut.model_validate(plan).model_dump(mode="json"),
         "map_meta": mp.meta if mp else {},
         "phases": [
-            {"id": p.id, "name": p.name, "ordering": p.ordering,
+            {"id": p.id, "name": p.name, "ordering": p.ordering, "notes": p.notes or "",
              "start_at": p.start_at.isoformat() if p.start_at else None}
             for p in phases
         ],
@@ -245,12 +245,13 @@ def get_snapshot(plan: ViewerPlan, db: DbDep) -> dict:
 # ─── Phasen (Zeitstrahl) ───────────────────────────────────────────────────
 
 class PhaseBody(BaseModel):
-    name: str
+    name: str | None = None
     ordering: int | None = None
+    notes: str | None = None
 
 
 def _phase_out(p: Phase) -> dict:
-    return {"id": p.id, "name": p.name, "ordering": p.ordering}
+    return {"id": p.id, "name": p.name, "ordering": p.ordering, "notes": p.notes or ""}
 
 
 @router.get("/{plan_id}/phases")
@@ -279,6 +280,8 @@ def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, db: DbDep) -> 
         p.name = body.name.strip()
     if body.ordering is not None:
         p.ordering = body.ordering
+    if body.notes is not None:
+        p.notes = body.notes
     db.commit()
     return _phase_out(p)
 
@@ -407,7 +410,7 @@ def clone_plan(
 
     phase_map: dict[str, str] = {}
     for p in db.scalars(select(Phase).where(Phase.plan_id == plan.id)):
-        np = Phase(plan_id=clone.id, name=p.name, ordering=p.ordering, start_at=p.start_at)
+        np = Phase(plan_id=clone.id, name=p.name, ordering=p.ordering, start_at=p.start_at, notes=p.notes)
         db.add(np)
         db.flush()
         phase_map[p.id] = np.id

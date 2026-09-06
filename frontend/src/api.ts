@@ -65,6 +65,7 @@ export interface Phase {
   id: string;
   name: string;
   ordering: number;
+  notes: string;
 }
 export interface AdminUser {
   id: string;
@@ -203,6 +204,8 @@ export const api = {
     req<Phase>("POST", `/plans/${planId}/phases`, { name }),
   renamePhase: (planId: string, phaseId: string, name: string) =>
     req<Phase>("PATCH", `/plans/${planId}/phases/${phaseId}`, { name }),
+  updatePhaseNotes: (planId: string, phaseId: string, notes: string) =>
+    req<Phase>("PATCH", `/plans/${planId}/phases/${phaseId}`, { notes }),
   deletePhase: (planId: string, phaseId: string) =>
     req<void>("DELETE", `/plans/${planId}/phases/${phaseId}`),
   planAcl: (planId: string) => req<AclEntry[]>("GET", `/plans/${planId}/acl`),

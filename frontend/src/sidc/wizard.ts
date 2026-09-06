@@ -8,9 +8,11 @@ import {
   findEntry,
   loadAllMarkers,
   loadChannels,
+  loadModifiers,
   loadQuickMenu,
   type CatalogCategory,
   type CatalogEntry,
+  type ModifierCatalog,
   type QuickMenuButton,
 } from "./catalog";
 import {
@@ -20,6 +22,8 @@ import {
   IDENTITY_TO_AFFILIATION,
   withAffiliation,
   withAffiliationAndEchelon,
+  withModifiers,
+  type SidcModifiers,
 } from "./sidc";
 import { iconSrc } from "./symbol";
 
@@ -38,10 +42,11 @@ export interface MarkerTemplate {
 type Done = (t: MarkerTemplate) => void;
 
 export async function openWizard(host: HTMLElement, onPick: Done): Promise<void> {
-  const [cats, quick, channels] = await Promise.all([
+  const [cats, quick, channels, mods] = await Promise.all([
     loadAllMarkers(),
     loadQuickMenu(),
     loadChannels(),
+    loadModifiers(),
   ]);
   if (!cats) {
     alert(t("wiz.noCatalog"));
@@ -83,18 +88,64 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
 
   // ── Konfig-Panel für einen gewählten Eintrag ────────────────────────────
   function configure(entry: CatalogEntry, identity: string | null, btn?: QuickMenuButton): void {
-    const isLandUnit = entry.languageKey.includes("-LandUnits-");
+    const isLandUnit =
+      entry.languageKey.includes("-LandUnits-") || entry.subCategory === "Land_Unit";
     let aff = identity ? IDENTITY_TO_AFFILIATION[identity] ?? "1" : "1";
     let echelon = "00";
     let dir = -1;
+    const modDefs: Record<string, import("./catalog").ModifierOption[]> | null =
+      (mods && entry.subCategory && (mods as ModifierCatalog)[entry.subCategory]) || null;
+    let advOpen = false;
+    const modSel: SidcModifiers = {};
+
+    const buildSidc = () => {
+      let s = isLandUnit
+        ? withAffiliationAndEchelon(entry.sidc, aff, echelon)
+        : withAffiliation(entry.sidc, aff);
+      return withModifiers(s, modSel);
+    };
+
+    const MOD_LABELS: Record<string, string> = {
+      modifier1: t("wiz.modifier1"),
+      modifier2: t("wiz.modifier2"),
+      modifier3: t("wiz.modifier3"),
+      modifier4: t("wiz.modifier4"),
+    };
+    const MOD_KEY: Record<string, keyof SidcModifiers> = {
+      modifier1: "m1",
+      modifier2: "m2",
+      modifier3: "m3",
+      modifier4: "m4",
+    };
+    const advPanel = () => {
+      if (!modDefs) return "";
+      const groups = ["modifier1", "modifier2", "modifier3", "modifier4"].filter(
+        (g) => (modDefs[g] ?? []).length,
+      );
+      return `<div class="wiz-adv">
+        <div class="wiz-adv-h">${t("wiz.advanced")}</div>
+        ${groups
+          .map((g) => {
+            const key = MOD_KEY[g];
+            const cur = modSel[key] ?? 0;
+            return `<label>${MOD_LABELS[g]}</label><select data-mod="${key}">
+              <option value="0">—</option>
+              ${modDefs[g]
+                .map((o) => `<option value="${o.code}" ${o.code === cur ? "selected" : ""}>${o.description}</option>`)
+                .join("")}
+            </select>`;
+          })
+          .join("")}
+      </div>`;
+    };
 
     const draw = () => {
       config.hidden = false;
+      config.classList.toggle("adv", advOpen && !!modDefs);
       config.innerHTML = `
+       <div class="wiz-cfg-main">
         <div class="wiz-cfg-title">
-          <img src="${iconSrc(
-            isLandUnit ? withAffiliationAndEchelon(entry.sidc, aff, echelon) : withAffiliation(entry.sidc, aff),
-          )}" width="34" height="34" onerror="this.style.visibility='hidden'"/>
+          <img src="${iconSrc(buildSidc())}" width="34" height="34" onerror="this.style.visibility='hidden'"/>
           <strong>${entry.name}</strong>
         </div>
         <label>${t("wiz.affiliation")}</label>
@@ -124,7 +175,10 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
           <label><input type="checkbox" data-lock ${entry.defaultLocked ? "checked" : ""}/> ${t("wiz.locked")}</label>
           <label><input type="checkbox" data-ts ${entry.defaultTimestampVisible !== false ? "checked" : ""}/> ${t("wiz.timestamp")}</label>
         </div>
-        <button class="primary wiz-place">${t("wiz.place")}</button>`;
+        ${modDefs ? `<button class="wiz-adv-toggle">${advOpen ? "▾" : "▸"} ${t("wiz.advanced")}</button>` : ""}
+        <button class="primary wiz-place">${t("wiz.place")}</button>
+       </div>
+       ${advOpen ? advPanel() : ""}`;
 
       config.querySelectorAll<HTMLButtonElement>("[data-aff]").forEach((b) =>
         b.addEventListener("click", () => {
@@ -142,10 +196,20 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
           draw();
         }),
       );
+      config.querySelector(".wiz-adv-toggle")?.addEventListener("click", () => {
+        advOpen = !advOpen;
+        draw();
+      });
+      config.querySelectorAll<HTMLSelectElement>("[data-mod]").forEach((sel) =>
+        sel.addEventListener("change", () => {
+          const k = sel.dataset.mod as keyof SidcModifiers;
+          const v = Number(sel.value);
+          modSel[k] = v || undefined;
+          draw();
+        }),
+      );
       config.querySelector(".wiz-place")!.addEventListener("click", () => {
-        const sidc = isLandUnit
-          ? withAffiliationAndEchelon(entry.sidc, aff, echelon)
-          : withAffiliation(entry.sidc, aff);
+        const sidc = buildSidc();
         onPick({
           sidc,
           unit_text: config.querySelector<HTMLInputElement>("[data-unit]")!.value,

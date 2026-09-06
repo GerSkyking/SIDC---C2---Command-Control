@@ -156,6 +156,7 @@ class Phase(Base):
     name: Mapped[str] = mapped_column(String(128))
     ordering: Mapped[int] = mapped_column(Integer, default=0)
     start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # optionale Zeit
+    notes: Mapped[str] = mapped_column(Text, default="")  # Markdown-Notizen zur Phase
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

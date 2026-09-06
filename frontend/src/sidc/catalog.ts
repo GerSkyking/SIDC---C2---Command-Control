@@ -4,11 +4,20 @@ export interface CatalogEntry {
   name: string;
   sidc: string;
   languageKey: string;
+  subCategory?: string; // Schlüssel in den Modifier-Katalog (z. B. "Land_Unit")
   isMultiPointLine?: boolean;
   maxLinePoints?: number;
   defaultTimestampVisible?: boolean;
   defaultLocked?: boolean;
 }
+
+export interface ModifierOption {
+  code: number;
+  description: string;
+  languageKey: string;
+}
+/** SIDC_ModifierCatalog.json: { "<subCategory>": { modifier1: [...], ... modifier5: [...] } } */
+export type ModifierCatalog = Record<string, Record<string, ModifierOption[]>>;
 export interface CatalogCategory {
   key: string;
   label: string;
@@ -136,6 +145,12 @@ let _phase: Promise<PhaseLineStyle | null> | null = null;
 export function loadPhaseLineStyle(): Promise<PhaseLineStyle | null> {
   _phase ??= tryFetch<PhaseLineStyle>("/api/catalog/phaseline-style");
   return _phase;
+}
+
+let _mods: Promise<ModifierCatalog | null> | null = null;
+export function loadModifiers(): Promise<ModifierCatalog | null> {
+  _mods ??= tryFetch<ModifierCatalog>("/api/catalog/modifiers");
+  return _mods;
 }
 
 /** markerDescription (QuickMenuButton) → CatalogEntry über alle Kategorien. */

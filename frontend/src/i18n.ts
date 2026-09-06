@@ -147,6 +147,14 @@ const DE: Record<string, string> = {
   "wiz.place": "Platzieren (Linksklick auf Karte)",
   "wiz.back": "← zurück",
   "wiz.noCatalog": "Kein Marker-Katalog hochgeladen (Admin-Bereich → Katalog).",
+  "wiz.advanced": "Erweitert (Modifikatoren)",
+  "wiz.modifier1": "Modifikator 1",
+  "wiz.modifier2": "Modifikator 2",
+  "wiz.modifier3": "HQ / Task Force / Dummy",
+  "wiz.modifier4": "Zustand / Einsatzbereitschaft",
+  "notes.title": "Phasen-Notizen",
+  "notes.hint": "Markdown wird unterstützt",
+  "notes.open": "Notizen zur Phase",
 };
 
 const EN: Record<string, string> = {
@@ -291,6 +299,14 @@ const EN: Record<string, string> = {
   "wiz.place": "Place (left-click on the map)",
   "wiz.back": "← back",
   "wiz.noCatalog": "No marker catalog uploaded (Admin area → catalog).",
+  "wiz.advanced": "Advanced (modifiers)",
+  "wiz.modifier1": "Modifier 1",
+  "wiz.modifier2": "Modifier 2",
+  "wiz.modifier3": "HQ / Task Force / Dummy",
+  "wiz.modifier4": "Condition / capability",
+  "notes.title": "Phase notes",
+  "notes.hint": "Markdown supported",
+  "notes.open": "Notes for this phase",
 };
 
 const DICTS: Record<Lang, Record<string, string>> = { de: DE, en: EN };

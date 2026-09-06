@@ -9,6 +9,7 @@ import { ensureMapIcon, iconSrc } from "./sidc/symbol";
 import { openAclEditor } from "./acl";
 import { t } from "./i18n";
 import { cid, PlanSocket, type WsMessage } from "./ws";
+import { renderMarkdown } from "./md";
 
 interface Marker {
   id: string;
@@ -66,11 +67,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     id: string;
     name: string;
     ordering: number;
+    notes: string;
   }
   const phases: PhaseT[] = [...(snap.phases ?? [])].sort((a: PhaseT, b: PhaseT) => a.ordering - b.ordering);
   let currentPhaseId: string = phases[0]?.id ?? "";
   let outOpacity = Number(localStorage.getItem("sidc_phaseopacity") ?? "20"); // % fremde Phasen
   if (!Number.isFinite(outOpacity)) outOpacity = 20;
+  const phaseListeners: (() => void)[] = []; // z. B. Notiz-Fenster bei Phasenwechsel
   const phaseOpacity = (m: Marker): number =>
     m.phase_id == null || m.phase_id === currentPhaseId ? 1 : Math.max(0, Math.min(100, outOpacity)) / 100;
 
@@ -87,6 +90,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         .map((c) => `<option value="${c.name}" ${c.name === myChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
         .join("")}</select>
       <div id="timeline" class="timeline"></div>
+      <button id="notesBtn" title="${t("notes.open")}">🗒️</button>
       <select id="maplang" title="${t("map.lang")}"></select>
       <button id="layersBtn" title="${t("tool.layers")}">☰</button>
       <span class="grow"></span>
@@ -650,6 +654,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         currentPhaseId = b.dataset.pick!;
         renderTimeline();
         void refreshMarkers();
+        phaseListeners.forEach((f) => f());
       }),
     );
     timelineEl.querySelectorAll<HTMLButtonElement>("[data-delph]").forEach((b) =>
@@ -662,15 +667,18 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         if (currentPhaseId === b.dataset.delph) currentPhaseId = phases[0]?.id ?? "";
         renderTimeline();
         void refreshMarkers();
+        phaseListeners.forEach((f) => f());
       }),
     );
     timelineEl.querySelector("#ph-add")?.addEventListener("click", async () => {
       const name = prompt(t("phase.namePrompt"), `Phase ${phases.length}`);
       if (!name) return;
       const p = await api.createPhase(planId, name);
-      phases.push(p);
+      phases.push({ ...p, notes: p.notes ?? "" });
       currentPhaseId = p.id;
       renderTimeline();
+      void refreshMarkers();
+      phaseListeners.forEach((f) => f());
     });
     const op = timelineEl.querySelector<HTMLInputElement>("#ph-op")!;
     const opv = timelineEl.querySelector<HTMLSpanElement>("#ph-op-v")!;
@@ -682,6 +690,99 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     });
   }
   renderTimeline();
+
+  // ── Phasen-Notizen: frei verschiebbares Fenster mit Reiter je Phase ────
+  const notesWin = document.createElement("div");
+  notesWin.className = "notes-win";
+  notesWin.hidden = true;
+  notesWin.innerHTML = `
+    <div class="notes-head"><span>${t("notes.title")}</span><button class="notes-x">✕</button></div>
+    <div class="notes-tabs"></div>
+    <div class="notes-split">
+      <textarea class="notes-edit" placeholder="${t("notes.hint")}" ${canEdit ? "" : "readonly"}></textarea>
+      <div class="notes-view"></div>
+    </div>`;
+  root.appendChild(notesWin);
+  {
+    const posRaw = localStorage.getItem("sidc_noteswin");
+    const pos = posRaw ? JSON.parse(posRaw) : { x: window.innerWidth - 380, y: 90 };
+    notesWin.style.left = `${Math.max(0, pos.x)}px`;
+    notesWin.style.top = `${Math.max(0, pos.y)}px`;
+  }
+  const nTabs = notesWin.querySelector<HTMLDivElement>(".notes-tabs")!;
+  const nEdit = notesWin.querySelector<HTMLTextAreaElement>(".notes-edit")!;
+  const nView = notesWin.querySelector<HTMLDivElement>(".notes-view")!;
+  let notesTabId = currentPhaseId;
+  let saveTimer = 0;
+
+  const flushNotes = () => {
+    const ph = phases.find((p) => p.id === notesTabId);
+    if (!ph || !canEdit) return;
+    if (ph.notes === nEdit.value) return;
+    ph.notes = nEdit.value;
+    window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      void api.updatePhaseNotes(planId, ph.id, ph.notes).catch(() => {});
+    }, 600);
+  };
+  const paintNotes = () => {
+    const ph = phases.find((p) => p.id === notesTabId) ?? phases[0];
+    if (!ph) return;
+    notesTabId = ph.id;
+    nTabs.innerHTML = phases
+      .map((p) => `<button data-nt="${p.id}" class="${p.id === notesTabId ? "active" : ""}">${p.name}</button>`)
+      .join("");
+    nTabs.querySelectorAll<HTMLButtonElement>("[data-nt]").forEach((b) =>
+      b.addEventListener("click", () => {
+        flushNotes();
+        notesTabId = b.dataset.nt!;
+        paintNotes();
+      }),
+    );
+    nEdit.value = ph.notes ?? "";
+    nView.innerHTML = renderMarkdown(ph.notes ?? "");
+  };
+  nEdit.addEventListener("input", () => {
+    flushNotes();
+    nView.innerHTML = renderMarkdown(nEdit.value);
+  });
+  nEdit.addEventListener("blur", flushNotes);
+  // Phasenwechsel → Reiter dieser Phase aktiv machen
+  phaseListeners.push(() => {
+    flushNotes();
+    notesTabId = currentPhaseId;
+    paintNotes();
+  });
+  notesWin.querySelector(".notes-x")!.addEventListener("click", () => (notesWin.hidden = true));
+  root.querySelector("#notesBtn")!.addEventListener("click", () => {
+    notesWin.hidden = !notesWin.hidden;
+    if (!notesWin.hidden) paintNotes();
+  });
+  // Ziehen am Kopf
+  {
+    const head = notesWin.querySelector<HTMLDivElement>(".notes-head")!;
+    let dx = 0;
+    let dy = 0;
+    const onMove = (e: MouseEvent) => {
+      notesWin.style.left = `${e.clientX - dx}px`;
+      notesWin.style.top = `${e.clientY - dy}px`;
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      localStorage.setItem(
+        "sidc_noteswin",
+        JSON.stringify({ x: parseInt(notesWin.style.left), y: parseInt(notesWin.style.top) }),
+      );
+    };
+    head.addEventListener("mousedown", (e) => {
+      if ((e.target as HTMLElement).closest(".notes-x")) return;
+      dx = e.clientX - notesWin.offsetLeft;
+      dy = e.clientY - notesWin.offsetTop;
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  }
 
   // ── Ebenen: Basiskarte-Layer + Topo-Vektor + Map-Locations ─────────────
   interface LocGroup {

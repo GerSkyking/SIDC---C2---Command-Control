@@ -21,6 +21,7 @@ CATALOGS = {
     "quick-menu": "SIDC_QuickMarkerMenuCatalog.json",
     "phaseline-style": "SIDC_PhaseLineStyleCatalog.json",
     "channels": "SIDC_ChannelSettings.json",
+    "modifiers": "SIDC_ModifierCatalog.json",
 }
 _MAX_BYTES = 8 * 1024 * 1024
 
