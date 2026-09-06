@@ -37,7 +37,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     <div id="map"></div>`;
 
   // center/zoom kommen aus der style.json (pro Karte gesetzt).
-  const map = new maplibregl.Map({ container: "map", style: `/api/maps/${mapId}/style.json` });
+  const map = new maplibregl.Map({
+    container: "map",
+    style: `/api/maps/${mapId}/style.json`,
+    // style.json + Tiles hängen an der Session -> Cookie mitschicken
+    transformRequest: (url) =>
+      url.startsWith("/") || url.startsWith(location.origin)
+        ? { url, credentials: "include" }
+        : { url },
+  });
 
   map.on("load", () => {
     map.addSource("markers", { type: "geojson", data: featureCollection(markers) });
