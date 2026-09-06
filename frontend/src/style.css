@@ -110,6 +110,10 @@ a { color: var(--accent); }
 .edit-panel label.chk { display: flex; align-items: center; gap: 0.5rem; color: var(--fg); font-size: 0.95rem; }
 .edit-panel label.chk input { width: auto; min-width: 0; }
 .edit-panel .row { flex-wrap: wrap; }
+.edit-adv { margin: 0.5rem 0; border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.6rem; }
+.edit-adv summary { cursor: pointer; font-size: 0.9rem; color: var(--accent); }
+.edit-adv label { font-size: 0.78rem; }
+.edit-adv select { width: 100%; }
 .edit-panel .row button { padding: 0.55rem 0.7rem; flex: 1 1 auto; }
 .fav-head { font-weight: 600; color: var(--fg); margin-top: 0; }
 .fav { display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem; border-radius: 5px; cursor: pointer; }

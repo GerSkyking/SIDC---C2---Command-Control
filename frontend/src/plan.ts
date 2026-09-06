@@ -2,8 +2,8 @@
 // Nähert sich der ATAKmaps-UI an (D:\Mods\ATAKmaps).
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
-import { channelLabel, loadChannels, loadPhaseLineStyle } from "./sidc/catalog";
-import { lngLatToWorld, worldToLngLat, type Calibration } from "./sidc/sidc";
+import { channelLabel, loadAllMarkers, loadChannels, loadModifiers, loadPhaseLineStyle } from "./sidc/catalog";
+import { lngLatToWorld, withModifiers, worldToLngLat, type Calibration, type SidcModifiers } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { ensureMapIcon, iconSrc } from "./sidc/symbol";
 import { openAclEditor } from "./acl";
@@ -47,6 +47,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const canEdit = myPlan?.level === "editor" || myPlan?.level === "owner";
   const channels = await loadChannels();
   const lineStyle = await loadPhaseLineStyle();
+  const modCat = await loadModifiers();
+  // SIDC (Symbolset + Entity) → subCategory, um die Modifikatoren eines
+  // platzierten Markers im Bearbeiten-Panel zu kennen.
+  const subCatBySidc = new Map<string, string>();
+  for (const c of (await loadAllMarkers()) ?? [])
+    for (const e of c.entries)
+      if (e.subCategory) subCatBySidc.set(e.sidc.slice(4, 6) + e.sidc.slice(10, 16), e.subCategory);
   const lineColors = lineStyle?.colors ?? [
     { name: "Gelb", red: 255, green: 255, blue: 0, packedColor: -256, isDefault: true },
     { name: "Rot", red: 255, green: 0, blue: 0, packedColor: -65536, isDefault: false },
@@ -1526,8 +1533,38 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     back.id = "editModal";
     const p = document.createElement("div");
     p.className = "edit-panel";
+
+    // Advanced: Modifikatoren des Markers aus dem SIDC lesen + bearbeiten
+    const subCat = subCatBySidc.get(m.sidc.slice(4, 6) + m.sidc.slice(10, 16));
+    const modDefs = subCat && modCat ? modCat[subCat] : null;
+    const MOD_KEY: Record<string, keyof SidcModifiers> = { modifier1: "m1", modifier2: "m2", modifier3: "m3", modifier4: "m4" };
+    const MOD_LBL: Record<string, string> = {
+      modifier1: t("wiz.modifier1"), modifier2: t("wiz.modifier2"), modifier3: t("wiz.modifier3"), modifier4: t("wiz.modifier4"),
+    };
+    const curMods: SidcModifiers = {
+      m4: Number(m.sidc[6]) || 0,
+      m3: Number(m.sidc[7]) || 0,
+      m1: Number(m.sidc.slice(16, 18)) || 0,
+      m2: Number(m.sidc.slice(18, 20)) || 0,
+    };
+    const advHtml =
+      modDefs && ["modifier1", "modifier2", "modifier3", "modifier4"].some((g) => (modDefs[g] ?? []).length)
+        ? `<details class="edit-adv"><summary>${t("wiz.advanced")}</summary>` +
+          ["modifier1", "modifier2", "modifier3", "modifier4"]
+            .filter((g) => (modDefs[g] ?? []).length)
+            .map((g) => {
+              const key = MOD_KEY[g];
+              const cur = curMods[key] ?? 0;
+              return `<label>${MOD_LBL[g]}</label><select data-mod="${key}"><option value="0">—</option>${modDefs[g]
+                .map((o) => `<option value="${o.code}" ${o.code === cur ? "selected" : ""}>${o.description}</option>`)
+                .join("")}</select>`;
+            })
+            .join("") +
+          `</details>`
+        : "";
+
     p.innerHTML = `
-      <div class="fav-head"><img src="${iconSrc(m.sidc)}" width="26" height="26" onerror="this.style.visibility='hidden'"/> ${t("marker.heading")}</div>
+      <div class="fav-head"><img class="edit-ico" src="${iconSrc(m.sidc)}" width="26" height="26" onerror="this.style.visibility='hidden'"/> ${t("marker.heading")}</div>
       <label>${t("marker.unitText")}</label><input data-unit value="${m.unit_text}" />
       <label>${t("marker.aiText")}</label><input data-ai value="${m.ai_text}" />
       <label>${t("marker.iconRot")}</label><input data-rot type="number" value="${m.icon_rotation || 0}" />
@@ -1539,6 +1576,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           .join("")}
       </select>
       <label class="chk"><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> <span>${t("marker.locked")}</span></label>
+      ${advHtml}
       <div class="row">
         <button class="primary" data-apply>${t("common.apply")}</button>
         <button data-fav>${t("fav.add")}</button>
@@ -1546,6 +1584,21 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         <button data-del>${t("common.delete")}</button>
       </div>`;
     back.appendChild(p);
+
+    const readModSel = (): SidcModifiers => {
+      const s: SidcModifiers = {};
+      p.querySelectorAll<HTMLSelectElement>("[data-mod]").forEach((sel) => {
+        const v = Number(sel.value);
+        s[sel.dataset.mod as keyof SidcModifiers] = v || undefined;
+      });
+      return s;
+    };
+    const nextSidc = () => withModifiers(m.sidc, readModSel());
+    p.querySelectorAll<HTMLSelectElement>("[data-mod]").forEach((sel) =>
+      sel.addEventListener("change", () => {
+        p.querySelector<HTMLImageElement>(".edit-ico")!.src = iconSrc(nextSidc());
+      }),
+    );
     root.appendChild(back);
     const close = () => back.remove();
     back.addEventListener("mousedown", (e) => {
@@ -1567,6 +1620,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           ai_text: p.querySelector<HTMLInputElement>("[data-ai]")!.value,
           icon_rotation: Number(p.querySelector<HTMLInputElement>("[data-rot]")!.value) || 0,
           phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || null,
+          ...(modDefs ? { sidc: nextSidc() } : {}),
         },
       });
       socket.send({ type: "marker.lock", id: m.id, locked: p.querySelector<HTMLInputElement>("[data-lock]")!.checked });
