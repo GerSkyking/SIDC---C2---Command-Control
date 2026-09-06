@@ -540,23 +540,35 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("load", syncCompass);
   compass.addEventListener("click", () => map.easeTo({ bearing: 0, duration: 400 }));
 
-  // ── Screenshot (nur Karteninhalt, keine Bedienelemente) ───────────────
-  root.querySelector("#shot")!.addEventListener("click", () => {
-    map.once("idle", () => {
+  // ── Screenshot: nur Karteninhalt (Sat/Grid + Orte + Marker + Zeichnungen
+  //    + Richtungspfeile), keine Bedienelemente. Titel = <Plan>_<Phase>_<Zeit>.
+  const shotBtn = root.querySelector<HTMLButtonElement>("#shot")!;
+  shotBtn.addEventListener("click", async () => {
+    shotBtn.disabled = true;
+    try {
+      await new Promise<void>((res) => {
+        if (map.loaded() && !map.isMoving()) return res();
+        map.once("idle", () => res());
+        map.triggerRepaint();
+      });
+      map.redraw(); // synchroner Vollframe → Puffer enthält alle GL-Layer
       const mc = map.getCanvas();
       const out = document.createElement("canvas");
       out.width = mc.width;
       out.height = mc.height;
-      const ctx = out.getContext("2d");
-      if (!ctx) return;
+      const ctx = out.getContext("2d")!;
       ctx.drawImage(mc, 0, 0);
       if (baseLayerVisible.grid !== false) ctx.drawImage(gridCanvas, 0, 0, out.width, out.height);
+      const phaseName = phases.find((p) => p.id === currentPhaseId)?.name ?? "global";
+      const safe = (s: string) => s.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "map";
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
       const a = document.createElement("a");
       a.href = out.toDataURL("image/png");
-      a.download = `${snap.plan.name}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`;
+      a.download = `${safe(snap.plan.name)}_${safe(phaseName)}_${stamp}.png`;
       a.click();
-    });
-    map.triggerRepaint();
+    } finally {
+      shotBtn.disabled = false;
+    }
   });
 
   root.querySelector("#acl")?.addEventListener("click", () => openAclEditor(planId, snap.plan.name));
