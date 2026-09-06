@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 
 from .config import get_settings
 from .db import Base, SessionLocal, engine
@@ -14,8 +14,35 @@ log = logging.getLogger("sidc.bootstrap")
 
 
 def init_db() -> None:
-    # Phase 1: create_all. Alembic-Baseline folgt in einer eigenen Phase (siehe PLAN.md).
+    # Phase 1: create_all + einfacher Spalten-Abgleich. Echte Alembic-Baseline folgt
+    # (siehe PLAN.md) — bis dahin fängt _add_missing_columns() Modell-Erweiterungen ab.
     Base.metadata.create_all(bind=engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns() -> None:
+    """ALTER TABLE ... ADD COLUMN für Spalten, die im Modell dazugekommen sind.
+    Nur einfache Spalten mit skalarem Default (kein Rename/Typwechsel — dafür Alembic)."""
+    insp = inspect(engine)
+    existing_tables = set(insp.get_table_names())
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in have:
+                    continue
+                coltype = col.type.compile(engine.dialect)
+                default = getattr(col.default, "arg", None)
+                clause = f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" {coltype}'
+                if default is not None and not callable(default):
+                    lit = "TRUE" if default is True else "FALSE" if default is False else repr(default)
+                    clause += f" DEFAULT {lit}"
+                elif not col.nullable:
+                    continue  # NOT NULL ohne Default -> nicht automatisch machbar
+                log.warning("Schema-Sync: %s.%s wird ergänzt", table.name, col.name)
+                conn.execute(text(clause))
 
 
 def ensure_bootstrap_admin() -> None:

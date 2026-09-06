@@ -23,8 +23,10 @@ Später Open Source (AGPL-3.0).
 - **Gruppen:** benannt, n:m zu Usern.
 - **Plan-ACL:** Einträge `{subjekt: user|gruppe, level: viewer|editor|owner}`
   - `viewer` – Plan + Marker sehen, nichts ändern
-  - `editor` – Marker anlegen/verschieben/ändern/löschen + zeichnen
-  - `owner` – wie editor + ACL verwalten, Plan umbenennen/klonen/löschen
+  - `editor` – mit feingranularen Häkchen: **setzen / bewegen / löschen / malen** (je an/aus)
+  - `owner` – alles + ACL verwalten, Plan umbenennen/klonen/löschen
+  - serverseitig durchgesetzt (`live.py` gated jede WS-Op einzeln, `effective_caps()`);
+    Editor im Frontend unter „Freigaben" (Plan-Liste + Plan-Kopfleiste, nur Owner). ✅
 - **Capability** `can_create_plans` – Flag auf User oder Gruppe.
 - **Karten-Sichtbarkeit** (optional): pro Gruppe/User einschränkbar, welche Karten als Plan-Basis erlaubt sind.
 - **Objekt-Lock:** Marker sperrbar (wie ATAKmaps `locked`); gesperrte Marker nur von Plan-`owner` änderbar.
