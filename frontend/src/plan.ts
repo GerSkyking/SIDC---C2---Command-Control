@@ -14,14 +14,9 @@ interface Marker {
   locked: boolean;
 }
 
-const EMPTY_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {},
-  layers: [{ id: "bg", type: "background", paint: { "background-color": "#161a20" } }],
-};
-
 export async function openPlanView(root: HTMLElement, planId: string, me: Me): Promise<void> {
   const snap = await api.snapshot(planId);
+  const mapId: string = snap.plan.map_id;
   const markers = new Map<string, Marker>();
   for (const m of snap.markers) markers.set(m.id, m);
 
@@ -41,12 +36,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     </div>
     <div id="map"></div>`;
 
-  const map = new maplibregl.Map({
-    container: "map",
-    style: EMPTY_STYLE,
-    center: [0, 0],
-    zoom: 3,
-  });
+  // center/zoom kommen aus der style.json (pro Karte gesetzt).
+  const map = new maplibregl.Map({ container: "map", style: `/api/maps/${mapId}/style.json` });
 
   map.on("load", () => {
     map.addSource("markers", { type: "geojson", data: featureCollection(markers) });

@@ -135,18 +135,54 @@ async function renderPlanList(): Promise<void> {
       alert(e instanceof ApiError ? e.message : "Fehler");
     }
   });
+  app.querySelectorAll<HTMLButtonElement>("[data-reimport]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await api.reimportMap(b.dataset.reimport!);
+      setTimeout(route, 800);
+    }),
+  );
+  app.querySelectorAll<HTMLButtonElement>("[data-delmap]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm(`Karte "${b.dataset.delmap}" löschen?`)) return;
+      try {
+        await api.deleteMap(b.dataset.delmap!);
+        route();
+      } catch (e) {
+        alert(e instanceof ApiError ? e.message : "Fehler");
+      }
+    }),
+  );
+  app.querySelector("#restart")?.addEventListener("click", async () => {
+    if (!confirm("Backend neu starten? Kurzer Ausfall (~5 s).")) return;
+    try {
+      await api.restartBackend();
+    } catch {
+      /* Verbindung bricht beim Neustart erwartungsgemäß ab */
+    }
+    setTimeout(() => location.reload(), 6000);
+  });
 }
 
 function adminMapsBlock(maps: { id: string; name: string; status: string; error: string | null }[]): string {
   return `
-    <h2>Karten (Admin)</h2>
+    <div class="row">
+      <h2 style="margin:0">Karten (Admin)</h2>
+      <span class="grow"></span>
+      <button id="restart">Backend neu starten</button>
+    </div>
     <table><tbody>
       ${maps
         .map(
           (m) =>
-            `<tr><td>${m.name}</td><td><span class="badge">${m.status}</span></td><td class="muted">${
-              m.error ?? ""
-            }</td></tr>`,
+            `<tr>
+               <td>${m.name} <span class="muted">${m.id}</span></td>
+               <td><span class="badge">${m.status}</span></td>
+               <td class="muted">${m.error ?? ""}</td>
+               <td>
+                 <button data-reimport="${m.id}">Neu laden</button>
+                 <button data-delmap="${m.id}">Löschen</button>
+               </td>
+             </tr>`,
         )
         .join("")}
     </tbody></table>

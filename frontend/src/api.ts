@@ -54,6 +54,9 @@ export const api = {
   maps: () => req<MapItem[]>("GET", "/api/maps"),
   importMap: (id: string, name: string, url: string) =>
     req<MapItem>("POST", "/api/maps", { id, name, url }),
+  reimportMap: (id: string) => req<MapItem>("POST", `/api/maps/${id}/reimport`),
+  deleteMap: (id: string) => req<void>("DELETE", `/api/maps/${id}`),
+  restartBackend: () => req<{ message: string }>("POST", "/api/admin/restart"),
 
   plans: () => req<PlanItem[]>("GET", "/plans"),
   createPlan: (name: string, map_id: string) =>
