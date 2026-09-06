@@ -88,12 +88,34 @@ class Map(Base):
 
 # ─── Pläne ──────────────────────────────────────────────────────────────────
 
+class PlanFolder(Base):
+    """Ordner zum Gruppieren von Plänen. parent_id NULL = oberste Ebene.
+    Organisationsstruktur, für alle angemeldeten Nutzer sichtbar."""
+
+    __tablename__ = "plan_folders"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    name: Mapped[str] = mapped_column(String(128))
+    parent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("plan_folders.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    ordering: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Plan(Base):
     __tablename__ = "plans"
 
     id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
     name: Mapped[str] = mapped_column(String(128))
     map_id: Mapped[str] = mapped_column(ForeignKey("maps.id", ondelete="RESTRICT"), index=True)
+    folder_id: Mapped[str | None] = mapped_column(
+        ForeignKey("plan_folders.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    ordering: Mapped[int] = mapped_column(Integer, default=0)
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

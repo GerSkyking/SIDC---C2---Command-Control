@@ -4,6 +4,7 @@ import { api, ApiError, type Me } from "./api";
 import { openPlanView } from "./plan";
 import { renderAdmin } from "./admin";
 import { openAclEditor } from "./acl";
+import { renderPlanTree } from "./planTree";
 import { renderPublicView } from "./publicview";
 import { langSelect, t, wireLangSelect } from "./i18n";
 
@@ -78,7 +79,11 @@ async function renderLogin(): Promise<void> {
 // ─── Plan-Liste ───────────────────────────────────────────────────────────
 
 async function renderPlanList(): Promise<void> {
-  const [plans, maps] = await Promise.all([api.plans(), api.maps().catch(() => [])]);
+  const [plans, maps, folders] = await Promise.all([
+    api.plans(),
+    api.maps().catch(() => []),
+    api.folders().catch(() => []),
+  ]);
   const canCreate = me!.can_create_plans_effective && maps.some((m) => m.status === "ready");
 
   app.innerHTML = `
@@ -107,24 +112,20 @@ async function renderPlanList(): Promise<void> {
               me!.can_create_plans_effective ? t("plans.noMap") : t("plans.noPerm")
             }</div>`
       }
-      <table><tbody>
-        ${plans
-          .map(
-            (p) => `<tr>
-              <td><a href="#/plans/${p.id}">${p.name}</a></td>
-              <td><span class="badge">${p.level}</span></td>
-              <td>${
-                p.level === "owner"
-                  ? `<button data-acl="${p.id}" data-name="${p.name}">${t("plans.shares")}</button>
-                     <button data-del="${p.id}">${t("common.delete")}</button>`
-                  : ""
-              }</td>
-            </tr>`,
-          )
-          .join("")}
-      </tbody></table>
+      <div class="plan-tree" id="planTree"></div>
     </div>`;
   wireLangSelect(app);
+
+  renderPlanTree(app.querySelector<HTMLDivElement>("#planTree")!, plans, folders, me!.can_create_plans_effective, {
+    onChanged: () => renderPlanList(),
+    onDeletePlan: async (p) => {
+      if (confirm(t("plans.confirmDelete"))) {
+        await api.deletePlan(p.id);
+        renderPlanList();
+      }
+    },
+    onOpenShares: (p) => openAclEditor(p.id, p.name),
+  });
 
   app.querySelector("#logout")!.addEventListener("click", async () => {
     await api.logout();
@@ -139,17 +140,6 @@ async function renderPlanList(): Promise<void> {
     location.hash = `#/plans/${p.id}`;
     route();
   });
-  app.querySelectorAll<HTMLButtonElement>("[data-del]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (confirm(t("plans.confirmDelete"))) {
-        await api.deletePlan(b.dataset.del!);
-        route();
-      }
-    }),
-  );
-  app.querySelectorAll<HTMLButtonElement>("[data-acl]").forEach((b) =>
-    b.addEventListener("click", () => openAclEditor(b.dataset.acl!, b.dataset.name ?? "")),
-  );
   const mapId = () => app.querySelector<HTMLInputElement>("#mid")!.value.trim();
   const mapName = () => app.querySelector<HTMLInputElement>("#mname")!.value.trim();
   app.querySelector("#mi")?.addEventListener("click", async () => {

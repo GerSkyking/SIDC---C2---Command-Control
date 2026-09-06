@@ -56,8 +56,27 @@ class PlanOut(BaseModel):
     id: str
     name: str
     map_id: str
+    folder_id: str | None = None
+    ordering: int = 0
     created_at: datetime
     updated_at: datetime
+
+
+class PlanMoveIn(BaseModel):
+    folder_id: str | None = None  # None = oberste Ebene
+    ordering: int | None = None
+
+
+class FolderIn(BaseModel):
+    name: str
+    parent_id: str | None = None
+
+
+class FolderPatchIn(BaseModel):
+    name: str | None = None
+    parent_id: str | None = None
+    ordering: int | None = None
+    move_to_root: bool = False  # parent_id=None sonst = "nicht ändern"
 
 
 class PlanListItem(PlanOut):
@@ -88,6 +107,7 @@ class ACLCandidate(BaseModel):
 class PlanCloneIn(BaseModel):
     name: str
     copy_acl: bool = False
+    folder_id: str | None = None
 
 
 class VersionCreateIn(BaseModel):

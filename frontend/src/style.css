@@ -28,6 +28,23 @@ a { color: var(--accent); }
 .topbar { display: flex; align-items: center; gap: 1rem; padding: 0.6rem 1rem; border-bottom: 1px solid var(--border); background: var(--panel); }
 .topbar .grow { flex: 1; }
 .list { max-width: 60rem; margin: 1.5rem auto; padding: 0 1rem; }
+
+/* Plan-Baum (Ordner + Drag & Drop) */
+.plan-tree { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.tree-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+.tree-row:last-child { border-bottom: none; }
+.tree-root { background: var(--panel); font-weight: 600; }
+.tree-folder { background: rgba(255,255,255,0.03); }
+.tree-name { flex: 1; }
+.tree-plan .tree-name { font-weight: 400; }
+.tree-ico { opacity: 0.85; }
+.tree-tw { border: none; background: transparent; padding: 0 0.2rem; width: 1.2rem; }
+.tree-count { font-size: 0.75rem; color: var(--muted); min-width: 1.2rem; text-align: center; }
+.tree-actions { display: flex; gap: 0.3rem; }
+.tree-actions button { padding: 0.15rem 0.45rem; font-size: 0.78rem; }
+.tree-row[draggable="true"] { cursor: grab; }
+.tree-row.drop-hi { outline: 2px dashed var(--accent); outline-offset: -2px; background: rgba(76,141,255,0.12); }
+.tree-kids { border-top: 1px solid var(--border); }
 .list table { width: 100%; border-collapse: collapse; }
 .list td, .list th { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); }
 
@@ -36,6 +53,7 @@ a { color: var(--accent); }
 .presence { display: flex; gap: 0.4rem; }
 .topbar button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .topbar select { padding: 0.3rem 0.4rem; }
+.topbar input[type="datetime-local"] { padding: 0.3rem 0.4rem; max-width: 12rem; font-size: 0.8rem; }
 
 .timeline { display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; max-width: 34rem; }
 .timeline .ph-label { font-size: 0.75rem; color: var(--muted); }

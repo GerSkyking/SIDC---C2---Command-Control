@@ -17,6 +17,7 @@ from ..models import (
     Phase,
     Plan,
     PlanACL,
+    PlanFolder,
     PlanVersion,
     Stroke,
     User,
@@ -27,15 +28,19 @@ from ..schemas import (
     ACLCandidate,
     ACLEntryIn,
     ACLOut,
+    FolderIn,
+    FolderPatchIn,
     PlanCloneIn,
     PlanCreateIn,
     PlanListItem,
+    PlanMoveIn,
     PlanOut,
     PlanPatchIn,
     VersionCreateIn,
 )
 
 router = APIRouter(prefix="/plans", tags=["plans"])
+folders_router = APIRouter(prefix="/folders", tags=["folders"])
 
 EditorPlan = Annotated[Plan, Depends(require_plan_level("editor"))]
 OwnerPlan = Annotated[Plan, Depends(require_plan_level("owner"))]
@@ -108,6 +113,95 @@ def patch_plan(body: PlanPatchIn, plan: OwnerPlan, db: DbDep) -> Plan:
         plan.name = body.name
     db.commit()
     return plan
+
+
+@router.post("/{plan_id}/move", response_model=PlanOut)
+def move_plan(body: PlanMoveIn, plan: EditorPlan, db: DbDep) -> Plan:
+    """Plan in einen Ordner (oder auf die oberste Ebene, folder_id=null) verschieben."""
+    if body.folder_id is not None and db.get(PlanFolder, body.folder_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ordner nicht gefunden")
+    plan.folder_id = body.folder_id
+    if body.ordering is not None:
+        plan.ordering = body.ordering
+    db.commit()
+    return plan
+
+
+# ─── Ordner (Plan-Gruppen) ─────────────────────────────────────────────────
+
+def _folder_out(f: PlanFolder) -> dict:
+    return {"id": f.id, "name": f.name, "parent_id": f.parent_id, "ordering": f.ordering}
+
+
+def _is_descendant(db: Session, folder_id: str, maybe_ancestor_id: str) -> bool:
+    """True, wenn maybe_ancestor_id im Elternpfad von folder_id liegt (Zyklus-Schutz)."""
+    seen: set[str] = set()
+    cur: str | None = folder_id
+    while cur and cur not in seen:
+        if cur == maybe_ancestor_id:
+            return True
+        seen.add(cur)
+        f = db.get(PlanFolder, cur)
+        cur = f.parent_id if f else None
+    return False
+
+
+@folders_router.get("")
+def list_folders(user: CurrentUser, db: DbDep) -> list[dict]:
+    rows = db.scalars(select(PlanFolder).order_by(PlanFolder.ordering, PlanFolder.name))
+    return [_folder_out(f) for f in rows]
+
+
+@folders_router.post("", status_code=status.HTTP_201_CREATED)
+def create_folder(body: FolderIn, user: CurrentUser, db: DbDep) -> dict:
+    if body.parent_id is not None and db.get(PlanFolder, body.parent_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Übergeordneter Ordner nicht gefunden")
+    nxt = db.scalar(select(func.coalesce(func.max(PlanFolder.ordering), -1)))
+    f = PlanFolder(
+        name=(body.name or "").strip() or "Ordner",
+        parent_id=body.parent_id,
+        ordering=int(nxt) + 1,
+        created_by=user.id,
+    )
+    db.add(f)
+    db.commit()
+    return _folder_out(f)
+
+
+@folders_router.patch("/{folder_id}")
+def patch_folder(folder_id: str, body: FolderPatchIn, user: CurrentUser, db: DbDep) -> dict:
+    f = db.get(PlanFolder, folder_id)
+    if f is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if body.name is not None and body.name.strip():
+        f.name = body.name.strip()
+    if body.parent_id is not None:
+        if body.parent_id == folder_id or _is_descendant(db, body.parent_id, folder_id):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Zyklus im Ordnerbaum")
+        if db.get(PlanFolder, body.parent_id) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Zielordner nicht gefunden")
+        f.parent_id = body.parent_id
+    elif body.move_to_root:
+        f.parent_id = None
+    if body.ordering is not None:
+        f.ordering = body.ordering
+    db.commit()
+    return _folder_out(f)
+
+
+@folders_router.delete("/{folder_id}")
+def delete_folder(folder_id: str, user: CurrentUser, db: DbDep) -> dict:
+    f = db.get(PlanFolder, folder_id)
+    if f is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    # Inhalt eine Ebene nach oben ziehen, dann Ordner entfernen
+    db.execute(update(Plan).where(Plan.folder_id == folder_id).values(folder_id=f.parent_id))
+    db.execute(
+        update(PlanFolder).where(PlanFolder.parent_id == folder_id).values(parent_id=f.parent_id)
+    )
+    db.delete(f)
+    db.commit()
+    return {"ok": True}
 
 
 @router.delete("/{plan_id}")
@@ -305,7 +399,9 @@ def clone_plan(
 ) -> Plan:
     if not can_create_plans(db, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Berechtigung, Pläne zu erstellen")
-    clone = Plan(name=body.name, map_id=plan.map_id, created_by=user.id)
+    if body.folder_id is not None and db.get(PlanFolder, body.folder_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ordner nicht gefunden")
+    clone = Plan(name=body.name, map_id=plan.map_id, folder_id=body.folder_id, created_by=user.id)
     db.add(clone)
     db.flush()
 

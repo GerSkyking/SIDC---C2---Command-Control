@@ -41,7 +41,15 @@ export interface PlanItem {
   id: string;
   name: string;
   map_id: string;
+  folder_id: string | null;
+  ordering: number;
   level: "viewer" | "editor" | "owner";
+}
+export interface PlanFolder {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  ordering: number;
 }
 export interface Favorite {
   id: string;
@@ -207,8 +215,18 @@ export const api = {
   revokeShare: (planId: string, token: string) =>
     req<void>("DELETE", `/plans/${planId}/shares/${token}`),
   publicSnapshot: (token: string) => req<any>("GET", `/public/plans/${token}`),
-  clonePlan: (planId: string, name: string, copy_acl: boolean) =>
-    req<PlanItem>("POST", `/plans/${planId}/clone`, { name, copy_acl }),
+  clonePlan: (planId: string, name: string, copy_acl: boolean, folder_id: string | null = null) =>
+    req<PlanItem>("POST", `/plans/${planId}/clone`, { name, copy_acl, folder_id }),
+  movePlan: (planId: string, folder_id: string | null) =>
+    req<PlanItem>("POST", `/plans/${planId}/move`, { folder_id }),
   saveVersion: (planId: string, label: string) =>
     req<{ id: string }>("POST", `/plans/${planId}/versions`, { label }),
+
+  folders: () => req<PlanFolder[]>("GET", "/folders"),
+  createFolder: (name: string, parent_id: string | null = null) =>
+    req<PlanFolder>("POST", "/folders", { name, parent_id }),
+  renameFolder: (id: string, name: string) => req<PlanFolder>("PATCH", `/folders/${id}`, { name }),
+  moveFolder: (id: string, parent_id: string | null) =>
+    req<PlanFolder>("PATCH", `/folders/${id}`, parent_id === null ? { move_to_root: true } : { parent_id }),
+  deleteFolder: (id: string) => req<void>("DELETE", `/folders/${id}`),
 };

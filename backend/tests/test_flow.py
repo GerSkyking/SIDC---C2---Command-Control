@@ -48,6 +48,18 @@ def test_plan_lifecycle_and_permissions(admin):
     assert admin.delete(f"/plans/{pid}/phases/{phid}").status_code == 200
     assert len(admin.get(f"/plans/{pid}/phases").json()) == 1
 
+    # Ordner: anlegen, Plan verschieben, klonen in Ordner, Ordner löschen
+    root = admin.post("/folders", json={"name": "Übung"}).json()
+    sub = admin.post("/folders", json={"name": "Kompanie A", "parent_id": root["id"]}).json()
+    assert admin.post(f"/plans/{pid}/move", json={"folder_id": sub["id"]}).json()["folder_id"] == sub["id"]
+    cl = admin.post(f"/plans/{pid}/clone", json={"name": "Op Alpha 2", "folder_id": root["id"]})
+    assert cl.status_code == 201 and cl.json()["folder_id"] == root["id"]
+    # Zyklus-Schutz
+    assert admin.patch(f"/folders/{root['id']}", json={"parent_id": sub["id"]}).status_code == 400
+    # Löschen zieht Inhalt eine Ebene hoch
+    assert admin.delete(f"/folders/{sub['id']}").status_code == 200
+    assert admin.get(f"/plans/{pid}").json()["folder_id"] == root["id"]
+
 
 def test_live_marker_authority(admin):
     _make_map(admin)

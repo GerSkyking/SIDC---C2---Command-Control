@@ -81,6 +81,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <span class="badge">${myPlan?.level ?? "?"}</span>
       <button id="t3d">3D</button>
       <button id="compass" class="compass" title="${t("map.compass")}"><span>↑</span></button>
+      <input type="datetime-local" id="dtg" title="${t("map.dtg")}" />
       <button id="shot" title="${t("map.screenshot")}">📷</button>
       <select id="chan" title="${t('map.channel')}">${(channels?.channels ?? [])
         .map((c) => `<option value="${c.name}" ${c.name === myChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
@@ -540,8 +541,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("load", syncCompass);
   compass.addEventListener("click", () => map.easeTo({ bearing: 0, duration: 400 }));
 
+  // ── Datum/Zeit (DTG) für den Screenshot ───────────────────────────────
+  const dtgInput = root.querySelector<HTMLInputElement>("#dtg")!;
+  const DTG_MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const shotDate = () => (dtgInput.value ? new Date(dtgInput.value) : new Date());
+  // Militärisches Format "DDHHMMZ MMM YY" (eingegebene Zeit als Zulu gelesen).
+  const militaryDtg = (d: Date) =>
+    `${p2(d.getDate())}${p2(d.getHours())}${p2(d.getMinutes())}Z ${DTG_MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(-2)}`;
+
   // ── Screenshot: nur Karteninhalt (Sat/Grid + Orte + Marker + Zeichnungen
-  //    + Richtungspfeile), keine Bedienelemente. Titel = <Plan>_<Phase>_<Zeit>.
+  //    + Richtungspfeile), keine Bedienelemente. Unten links der DTG.
   const shotBtn = root.querySelector<HTMLButtonElement>("#shot")!;
   shotBtn.addEventListener("click", async () => {
     shotBtn.disabled = true;
@@ -559,12 +569,28 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const ctx = out.getContext("2d")!;
       ctx.drawImage(mc, 0, 0);
       if (baseLayerVisible.grid !== false) ctx.drawImage(gridCanvas, 0, 0, out.width, out.height);
+
+      const d = shotDate();
+      const dpr = window.devicePixelRatio || 1;
+      ctx.font = `bold ${Math.round(15 * dpr)}px monospace`;
+      ctx.textBaseline = "bottom";
+      ctx.lineWidth = 3 * dpr;
+      ctx.strokeStyle = "rgba(0,0,0,0.85)";
+      ctx.fillStyle = "#fff";
+      const label = militaryDtg(d);
+      const x = 12 * dpr;
+      const y = out.height - 12 * dpr;
+      ctx.strokeText(label, x, y);
+      ctx.fillText(label, x, y);
+
       const phaseName = phases.find((p) => p.id === currentPhaseId)?.name ?? "global";
       const safe = (s: string) => s.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "map";
-      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const fileStamp =
+        `${p2(d.getDate())}${p2(d.getMonth() + 1)}${d.getFullYear()}-` +
+        `${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
       const a = document.createElement("a");
       a.href = out.toDataURL("image/png");
-      a.download = `${safe(snap.plan.name)}_${safe(phaseName)}_${stamp}.png`;
+      a.download = `${safe(snap.plan.name)}_${safe(phaseName)}_${fileStamp}.png`;
       a.click();
     } finally {
       shotBtn.disabled = false;
