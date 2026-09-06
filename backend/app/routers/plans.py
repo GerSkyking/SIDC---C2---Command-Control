@@ -50,7 +50,7 @@ def _snapshot(db: Session, plan: Plan) -> dict:
 def _marker_dict(m: Marker) -> dict:
     return {
         "id": m.id, "phase_id": m.phase_id, "layer_id": m.layer_id, "sidc": m.sidc,
-        "world_x": m.world_x, "world_y": m.world_y, "rotation_degrees": m.rotation_degrees,
+        "world_x": m.world_x, "world_y": m.world_y, "rotation_degrees": m.rotation_degrees, "icon_rotation": m.icon_rotation,
         "unit_text": m.unit_text, "ai_text": m.ai_text, "channel": m.channel,
         "locked": m.locked, "timestamp_visible": m.timestamp_visible,
         "linked_group_id": m.linked_group_id, "point_index": m.point_index,
@@ -113,8 +113,12 @@ def delete_plan(plan: OwnerPlan, db: DbDep) -> None:
 def get_snapshot(plan: ViewerPlan, db: DbDep) -> dict:
     phases = db.scalars(select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering))
     layers = db.scalars(select(Layer).where(Layer.plan_id == plan.id).order_by(Layer.ordering))
+    from ..models import Map
+
+    mp = db.get(Map, plan.map_id)
     return {
         "plan": PlanOut.model_validate(plan).model_dump(mode="json"),
+        "map_meta": mp.meta if mp else {},
         "phases": [
             {"id": p.id, "name": p.name, "ordering": p.ordering,
              "start_at": p.start_at.isoformat() if p.start_at else None}

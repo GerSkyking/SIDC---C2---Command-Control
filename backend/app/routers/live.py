@@ -21,7 +21,7 @@ from ..services.realtime import hub
 log = logging.getLogger("sidc.live")
 
 MARKER_FIELDS = (
-    "phase_id", "layer_id", "sidc", "world_x", "world_y", "rotation_degrees",
+    "phase_id", "layer_id", "sidc", "world_x", "world_y", "rotation_degrees", "icon_rotation",
     "unit_text", "ai_text", "channel", "timestamp_visible",
     "linked_group_id", "point_index", "line_color", "line_width",
 )
@@ -46,7 +46,8 @@ def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str] | Non
 def _marker_out(m: Marker) -> dict:
     return {
         "id": m.id, "phase_id": m.phase_id, "layer_id": m.layer_id, "sidc": m.sidc,
-        "world_x": m.world_x, "world_y": m.world_y, "rotation_degrees": m.rotation_degrees,
+        "world_x": m.world_x, "world_y": m.world_y,
+        "rotation_degrees": m.rotation_degrees, "icon_rotation": m.icon_rotation,
         "unit_text": m.unit_text, "ai_text": m.ai_text, "channel": m.channel,
         "locked": m.locked, "timestamp_visible": m.timestamp_visible,
         "linked_group_id": m.linked_group_id, "point_index": m.point_index,

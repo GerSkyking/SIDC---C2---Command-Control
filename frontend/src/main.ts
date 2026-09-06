@@ -2,6 +2,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./style.css";
 import { api, ApiError, type Me } from "./api";
 import { openPlanView } from "./plan";
+import { renderAdmin } from "./admin";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -18,6 +19,7 @@ async function route(): Promise<void> {
 
   const planMatch = location.hash.match(/^#\/plans\/([0-9a-f]{32})$/);
   if (planMatch) return openPlanView(app, planMatch[1], me);
+  if (location.hash === "#/admin" && me.role === "admin") return renderAdmin(app);
   return renderPlanList();
 }
 
@@ -65,6 +67,7 @@ async function renderPlanList(): Promise<void> {
     <div class="topbar">
       <strong>SIDC – C2</strong>
       <span class="grow"></span>
+      ${me!.role === "admin" ? `<a href="#/admin">Administration</a>` : ""}
       <span class="muted">${me!.username} (${me!.role})</span>
       <button id="logout">Abmelden</button>
     </div>

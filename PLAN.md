@@ -92,7 +92,43 @@ volles sidc-marker-Frontend, Zeitstrahl/Phasen/Layer-UI, Admin-UI, Hardening.
 - [ ] NPM-Proxy-Host: „Websockets Support" aktivieren (Doku).
 
 ### Phase 7 – Marker-/Zeichen-Funktionsparität
-- [ ] SIDC-QuickMenu, Katalog, Phase-Lines, Freihand, Marker-Edit (Text/Rotation/SIDC/Lock), Sichtbarkeits-/Layer-Logik aus ATAKmaps — ohne „client verified".
+Ziel: **UI und Marker-Workflow so identisch wie möglich zu ATAKmaps** (`D:\Mods\ATAKmaps`).
+
+**7a – Marker-Katalog (serverseitig, Admin-verwaltet)**
+- [ ] Admin lädt im Admin-Panel die JSONs aus `LocalMapData` hoch, Server speichert unter `/data/catalog/`:
+  `SIDC_AllMarkersCatalog.json`, `SIDC_QuickMarkerMenuCatalog.json`, `SIDC_PhaseLineStyleCatalog.json`,
+  `SIDC_ChannelSettings.json`. Endpunkte: `GET /api/catalog/{name}`, `POST /api/admin/catalog/{name}`,
+  `DELETE /api/admin/catalog/{name}`. Format = 1:1 wie ingame (nichts umbauen).
+- [ ] APP-6D-Icons + Richtungspfeile aus `web/assets/` (852 PNGs, 3 MB) ins Frontend vendored.
+- [ ] SIDC-Zusammenbau portiert (`sidc/lookup.ts`: withAffiliation / withAffiliationAndEchelon).
+
+**7b – Marker setzen wie ATAKmaps (voller Wizard)**
+- [ ] QuickMarkerMenü-Baum (CategoryRow→Category→SubCategory→Row→Button) dynamisch aus dem Katalog,
+  inkl. Suche, `setsIdentity`, `needsAmp`, `needsDirection`, `placeOnClick`.
+- [ ] Voller Katalog-Browser (nach Kategorie gruppiert) als Alternative zum QuickMenü.
+- [ ] Pro Marker setzbar (alles wie ingame): Affiliation (6), Echelon/Amplifier (14, nur LandUnits),
+  Richtung (8 + stationär) → `rotation_degrees`, freie Icon-Rotation → `icon_rotation`,
+  `unit_text`, `ai_text`, `channel`, `locked`, `timestamp_visible`.
+- [ ] Phase-Line-/Multipoint-Marker (`isMultiPointLine`): Kette aus `linked_group_id`/`point_index`,
+  Farbe/Breite aus `SIDC_PhaseLineStyleCatalog.json`, `maxLinePoints`.
+- [ ] Marker-Edit-Panel + Kontextmenü (Rechtsklick): alle o. g. Felder nachträglich änderbar, löschen, klonen.
+
+**7c – Werkzeugleiste links**
+- [ ] **Bewegen** – Karte greifen/pannen (Standard).
+- [ ] **Zeigen** – eigener Cursor wird anderen Nutzern live angezeigt (Laser); nutzt vorhandenes
+  `presence.cursor`-Event.
+- [ ] **Stift** – Modus zum Malen (Freihand-Stroke) bzw. Marker setzen.
+- [ ] **Stern / Favoriten** (pro User): Marker anklicken → „Add favorite" speichert Icon (SIDC) +
+  Beschriftung; Favoriten in einer Scroll-Box, auswählbar, per Linksklick platzierbar, löschbar.
+  Backend: `GET/POST/DELETE /api/favorites`.
+
+**7d – Kopfleiste / HUD**
+- [ ] 2D/3D-Umschalter (Terrain an/aus, Pitch 0↔60). Grid + Maßstab in beiden Modi.
+- [ ] Channel-Dropdown (aktueller Channel des Users, aus `SIDC_ChannelSettings.json`).
+- [ ] Zeitstrahl oben für Phasen (global + Phasen, optional Zeit) — siehe Abschnitt „Zeitstrahl".
+- [ ] Oben rechts: Cursor-Position X/Y (Welt-Koordinaten via Kalibrierung aus Karten-Meta).
+- [ ] Grid-Layer (aus `grid.mbtiles`) ein/aus, `maplibregl.ScaleControl` + `NavigationControl`.
+
 - [ ] Undo/Redo pro User (lokaler Stack, sendet inverse Server-Kommandos).
 
 ### Phase 8 – Plan-Lifecycle
@@ -102,7 +138,13 @@ volles sidc-marker-Frontend, Zeitstrahl/Phasen/Layer-UI, Admin-UI, Hardening.
 - [ ] Löschen: Trash + endgültig (admin/owner).
 
 ### Phase 9 – Admin-UI
-- [ ] User-Verwaltung (anlegen, Passwort-Reset, Rolle, `can_create_plans`), Gruppen + Mitglieder, Karten-Import/-Liste, Audit-Log-Ansicht.
+- [ ] **Lokale User anlegen/verwalten** über den Admin-Account: Username + Passwort setzen,
+  Rolle (`admin`/`user`), `can_create_plans`, aktiv/deaktiviert, Passwort-Reset, löschen.
+  Backend: `GET/POST/PATCH/DELETE /api/admin/users`.
+- [ ] Gruppen anlegen + Mitglieder verwalten, `can_create_plans` je Gruppe.
+  Backend: `GET/POST/PATCH/DELETE /api/admin/groups`, Mitglieder-Endpunkte.
+- [ ] Plan-ACL-UI (Subjekt = User/Gruppe → viewer/editor/owner), Layer-Gruppenbindung.
+- [ ] Karten-Import/-Liste (vorhanden), Katalog-Upload (7a), Audit-Log-Ansicht.
 
 ### Phase 10 – Hardening & Deployment
 - [ ] Security-Header, CORS zu (same-origin über einen Port).

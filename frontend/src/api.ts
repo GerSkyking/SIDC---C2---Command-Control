@@ -43,6 +43,28 @@ export interface PlanItem {
   map_id: string;
   level: "viewer" | "editor" | "owner";
 }
+export interface Favorite {
+  id: string;
+  label: string;
+  sidc: string;
+  rotation_degrees: number;
+  unit_text: string;
+  ai_text: string;
+}
+export interface AdminUser {
+  id: string;
+  username: string;
+  role: string;
+  can_create_plans: boolean;
+  is_active: boolean;
+  is_local: boolean;
+}
+export interface AdminGroup {
+  id: string;
+  name: string;
+  can_create_plans: boolean;
+  member_ids: string[];
+}
 
 export const api = {
   me: () => req<Me>("GET", "/auth/me"),
@@ -57,6 +79,34 @@ export const api = {
   reimportMap: (id: string) => req<MapItem>("POST", `/api/maps/${id}/reimport`),
   deleteMap: (id: string) => req<void>("DELETE", `/api/maps/${id}`),
   restartBackend: () => req<{ message: string }>("POST", "/api/admin/restart"),
+
+  catalogStatus: () => req<Record<string, boolean>>("GET", "/api/catalog"),
+  uploadCatalog: (name: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetch(`/api/admin/catalog/${name}`, { method: "POST", credentials: "include", body: fd }).then(
+      async (r) => {
+        if (!r.ok) throw new ApiError(r.status, (await r.json().catch(() => ({}))).detail ?? r.statusText);
+        return r.json();
+      },
+    );
+  },
+  deleteCatalog: (name: string) => req<void>("DELETE", `/api/admin/catalog/${name}`),
+
+  favorites: () => req<Favorite[]>("GET", "/api/favorites"),
+  addFavorite: (f: Omit<Favorite, "id">) => req<Favorite>("POST", "/api/favorites", f),
+  deleteFavorite: (id: string) => req<void>("DELETE", `/api/favorites/${id}`),
+
+  adminUsers: () => req<AdminUser[]>("GET", "/api/admin/users"),
+  createUser: (b: { username: string; password: string; role: string; can_create_plans: boolean }) =>
+    req<AdminUser>("POST", "/api/admin/users", b),
+  patchUser: (id: string, b: Partial<{ role: string; can_create_plans: boolean; is_active: boolean; password: string }>) =>
+    req<AdminUser>("PATCH", `/api/admin/users/${id}`, b),
+  deleteUser: (id: string) => req<void>("DELETE", `/api/admin/users/${id}`),
+  adminGroups: () => req<AdminGroup[]>("GET", "/api/admin/groups"),
+  createGroup: (b: { name: string; can_create_plans: boolean }) => req<AdminGroup>("POST", "/api/admin/groups", b),
+  setGroupMembers: (id: string, userIds: string[]) => req<AdminGroup>("PUT", `/api/admin/groups/${id}/members`, userIds),
+  deleteGroup: (id: string) => req<void>("DELETE", `/api/admin/groups/${id}`),
 
   plans: () => req<PlanItem[]>("GET", "/plans"),
   createPlan: (name: string, map_id: string) =>

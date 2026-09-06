@@ -18,7 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import __version__
 from .bootstrap import ensure_bootstrap_admin, init_db
 from .config import get_settings
-from .routers import admin, auth, live, maps, plans, tiles
+from .routers import admin, auth, catalog, favorites, live, maps, plans, tiles
 from .services.realtime import hub
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -49,6 +49,8 @@ app.include_router(maps.router)
 app.include_router(tiles.router)
 app.include_router(plans.router)
 app.include_router(admin.router)
+app.include_router(catalog.router)
+app.include_router(favorites.router)
 app.add_api_websocket_route("/plans/{plan_id}/live", live.live_ws)
 
 

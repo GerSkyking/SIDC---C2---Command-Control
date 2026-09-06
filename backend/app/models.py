@@ -165,7 +165,8 @@ class Marker(Base):
     sidc: Mapped[str] = mapped_column(String(64))
     world_x: Mapped[float] = mapped_column(Float)
     world_y: Mapped[float] = mapped_column(Float)
-    rotation_degrees: Mapped[int] = mapped_column(Integer, default=-1)
+    rotation_degrees: Mapped[int] = mapped_column(Integer, default=-1)  # 8-Richtungen-Pfeil, -1 = stationär
+    icon_rotation: Mapped[float] = mapped_column(Float, default=0)       # freie Icon-Drehung (Grad)
     unit_text: Mapped[str] = mapped_column(String(255), default="")
     ai_text: Mapped[str] = mapped_column(String(255), default="")
     channel: Mapped[str] = mapped_column(String(64), default="")
@@ -206,6 +207,22 @@ class PlanVersion(Base):
     label: Mapped[str] = mapped_column(String(128), default="")
     snapshot: Mapped[dict] = mapped_column(JSON)  # {markers: [...], strokes: [...]}
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Favorite(Base):
+    """Persönliche Marker-Favoriten eines Users (Icon-SIDC + Beschriftung + Defaults)."""
+
+    __tablename__ = "favorites"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    label: Mapped[str] = mapped_column(String(128))
+    sidc: Mapped[str] = mapped_column(String(64))
+    rotation_degrees: Mapped[int] = mapped_column(Integer, default=-1)
+    unit_text: Mapped[str] = mapped_column(String(255), default="")
+    ai_text: Mapped[str] = mapped_column(String(255), default="")
+    ordering: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
