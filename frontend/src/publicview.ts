@@ -1,0 +1,137 @@
+// Öffentliche Nur-Lese-Ansicht eines Plans (kein Login) — Karte + Marker + Zeichnungen,
+// Live-Updates über den Empfangs-WebSocket. Keine Werkzeuge.
+import maplibregl, { type GeoJSONSource } from "maplibre-gl";
+import { api } from "./api";
+import { iconUrl } from "./sidc/sidc";
+
+interface M {
+  id: string;
+  world_x: number;
+  world_y: number;
+  sidc: string;
+  unit_text: string;
+  ai_text: string;
+  icon_rotation: number;
+  locked: boolean;
+}
+interface S {
+  id: string;
+  points: [number, number][];
+  color: number;
+  width: number;
+}
+
+function hex(p: number): string {
+  return p === undefined || p === -1 ? "#ffd700" : "#" + (p & 0xffffff).toString(16).padStart(6, "0");
+}
+
+export async function renderPublicView(root: HTMLElement, token: string): Promise<void> {
+  let snap: any;
+  try {
+    snap = await api.publicSnapshot(token);
+  } catch {
+    root.innerHTML = `<div class="center"><div class="card"><h1>Link ungültig oder abgelaufen</h1></div></div>`;
+    return;
+  }
+
+  const markers = new Map<string, M>(snap.markers.map((m: M) => [m.id, m]));
+  const strokes = new Map<string, S>(snap.strokes.map((s: S) => [s.id, s]));
+
+  root.innerHTML = `
+    <div class="topbar"><strong>${snap.plan.name}</strong><span class="badge">öffentlich · nur ansehen</span></div>
+    <div id="map"></div>`;
+
+  const map = new maplibregl.Map({
+    container: "map",
+    style: `/public/plans/${token}/style.json`,
+    transformRequest: (url) =>
+      url.startsWith("/") || url.startsWith(location.origin) ? { url, credentials: "include" } : { url },
+  });
+  map.addControl(new maplibregl.NavigationControl(), "bottom-right");
+  map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+
+  const loaded = new Set<string>();
+  const ensureIcon = async (sidc: string) => {
+    if (loaded.has(sidc) || map.hasImage(sidc)) return;
+    loaded.add(sidc);
+    try {
+      const img = await map.loadImage(iconUrl(sidc));
+      if (!map.hasImage(sidc)) map.addImage(sidc, img.data);
+    } catch {
+      /* fehlendes Icon */
+    }
+  };
+
+  const mFC = (): GeoJSON.FeatureCollection => ({
+    type: "FeatureCollection",
+    features: [...markers.values()].map((m) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [m.world_x, m.world_y] },
+      properties: { sidc: m.sidc, label: m.unit_text || m.ai_text || "", rot: m.icon_rotation || 0 },
+    })),
+  });
+  const sFC = (): GeoJSON.FeatureCollection => ({
+    type: "FeatureCollection",
+    features: [...strokes.values()].map((s) => ({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: s.points },
+      properties: { color: hex(s.color), width: s.width > 0 ? s.width : 2 },
+    })),
+  });
+
+  map.on("load", async () => {
+    await Promise.all([...new Set([...markers.values()].map((m) => m.sidc))].map(ensureIcon));
+    map.addSource("s", { type: "geojson", data: sFC() });
+    map.addLayer({
+      id: "s",
+      type: "line",
+      source: "s",
+      paint: { "line-color": ["get", "color"], "line-width": ["get", "width"] },
+      layout: { "line-cap": "round", "line-join": "round" },
+    });
+    map.addSource("m", { type: "geojson", data: mFC() });
+    map.addLayer({
+      id: "m",
+      type: "symbol",
+      source: "m",
+      layout: {
+        "icon-image": ["get", "sidc"],
+        "icon-size": 0.8,
+        "icon-rotate": ["get", "rot"],
+        "icon-allow-overlap": true,
+        "text-field": ["get", "label"],
+        "text-optional": true,
+        "text-size": 11,
+        "text-offset": [0, 1.6],
+      },
+      paint: { "text-color": "#e6e9ee", "text-halo-color": "#000", "text-halo-width": 1.4 },
+    });
+  });
+
+  const refreshM = async () => {
+    await Promise.all([...new Set([...markers.values()].map((m) => m.sidc))].map(ensureIcon));
+    (map.getSource("m") as GeoJSONSource)?.setData(mFC());
+  };
+  const refreshS = () => (map.getSource("s") as GeoJSONSource)?.setData(sFC());
+
+  // Empfangs-WebSocket für Live-Updates
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/public/plans/${token}/live`);
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "marker.upsert") {
+      markers.set(msg.marker.id, msg.marker);
+      void refreshM();
+    } else if (msg.type === "marker.delete") {
+      markers.delete(msg.id);
+      void refreshM();
+    } else if (msg.type === "stroke.upsert") {
+      strokes.set(msg.stroke.id, msg.stroke);
+      refreshS();
+    } else if (msg.type === "stroke.delete") {
+      strokes.delete(msg.id);
+      refreshS();
+    }
+  };
+  window.addEventListener("hashchange", () => ws.close(), { once: true });
+}

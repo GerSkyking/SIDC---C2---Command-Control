@@ -184,6 +184,58 @@ def put_acl(
     return rows
 
 
+# ─── Öffentliche Freigaben ─────────────────────────────────────────────────
+
+@router.get("/{plan_id}/shares")
+def list_shares(plan: OwnerPlan, db: DbDep) -> list[dict]:
+    from ..models import PublicShare
+
+    rows = db.scalars(select(PublicShare).where(PublicShare.plan_id == plan.id))
+    return [
+        {
+            "token": s.token, "label": s.label, "revoked": s.revoked,
+            "created_at": s.created_at.isoformat(),
+            "expires_at": s.expires_at.isoformat() if s.expires_at else None,
+        }
+        for s in rows
+    ]
+
+
+@router.post("/{plan_id}/shares", status_code=status.HTTP_201_CREATED)
+def create_share(
+    body: dict, request: Request, plan: OwnerPlan, user: CurrentUser, db: DbDep
+) -> dict:
+    import secrets
+    from datetime import timedelta
+
+    from ..models import PublicShare, now
+
+    token = secrets.token_urlsafe(24)
+    expires = None
+    days = body.get("expires_days")
+    if isinstance(days, (int, float)) and days > 0:
+        expires = now() + timedelta(days=int(days))
+    db.add(PublicShare(token=token, plan_id=plan.id, created_by=user.id,
+                       label=str(body.get("label") or ""), expires_at=expires))
+    db.commit()
+    audit.record(db, "plan.share.create", user_id=user.id, target_type="plan", target_id=plan.id,
+                 request=request)
+    return {"token": token}
+
+
+@router.delete("/{plan_id}/shares/{token}")
+def revoke_share(token: str, request: Request, plan: OwnerPlan, user: CurrentUser, db: DbDep) -> dict:
+    from ..models import PublicShare
+
+    s = db.get(PublicShare, token)
+    if s is not None and s.plan_id == plan.id:
+        s.revoked = True
+        db.commit()
+        audit.record(db, "plan.share.revoke", user_id=user.id, target_type="plan",
+                     target_id=plan.id, request=request)
+    return {"ok": True}
+
+
 # ─── Klonen ────────────────────────────────────────────────────────────────
 
 @router.post("/{plan_id}/clone", response_model=PlanOut, status_code=status.HTTP_201_CREATED)

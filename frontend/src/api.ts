@@ -80,6 +80,13 @@ export interface AclCandidate {
   subject_id: string;
   name: string;
 }
+export interface PublicShareRow {
+  token: string;
+  label: string;
+  revoked: boolean;
+  created_at: string;
+  expires_at: string | null;
+}
 export interface AuditRow {
   ts: string;
   user: string;
@@ -181,6 +188,12 @@ export const api = {
   planAclCandidates: (planId: string) => req<AclCandidate[]>("GET", `/plans/${planId}/acl/candidates`),
   putPlanAcl: (planId: string, entries: Omit<AclEntry, "id">[]) =>
     req<AclEntry[]>("PUT", `/plans/${planId}/acl`, entries),
+  planShares: (planId: string) => req<PublicShareRow[]>("GET", `/plans/${planId}/shares`),
+  createShare: (planId: string, label: string, expiresDays?: number) =>
+    req<{ token: string }>("POST", `/plans/${planId}/shares`, { label, expires_days: expiresDays }),
+  revokeShare: (planId: string, token: string) =>
+    req<void>("DELETE", `/plans/${planId}/shares/${token}`),
+  publicSnapshot: (token: string) => req<any>("GET", `/public/plans/${token}`),
   clonePlan: (planId: string, name: string, copy_acl: boolean) =>
     req<PlanItem>("POST", `/plans/${planId}/clone`, { name, copy_acl }),
   saveVersion: (planId: string, label: string) =>

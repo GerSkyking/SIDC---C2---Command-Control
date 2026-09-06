@@ -215,6 +215,20 @@ class PlanVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class PublicShare(Base):
+    """Öffentlicher Nur-Lese-Link zu einem Plan (ohne Login)."""
+
+    __tablename__ = "public_shares"
+
+    token: Mapped[str] = mapped_column(String(48), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    label: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class Favorite(Base):
     """Persönliche Marker-Favoriten eines Users (Icon-SIDC + Beschriftung + Defaults)."""
 

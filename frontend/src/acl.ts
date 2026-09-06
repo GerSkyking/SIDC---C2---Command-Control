@@ -61,6 +61,14 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
             </select>
           </div>
           <p class="muted">Feingranulare Häkchen gelten nur für Rolle „editor". „owner" darf alles + Freigaben verwalten, „viewer" nur sehen.</p>
+          <hr style="border-color:var(--border)"/>
+          <h3 style="margin:.4rem 0">Öffentlicher Link (nur ansehen)</h3>
+          <div id="shares"></div>
+          <div class="row">
+            <input id="sh-label" placeholder="Bezeichnung (optional)" />
+            <input id="sh-days" type="number" min="0" placeholder="Tage (0 = unbegrenzt)" style="width:9rem" />
+            <button id="sh-add">Link erzeugen</button>
+          </div>
         </div>
         <div class="wiz-config" style="max-height:none">
           <span class="error" data-err></span>
@@ -99,6 +107,14 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
       });
       draw();
     });
+    backdrop.querySelector("#sh-add")?.addEventListener("click", async () => {
+      const label = (backdrop.querySelector("#sh-label") as HTMLInputElement).value.trim();
+      const days = Number((backdrop.querySelector("#sh-days") as HTMLInputElement).value) || 0;
+      await api.createShare(planId, label, days || undefined);
+      void renderShares();
+    });
+    void renderShares();
+
     backdrop.querySelector("[data-save]")!.addEventListener("click", async () => {
       try {
         await api.putPlanAcl(planId, rows);
@@ -109,5 +125,33 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
       }
     });
   };
+
+  async function renderShares(): Promise<void> {
+    const box = backdrop.querySelector<HTMLDivElement>("#shares");
+    if (!box) return;
+    const shares = (await api.planShares(planId)).filter((s) => !s.revoked);
+    box.innerHTML = shares.length
+      ? shares
+          .map((s) => {
+            const url = `${location.origin}/#/p/${s.token}`;
+            return `<div class="row" style="margin:.2rem 0">
+              <input readonly value="${url}" style="flex:1" onclick="this.select()" />
+              <button data-copy="${url}">Kopieren</button>
+              <button data-revoke="${s.token}">Widerrufen</button>
+            </div>`;
+          })
+          .join("")
+      : `<p class="muted">Kein öffentlicher Link.</p>`;
+    box.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((b) =>
+      b.addEventListener("click", () => navigator.clipboard?.writeText(b.dataset.copy!)),
+    );
+    box.querySelectorAll<HTMLButtonElement>("[data-revoke]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        await api.revokeShare(planId, b.dataset.revoke!);
+        renderShares();
+      }),
+    );
+  }
+
   draw();
 }

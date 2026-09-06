@@ -53,7 +53,8 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
       <div class="row">
         <input id="lg-action" placeholder="Aktion (z.B. login, plan, map)" />
         <input id="lg-user" placeholder="Benutzer" />
-        <button id="lg-load">Anzeigen</button>
+        <button id="lg-load">Filtern</button>
+        <button id="lg-more">30 mehr</button>
       </div>
       <div id="lg-out"><table class="acl-tbl"><tbody></tbody></table></div>
     </div>`;
@@ -107,10 +108,10 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
   });
 
   let logOffset = 0;
-  const loadLog = async (reset: boolean) => {
+  const loadLog = async (reset: boolean, count = 30) => {
     if (reset) logOffset = 0;
     const r = await api.adminAudit({
-      limit: 100,
+      limit: count,
       offset: logOffset,
       action: (app.querySelector("#lg-action") as HTMLInputElement).value.trim(),
       user: (app.querySelector("#lg-user") as HTMLInputElement).value.trim(),
@@ -136,6 +137,8 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
     logOffset += r.items.length;
   };
   app.querySelector("#lg-load")!.addEventListener("click", () => guard(() => loadLog(true)));
+  app.querySelector("#lg-more")!.addEventListener("click", () => guard(() => loadLog(false)));
+  void loadLog(true, 20); // beim Öffnen: die letzten 20 Ereignisse
 
   app.querySelector("#ng-add")!.addEventListener("click", () =>
     guard(() =>

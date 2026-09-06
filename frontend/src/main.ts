@@ -4,12 +4,16 @@ import { api, ApiError, type Me } from "./api";
 import { openPlanView } from "./plan";
 import { renderAdmin } from "./admin";
 import { openAclEditor } from "./acl";
+import { renderPublicView } from "./publicview";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
 let me: Me | null = null;
 
 async function route(): Promise<void> {
+  const pub = location.hash.match(/^#\/p\/([A-Za-z0-9_-]{10,})$/);
+  if (pub) return renderPublicView(app, pub[1]);
+
   try {
     me = await api.me();
   } catch {

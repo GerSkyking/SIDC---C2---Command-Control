@@ -103,3 +103,29 @@ def test_granular_caps_block_ops(admin):
             r = ws.receive_json()
             assert r["type"] == "reject" and "place" in r["reason"]
 
+
+
+def test_public_share(admin):
+    from app.db import SessionLocal
+    from app.models import Map, now
+
+    admin.post("/api/maps", json={"id": "ps", "name": "PS", "url": "http://x.invalid/a.zip"})
+    with SessionLocal() as db:
+        db.get(Map, "ps").status = "ready"
+        db.get(Map, "ps").imported_at = now()
+        db.commit()
+    pid = admin.post("/plans", json={"name": "Public", "map_id": "ps"}).json()["id"]
+    tok = admin.post(f"/plans/{pid}/shares", json={"label": "test"}).json()["token"]
+
+
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with TestClient(app) as anon:  # kein Login-Cookie
+        r = anon.get(f"/public/plans/{tok}")
+        assert r.status_code == 200 and r.json()["readonly"] is True
+        assert anon.get(f"/public/plans/{tok}/style.json").status_code == 200
+
+    admin.delete(f"/plans/{pid}/shares/{tok}")
+    with TestClient(app) as anon:
+        assert anon.get(f"/public/plans/{tok}").status_code == 404

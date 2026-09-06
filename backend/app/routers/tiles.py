@@ -62,10 +62,7 @@ def _tile(map_id: str, layer: str, z: int, x: int, y: int, base_maxzoom: int) ->
 
 @router.get("/tiles/{layer}/{z}/{x}/{y}.png")
 def tile(map_id: str, layer: str, z: int, x: int, y: int, user: CurrentUser) -> Response:
-    if layer not in _LAYERS:
-        raise HTTPException(404, "Unbekannte Ebene")
-    base_maxzoom = int(_meta(map_id, layer).get("maxzoom", 18))
-    data = _tile(map_id, layer, z, x, y, base_maxzoom)
+    data = read_tile(map_id, layer, z, x, y)
     if data is None:
         raise HTTPException(404)
     return Response(data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
@@ -89,11 +86,9 @@ def locations(map_id: str, user: CurrentUser) -> Response:
                     headers={"Cache-Control": "public, max-age=86400"})
 
 
-@router.get("/style.json")
-def style_json(map_id: str, user: CurrentUser, db: DbDep) -> JSONResponse:
-    if db.get(Map, map_id) is None:
-        raise HTTPException(404, "Karte nicht gefunden")
-
+def build_style(map_id: str, tile_base: str) -> dict:
+    """MapLibre-style.json für eine Karte. `tile_base` = URL-Präfix der Tile-Routen
+    (authentifiziert: /api/maps/<id>/tiles, öffentlich: /public/plans/<token>/tiles)."""
     sat = _meta(map_id, "sat")
     terr = _meta(map_id, "terrain")
     grid = _meta(map_id, "grid")
@@ -103,7 +98,7 @@ def style_json(map_id: str, user: CurrentUser, db: DbDep) -> JSONResponse:
     cx, cy = (bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2
     min_z = int(sat.get("minzoom", 8))
     max_z = effective_maxzoom(map_id, "sat", int(sat.get("maxzoom", 18)))
-    base = f"/api/maps/{map_id}/tiles"
+    base = tile_base
 
     doc: dict = {
         "version": 8,
@@ -136,5 +131,20 @@ def style_json(map_id: str, user: CurrentUser, db: DbDep) -> JSONResponse:
             "tileSize": 256, "encoding": "terrarium",
             "minzoom": int(terr.get("minzoom", min_z)), "maxzoom": int(terr.get("maxzoom", max_z)),
         }
+    return doc
 
-    return JSONResponse(doc, headers={"Cache-Control": "no-cache"})
+
+def read_tile(map_id: str, layer: str, z: int, x: int, y: int) -> bytes | None:
+    if layer not in _LAYERS:
+        return None
+    base_maxzoom = int(_meta(map_id, layer).get("maxzoom", 18))
+    return _tile(map_id, layer, z, x, y, base_maxzoom)
+
+
+@router.get("/style.json")
+def style_json(map_id: str, user: CurrentUser, db: DbDep) -> JSONResponse:
+    if db.get(Map, map_id) is None:
+        raise HTTPException(404, "Karte nicht gefunden")
+    return JSONResponse(
+        build_style(map_id, f"/api/maps/{map_id}/tiles"), headers={"Cache-Control": "no-cache"}
+    )
