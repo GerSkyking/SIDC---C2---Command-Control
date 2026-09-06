@@ -81,15 +81,30 @@ export const api = {
   restartBackend: () => req<{ message: string }>("POST", "/api/admin/restart"),
 
   catalogStatus: () => req<Record<string, boolean>>("GET", "/api/catalog"),
-  uploadCatalog: (name: string, file: File) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    return fetch(`/api/admin/catalog/${name}`, { method: "POST", credentials: "include", body: fd }).then(
-      async (r) => {
-        if (!r.ok) throw new ApiError(r.status, (await r.json().catch(() => ({}))).detail ?? r.statusText);
-        return r.json();
-      },
-    );
+  uploadCatalog: async (name: string, file: File) => {
+    const text = await file.text();
+    const r = await fetch(`/api/admin/catalog/${name}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: text,
+    });
+    if (!r.ok) {
+      const body = await r.text().catch(() => "");
+      let detail = body;
+      try {
+        detail = JSON.parse(body).detail ?? body;
+      } catch {
+        /* nicht-JSON (z.B. nginx-Fehlerseite) */
+      }
+      if (r.status === 413 || /request entity too large/i.test(body)) {
+        detail =
+          "Datei zu groß für den Reverse Proxy. Im Nginx Proxy Manager beim Proxy Host " +
+          "unter 'Advanced' eintragen: client_max_body_size 25m;";
+      }
+      throw new ApiError(r.status, detail || `HTTP ${r.status}`);
+    }
+    return r.json();
   },
   deleteCatalog: (name: string) => req<void>("DELETE", `/api/admin/catalog/${name}`),
 

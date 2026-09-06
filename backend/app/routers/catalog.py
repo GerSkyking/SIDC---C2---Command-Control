@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from ..config import get_settings
@@ -47,10 +47,11 @@ def get_catalog(name: str, user: CurrentUser) -> JSONResponse:
 
 
 @router.post("/admin/catalog/{name}")
-async def upload_catalog(name: str, file: UploadFile, admin: AdminUser) -> dict:
+async def upload_catalog(name: str, request: Request, admin: AdminUser) -> dict:
+    """Roher JSON-Body (kein Multipart) — schlanker durch den Reverse Proxy."""
     if name not in CATALOGS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unbekannter Katalog")
-    raw = await file.read()
+    raw = await request.body()
     if len(raw) > _MAX_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Datei zu groß")
     try:

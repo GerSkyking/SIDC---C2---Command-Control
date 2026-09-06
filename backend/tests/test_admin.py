@@ -1,5 +1,5 @@
 """Admin: lokale User + Gruppen, Katalog-Upload, Favoriten."""
-import io
+
 import json
 
 
@@ -34,7 +34,8 @@ def test_catalog_upload_and_fetch(admin):
     doc = {"markers": [{"name": "Rifle", "sidc": "100140000011010100000000000000"}]}
     r = admin.post(
         "/api/admin/catalog/all-markers",
-        files={"file": ("SIDC_AllMarkersCatalog.json", io.BytesIO(json.dumps(doc).encode()), "application/json")},
+        content=json.dumps(doc),
+        headers={"content-type": "application/json"},
     )
     assert r.status_code == 200
     assert admin.get("/api/catalog").json()["all-markers"] is True
