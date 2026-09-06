@@ -5,6 +5,7 @@ import { openPlanView } from "./plan";
 import { renderAdmin } from "./admin";
 import { openAclEditor } from "./acl";
 import { renderPublicView } from "./publicview";
+import { langSelect, t, wireLangSelect } from "./i18n";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -28,9 +29,9 @@ async function route(): Promise<void> {
       return await openPlanView(app, planMatch[1], me);
     } catch (e) {
       app.innerHTML = `<div class="center"><div class="card stack">
-        <h1>Plan konnte nicht geladen werden</h1>
+        <h1>${t("plan.loadFailed")}</h1>
         <p class="error">${e instanceof Error ? e.message : String(e)}</p>
-        <a href="#/">← zurück</a></div></div>`;
+        <a href="#/">← ${t("nav.back")}</a></div></div>`;
       console.error(e);
       return;
     }
@@ -45,13 +46,14 @@ async function renderLogin(): Promise<void> {
   const { enabled: oidc } = await api.oidcEnabled().catch(() => ({ enabled: false }));
   app.innerHTML = `
     <div class="center"><div class="card stack">
-      <h1>SIDC – C2 – Command &amp; Control</h1>
-      <input id="u" placeholder="Benutzername" autocomplete="username" />
-      <input id="p" type="password" placeholder="Passwort" autocomplete="current-password" />
-      <button class="primary" id="go">Anmelden</button>
-      ${oidc ? `<a href="/auth/oidc/login">Mit OIDC anmelden</a>` : ""}
+      <div class="row"><h1 style="flex:1">${t("app.title")}</h1>${langSelect()}</div>
+      <input id="u" placeholder="${t("auth.username")}" autocomplete="username" />
+      <input id="p" type="password" placeholder="${t("auth.password")}" autocomplete="current-password" />
+      <button class="primary" id="go">${t("auth.login")}</button>
+      ${oidc ? `<a href="/auth/oidc/login">${t("auth.oidc")}</a>` : ""}
       <div class="error" id="err"></div>
     </div></div>`;
+  wireLangSelect(app);
 
   const err = app.querySelector<HTMLDivElement>("#err")!;
   const submit = async () => {
@@ -64,7 +66,7 @@ async function renderLogin(): Promise<void> {
       location.hash = "#/";
       route();
     } catch (e) {
-      err.textContent = e instanceof ApiError ? e.message : "Fehler";
+      err.textContent = e instanceof ApiError ? e.message : t("auth.error");
     }
   };
   app.querySelector("#go")!.addEventListener("click", submit);
@@ -83,27 +85,26 @@ async function renderPlanList(): Promise<void> {
     <div class="topbar">
       <strong>SIDC – C2</strong>
       <span class="grow"></span>
-      ${me!.role === "admin" ? `<a href="#/admin">Administration</a>` : ""}
+      ${langSelect()}
+      ${me!.role === "admin" ? `<a href="#/admin">${t("nav.admin")}</a>` : ""}
       <span class="muted">${me!.username} (${me!.role})</span>
-      <button id="logout">Abmelden</button>
+      <button id="logout">${t("auth.logout")}</button>
     </div>
     <div class="list stack">
       ${me!.role === "admin" ? adminMapsBlock(maps) : ""}
-      <h2>Pläne</h2>
+      <h2>${t("plans.heading")}</h2>
       ${
         canCreate
           ? `<div class="row">
-               <input id="pn" placeholder="Planname" />
+               <input id="pn" placeholder="${t("plans.planName")}" />
                <select id="pm">${maps
                  .filter((m) => m.status === "ready")
                  .map((m) => `<option value="${m.id}">${m.name}</option>`)
                  .join("")}</select>
-               <button class="primary" id="pc">Neuer Plan</button>
+               <button class="primary" id="pc">${t("plans.new")}</button>
              </div>`
           : `<div class="muted">${
-              me!.can_create_plans_effective
-                ? "Keine importierte Karte vorhanden."
-                : "Keine Berechtigung, Pläne zu erstellen."
+              me!.can_create_plans_effective ? t("plans.noMap") : t("plans.noPerm")
             }</div>`
       }
       <table><tbody>
@@ -114,8 +115,8 @@ async function renderPlanList(): Promise<void> {
               <td><span class="badge">${p.level}</span></td>
               <td>${
                 p.level === "owner"
-                  ? `<button data-acl="${p.id}" data-name="${p.name}">Freigaben</button>
-                     <button data-del="${p.id}">Löschen</button>`
+                  ? `<button data-acl="${p.id}" data-name="${p.name}">${t("plans.shares")}</button>
+                     <button data-del="${p.id}">${t("common.delete")}</button>`
                   : ""
               }</td>
             </tr>`,
@@ -123,6 +124,7 @@ async function renderPlanList(): Promise<void> {
           .join("")}
       </tbody></table>
     </div>`;
+  wireLangSelect(app);
 
   app.querySelector("#logout")!.addEventListener("click", async () => {
     await api.logout();
@@ -139,7 +141,7 @@ async function renderPlanList(): Promise<void> {
   });
   app.querySelectorAll<HTMLButtonElement>("[data-del]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (confirm("Plan wirklich löschen?")) {
+      if (confirm(t("plans.confirmDelete"))) {
         await api.deletePlan(b.dataset.del!);
         route();
       }
@@ -175,23 +177,47 @@ async function renderPlanList(): Promise<void> {
   });
   app.querySelectorAll<HTMLButtonElement>("[data-reimport]").forEach((b) =>
     b.addEventListener("click", async () => {
-      await api.reimportMap(b.dataset.reimport!);
-      setTimeout(route, 800);
-    }),
-  );
-  app.querySelectorAll<HTMLButtonElement>("[data-delmap]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (!confirm(`Karte "${b.dataset.delmap}" löschen?`)) return;
       try {
-        await api.deleteMap(b.dataset.delmap!);
-        route();
+        await api.reimportMap(b.dataset.reimport!);
+        setTimeout(route, 800);
       } catch (e) {
         alert(e instanceof ApiError ? e.message : "Fehler");
       }
     }),
   );
+  app.querySelectorAll<HTMLButtonElement>("[data-updbtn]").forEach((b) =>
+    b.addEventListener("click", () =>
+      app.querySelector<HTMLInputElement>(`[data-upd="${b.dataset.updbtn}"]`)!.click(),
+    ),
+  );
+  app.querySelectorAll<HTMLInputElement>("[data-upd]").forEach((inp) =>
+    inp.addEventListener("change", async () => {
+      const f = inp.files?.[0];
+      if (!f) return;
+      const prog = app.querySelector<HTMLDivElement>("#mprogress")!;
+      try {
+        await api.uploadMapFile(inp.dataset.upd!, "", f, (p) => (prog.textContent = `Update ${p.toFixed(0)} %`));
+        prog.textContent = "Upload fertig – Verarbeitung läuft…";
+        setTimeout(route, 1500);
+      } catch (e) {
+        prog.textContent = "";
+        alert(e instanceof ApiError ? e.message : "Fehler");
+      }
+    }),
+  );
+  app.querySelectorAll<HTMLButtonElement>("[data-delmap]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm(`${t("common.delete")}: ${b.dataset.delmap}?`)) return;
+      try {
+        await api.deleteMap(b.dataset.delmap!);
+        route();
+      } catch (e) {
+        alert(e instanceof ApiError ? e.message : t("common.error"));
+      }
+    }),
+  );
   app.querySelector("#restart")?.addEventListener("click", async () => {
-    if (!confirm("Backend neu starten? Kurzer Ausfall (~5 s).")) return;
+    if (!confirm(t("admin.restartConfirm"))) return;
     try {
       await api.restartBackend();
     } catch {
@@ -204,9 +230,9 @@ async function renderPlanList(): Promise<void> {
 function adminMapsBlock(maps: { id: string; name: string; status: string; error: string | null }[]): string {
   return `
     <div class="row">
-      <h2 style="margin:0">Karten (Admin)</h2>
+      <h2 style="margin:0">${t("admin.maps")}</h2>
       <span class="grow"></span>
-      <button id="restart">Backend neu starten</button>
+      <button id="restart">${t("admin.restart")}</button>
     </div>
     <table><tbody>
       ${maps
@@ -217,24 +243,26 @@ function adminMapsBlock(maps: { id: string; name: string; status: string; error:
                <td><span class="badge">${m.status}</span></td>
                <td class="muted">${m.error ?? ""}</td>
                <td>
-                 <button data-reimport="${m.id}">Neu laden</button>
-                 <button data-delmap="${m.id}">Löschen</button>
+                 <input type="file" accept=".zip" data-upd="${m.id}" style="display:none" />
+                 <button data-updbtn="${m.id}">${t("admin.update")}</button>
+                 <button data-reimport="${m.id}">${t("admin.fromLink")}</button>
+                 <button data-delmap="${m.id}">${t("common.delete")}</button>
                </td>
              </tr>`,
         )
         .join("")}
     </tbody></table>
     <div class="row">
-      <input id="mid" placeholder="karten-id" />
-      <input id="mname" placeholder="Anzeigename" />
+      <input id="mid" placeholder="${t("admin.mapId")}" />
+      <input id="mname" placeholder="${t("admin.displayName")}" />
     </div>
     <div class="row">
-      <input id="murl" placeholder="Download-URL (.zip)" style="flex:1" />
-      <button id="mi">Per Link</button>
+      <input id="murl" placeholder="${t("admin.downloadUrl")}" style="flex:1" />
+      <button id="mi">${t("admin.viaLink")}</button>
     </div>
     <div class="row">
       <input type="file" id="mfile" accept=".zip,application/zip" style="flex:1" />
-      <button id="mu">Hochladen</button>
+      <button id="mu">${t("admin.upload")}</button>
     </div>
     <div id="mprogress" class="muted"></div>`;
 }

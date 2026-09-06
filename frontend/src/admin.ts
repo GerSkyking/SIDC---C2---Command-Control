@@ -1,5 +1,6 @@
 // Admin-Bereich: SIDC-Katalog-Upload, lokale User, Gruppen.
 import { api, ApiError, type AdminGroup, type AdminUser } from "./api";
+import { langSelect, t, wireLangSelect } from "./i18n";
 
 const CATALOGS: { key: string; label: string; file: string }[] = [
   { key: "all-markers", label: "Alle Marker", file: "SIDC_AllMarkersCatalog.json" },
@@ -16,56 +17,57 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
   ]);
 
   app.innerHTML = `
-    <div class="topbar"><a href="#/">← Pläne</a><strong>Administration</strong></div>
+    <div class="topbar"><a href="#/">← ${t("nav.plans")}</a><strong>${t("admin.heading")}</strong><span class="grow"></span>${langSelect()}</div>
     <div class="list stack">
-      <h2>SIDC-Katalog</h2>
-      <p class="muted">Die JSON-Dateien aus dem ingame-Ordner <code>LocalMapData</code> hochladen — Format bleibt unverändert.</p>
+      <h2>${t("admin.catalog")}</h2>
+      <p class="muted">${t("admin.catalogHint")}</p>
       <table><tbody>${CATALOGS.map(
         (c) => `<tr>
           <td>${c.label} <span class="muted">${c.file}</span></td>
-          <td><span class="badge">${status[c.key] ? "geladen" : "fehlt"}</span></td>
+          <td><span class="badge">${status[c.key] ? t("admin.loaded") : t("admin.missing")}</span></td>
           <td>
             <input type="file" accept="application/json,.json" data-cat="${c.key}" />
-            ${status[c.key] ? `<button data-delcat="${c.key}">Löschen</button>` : ""}
+            ${status[c.key] ? `<button data-delcat="${c.key}">${t("common.delete")}</button>` : ""}
           </td>
         </tr>`,
       ).join("")}</tbody></table>
 
-      <h2>Lokale Benutzer</h2>
+      <h2>${t("admin.users")}</h2>
       <table><tbody>${users.map(userRow).join("")}</tbody></table>
       <div class="row">
-        <input id="nu-name" placeholder="Benutzername" />
-        <input id="nu-pw" type="password" placeholder="Passwort (min. 12)" />
+        <input id="nu-name" placeholder="${t('auth.username')}" />
+        <input id="nu-pw" type="password" placeholder="${t('auth.password')} (min. 12)" />
         <select id="nu-role"><option value="user">user</option><option value="admin">admin</option></select>
-        <label><input type="checkbox" id="nu-ccp" /> darf Pläne erstellen</label>
-        <button class="primary" id="nu-add">Anlegen</button>
+        <label><input type="checkbox" id="nu-ccp" /> ${t("admin.canCreatePlans")}</label>
+        <button class="primary" id="nu-add">${t("common.create")}</button>
       </div>
 
-      <h2>Gruppen</h2>
+      <h2>${t("admin.groups")}</h2>
       <table><tbody>${groups.map((g) => groupRow(g, users)).join("")}</tbody></table>
       <div class="row">
-        <input id="ng-name" placeholder="Gruppenname" />
-        <label><input type="checkbox" id="ng-ccp" /> darf Pläne erstellen</label>
-        <button class="primary" id="ng-add">Gruppe anlegen</button>
+        <input id="ng-name" placeholder="${t('admin.groupName')}" />
+        <label><input type="checkbox" id="ng-ccp" /> ${t("admin.canCreatePlans")}</label>
+        <button class="primary" id="ng-add">${t("common.create")}</button>
       </div>
 
-      <h2>Log</h2>
+      <h2>${t("admin.log")}</h2>
       <div class="row">
-        <input id="lg-action" placeholder="Aktion (z.B. login, plan, map)" />
-        <input id="lg-user" placeholder="Benutzer" />
-        <button id="lg-load">Filtern</button>
-        <button id="lg-more">30 mehr</button>
+        <input id="lg-action" placeholder="action (login, plan, map, …)" />
+        <input id="lg-user" placeholder="${t('auth.username')}" />
+        <button id="lg-load">${t("admin.logFilter")}</button>
+        <button id="lg-more">${t("admin.logMore")}</button>
       </div>
       <div id="lg-out"><table class="acl-tbl"><tbody></tbody></table></div>
     </div>`;
 
+  wireLangSelect(app);
   const reload = () => renderAdmin(app);
   const guard = async (fn: () => Promise<unknown>) => {
     try {
       await fn();
       reload();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : "Fehler");
+      alert(e instanceof ApiError ? e.message : t("common.error"));
     }
   };
 
@@ -99,11 +101,11 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
       guard(() => api.patchUser(id, { can_create_plans: el.dataset.ccp !== "true" })),
     );
     el.querySelector("[data-reset]")?.addEventListener("click", () => {
-      const pw = prompt("Neues Passwort (min. 12 Zeichen):");
+      const pw = prompt(t("admin.newPassword"));
       if (pw) guard(() => api.patchUser(id, { password: pw }));
     });
     el.querySelector("[data-del]")?.addEventListener("click", () => {
-      if (confirm("Benutzer löschen?")) guard(() => api.deleteUser(id));
+      if (confirm(t("admin.confirmDeleteUser"))) guard(() => api.deleteUser(id));
     });
   });
 
@@ -151,7 +153,7 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
   app.querySelectorAll<HTMLElement>("[data-g]").forEach((el) => {
     const id = el.dataset.g!;
     el.querySelector("[data-delg]")?.addEventListener("click", () => {
-      if (confirm("Gruppe löschen?")) guard(() => api.deleteGroup(id));
+      if (confirm(t("admin.confirmDeleteGroup"))) guard(() => api.deleteGroup(id));
     });
     el.querySelectorAll<HTMLInputElement>("[data-member]").forEach((cb) =>
       cb.addEventListener("change", () => {

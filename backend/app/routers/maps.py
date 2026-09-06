@@ -43,15 +43,15 @@ def import_map(
 
 @router.post("/{map_id}/upload", response_model=MapOut, status_code=status.HTTP_202_ACCEPTED)
 async def upload_map(
-    map_id: str, name: str, request: Request, bg: BackgroundTasks, admin: AdminUser, db: DbDep
+    map_id: str, request: Request, bg: BackgroundTasks, admin: AdminUser, db: DbDep, name: str = ""
 ) -> Map:
-    """Rohen ZIP-Body streamen (Direkt-Upload). `name` als Query-Parameter."""
+    """Rohen ZIP-Body streamen (Direkt-Upload/-Update). `name` als Query-Parameter,
+    bei vorhandener Karte optional."""
     import re
 
     if not re.match(_ID_RE, map_id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ungültige Karten-ID")
-    if db.get(Map, map_id) is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Karten-ID existiert bereits")
+    existing = db.get(Map, map_id)
 
     dest = _settings.maps_dir / f".import_{map_id}.zip"
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -71,11 +71,18 @@ async def upload_map(
         dest.unlink(missing_ok=True)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Leerer Upload")
 
-    m = Map(id=map_id, name=name, status="importing", source_url=None, created_at=now())
-    db.add(m)
+    if existing is not None:
+        existing.status = "importing"
+        existing.error = None
+        if name:
+            existing.name = name
+        m = existing
+    else:
+        m = Map(id=map_id, name=name or map_id, status="importing", source_url=None, created_at=now())
+        db.add(m)
     db.commit()
-    audit.record(db, "map.import", user_id=admin.id, target_type="map", target_id=map_id,
-                 request=request, name=name, via="upload", bytes=written)
+    audit.record(db, "map.import" if existing is None else "map.update", user_id=admin.id,
+                 target_type="map", target_id=map_id, request=request, via="upload", bytes=written)
     bg.add_task(run_import, map_id, zip_path=str(dest))
     return m
 

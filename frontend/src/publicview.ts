@@ -3,6 +3,7 @@
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import { api } from "./api";
 import { iconUrl } from "./sidc/sidc";
+import { t } from "./i18n";
 
 interface M {
   id: string;
@@ -30,7 +31,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   try {
     snap = await api.publicSnapshot(token);
   } catch {
-    root.innerHTML = `<div class="center"><div class="card"><h1>Link ungültig oder abgelaufen</h1></div></div>`;
+    root.innerHTML = `<div class="center"><div class="card"><h1>${t("plan.linkInvalid")}</h1></div></div>`;
     return;
   }
 
@@ -38,7 +39,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   const strokes = new Map<string, S>(snap.strokes.map((s: S) => [s.id, s]));
 
   root.innerHTML = `
-    <div class="topbar"><strong>${snap.plan.name}</strong><span class="badge">öffentlich · nur ansehen</span></div>
+    <div class="topbar"><strong>${snap.plan.name}</strong><span class="badge">${t("plan.public")}</span></div>
     <div id="map"></div>`;
 
   const map = new maplibregl.Map({

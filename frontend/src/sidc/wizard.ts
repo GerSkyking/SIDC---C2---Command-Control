@@ -2,6 +2,7 @@
 // Echelon, Richtung, Texte, Channel, Lock/Timestamp). Ergebnis = MarkerTemplate,
 // das die Plan-Ansicht per Linksklick platziert (wie ATAKmaps placeOnClick).
 
+import { t } from "../i18n";
 import {
   channelLabel,
   findEntry,
@@ -43,7 +44,7 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
     loadChannels(),
   ]);
   if (!cats) {
-    alert("Kein Marker-Katalog hochgeladen (Admin-Bereich → Katalog).");
+    alert(t("wiz.noCatalog"));
     return;
   }
 
@@ -52,9 +53,9 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
   wrap.innerHTML = `
     <div class="wiz">
       <div class="wiz-head">
-        <button data-tab="quick" class="active">QuickMenü</button>
-        <button data-tab="cat">Katalog</button>
-        <input class="wiz-search" placeholder="Suche…" />
+        <button data-tab="quick" class="active">${t("wiz.quickMenu")}</button>
+        <button data-tab="cat">${t("wiz.catalog")}</button>
+        <input class="wiz-search" placeholder="${t('wiz.search')}" />
         <span class="grow"></span>
         <button data-close>✕</button>
       </div>
@@ -96,34 +97,34 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
           )}" width="34" height="34" onerror="this.style.visibility='hidden'"/>
           <strong>${entry.name}</strong>
         </div>
-        <label>Zugehörigkeit</label>
+        <label>${t("wiz.affiliation")}</label>
         <div class="wiz-aff">${AFFILIATIONS.map(
           (a) => `<button data-aff="${a.digit}" class="${a.digit === aff ? "active" : ""}">${a.label}</button>`,
         ).join("")}</div>
         ${
           isLandUnit
-            ? `<label>Echelon</label><select data-echelon>${AMPLIFIERS.map(
+            ? `<label>${t("wiz.echelon")}</label><select data-echelon>${AMPLIFIERS.map(
                 (m) => `<option value="${m.digits}" ${m.digits === echelon ? "selected" : ""}>${m.label}</option>`,
               ).join("")}</select>`
             : ""
         }
         ${
           btn?.needsDirection !== false
-            ? `<label>Richtung</label><div class="wiz-dir">${DIRECTIONS.map(
+            ? `<label>${t("wiz.direction")}</label><div class="wiz-dir">${DIRECTIONS.map(
                 (d) => `<button data-dir="${d.degrees}" class="${d.degrees === dir ? "active" : ""}">${d.label}</button>`,
               ).join("")}</div>`
             : ""
         }
-        <label>Einheitstext (Amplifier)</label><input data-unit maxlength="60" />
-        <label>KI-/Zusatztext</label><input data-ai maxlength="120" />
-        <label>Channel</label><select data-channel>${(channels?.channels ?? [])
+        <label>${t("wiz.unitText")}</label><input data-unit maxlength="60" />
+        <label>${t("wiz.aiText")}</label><input data-ai maxlength="120" />
+        <label>${t("wiz.channel")}</label><select data-channel>${(channels?.channels ?? [])
           .map((c) => `<option value="${c.name}" ${c.name === entry.name ? "" : ""}>${channelLabel(c)}</option>`)
           .join("")}</select>
         <div class="wiz-flags">
-          <label><input type="checkbox" data-lock ${entry.defaultLocked ? "checked" : ""}/> Gesperrt</label>
-          <label><input type="checkbox" data-ts ${entry.defaultTimestampVisible !== false ? "checked" : ""}/> Zeitstempel</label>
+          <label><input type="checkbox" data-lock ${entry.defaultLocked ? "checked" : ""}/> ${t("wiz.locked")}</label>
+          <label><input type="checkbox" data-ts ${entry.defaultTimestampVisible !== false ? "checked" : ""}/> ${t("wiz.timestamp")}</label>
         </div>
-        <button class="primary wiz-place">Platzieren (Linksklick auf Karte)</button>`;
+        <button class="primary wiz-place">${t("wiz.place")}</button>`;
 
       config.querySelectorAll<HTMLButtonElement>("[data-aff]").forEach((b) =>
         b.addEventListener("click", () => {
@@ -215,7 +216,7 @@ function renderQuick(
     identity: string | null,
     back: () => void,
   ) => {
-    nav.innerHTML = `<button class="wiz-back">← zurück</button>`;
+    nav.innerHTML = `<button class="wiz-back">${t("wiz.back")}</button>`;
     nav.querySelector(".wiz-back")!.addEventListener("click", back);
     for (const row of rows) {
       const rEl = document.createElement("div");
@@ -247,7 +248,7 @@ function renderQuick(
       b.textContent = cat.buttonLanguageKey || cat.categoryName;
       b.addEventListener("click", () => {
         const subNav = () => {
-          nav.innerHTML = `<button class="wiz-back">← zurück</button>`;
+          nav.innerHTML = `<button class="wiz-back">${t("wiz.back")}</button>`;
           nav.querySelector(".wiz-back")!.addEventListener("click", top);
           for (const sub of cat.subCategories) {
             const sb = document.createElement("button");

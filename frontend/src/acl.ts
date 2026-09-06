@@ -1,6 +1,7 @@
 // Freigabe-Editor für einen Plan (nur Owner): Subjekte (User/Gruppe) → Rolle +
 // feingranulare Rechte (setzen / bewegen / löschen / malen).
 import { api, ApiError, type AclEntry } from "./api";
+import { t } from "./i18n";
 
 type Row = Omit<AclEntry, "id">;
 
@@ -26,10 +27,10 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
   const draw = () => {
     backdrop.innerHTML = `
       <div class="wiz" style="width:min(44rem,95vw)">
-        <div class="wiz-head"><strong>Freigaben — ${planName}</strong><span class="grow"></span><button data-x>✕</button></div>
+        <div class="wiz-head"><strong>${t("acl.heading")} — ${planName}</strong><span class="grow"></span><button data-x>✕</button></div>
         <div class="wiz-body">
           <table class="acl-tbl"><thead><tr>
-            <th>Wer</th><th>Rolle</th><th>setzen</th><th>bewegen</th><th>löschen</th><th>malen</th><th></th>
+            <th>${t("acl.who")}</th><th>${t("acl.role")}</th><th>${t("acl.place")}</th><th>${t("acl.move")}</th><th>${t("acl.deletePerm")}</th><th>${t("acl.draw")}</th><th></th>
           </tr></thead><tbody>
           ${rows
             .map(
@@ -53,7 +54,7 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
           </tbody></table>
           <div class="row" style="margin-top:.6rem">
             <select data-add>
-              <option value="">+ Subjekt hinzufügen…</option>
+              <option value="">${t("acl.addSubject")}</option>
               ${candidates
                 .filter((c) => !rows.some((r) => r.subject_type === c.subject_type && r.subject_id === c.subject_id))
                 .map((c) => `<option value="${c.subject_type}:${c.subject_id}">${c.name}</option>`)
@@ -62,17 +63,17 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
           </div>
           <p class="muted">Feingranulare Häkchen gelten nur für Rolle „editor". „owner" darf alles + Freigaben verwalten, „viewer" nur sehen.</p>
           <hr style="border-color:var(--border)"/>
-          <h3 style="margin:.4rem 0">Öffentlicher Link (nur ansehen)</h3>
+          <h3 style="margin:.4rem 0">${t("acl.publicLink")}</h3>
           <div id="shares"></div>
           <div class="row">
-            <input id="sh-label" placeholder="Bezeichnung (optional)" />
-            <input id="sh-days" type="number" min="0" placeholder="Tage (0 = unbegrenzt)" style="width:9rem" />
-            <button id="sh-add">Link erzeugen</button>
+            <input id="sh-label" placeholder="${t('acl.linkLabel')}" />
+            <input id="sh-days" type="number" min="0" placeholder="${t('acl.linkDays')}" style="width:9rem" />
+            <button id="sh-add">${t("acl.createLink")}</button>
           </div>
         </div>
         <div class="wiz-config" style="max-height:none">
           <span class="error" data-err></span>
-          <button class="primary" data-save>Speichern</button>
+          <button class="primary" data-save>${t("common.save")}</button>
         </div>
       </div>`;
 
@@ -121,7 +122,7 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
         close();
       } catch (err) {
         backdrop.querySelector<HTMLElement>("[data-err]")!.textContent =
-          err instanceof ApiError ? err.message : "Fehler";
+          err instanceof ApiError ? err.message : t("common.error");
       }
     });
   };
@@ -136,12 +137,12 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
             const url = `${location.origin}/#/p/${s.token}`;
             return `<div class="row" style="margin:.2rem 0">
               <input readonly value="${url}" style="flex:1" onclick="this.select()" />
-              <button data-copy="${url}">Kopieren</button>
-              <button data-revoke="${s.token}">Widerrufen</button>
+              <button data-copy="${url}">${t("acl.copy")}</button>
+              <button data-revoke="${s.token}">${t("acl.revoke")}</button>
             </div>`;
           })
           .join("")
-      : `<p class="muted">Kein öffentlicher Link.</p>`;
+      : `<p class="muted">${t("acl.noLink")}</p>`;
     box.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((b) =>
       b.addEventListener("click", () => navigator.clipboard?.writeText(b.dataset.copy!)),
     );

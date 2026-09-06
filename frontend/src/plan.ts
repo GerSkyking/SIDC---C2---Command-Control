@@ -6,6 +6,7 @@ import { channelLabel, loadChannels, loadPhaseLineStyle } from "./sidc/catalog";
 import { iconUrl, lngLatToWorld, niceStep, worldToLngLat, type Calibration } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { openAclEditor } from "./acl";
+import { t } from "./i18n";
 import { cid, PlanSocket, type WsMessage } from "./ws";
 
 interface Marker {
@@ -65,43 +66,43 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <strong>${snap.plan.name}</strong>
       <span class="badge">${myPlan?.level ?? "?"}</span>
       <button id="t3d">3D</button>
-      <select id="chan" title="Mein Channel">${(channels?.channels ?? [])
+      <select id="chan" title="${t('map.channel')}">${(channels?.channels ?? [])
         .map((c) => `<option value="${c.name}" ${c.name === myChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
         .join("")}</select>
       <div id="timeline" class="timeline"></div>
-      <select id="maplang" title="Sprache der Kartenbeschriftung"></select>
-      <button id="layersBtn" title="Ebenen">☰</button>
+      <select id="maplang" title="${t("map.lang")}"></select>
+      <button id="layersBtn" title="${t("tool.layers")}">☰</button>
       <span class="grow"></span>
       <span class="presence" id="presence"></span>
-      ${myPlan?.level === "owner" ? `<button id="acl">Freigaben</button>` : ""}
-      ${canEdit ? `<button id="save">Version</button>` : ""}
+      ${myPlan?.level === "owner" ? `<button id="acl">${t("plans.shares")}</button>` : ""}
+      ${canEdit ? `<button id="save">${t("plan.version")}</button>` : ""}
     </div>
     <div id="map"></div>
     ${
       canEdit
         ? `<div class="toolbar" id="toolbar">
-             <button data-mode="move" class="active" title="Karte bewegen">✋</button>
-             <button data-mode="point" title="Zeigen – Cursor für andere, Karte fixiert">👉</button>
-             <button data-mode="line" title="Linie zeichnen (gerade Segmente)">📏</button>
-             <button data-mode="erase" title="Radierer – Marker schnell löschen">🧽</button>
-             <button id="tool-marker" title="Marker setzen">📍</button>
-             <button id="tool-fav" title="Favoriten">★</button>
+             <button data-mode="move" class="active" title="${t("tool.move")}">✋</button>
+             <button data-mode="point" title="${t("tool.point")}">👉</button>
+             <button data-mode="line" title="${t("tool.line")}">📏</button>
+             <button data-mode="erase" title="${t("tool.erase")}">🧽</button>
+             <button id="tool-marker" title="${t("tool.marker")}">📍</button>
+             <button id="tool-fav" title="${t("tool.fav")}">★</button>
            </div>
            <div class="fav-panel" id="favPanel" hidden></div>
            <div class="line-style" id="lineStyle" hidden>
-             <div class="fav-head">Linie</div>
-             <label>Farbe</label>
+             <div class="fav-head">${t("line.heading")}</div>
+             <label>${t("line.color")}</label>
              <div id="lc" class="line-colors"></div>
-             <label>Stärke</label>
+             <label>${t("line.width")}</label>
              <select id="lw">${lineWidths
                .map((w) => `<option value="${w.width}" ${w.width === lineWidth ? "selected" : ""}>${w.width}</option>`)
                .join("")}</select>
-             <button class="primary" id="lineFinish">Linie fertig</button>
-             <button id="lineCancel">Abbrechen</button>
+             <button class="primary" id="lineFinish">${t("line.finish")}</button>
+             <button id="lineCancel">${t("common.cancel")}</button>
            </div>`
         : ""
     }
-    <div class="hud" id="hud">X: – &nbsp; Y: – &nbsp; H: –</div>
+    <div class="hud" id="hud">X: –  Y: –  H: –</div>
     <div class="layers-panel" id="layersPanel" hidden></div>
     <canvas class="grid-canvas" id="gridCanvas"></canvas>`;
 
@@ -443,16 +444,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   root.querySelector("#layersBtn")!.addEventListener("click", () => (layersPanel.hidden = !layersPanel.hidden));
 
   function buildLayersPanel(): void {
-    const rows: string[] = ['<div class="fav-head">Ebenen</div>'];
+    const rows: string[] = [`<div class="fav-head">${t('layers.heading')}</div>`];
     for (const ly of ["sat", "grid", "terrain"]) {
       if (!map.getLayer(ly)) continue;
       rows.push(
         `<label><input type="checkbox" data-base="${ly}" ${baseLayerVisible[ly] !== false ? "checked" : ""}/> ${ly}</label>`,
       );
     }
-    if (map.getLayer("topo")) rows.push(`<label><input type="checkbox" data-topo /> Topo (Straßen)</label>`);
+    if (map.getLayer("topo")) rows.push(`<label><input type="checkbox" data-topo /> ${t('layers.topo')}</label>`);
     if (locData) {
-      rows.push('<div class="fav-head">Orte</div>');
+      rows.push(`<div class="fav-head">${t('layers.places')}</div>`);
       for (const g of locData.groups) {
         rows.push(
           `<label><input type="checkbox" data-group="${g.key}" checked/> ${g.label} <span class="muted">${g.items.length}</span></label>`,
@@ -635,7 +636,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let favs = await api.favorites();
   const renderFavs = () => {
     favPanel.innerHTML =
-      `<div class="fav-head">Favoriten</div>` +
+      `<div class="fav-head">${t("fav.heading")}</div>` +
       (favs.length
         ? favs
             .map(
@@ -644,7 +645,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
                 <span>${f.label}</span><button data-delfav="${f.id}">✕</button></div>`,
             )
             .join("")
-        : `<div class="muted">Marker anklicken → „Favorit"</div>`);
+        : `<div class="muted">${t("fav.hint")}</div>`);
     favPanel.querySelectorAll<HTMLElement>("[data-fav]").forEach((el) =>
       el.addEventListener("click", (ev) => {
         if ((ev.target as HTMLElement).dataset.delfav) return;
@@ -746,16 +747,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     p.className = "edit-panel";
     p.id = "editPanel";
     p.innerHTML = `
-      <div class="fav-head"><img src="${iconUrl(m.sidc)}" width="26" height="26" onerror="this.style.visibility='hidden'"/> Marker</div>
-      <label>Einheitstext</label><input data-unit value="${m.unit_text}" />
-      <label>Zusatztext</label><input data-ai value="${m.ai_text}" />
-      <label>Icon-Drehung (°)</label><input data-rot type="number" value="${m.icon_rotation || 0}" />
-      <label><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> Gesperrt</label>
+      <div class="fav-head"><img src="${iconUrl(m.sidc)}" width="26" height="26" onerror="this.style.visibility='hidden'"/> ${t("marker.heading")}</div>
+      <label>${t("marker.unitText")}</label><input data-unit value="${m.unit_text}" />
+      <label>${t("marker.aiText")}</label><input data-ai value="${m.ai_text}" />
+      <label>${t("marker.iconRot")}</label><input data-rot type="number" value="${m.icon_rotation || 0}" />
+      <label><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> ${t("marker.locked")}</label>
       <div class="row">
-        <button class="primary" data-apply>Übernehmen</button>
-        <button data-fav>★ Favorit</button>
-        <button data-clone>Klonen</button>
-        <button data-del>Löschen</button>
+        <button class="primary" data-apply>${t("common.apply")}</button>
+        <button data-fav>${t("fav.add")}</button>
+        <button data-clone>${t("marker.clone")}</button>
+        <button data-del>${t("common.delete")}</button>
       </div>`;
     root.appendChild(p);
     p.querySelector("[data-apply]")!.addEventListener("click", () => {
@@ -792,7 +793,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       p.remove();
     });
     p.querySelector("[data-fav]")!.addEventListener("click", async () => {
-      const label = prompt("Bezeichnung für den Favoriten:", m.unit_text || m.sidc.slice(0, 8));
+      const label = prompt(t("fav.labelPrompt"), m.unit_text || m.sidc.slice(0, 8));
       if (!label) return;
       await api.addFavorite({
         label,
@@ -808,8 +809,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
 
   root.querySelector("#save")?.addEventListener("click", async () => {
-    await api.saveVersion(planId, prompt("Bezeichnung der Version:") ?? "");
-    alert("Version gespeichert");
+    await api.saveVersion(planId, prompt(t("plan.versionLabel")) ?? "");
+    alert(t("plan.versionSaved"));
   });
 }
 
