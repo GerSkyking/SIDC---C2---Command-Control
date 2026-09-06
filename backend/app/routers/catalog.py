@@ -25,7 +25,8 @@ _MAX_BYTES = 8 * 1024 * 1024
 
 
 def _dir():
-    d = _settings.uploads_dir.parent / "catalog"
+    # unter dem persistenten uploads-Volume — NICHT /data/catalog (nur uploads+maps sind Volumes)
+    d = _settings.uploads_dir / "catalog"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
