@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+from .. import audit
 
 from ..deps import CurrentUser, DbDep, load_plan, require_plan_level
 from ..models import (
@@ -79,7 +81,7 @@ def list_plans(user: CurrentUser, db: DbDep) -> list[PlanListItem]:
 
 
 @router.post("", response_model=PlanOut, status_code=status.HTTP_201_CREATED)
-def create_plan(body: PlanCreateIn, user: CurrentUser, db: DbDep) -> Plan:
+def create_plan(body: PlanCreateIn, request: Request, user: CurrentUser, db: DbDep) -> Plan:
     if not can_create_plans(db, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Berechtigung, Pläne zu erstellen")
     plan = Plan(name=body.name, map_id=body.map_id, created_by=user.id)
@@ -88,6 +90,8 @@ def create_plan(body: PlanCreateIn, user: CurrentUser, db: DbDep) -> Plan:
     db.add(PlanACL(plan_id=plan.id, subject_type="user", subject_id=user.id, level="owner"))
     db.add(Layer(plan_id=plan.id, name="Allgemein", is_default=True))
     db.commit()
+    audit.record(db, "plan.create", user_id=user.id, target_type="plan", target_id=plan.id,
+                 request=request, name=plan.name, map_id=plan.map_id)
     return plan
 
 
@@ -105,9 +109,11 @@ def patch_plan(body: PlanPatchIn, plan: OwnerPlan, db: DbDep) -> Plan:
 
 
 @router.delete("/{plan_id}")
-def delete_plan(plan: OwnerPlan, db: DbDep) -> None:
+def delete_plan(plan: OwnerPlan, request: Request, user: CurrentUser, db: DbDep) -> None:
     plan.deleted_at = now()
     db.commit()
+    audit.record(db, "plan.delete", user_id=user.id, target_type="plan", target_id=plan.id,
+                 request=request, name=plan.name)
 
 
 @router.get("/{plan_id}/snapshot")
@@ -158,7 +164,9 @@ def acl_candidates(plan: OwnerPlan, db: DbDep) -> list[ACLCandidate]:
 
 
 @router.put("/{plan_id}/acl", response_model=list[ACLOut])
-def put_acl(entries: list[ACLEntryIn], plan: OwnerPlan, user: CurrentUser, db: DbDep) -> list[PlanACL]:
+def put_acl(
+    entries: list[ACLEntryIn], request: Request, plan: OwnerPlan, user: CurrentUser, db: DbDep
+) -> list[PlanACL]:
     if not any(e.level == "owner" for e in entries):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Mindestens ein 'owner' erforderlich")
     db.query(PlanACL).filter(PlanACL.plan_id == plan.id).delete()
@@ -171,13 +179,17 @@ def put_acl(entries: list[ACLEntryIn], plan: OwnerPlan, user: CurrentUser, db: D
     ]
     db.add_all(rows)
     db.commit()
+    audit.record(db, "plan.acl", user_id=user.id, target_type="plan", target_id=plan.id,
+                 request=request, entries=len(rows))
     return rows
 
 
 # ─── Klonen ────────────────────────────────────────────────────────────────
 
 @router.post("/{plan_id}/clone", response_model=PlanOut, status_code=status.HTTP_201_CREATED)
-def clone_plan(body: PlanCloneIn, plan: ViewerPlan, user: CurrentUser, db: DbDep) -> Plan:
+def clone_plan(
+    body: PlanCloneIn, request: Request, plan: ViewerPlan, user: CurrentUser, db: DbDep
+) -> Plan:
     if not can_create_plans(db, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Berechtigung, Pläne zu erstellen")
     clone = Plan(name=body.name, map_id=plan.map_id, created_by=user.id)
@@ -222,6 +234,8 @@ def clone_plan(body: PlanCloneIn, plan: ViewerPlan, user: CurrentUser, db: DbDep
                 db.add(PlanACL(plan_id=clone.id, subject_type=e.subject_type,
                                subject_id=e.subject_id, level=e.level))
     db.commit()
+    audit.record(db, "plan.clone", user_id=user.id, target_type="plan", target_id=clone.id,
+                 request=request, source=plan.id, name=body.name)
     return clone
 
 

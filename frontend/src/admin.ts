@@ -48,6 +48,14 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
         <label><input type="checkbox" id="ng-ccp" /> darf Pläne erstellen</label>
         <button class="primary" id="ng-add">Gruppe anlegen</button>
       </div>
+
+      <h2>Log</h2>
+      <div class="row">
+        <input id="lg-action" placeholder="Aktion (z.B. login, plan, map)" />
+        <input id="lg-user" placeholder="Benutzer" />
+        <button id="lg-load">Anzeigen</button>
+      </div>
+      <div id="lg-out"><table class="acl-tbl"><tbody></tbody></table></div>
     </div>`;
 
   const reload = () => renderAdmin(app);
@@ -97,6 +105,37 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
       if (confirm("Benutzer löschen?")) guard(() => api.deleteUser(id));
     });
   });
+
+  let logOffset = 0;
+  const loadLog = async (reset: boolean) => {
+    if (reset) logOffset = 0;
+    const r = await api.adminAudit({
+      limit: 100,
+      offset: logOffset,
+      action: (app.querySelector("#lg-action") as HTMLInputElement).value.trim(),
+      user: (app.querySelector("#lg-user") as HTMLInputElement).value.trim(),
+    });
+    const tb = app.querySelector("#lg-out tbody")!;
+    if (reset) tb.innerHTML = "";
+    tb.insertAdjacentHTML(
+      "beforeend",
+      r.items
+        .map(
+          (x) => `<tr>
+            <td style="text-align:left">${new Date(x.ts).toLocaleString()}</td>
+            <td>${x.user}</td><td><code>${x.action}</code></td><td>${x.target}</td>
+            <td style="text-align:left;color:var(--muted)">${
+              Object.entries(x.detail)
+                .map(([k, v]) => `${k}=${v}`)
+                .join(" ")
+            }</td>
+          </tr>`,
+        )
+        .join(""),
+    );
+    logOffset += r.items.length;
+  };
+  app.querySelector("#lg-load")!.addEventListener("click", () => guard(() => loadLog(true)));
 
   app.querySelector("#ng-add")!.addEventListener("click", () =>
     guard(() =>

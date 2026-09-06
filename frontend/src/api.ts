@@ -80,6 +80,13 @@ export interface AclCandidate {
   subject_id: string;
   name: string;
 }
+export interface AuditRow {
+  ts: string;
+  user: string;
+  action: string;
+  target: string;
+  detail: Record<string, unknown>;
+}
 
 export const api = {
   me: () => req<Me>("GET", "/auth/me"),
@@ -159,6 +166,11 @@ export const api = {
   createGroup: (b: { name: string; can_create_plans: boolean }) => req<AdminGroup>("POST", "/api/admin/groups", b),
   setGroupMembers: (id: string, userIds: string[]) => req<AdminGroup>("PUT", `/api/admin/groups/${id}/members`, userIds),
   deleteGroup: (id: string) => req<void>("DELETE", `/api/admin/groups/${id}`),
+  adminAudit: (q: { limit?: number; offset?: number; action?: string; user?: string }) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") p.set(k, String(v));
+    return req<{ items: AuditRow[]; offset: number; limit: number }>("GET", `/api/admin/audit?${p}`);
+  },
 
   plans: () => req<PlanItem[]>("GET", "/plans"),
   createPlan: (name: string, map_id: string) =>

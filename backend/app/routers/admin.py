@@ -6,12 +6,13 @@ import logging
 import os
 import signal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import desc, select
 
+from .. import audit
 from ..deps import AdminUser, DbDep
-from ..models import Group, GroupMember, User
+from ..models import AuditLog, Group, GroupMember, User
 from ..security import MIN_PASSWORD_LEN, hash_password
 
 log = logging.getLogger("sidc.admin")
@@ -19,10 +20,11 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 @router.post("/restart")
-async def restart_backend(admin: AdminUser) -> dict:
+async def restart_backend(request: Request, admin: AdminUser, db: DbDep) -> dict:
     """Beendet den Backend-Prozess; Docker (`restart: unless-stopped`) startet den
     Container neu. db/redis laufen weiter. ~2 s Ausfall."""
     log.warning("Neustart durch Admin '%s' ausgelöst", admin.username)
+    audit.record(db, "backend.restart", user_id=admin.id, request=request)
 
     async def _bye() -> None:
         await asyncio.sleep(0.3)
@@ -70,7 +72,7 @@ def list_users(admin: AdminUser, db: DbDep) -> list[UserRow]:
 
 
 @router.post("/users", response_model=UserRow, status_code=status.HTTP_201_CREATED)
-def create_user(body: UserCreate, admin: AdminUser, db: DbDep) -> UserRow:
+def create_user(body: UserCreate, request: Request, admin: AdminUser, db: DbDep) -> UserRow:
     if len(body.password) < MIN_PASSWORD_LEN:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Passwort min. {MIN_PASSWORD_LEN} Zeichen")
     if db.scalar(select(User.id).where(User.username == body.username)):
@@ -81,6 +83,8 @@ def create_user(body: UserCreate, admin: AdminUser, db: DbDep) -> UserRow:
     )
     db.add(u)
     db.commit()
+    audit.record(db, "user.create", user_id=admin.id, target_type="user", target_id=u.id,
+                 request=request, username=u.username, role=u.role)
     return _row(u)
 
 
@@ -108,15 +112,51 @@ def patch_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbDep) -> Us
 
 
 @router.delete("/users/{user_id}")
-def delete_user(user_id: str, admin: AdminUser, db: DbDep) -> dict:
+def delete_user(user_id: str, request: Request, admin: AdminUser, db: DbDep) -> dict:
     u = db.get(User, user_id)
     if u is None:
         return {"ok": True}
     if u.id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Eigenes Konto nicht löschbar")
+    uname = u.username
     db.delete(u)
     db.commit()
+    audit.record(db, "user.delete", user_id=admin.id, target_type="user", target_id=user_id,
+                 request=request, username=uname)
     return {"ok": True}
+
+
+@router.get("/audit")
+def list_audit(
+    admin: AdminUser, db: DbDep, limit: int = 100, offset: int = 0,
+    action: str | None = None, user: str | None = None,
+) -> dict:
+    q = select(AuditLog).order_by(desc(AuditLog.ts))
+    if action:
+        q = q.where(AuditLog.action.like(f"{action}%"))
+    if user:
+        uid = db.scalar(select(User.id).where(User.username == user))
+        q = q.where(AuditLog.user_id == uid)
+    limit = max(1, min(limit, 500))
+    rows = list(db.scalars(q.limit(limit).offset(offset)))
+    names = {
+        u.id: u.username
+        for u in db.scalars(select(User).where(User.id.in_([r.user_id for r in rows if r.user_id])))
+    }
+    return {
+        "items": [
+            {
+                "ts": r.ts.isoformat(),
+                "user": names.get(r.user_id) or (r.detail or {}).get("username") or "—",
+                "action": r.action,
+                "target": f"{r.target_type or ''}:{r.target_id or ''}".strip(":"),
+                "detail": r.detail or {},
+            }
+            for r in rows
+        ],
+        "offset": offset,
+        "limit": limit,
+    }
 
 
 # ─── Gruppen ───────────────────────────────────────────────────────────────
@@ -147,12 +187,14 @@ def list_groups(admin: AdminUser, db: DbDep) -> list[GroupRow]:
 
 
 @router.post("/groups", response_model=GroupRow, status_code=status.HTTP_201_CREATED)
-def create_group(body: GroupIn, admin: AdminUser, db: DbDep) -> GroupRow:
+def create_group(body: GroupIn, request: Request, admin: AdminUser, db: DbDep) -> GroupRow:
     if db.scalar(select(Group.id).where(Group.name == body.name)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Gruppenname vergeben")
     g = Group(name=body.name, can_create_plans=body.can_create_plans)
     db.add(g)
     db.commit()
+    audit.record(db, "group.create", user_id=admin.id, target_type="group", target_id=g.id,
+                 request=request, name=g.name)
     return _grow(g, [])
 
 

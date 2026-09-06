@@ -11,6 +11,7 @@ from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import select
 
+from .. import audit
 from ..config import get_settings
 from ..deps import CurrentUser, DbDep
 from ..models import OidcIdentity, User
@@ -65,16 +66,24 @@ def login(body: LoginIn, request: Request, response: Response, db: DbDep) -> MeO
 
     user = db.scalar(select(User).where(User.username == body.username))
     if user is None or not user.is_active or not verify_password(body.password, user.password_hash):
+        audit.record(db, "login.fail", request=request, username=body.username)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login fehlgeschlagen")
 
     reset(key)
     _set_session_cookie(request, response, user.id)
+    audit.record(db, "login.ok", user_id=user.id, request=request)
     return _me(db, user)
 
 
 @router.post("/logout")
-def logout(response: Response) -> dict:
+def logout(request: Request, response: Response, db: DbDep) -> dict:
+    token = request.cookies.get(SESSION_COOKIE)
+    from ..security import read_session
+
+    uid = read_session(token) if token else None
     response.delete_cookie(SESSION_COOKIE, path="/")
+    if uid:
+        audit.record(db, "logout", user_id=uid, request=request)
     return {"ok": True}
 
 

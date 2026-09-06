@@ -9,6 +9,7 @@ import shutil
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import select
 
+from .. import audit
 from ..config import get_settings
 from ..deps import AdminUser, CurrentUser, DbDep
 from ..models import Map, Plan, now
@@ -26,12 +27,16 @@ def list_maps(user: CurrentUser, db: DbDep) -> list[Map]:
 
 
 @router.post("", response_model=MapOut, status_code=status.HTTP_202_ACCEPTED)
-def import_map(body: MapImportIn, bg: BackgroundTasks, admin: AdminUser, db: DbDep) -> Map:
+def import_map(
+    body: MapImportIn, request: Request, bg: BackgroundTasks, admin: AdminUser, db: DbDep
+) -> Map:
     if db.get(Map, body.id) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Karten-ID existiert bereits")
     m = Map(id=body.id, name=body.name, status="importing", source_url=body.url, created_at=now())
     db.add(m)
     db.commit()
+    audit.record(db, "map.import", user_id=admin.id, target_type="map", target_id=body.id,
+                 request=request, name=body.name, via="url")
     bg.add_task(run_import, body.id, url=body.url)
     return m
 
@@ -69,6 +74,8 @@ async def upload_map(
     m = Map(id=map_id, name=name, status="importing", source_url=None, created_at=now())
     db.add(m)
     db.commit()
+    audit.record(db, "map.import", user_id=admin.id, target_type="map", target_id=map_id,
+                 request=request, name=name, via="upload", bytes=written)
     bg.add_task(run_import, map_id, zip_path=str(dest))
     return m
 
@@ -87,7 +94,7 @@ def reimport_map(map_id: str, bg: BackgroundTasks, admin: AdminUser, db: DbDep) 
 
 
 @router.delete("/{map_id}")
-def delete_map(map_id: str, admin: AdminUser, db: DbDep) -> None:
+def delete_map(map_id: str, request: Request, admin: AdminUser, db: DbDep) -> None:
     m = db.get(Map, map_id)
     if m is None:
         return
@@ -96,6 +103,7 @@ def delete_map(map_id: str, admin: AdminUser, db: DbDep) -> None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Karte wird von Plänen genutzt")
     db.delete(m)
     db.commit()
+    audit.record(db, "map.delete", user_id=admin.id, target_type="map", target_id=map_id, request=request)
     d = map_dir(map_id)
     if d.exists():
         shutil.rmtree(d, ignore_errors=True)
