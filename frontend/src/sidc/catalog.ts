@@ -104,8 +104,12 @@ export function groupByCategory(entries: CatalogEntry[]): CatalogCategory[] {
 }
 
 async function tryFetch<T>(url: string): Promise<T | null> {
-  const r = await fetch(url, { credentials: "include" });
-  return r.ok ? ((await r.json()) as T) : null;
+  try {
+    const r = await fetch(url, { credentials: "include" });
+    return r.ok ? ((await r.json()) as T) : null;
+  } catch {
+    return null; // Netzwerkfehler soll die Kartenansicht nie blockieren
+  }
 }
 
 let _cat: Promise<CatalogCategory[] | null> | null = null;

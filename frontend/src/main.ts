@@ -18,7 +18,18 @@ async function route(): Promise<void> {
   if (!me) return renderLogin();
 
   const planMatch = location.hash.match(/^#\/plans\/([0-9a-f]{32})$/);
-  if (planMatch) return openPlanView(app, planMatch[1], me);
+  if (planMatch) {
+    try {
+      return await openPlanView(app, planMatch[1], me);
+    } catch (e) {
+      app.innerHTML = `<div class="center"><div class="card stack">
+        <h1>Plan konnte nicht geladen werden</h1>
+        <p class="error">${e instanceof Error ? e.message : String(e)}</p>
+        <a href="#/">← zurück</a></div></div>`;
+      console.error(e);
+      return;
+    }
+  }
   if (location.hash === "#/admin" && me.role === "admin") return renderAdmin(app);
   return renderPlanList();
 }
