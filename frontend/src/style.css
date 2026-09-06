@@ -114,6 +114,21 @@ a { color: var(--accent); }
 .edit-adv summary { cursor: pointer; font-size: 0.9rem; color: var(--accent); }
 .edit-adv label { font-size: 0.78rem; }
 .edit-adv select { width: 100%; }
+
+/* Hilfe / Versionsverlauf (im .edit-modal-Backdrop) */
+.help-card, .ver-card { width: min(42rem, 96vw); max-height: 88vh; overflow-y: auto; }
+.help-card h1, .ver-card h1 { font-size: 1.1rem; }
+.help-body { font-size: 0.9rem; line-height: 1.5; }
+.help-body h4 { margin: 0.9rem 0 0.3rem; font-size: 0.98rem; }
+.help-body ul { margin: 0.3rem 0; padding-left: 1.2rem; }
+.help-body li { margin: 0.15rem 0; }
+.help-body p { margin: 0.3rem 0; }
+.help-x, .ver-x { border: none; background: transparent; cursor: pointer; }
+.ver-list { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.6rem; }
+.ver-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border); border-radius: 6px; }
+.ver-meta { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; }
+.ver-meta .muted { font-size: 0.78rem; }
 .edit-panel .row button { padding: 0.55rem 0.7rem; flex: 1 1 auto; }
 .fav-head { font-weight: 600; color: var(--fg); margin-top: 0; }
 .fav { display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem; border-radius: 5px; cursor: pointer; }

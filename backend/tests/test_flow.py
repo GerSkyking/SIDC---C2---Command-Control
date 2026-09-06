@@ -88,6 +88,22 @@ def test_live_marker_authority(admin):
 
     assert len(admin.get(f"/plans/{pid}/snapshot").json()["markers"]) == 1
 
+    # Versionsverlauf: sichern, Marker ändern, zurück, Sicherungs-Version entsteht
+    v = admin.post(f"/plans/{pid}/versions", json={"label": "Stand A"})
+    assert v.status_code == 201
+    vid = v.json()["id"]
+    rows = admin.get(f"/plans/{pid}/versions").json()
+    assert rows[0]["label"] == "Stand A" and rows[0]["marker_count"] == 1
+    with admin.websocket_connect(f"/plans/{pid}/live") as ws:
+        for _ in range(2):
+            ws.receive_json()
+        ws.send_json({"type": "marker.delete", "id": mid})
+        ws.receive_json()
+    assert admin.get(f"/plans/{pid}/snapshot").json()["markers"] == []
+    assert admin.post(f"/plans/{pid}/restore/{vid}").status_code == 200
+    assert len(admin.get(f"/plans/{pid}/snapshot").json()["markers"]) == 1
+    assert len(admin.get(f"/plans/{pid}/versions").json()) == 2  # + Sicherung
+
 
 def test_granular_caps_block_ops(admin):
     from app.db import SessionLocal

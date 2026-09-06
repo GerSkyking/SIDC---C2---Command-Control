@@ -455,10 +455,31 @@ def clone_plan(
 
 @router.get("/{plan_id}/versions")
 def list_versions(plan: ViewerPlan, db: DbDep) -> list[dict]:
-    rows = db.scalars(
-        select(PlanVersion).where(PlanVersion.plan_id == plan.id).order_by(PlanVersion.created_at.desc())
+    rows = list(
+        db.scalars(
+            select(PlanVersion)
+            .where(PlanVersion.plan_id == plan.id)
+            .order_by(PlanVersion.created_at.desc())
+        )
     )
-    return [{"id": v.id, "label": v.label, "created_at": v.created_at.isoformat()} for v in rows]
+    names = {
+        u.id: u.username
+        for u in db.scalars(select(User).where(User.id.in_({v.created_by for v in rows if v.created_by})))
+    }
+    out = []
+    for v in rows:
+        snap = v.snapshot or {}
+        out.append(
+            {
+                "id": v.id,
+                "label": v.label,
+                "created_at": v.created_at.isoformat(),
+                "author": names.get(v.created_by or "", "?"),
+                "marker_count": len(snap.get("markers", [])),
+                "stroke_count": len(snap.get("strokes", [])),
+            }
+        )
+    return out
 
 
 @router.post("/{plan_id}/versions", status_code=status.HTTP_201_CREATED)
@@ -470,10 +491,19 @@ def create_version(body: VersionCreateIn, plan: EditorPlan, user: CurrentUser, d
 
 
 @router.post("/{plan_id}/restore/{version_id}")
-def restore_version(version_id: str, plan: OwnerPlan, db: DbDep) -> None:
+def restore_version(version_id: str, plan: OwnerPlan, user: CurrentUser, db: DbDep) -> None:
     v = db.get(PlanVersion, version_id)
     if v is None or v.plan_id != plan.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    # Sicherungs-Version des aktuellen Stands vor dem Zurücksetzen
+    db.add(
+        PlanVersion(
+            plan_id=plan.id,
+            label=f"vor Wiederherstellung ({v.label or v.created_at.strftime('%d.%m. %H:%M')})",
+            snapshot=_snapshot(db, plan),
+            created_by=user.id,
+        )
+    )
     db.query(Marker).filter(Marker.plan_id == plan.id).delete()
     db.query(Stroke).filter(Stroke.plan_id == plan.id).delete()
     for md in v.snapshot.get("markers", []):

@@ -7,6 +7,8 @@ import { lngLatToWorld, withModifiers, worldToLngLat, type Calibration, type Sid
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { ensureMapIcon, iconSrc } from "./sidc/symbol";
 import { openAclEditor } from "./acl";
+import { openHelp } from "./help";
+import { openVersionPanel } from "./versions";
 import { t } from "./i18n";
 import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
@@ -102,8 +104,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <button id="layersBtn" title="${t("tool.layers")}">☰</button>
       <span class="grow"></span>
       <span class="presence" id="presence"></span>
+      <button id="versions" title="${t("versions.open")}">🕑</button>
+      <button id="help" title="${t("help.open")}">?</button>
       ${myPlan?.level === "owner" ? `<button id="acl">${t("plans.shares")}</button>` : ""}
-      ${canEdit ? `<button id="save">${t("plan.version")}</button>` : ""}
     </div>
     <div id="map"></div>
     ${
@@ -636,6 +639,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   root.querySelector("#acl")?.addEventListener("click", () => openAclEditor(planId, snap.plan.name));
+  root.querySelector("#help")!.addEventListener("click", openHelp);
+  root
+    .querySelector("#versions")!
+    .addEventListener("click", () => openVersionPanel(planId, canEdit, myPlan?.level === "owner"));
 
   // ── Zeitstrahl / Phasen ───────────────────────────────────────────────
   const timelineEl = root.querySelector<HTMLDivElement>("#timeline")!;
@@ -1665,10 +1672,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     });
   }
 
-  root.querySelector("#save")?.addEventListener("click", async () => {
-    await api.saveVersion(planId, prompt(t("plan.versionLabel")) ?? "");
-    alert(t("plan.versionSaved"));
-  });
 }
 
 function packedToHex(packed: number): string {

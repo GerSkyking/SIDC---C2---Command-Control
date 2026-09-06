@@ -67,6 +67,14 @@ export interface Phase {
   ordering: number;
   notes: string;
 }
+export interface PlanVersionRow {
+  id: string;
+  label: string;
+  created_at: string;
+  author: string;
+  marker_count: number;
+  stroke_count: number;
+}
 export interface AdminUser {
   id: string;
   username: string;
@@ -224,6 +232,9 @@ export const api = {
     req<PlanItem>("POST", `/plans/${planId}/move`, { folder_id }),
   saveVersion: (planId: string, label: string) =>
     req<{ id: string }>("POST", `/plans/${planId}/versions`, { label }),
+  planVersions: (planId: string) => req<PlanVersionRow[]>("GET", `/plans/${planId}/versions`),
+  restoreVersion: (planId: string, versionId: string) =>
+    req<void>("POST", `/plans/${planId}/restore/${versionId}`),
 
   folders: () => req<PlanFolder[]>("GET", "/folders"),
   createFolder: (name: string, parent_id: string | null = null) =>
