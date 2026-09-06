@@ -3,6 +3,7 @@ import "./style.css";
 import { api, ApiError, type Me } from "./api";
 import { openPlanView } from "./plan";
 import { renderAdmin } from "./admin";
+import { openAclEditor } from "./acl";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -108,7 +109,10 @@ async function renderPlanList(): Promise<void> {
               <td><a href="#/plans/${p.id}">${p.name}</a></td>
               <td><span class="badge">${p.level}</span></td>
               <td>${
-                p.level === "owner" ? `<button data-del="${p.id}">Löschen</button>` : ""
+                p.level === "owner"
+                  ? `<button data-acl="${p.id}" data-name="${p.name}">Freigaben</button>
+                     <button data-del="${p.id}">Löschen</button>`
+                  : ""
               }</td>
             </tr>`,
           )
@@ -136,6 +140,9 @@ async function renderPlanList(): Promise<void> {
         route();
       }
     }),
+  );
+  app.querySelectorAll<HTMLButtonElement>("[data-acl]").forEach((b) =>
+    b.addEventListener("click", () => openAclEditor(b.dataset.acl!, b.dataset.name ?? "")),
   );
   app.querySelector("#mi")?.addEventListener("click", async () => {
     const id = app.querySelector<HTMLInputElement>("#mid")!.value.trim();

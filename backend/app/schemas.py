@@ -68,11 +68,21 @@ class ACLEntryIn(BaseModel):
     subject_type: str = Field(pattern=r"^(user|group)$")
     subject_id: str
     level: str = Field(pattern=r"^(viewer|editor|owner)$")
+    can_place: bool = True
+    can_move: bool = True
+    can_delete: bool = True
+    can_draw: bool = True
 
 
 class ACLOut(ACLEntryIn):
     model_config = ConfigDict(from_attributes=True)
     id: str
+
+
+class ACLCandidate(BaseModel):
+    subject_type: str
+    subject_id: str
+    name: str
 
 
 class PlanCloneIn(BaseModel):

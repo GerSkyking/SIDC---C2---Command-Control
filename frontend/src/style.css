@@ -83,3 +83,8 @@ a { color: var(--accent); }
 .wiz-cat-h { font-weight: 600; margin: 0.5rem 0 0.2rem; color: var(--muted); }
 .wiz-entry { display: flex; align-items: center; gap: 0.5rem; width: 100%; justify-content: flex-start; text-align: left; }
 .maplibregl-ctrl-scale { color: #111; }
+
+.acl-tbl { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.acl-tbl th, .acl-tbl td { padding: 0.35rem 0.4rem; border-bottom: 1px solid var(--border); text-align: center; }
+.acl-tbl th:first-child, .acl-tbl td:first-child { text-align: left; }
+.acl-tbl select { padding: 0.2rem; }

@@ -65,6 +65,21 @@ export interface AdminGroup {
   can_create_plans: boolean;
   member_ids: string[];
 }
+export interface AclEntry {
+  id: string;
+  subject_type: "user" | "group";
+  subject_id: string;
+  level: "viewer" | "editor" | "owner";
+  can_place: boolean;
+  can_move: boolean;
+  can_delete: boolean;
+  can_draw: boolean;
+}
+export interface AclCandidate {
+  subject_type: "user" | "group";
+  subject_id: string;
+  name: string;
+}
 
 export const api = {
   me: () => req<Me>("GET", "/auth/me"),
@@ -128,6 +143,10 @@ export const api = {
     req<PlanItem>("POST", "/plans", { name, map_id }),
   snapshot: (planId: string) => req<any>("GET", `/plans/${planId}/snapshot`),
   deletePlan: (planId: string) => req<void>("DELETE", `/plans/${planId}`),
+  planAcl: (planId: string) => req<AclEntry[]>("GET", `/plans/${planId}/acl`),
+  planAclCandidates: (planId: string) => req<AclCandidate[]>("GET", `/plans/${planId}/acl/candidates`),
+  putPlanAcl: (planId: string, entries: Omit<AclEntry, "id">[]) =>
+    req<AclEntry[]>("PUT", `/plans/${planId}/acl`, entries),
   clonePlan: (planId: string, name: string, copy_acl: boolean) =>
     req<PlanItem>("POST", `/plans/${planId}/clone`, { name, copy_acl }),
   saveVersion: (planId: string, label: string) =>

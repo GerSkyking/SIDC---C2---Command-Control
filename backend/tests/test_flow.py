@@ -45,6 +45,8 @@ def test_live_marker_authority(admin):
     pid = admin.post("/plans", json={"name": "Op Bravo", "map_id": "m1"}).json()["id"]
 
     with admin.websocket_connect(f"/plans/{pid}/live") as ws:
+        hello = ws.receive_json()
+        assert hello["type"] == "hello" and hello["caps"]["place"] is True
         assert ws.receive_json()["type"] == "presence.join"
         ws.send_json({
             "type": "marker.create",
@@ -62,3 +64,42 @@ def test_live_marker_authority(admin):
         assert ws.receive_json()["marker"]["locked"] is True
 
     assert len(admin.get(f"/plans/{pid}/snapshot").json()["markers"]) == 1
+
+
+def test_granular_caps_block_ops(admin):
+    from app.db import SessionLocal
+    from app.models import Map, User, now
+    from app.security import hash_password
+
+    admin.post("/api/maps", json={"id": "mc", "name": "MC", "url": "http://x.invalid/a.zip"})
+    with SessionLocal() as db:
+        db.get(Map, "mc").status = "ready"
+        db.get(Map, "mc").imported_at = now()
+        u = User(username="mover", password_hash=hash_password("mover-pass-1234"))
+        db.add(u)
+        db.commit()
+        uid = u.id
+
+    pid = admin.post("/plans", json={"name": "Caps", "map_id": "mc"}).json()["id"]
+    # mover darf bewegen, aber nicht setzen/löschen/malen
+    me = admin.get("/auth/me").json()["id"]
+    admin.put(f"/plans/{pid}/acl", json=[
+        {"subject_type": "user", "subject_id": me, "level": "owner"},
+        {"subject_type": "user", "subject_id": uid, "level": "editor",
+         "can_place": False, "can_move": True, "can_delete": False, "can_draw": False},
+    ])
+
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with TestClient(app) as c2:
+        c2.post("/auth/login", json={"username": "mover", "password": "mover-pass-1234"})
+        with c2.websocket_connect(f"/plans/{pid}/live") as ws:
+            hello = ws.receive_json()
+            assert hello["caps"] == {"place": False, "move": True, "delete": False, "draw": False}
+            ws.receive_json()  # presence.join (selbst)
+            ws.send_json({"type": "marker.create", "cid": "x",
+                          "data": {"sidc": "1", "world_x": 0, "world_y": 0}})
+            r = ws.receive_json()
+            assert r["type"] == "reject" and "place" in r["reason"]
+

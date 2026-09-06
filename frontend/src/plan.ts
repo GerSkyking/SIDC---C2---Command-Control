@@ -5,6 +5,7 @@ import { api, type Me } from "./api";
 import { channelLabel, loadChannels } from "./sidc/catalog";
 import { iconUrl, lngLatToWorld, type Calibration } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
+import { openAclEditor } from "./acl";
 import { cid, PlanSocket, type WsMessage } from "./ws";
 
 interface Marker {
@@ -40,6 +41,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const channels = await loadChannels();
 
   const peers = new Map<string, { name: string; lng: number; lat: number; t: number }>();
+  const caps = { place: canEdit, move: canEdit, delete: canEdit, draw: canEdit };
   let mode: Mode = "move";
   let pending: MarkerTemplate | null = null;
   let myChannel = channels?.currentChannel ?? "";
@@ -57,6 +59,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <div id="timeline" class="timeline"></div>
       <span class="grow"></span>
       <span class="presence" id="presence"></span>
+      ${myPlan?.level === "owner" ? `<button id="acl">Freigaben</button>` : ""}
       ${canEdit ? `<button id="save">Version</button>` : ""}
     </div>
     <div id="map"></div>
@@ -196,6 +199,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   socket.on((msg: WsMessage) => {
     switch (msg.type) {
+      case "hello":
+        Object.assign(caps, msg.caps);
+        applyCaps();
+        break;
+      case "reject":
+        if (msg.reason) console.warn("abgelehnt:", msg.reason);
+        break;
       case "presence.join":
         if (msg.uid !== me.id) names.set(msg.uid, msg.user);
         renderPresence();
@@ -270,6 +280,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     myChannel = (e.target as HTMLSelectElement).value;
   });
 
+  root.querySelector("#acl")?.addEventListener("click", () => openAclEditor(planId, snap.plan.name));
+
   if (!canEdit) return;
 
   // ── Werkzeugleiste ────────────────────────────────────────────────────
@@ -295,6 +307,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       setMode("place");
     });
   });
+
+  function applyCaps(): void {
+    const tb = root.querySelector("#toolbar");
+    if (!tb) return;
+    tb.querySelector<HTMLButtonElement>('[data-mode="draw"]')?.toggleAttribute("disabled", !caps.draw);
+    tb.querySelector<HTMLButtonElement>("#tool-marker")?.toggleAttribute("disabled", !caps.place);
+    tb.querySelector<HTMLButtonElement>("#tool-fav")?.toggleAttribute("disabled", !caps.place);
+  }
+  applyCaps();
 
   // ── Favoriten ─────────────────────────────────────────────────────────
   const favPanel = root.querySelector<HTMLDivElement>("#favPanel")!;

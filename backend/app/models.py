@@ -115,6 +115,11 @@ class PlanACL(Base):
     subject_type: Mapped[str] = mapped_column(String(8))  # 'user' | 'group'
     subject_id: Mapped[str] = mapped_column(UuidPk)
     level: Mapped[str] = mapped_column(String(8))         # 'viewer' | 'editor' | 'owner'
+    # Feingranulare Rechte — nur relevant bei level == 'editor' (owner/admin = alles).
+    can_place: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_move: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_delete: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_draw: Mapped[bool] = mapped_column(Boolean, default=True)
 
     plan: Mapped[Plan] = relationship(back_populates="acl")
 

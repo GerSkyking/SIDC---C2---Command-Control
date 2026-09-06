@@ -14,7 +14,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..db import SessionLocal
 from ..models import Marker, Plan, Stroke, User, now
-from ..permissions import effective_level, rank
+from ..permissions import effective_caps, effective_level, rank
 from ..security import SESSION_COOKIE, read_session
 from ..services.realtime import hub
 
@@ -27,7 +27,7 @@ MARKER_FIELDS = (
 )
 
 
-def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str] | None:
+def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str, dict] | None:
     token = cookies.get(SESSION_COOKIE)
     uid = read_session(token) if token else None
     if not uid:
@@ -40,7 +40,7 @@ def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str] | Non
         level = effective_level(db, user, plan)
         if level is None:
             return None
-        return user, plan, level
+        return user, plan, level, effective_caps(db, user, plan)
 
 
 def _marker_out(m: Marker) -> dict:
@@ -61,18 +61,18 @@ async def live_ws(websocket: WebSocket) -> None:
     if auth is None:
         await websocket.close(code=4403)
         return
-    user, _plan, level = auth
-    can_edit = rank(level) >= rank("editor")
+    user, _plan, level, caps = auth
     is_owner = rank(level) >= rank("owner")
 
     await websocket.accept()
     await hub.join(plan_id, websocket)
+    await websocket.send_json({"type": "hello", "level": level, "caps": caps})
     await hub.broadcast(plan_id, {"type": "presence.join", "user": user.username, "uid": user.id})
 
     try:
         while True:
             msg = await websocket.receive_json()
-            await _handle(websocket, plan_id, user, can_edit, is_owner, msg)
+            await _handle(websocket, plan_id, user, caps, is_owner, msg)
     except WebSocketDisconnect:
         pass
     except Exception:  # noqa: BLE001
@@ -87,17 +87,35 @@ async def _reject(ws: WebSocket, cid: str | None, reason: str) -> None:
 
 
 async def _handle(
-    ws: WebSocket, plan_id: str, user: User, can_edit: bool, is_owner: bool, msg: dict
+    ws: WebSocket, plan_id: str, user: User, caps: dict, is_owner: bool, msg: dict
 ) -> None:
     t = msg.get("type")
 
-    # Ephemer — kein DB-Schreiben, nur weiterreichen (Cursor, Live-Zeichnen-Vorschau)
-    if t in ("presence.cursor", "stroke.begin", "stroke.append"):
+    # presence.cursor immer erlaubt (auch für Nur-Leser sinnvoll: "Zeigen")
+    if t == "presence.cursor":
         await hub.broadcast(plan_id, {**msg, "uid": user.id})
         return
 
-    if not can_edit:
-        await _reject(ws, msg.get("cid"), "Nur-Lese-Zugriff")
+    need = {
+        "marker.create": "place",
+        "marker.move": "move",
+        "marker.modify": "move",
+        "marker.lock": "move",
+        "marker.delete": "delete",
+        "stroke.commit": "draw",
+        "stroke.begin": "draw",
+        "stroke.append": "draw",
+        "stroke.delete": "draw",
+    }.get(t or "")
+    if need is None:
+        await _reject(ws, msg.get("cid"), f"Unbekannter Typ: {t}")
+        return
+    if not caps.get(need):
+        await _reject(ws, msg.get("cid"), f"Keine Berechtigung: {need}")
+        return
+
+    if t in ("stroke.begin", "stroke.append"):
+        await hub.broadcast(plan_id, {**msg, "uid": user.id})
         return
 
     if t == "marker.create":
@@ -137,9 +155,6 @@ async def _handle(
     elif t == "stroke.delete":
         await run_in_threadpool(_delete_stroke, plan_id, msg["id"])
         await hub.broadcast(plan_id, {"type": "stroke.delete", "id": msg["id"]})
-
-    else:
-        await _reject(ws, msg.get("cid"), f"Unbekannter Typ: {t}")
 
 
 async def _emit_update(ws: WebSocket, plan_id: str, msg: dict, res: dict | None) -> None:

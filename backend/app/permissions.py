@@ -30,6 +30,31 @@ def effective_level(db: Session, user: User, plan: Plan) -> str | None:
     return best
 
 
+CAP_KEYS = ("place", "move", "delete", "draw")
+
+
+def effective_caps(db: Session, user: User, plan: Plan) -> dict[str, bool]:
+    """Feingranulare Marker-/Zeichen-Rechte. owner/admin = alles, viewer = nichts,
+    editor = OR über die passenden ACL-Einträge."""
+    level = effective_level(db, user, plan)
+    if level is None or rank(level) < rank("editor"):
+        return dict.fromkeys(CAP_KEYS, False)
+    if user.is_admin or rank(level) >= rank("owner"):
+        return dict.fromkeys(CAP_KEYS, True)
+
+    group_ids = list(db.scalars(select(GroupMember.group_id).where(GroupMember.user_id == user.id)))
+    subjects = {("user", user.id), *(("group", gid) for gid in group_ids)}
+    caps = dict.fromkeys(CAP_KEYS, False)
+    for acl in db.scalars(select(PlanACL).where(PlanACL.plan_id == plan.id)):
+        if (acl.subject_type, acl.subject_id) not in subjects or rank(acl.level) < rank("editor"):
+            continue
+        caps["place"] |= bool(acl.can_place)
+        caps["move"] |= bool(acl.can_move)
+        caps["delete"] |= bool(acl.can_delete)
+        caps["draw"] |= bool(acl.can_draw)
+    return caps
+
+
 def can_create_plans(db: Session, user: User) -> bool:
     if user.is_admin or user.can_create_plans:
         return True

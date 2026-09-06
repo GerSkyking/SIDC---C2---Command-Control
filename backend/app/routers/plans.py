@@ -21,6 +21,7 @@ from ..models import (
 )
 from ..permissions import can_create_plans, effective_level
 from ..schemas import (
+    ACLCandidate,
     ACLEntryIn,
     ACLOut,
     PlanCloneIn,
@@ -140,14 +141,32 @@ def get_acl(plan: OwnerPlan, db: DbDep) -> list[PlanACL]:
     return list(db.scalars(select(PlanACL).where(PlanACL.plan_id == plan.id)))
 
 
+@router.get("/{plan_id}/acl/candidates", response_model=list[ACLCandidate])
+def acl_candidates(plan: OwnerPlan, db: DbDep) -> list[ACLCandidate]:
+    """User + Gruppen, die als ACL-Subjekt gewählt werden können (nur für Plan-Owner)."""
+    from ..models import Group, User
+
+    out = [
+        ACLCandidate(subject_type="user", subject_id=u.id, name=u.username)
+        for u in db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.username))
+    ]
+    out += [
+        ACLCandidate(subject_type="group", subject_id=g.id, name=f"Gruppe: {g.name}")
+        for g in db.scalars(select(Group).order_by(Group.name))
+    ]
+    return out
+
+
 @router.put("/{plan_id}/acl", response_model=list[ACLOut])
 def put_acl(entries: list[ACLEntryIn], plan: OwnerPlan, user: CurrentUser, db: DbDep) -> list[PlanACL]:
-    has_owner = any(e.level == "owner" for e in entries)
-    if not has_owner:
+    if not any(e.level == "owner" for e in entries):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Mindestens ein 'owner' erforderlich")
     db.query(PlanACL).filter(PlanACL.plan_id == plan.id).delete()
     rows = [
-        PlanACL(plan_id=plan.id, subject_type=e.subject_type, subject_id=e.subject_id, level=e.level)
+        PlanACL(
+            plan_id=plan.id, subject_type=e.subject_type, subject_id=e.subject_id, level=e.level,
+            can_place=e.can_place, can_move=e.can_move, can_delete=e.can_delete, can_draw=e.can_draw,
+        )
         for e in entries
     ]
     db.add_all(rows)
