@@ -30,11 +30,6 @@ from ..models import Map, now
 log = logging.getLogger("sidc.maps")
 _settings = get_settings()
 
-BASE_TYPE_LABELS = {
-    58: "Hafen", 59: "Ortschaft", 63: "Anhöhe", 64: "Feld/Flur",
-    65: "Insel", 66: "Teich", 68: "Bucht", 70: "Bergrücken",
-}
-
 
 def map_dir(map_id: str) -> Path:
     return _settings.maps_dir / map_id
@@ -133,14 +128,16 @@ def run_import(map_id: str, *, url: str | None = None, zip_path: str | None = No
                 except ValueError:
                     pass
 
-            meta["has_topo"] = _validate_topo(dest)
-            loc = _build_locations(dest)
+            # topo.geojson + locations.json kommen FERTIG aus dem ATAKmaps-Pack
+            # (pipeline/topo_convert.py + locations_convert.py) — hier nur validieren.
+            meta["has_topo"] = _validate_json(dest / "topo.geojson", "FeatureCollection")
+            loc = _validate_locations(dest)
             meta["has_locations"] = loc is not None
             if loc is not None:
-                meta["location_langs"] = loc["langs"]
+                meta["location_langs"] = loc.get("langs", [])
                 meta["location_groups"] = [
-                    {"key": g["key"], "label": g["label"], "count": len(g["items"])}
-                    for g in loc["groups"]
+                    {"key": g["key"], "label": g["label"], "count": len(g.get("items", []))}
+                    for g in loc.get("groups", [])
                 ]
 
             m.status = "ready"
@@ -179,66 +176,29 @@ def _dlc_inventory(dest: Path) -> dict[str, list[int]]:
     return out
 
 
-def _validate_topo(dest: Path) -> bool:
-    p = dest / "topo.geojson"
+def _validate_json(p: Path, expect_type: str | None = None) -> bool:
     if not p.is_file():
         return False
     try:
         doc = json.loads(p.read_text(encoding="utf-8"))
-        return doc.get("type") == "FeatureCollection"
     except ValueError:
         p.unlink(missing_ok=True)
         return False
+    if expect_type and isinstance(doc, dict) and doc.get("type") != expect_type:
+        return False
+    return True
 
 
-def _build_locations(dest: Path) -> dict | None:
-    """mapLocations_locations.json (+ _translations.json) → locations.json,
-    nach baseType gruppiert, Namen je Sprache aufgelöst."""
-    src = dest / "mapLocations_locations.json"
-    if not src.is_file():
+def _validate_locations(dest: Path) -> dict | None:
+    p = dest / "locations.json"
+    if not p.is_file():
         return None
     try:
-        raw = json.loads(src.read_text(encoding="utf-8"))
+        doc = json.loads(p.read_text(encoding="utf-8"))
     except ValueError:
+        p.unlink(missing_ok=True)
         return None
-    trans: dict = {}
-    tp = dest / "mapLocations_translations.json"
-    if tp.is_file():
-        try:
-            trans = json.loads(tp.read_text(encoding="utf-8"))
-        except ValueError:
-            trans = {}
-
-    langs: set[str] = set()
-    for m in trans.values():
-        langs.update(m.keys())
-    langs_sorted = sorted(langs) or ["en_us", "de_de"]
-
-    groups: dict[int, dict] = {}
-    for e in raw:
-        if not (e.get("nameLocalized") or e.get("commentText")):
-            continue
-        gc = e.get("gameCoords") or e.get("position", [0, 0, 0])[:2]
-        bt = e.get("baseType", -1)
-        key = e.get("name") or ""
-        names = {lg: (trans.get(key, {}) or {}).get(lg) or e.get("nameLocalized") or key for lg in langs_sorted}
-        item = {
-            "x": gc[0],
-            "y": gc[1],
-            "names": names,
-            "color": e.get("commentColor", [1, 1, 1, 1]),
-            "bold": bool(e.get("commentBold")),
-            "italic": bool(e.get("commentItalic")),
-            "size": e.get("commentSizeCoef", 0.75),
-        }
-        groups.setdefault(bt, {"key": str(bt), "label": BASE_TYPE_LABELS.get(bt, f"Typ {bt}"), "items": []})
-        groups[bt]["items"].append(item)
-
-    if not groups:
-        return None
-    result = {"langs": langs_sorted, "groups": list(groups.values())}
-    (dest / "locations.json").write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
-    return result
+    return doc if isinstance(doc, dict) and "groups" in doc else None
 
 
 def _safe_extract(zf: zipfile.ZipFile, dest: Path) -> None:
