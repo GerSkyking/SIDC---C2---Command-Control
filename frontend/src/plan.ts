@@ -2,7 +2,7 @@
 // Nähert sich der ATAKmaps-UI an (D:\Mods\ATAKmaps).
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
-import { channelLabel, loadChannels } from "./sidc/catalog";
+import { channelLabel, loadChannels, loadPhaseLineStyle } from "./sidc/catalog";
 import { iconUrl, lngLatToWorld, type Calibration } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { openAclEditor } from "./acl";
@@ -21,6 +21,10 @@ interface Marker {
   icon_rotation: number;
   phase_id: string | null;
   layer_id: string | null;
+  linked_group_id: number;
+  point_index: number;
+  line_color: number;
+  line_width: number;
 }
 interface Stroke {
   id: string;
@@ -28,7 +32,7 @@ interface Stroke {
   color: number;
   width: number;
 }
-type Mode = "move" | "point" | "draw" | "place";
+type Mode = "move" | "point" | "line" | "erase" | "place";
 
 export async function openPlanView(root: HTMLElement, planId: string, me: Me): Promise<void> {
   const snap = await api.snapshot(planId);
@@ -39,6 +43,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const myPlan = (await api.plans()).find((p) => p.id === planId);
   const canEdit = myPlan?.level === "editor" || myPlan?.level === "owner";
   const channels = await loadChannels();
+  const lineStyle = await loadPhaseLineStyle();
+  const lineColors = lineStyle?.colors ?? [
+    { name: "Gelb", red: 255, green: 255, blue: 0, packedColor: -256, isDefault: true },
+    { name: "Rot", red: 255, green: 0, blue: 0, packedColor: -65536, isDefault: false },
+  ];
+  const lineWidths = lineStyle?.widths ?? [{ width: 2, isDefault: true }, { width: 4, isDefault: false }];
+  let lineColor = (lineColors.find((c) => c.isDefault) ?? lineColors[0]).packedColor;
+  let lineWidth = (lineWidths.find((w) => w.isDefault) ?? lineWidths[0]).width;
 
   const peers = new Map<string, { name: string; lng: number; lat: number; t: number }>();
   const caps = { place: canEdit, move: canEdit, delete: canEdit, draw: canEdit };
@@ -67,12 +79,24 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       canEdit
         ? `<div class="toolbar" id="toolbar">
              <button data-mode="move" class="active" title="Karte bewegen">✋</button>
-             <button data-mode="point" title="Zeigen (Cursor für andere)">👉</button>
-             <button data-mode="draw" title="Malen">✏️</button>
+             <button data-mode="point" title="Zeigen – Cursor für andere, Karte fixiert">👉</button>
+             <button data-mode="line" title="Linie zeichnen (gerade Segmente)">📏</button>
+             <button data-mode="erase" title="Radierer – Marker schnell löschen">🧽</button>
              <button id="tool-marker" title="Marker setzen">📍</button>
              <button id="tool-fav" title="Favoriten">★</button>
            </div>
-           <div class="fav-panel" id="favPanel" hidden></div>`
+           <div class="fav-panel" id="favPanel" hidden></div>
+           <div class="line-style" id="lineStyle" hidden>
+             <div class="fav-head">Linie</div>
+             <label>Farbe</label>
+             <div id="lc" class="line-colors"></div>
+             <label>Stärke</label>
+             <select id="lw">${lineWidths
+               .map((w) => `<option value="${w.width}" ${w.width === lineWidth ? "selected" : ""}>${w.width}</option>`)
+               .join("")}</select>
+             <button class="primary" id="lineFinish">Linie fertig</button>
+             <button id="lineCancel">Abbrechen</button>
+           </div>`
         : ""
     }
     <div class="hud" id="hud">X: – &nbsp; Y: – &nbsp; H: –</div>`;
@@ -120,6 +144,31 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       properties: { color: packedToHex(s.color), width: s.width > 0 ? s.width : 2 },
     })),
   });
+  // Verbindungslinien für Multipoint-Marker (gleiche linked_group_id, nach point_index)
+  const chainFC = (): GeoJSON.FeatureCollection => {
+    const byGroup = new Map<number, Marker[]>();
+    for (const m of markers.values()) {
+      if (m.linked_group_id != null && m.linked_group_id >= 0) {
+        (byGroup.get(m.linked_group_id) ?? byGroup.set(m.linked_group_id, []).get(m.linked_group_id)!).push(m);
+      }
+    }
+    const feats: GeoJSON.Feature[] = [];
+    for (const list of byGroup.values()) {
+      if (list.length < 2) continue;
+      list.sort((a, b) => a.point_index - b.point_index);
+      const anchor = list[0];
+      feats.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: list.map((m) => [m.world_x, m.world_y]) },
+        properties: {
+          color: packedToHex(anchor.line_color),
+          width: anchor.line_width > 0 ? anchor.line_width : 2,
+        },
+      });
+    }
+    return { type: "FeatureCollection", features: feats };
+  };
+
   const peerFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
     features: [...peers.values()]
@@ -141,6 +190,30 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       source: "strokes",
       paint: { "line-color": ["get", "color"], "line-width": ["get", "width"] },
       layout: { "line-cap": "round", "line-join": "round" },
+    });
+
+    map.addSource("chains", { type: "geojson", data: chainFC() });
+    map.addLayer({
+      id: "chains",
+      type: "line",
+      source: "chains",
+      paint: { "line-color": ["get", "color"], "line-width": ["get", "width"] },
+      layout: { "line-cap": "round", "line-join": "round" },
+    });
+
+    map.addSource("linedraft", { type: "geojson", data: emptyFC() });
+    map.addLayer({
+      id: "linedraft",
+      type: "line",
+      source: "linedraft",
+      paint: { "line-color": "#4c8dff", "line-width": 2, "line-dasharray": [2, 1] },
+    });
+    map.addLayer({
+      id: "linedraft-pts",
+      type: "circle",
+      source: "linedraft",
+      filter: ["==", ["geometry-type"], "Point"],
+      paint: { "circle-radius": 4, "circle-color": "#4c8dff", "circle-stroke-color": "#fff", "circle-stroke-width": 1 },
     });
 
     map.addSource("markers", { type: "geojson", data: markerFC() });
@@ -186,6 +259,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const refreshMarkers = async () => {
     await Promise.all([...new Set([...markers.values()].map((m) => m.sidc))].map(ensureIcon));
     (map.getSource("markers") as GeoJSONSource)?.setData(markerFC());
+    (map.getSource("chains") as GeoJSONSource)?.setData(chainFC());
   };
   const refreshStrokes = () => (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
   const refreshPeers = () => (map.getSource("peers") as GeoJSONSource)?.setData(peerFC());
@@ -286,32 +360,95 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // ── Werkzeugleiste ────────────────────────────────────────────────────
   const toolbar = root.querySelector<HTMLDivElement>("#toolbar")!;
+  const lineStylePanel = root.querySelector<HTMLDivElement>("#lineStyle")!;
+  let linePts: [number, number][] = [];
+  let chainGroup: number | null = null;
+  let chainIndex = 0;
+
+  const refreshLineDraft = () =>
+    (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts));
+
   const setMode = (m: Mode) => {
     mode = m;
     toolbar.querySelectorAll("[data-mode]").forEach((b) =>
       b.classList.toggle("active", (b as HTMLElement).dataset.mode === m),
     );
-    map.getCanvas().style.cursor = m === "place" ? "crosshair" : m === "draw" ? "cell" : "";
-    if (m === "draw") map.dragPan.disable();
-    else map.dragPan.enable();
+    map.getCanvas().style.cursor = m === "place" || m === "line" ? "crosshair" : m === "erase" ? "not-allowed" : "";
+    // Zeigen + Linie + Radierer: Karte fixieren (kein Greifen)
+    if (m === "point" || m === "line" || m === "erase") {
+      map.dragPan.disable();
+      map.dragRotate.disable();
+    } else {
+      map.dragPan.enable();
+      map.dragRotate.enable();
+    }
+    if (m === "line") map.doubleClickZoom.disable();
+    else map.doubleClickZoom.enable();
+    lineStylePanel.hidden = m !== "line";
+    if (m !== "line") {
+      linePts = [];
+      refreshLineDraft();
+    }
+    if (m !== "place") {
+      pending = null;
+      chainGroup = null;
+    }
   };
   toolbar.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
-    b.addEventListener("click", () => {
-      pending = null;
-      setMode(b.dataset.mode as Mode);
-    }),
+    b.addEventListener("click", () => setMode(b.dataset.mode as Mode)),
   );
   root.querySelector("#tool-marker")!.addEventListener("click", () => {
     openWizard(root, (tpl) => {
-      pending = tpl;
+      chainGroup = tpl.is_multipoint ? Math.floor(Math.random() * 1e9) : null;
+      chainIndex = 0;
       setMode("place");
+      pending = tpl; // nach setMode setzen (setMode('place') fasst pending nicht an)
     });
+  });
+
+  // Linien-Stil-Panel
+  const lcBox = root.querySelector<HTMLDivElement>("#lc")!;
+  const drawColors = () =>
+    (lcBox.innerHTML = lineColors
+      .map(
+        (c) =>
+          `<button data-pc="${c.packedColor}" title="${c.name}" style="background:rgb(${c.red},${c.green},${c.blue})" class="${
+            c.packedColor === lineColor ? "active" : ""
+          }"></button>`,
+      )
+      .join(""));
+  drawColors();
+  lcBox.addEventListener("click", (e) => {
+    const b = (e.target as HTMLElement).closest("[data-pc]") as HTMLElement | null;
+    if (!b) return;
+    lineColor = Number(b.dataset.pc);
+    drawColors();
+  });
+  root.querySelector<HTMLSelectElement>("#lw")!.addEventListener("change", (e) => {
+    lineWidth = Number((e.target as HTMLSelectElement).value);
+  });
+  const finishLine = () => {
+    if (linePts.length >= 2) {
+      socket.send({
+        type: "stroke.commit",
+        cid: cid(),
+        data: { kind: "phaseline", points: linePts, color: lineColor, width: lineWidth },
+      });
+    }
+    linePts = [];
+    refreshLineDraft();
+  };
+  root.querySelector("#lineFinish")!.addEventListener("click", finishLine);
+  root.querySelector("#lineCancel")!.addEventListener("click", () => {
+    linePts = [];
+    refreshLineDraft();
   });
 
   function applyCaps(): void {
     const tb = root.querySelector("#toolbar");
     if (!tb) return;
-    tb.querySelector<HTMLButtonElement>('[data-mode="draw"]')?.toggleAttribute("disabled", !caps.draw);
+    tb.querySelector<HTMLButtonElement>('[data-mode="line"]')?.toggleAttribute("disabled", !caps.draw);
+    tb.querySelector<HTMLButtonElement>('[data-mode="erase"]')?.toggleAttribute("disabled", !caps.delete);
     tb.querySelector<HTMLButtonElement>("#tool-marker")?.toggleAttribute("disabled", !caps.place);
     tb.querySelector<HTMLButtonElement>("#tool-fav")?.toggleAttribute("disabled", !caps.place);
   }
@@ -336,6 +473,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       el.addEventListener("click", (ev) => {
         if ((ev.target as HTMLElement).dataset.delfav) return;
         const f = favs.find((x) => x.id === el.dataset.fav)!;
+        chainGroup = null;
+        setMode("place");
         pending = {
           sidc: f.sidc,
           unit_text: f.unit_text,
@@ -347,7 +486,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           is_multipoint: false,
           max_line_points: 0,
         };
-        setMode("place");
       }),
     );
     favPanel.querySelectorAll<HTMLButtonElement>("[data-delfav]").forEach((b) =>
@@ -366,57 +504,62 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     e.preventDefault();
     const id = e.features?.[0]?.properties?.id as string;
     const m = markers.get(id);
-    if (m) openEditPanel(m);
+    if (!m) return;
+    if (mode === "erase") {
+      if (caps.delete) socket.send({ type: "marker.delete", id: m.id });
+    } else if (mode === "move") {
+      openEditPanel(m);
+    }
+  });
+
+  map.on("dblclick", (e) => {
+    if (mode === "line") {
+      e.preventDefault();
+      finishLine();
+    }
   });
 
   map.on("click", (e) => {
-    if ((e as any).defaultPrevented) return;
-    if (mode === "place" && pending) {
-      const [wx, wy] = [e.lngLat.lng, e.lngLat.lat];
-      socket.send({
-        type: "marker.create",
-        cid: cid(),
-        data: {
-          sidc: pending.sidc,
-          world_x: wx,
-          world_y: wy,
-          unit_text: pending.unit_text,
-          ai_text: pending.ai_text,
-          channel: pending.channel || myChannel,
-          locked: pending.locked,
-          timestamp_visible: pending.timestamp_visible,
-          rotation_degrees: pending.rotation_degrees,
-        },
-      });
-      if (!pending.is_multipoint) {
-        pending = null;
-        setMode("move");
-      }
-    }
-  });
+    if ((e as { defaultPrevented?: boolean }).defaultPrevented) return;
 
-  // Freihand-Zeichnen
-  let drawing: [number, number][] | null = null;
-  map.on("mousedown", (e) => {
-    if (mode !== "draw") return;
-    drawing = [[e.lngLat.lng, e.lngLat.lat]];
-  });
-  map.on("mousemove", (e) => {
-    if (mode !== "draw" || !drawing) return;
-    drawing.push([e.lngLat.lng, e.lngLat.lat]);
-  });
-  map.on("mouseup", () => {
-    if (mode !== "draw" || !drawing) return;
-    if (drawing.length > 1) {
-      socket.send({ type: "stroke.commit", cid: cid(), data: { kind: "freehand", points: drawing, width: 2 } });
+    if (mode === "line") {
+      linePts.push([e.lngLat.lng, e.lngLat.lat]);
+      refreshLineDraft();
+      return;
     }
-    drawing = null;
+
+    if (mode === "place" && pending) {
+      const data: Record<string, unknown> = {
+        sidc: pending.sidc,
+        world_x: e.lngLat.lng,
+        world_y: e.lngLat.lat,
+        unit_text: pending.unit_text,
+        ai_text: pending.ai_text,
+        channel: pending.channel || myChannel,
+        locked: pending.locked,
+        timestamp_visible: pending.timestamp_visible,
+        rotation_degrees: pending.rotation_degrees,
+      };
+      if (chainGroup != null) {
+        data.linked_group_id = chainGroup;
+        data.point_index = chainIndex;
+        if (chainIndex === 0) {
+          data.line_color = lineColor;
+          data.line_width = lineWidth;
+        }
+        chainIndex++;
+      }
+      socket.send({ type: "marker.create", cid: cid(), data });
+
+      const done = !pending.is_multipoint || (pending.max_line_points > 0 && chainIndex >= pending.max_line_points);
+      if (done) setMode("move");
+    }
   });
 
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
-      pending = null;
-      setMode("move");
+      if (mode === "line" && linePts.length) finishLine();
+      else setMode("move");
     }
   });
 
@@ -457,6 +600,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       p.remove();
     });
     p.querySelector("[data-clone]")!.addEventListener("click", () => {
+      chainGroup = null;
+      setMode("place");
       pending = {
         sidc: m.sidc,
         unit_text: m.unit_text,
@@ -468,7 +613,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         is_multipoint: false,
         max_line_points: 0,
       };
-      setMode("place");
       p.remove();
     });
     p.querySelector("[data-fav]")!.addEventListener("click", async () => {
@@ -497,4 +641,20 @@ function packedToHex(packed: number): string {
   if (packed === undefined || packed === -1 || Number.isNaN(packed)) return "#ffd700";
   const n = packed & 0xffffff;
   return "#" + n.toString(16).padStart(6, "0");
+}
+
+function emptyFC(): GeoJSON.FeatureCollection {
+  return { type: "FeatureCollection", features: [] };
+}
+
+function lineDraftFC(pts: [number, number][]): GeoJSON.FeatureCollection {
+  const feats: GeoJSON.Feature[] = pts.map((p) => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: p },
+    properties: {},
+  }));
+  if (pts.length >= 2) {
+    feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: pts }, properties: {} });
+  }
+  return { type: "FeatureCollection", features: feats };
 }
