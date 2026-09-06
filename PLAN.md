@@ -46,11 +46,43 @@ Später Open Source (AGPL-3.0).
 
 ## Stufenplan
 
-**Stand 2026-09-06:** Phasen 0–2 ✅, Phase 3 teilweise (Verwaltung ✅, Tile-Routen offen),
-Phasen 5 & 6 als minimaler Durchstich ✅ (CRUD/ACL/Klonen/Versionen + Live-Marker mit
-Server-Autorität, 5 pytest grün). **Bereit für ersten Deploy-Test auf dem Server.**
-Offen bis „fertig": Alembic-Baseline (aktuell `create_all`), Tile-/style.json-Portierung,
-volles sidc-marker-Frontend, Zeitstrahl/Phasen/Layer-UI, Admin-UI, Hardening.
+**Stand 2026-09-07:** Phasen 0–9 im Wesentlichen umgesetzt und auf dem Server deployt
+(11 pytest grün). Vollständige Funktionsbeschreibung: [`docs/HANDBUCH.md`](docs/HANDBUCH.md).
+
+Umgesetzt: Auth (lokal + OIDC), Rollen/Gruppen/ACL mit Einzel-Häkchen + `can_create_plans`,
+Karten-Import (Link **und** Direkt-Upload, Update, DLC), Tileserver + `style.json`,
+Katalog-Upload (5 Dateien inkl. `SIDC_ModifierCatalog.json`), voller Marker-Wizard
+(QuickMenü + Katalog + Advanced-Modifikatoren), Symbol-Rendering milsymbol.js + PNG-Fallback,
+Richtungspfeile, Werkzeugleiste (Bewegen/Marker-verschieben/Zeigen/Linie/Lineal/Radierer/
+Marker/Favoriten), Rechtsklick-Ende, Zeitstrahl/**Phasen** + Fremdphasen-Transparenz,
+**Phasen-Notizen** (verschiebbares Markdown-Fenster, Reiter je Phase), Grid mit
+Randbeschriftung, Kompass + Nach-Norden, **Screenshot** (nur Karteninhalt, DTG, Dateiname),
+2D-nur-Drehen + Kamera-Grenzen, Map-Locations (nach `baseType`, Sprachwahl), i18n DE/EN,
+Public Shares, Audit-Log-UI, **Plan-Ordner** (Baum + Drag & Drop) + Klonen in Ordner,
+**Versionsverlauf-UI** (Liste + Wiederherstellen mit Auto-Sicherung), **Hilfe-Overlay**.
+
+Offen bis „fertig": Alembic-Baseline (aktuell `create_all` + `_add_missing_columns`),
+Layer-UI innerhalb der Phasen, `.topo`-Straßen-Overlay (Parser noch nicht sauber → in
+C2 + ATAKmaps-Viewer deaktiviert), Undo/Redo pro User, Plan-JSON-Export/-Import,
+`pg_dump`-Backup-Container, Security-Header-Feinschliff.
+
+### Erweiterungen über den ursprünglichen Plan hinaus
+
+- **Plan-Ordner / Unterordner** mit Drag & Drop (`plan_folders`, `/folders`-CRUD,
+  `POST /plans/{id}/move`); Klon-Dialog mit Zielordner.
+- **Phasen-Notizen** als eigenes, verschiebbares Fenster mit Markdown und Reiter je Phase
+  (`Phase.notes`).
+- **Advanced-Modifikatoren**: `SIDC_ModifierCatalog.json` als 5. Katalog; Dropdowns im
+  Wizard **und** im Marker-Bearbeiten-Fenster; `withModifiers()` spleißt Stellen 6/7/16-19.
+- **Screenshot** mit militärischem DTG-Overlay + datetime-Feld in der Topbar.
+- **Kompass** + „nach Norden"-Funktion; **2D = nur Drehen** (kein Pitch); **Kamera-Grenzen**
+  (`setMaxBounds` + MinZoom).
+- **Lineal**-Werkzeug (Distanz), **Marker-verschieben**-Modus + mittlere Maustaste.
+- **Symbol-Rendering hybrid** milsymbol.js (primär) + vorgerendertes PNG (Fallback) +
+  Ersatzpunkt; **Richtungspfeile** als Vektor-Geometrie.
+- **Hilfe-Overlay** (`?`) mit Werkzeugen/Topbar/Tastenkürzeln.
+- **Schema-Drift** wird ohne Alembic über `bootstrap._add_missing_columns()` abgefangen
+  (ALTER TABLE ADD COLUMN für neue einfache Spalten beim Start).
 
 ### Phase 0 – Repo & Grundgerüst  ✅
 - [ ] Monorepo-Struktur: `backend/`, `frontend/`, `deploy/`, `data/` (gemountet, im Repo leer).

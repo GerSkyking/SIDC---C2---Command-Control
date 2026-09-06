@@ -4,24 +4,37 @@ Browser-basiertes, mehrbenutzerfähiges Einsatz-Planungstool auf Basis der Karte
 Markerlogik von **ATAKmaps** – aber ohne Ingame-Anbindung. Nutzer melden sich an,
 wählen eine Karte, und setzen gemeinsam in Echtzeit Marker und Zeichnungen.
 
-> Status: **Phase 0** (Grundgerüst). Siehe [`PLAN.md`](PLAN.md) für den vollständigen Stufenplan.
+> Status (2026-09-07): lauffähig und deployt, Phasen 0–9 im Wesentlichen umgesetzt.
+> **Vollständiges Handbuch: [`docs/HANDBUCH.md`](docs/HANDBUCH.md).**
+> Stufenplan & Abweichungen: [`PLAN.md`](PLAN.md).
 
-## Features (Zielbild)
+## Features
 
 - Login: lokaler Bootstrap-Admin **+** optional externes OIDC
-- Nutzer, Gruppen, feingranulare Rechte pro Plan (`viewer` / `editor` / `owner`) und
-  Capability „darf Pläne erstellen"
-- Karten liegen als vorbereitete Pakete in einem Datenverzeichnis; Import per Download-Link
-  über die Admin-UI
-- Echtzeit-Kollaboration (WebSocket, autoritativer Server) – Marker & Freihandzeichnen
-- Pläne: erstellen, klonen, versioniert speichern/laden, exportieren/importieren, löschen
+- Nutzer, Gruppen, feingranulare Rechte pro Plan (`viewer` / `editor` mit
+  setzen/bewegen/löschen/malen / `owner`) und Capability „darf Pläne erstellen"
+- Karten-Import per **Download-Link oder Direkt-Upload** (Admin-UI), inkl. Karten-Update
+  und DLC-Zoomstufen; Tileserver + `style.json` im Backend
+- Voller **Marker-Wizard** wie ATAKmaps (QuickMenü + Katalog + „Advanced"-Modifikatoren),
+  Symbol-Rendering über milsymbol.js mit PNG-Fallback, Richtungspfeile
+- Werkzeuge: Bewegen, Marker verschieben, Zeigen (Laser-Cursor), gerade Linien, **Lineal**,
+  Radierer, Marker, Favoriten
+- **Zeitstrahl / Phasen** (Marker je Phase, Transparenz für Fremdphasen) + verschiebbares
+  **Markdown-Notizfenster** je Phase
+- **Kompass**, „nach Norden", **Screenshot** (nur Karteninhalt, militärischer DTG),
+  Koordinaten-Grid mit Randbeschriftung, 2D = nur Drehen, Kamera-Grenzen
+- Echtzeit-Kollaboration (WebSocket, autoritativer Server) – Marker & Zeichnungen
+- Pläne: **Ordner/Unterordner mit Drag & Drop**, erstellen, klonen (in Zielordner),
+  **Versionsverlauf** mit Wiederherstellen, löschen (Trash)
+- Öffentliche Nur-Ansehen-Links, Admin-Bereich (Nutzer/Gruppen/Kataloge/Karten/Audit-Log),
+  UI zweisprachig DE/EN, Karten-Labels in 13 Sprachen
 
 ## Architektur
 
 | Komponente | Technik |
 |---|---|
-| Backend | FastAPI (Python), SQLAlchemy + Alembic |
-| Frontend | TypeScript + Vite + MapLibre-GL (im Backend-Image mitgebaut) |
+| Backend | FastAPI (Python), SQLAlchemy 2.0 (Schema via `create_all` + Auto-`ALTER TABLE`, noch kein Alembic) |
+| Frontend | TypeScript + Vite + MapLibre-GL 5 + milsymbol.js (im Backend-Image mitgebaut) |
 | DB | PostgreSQL |
 | Realtime-Backplane | Redis Pub/Sub |
 | TLS / externer Zugriff | **extern** (z. B. Nginx Proxy Manager) – kein Proxy im Stack |
