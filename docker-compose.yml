@@ -35,7 +35,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    image: ghcr.io/klausundjens/sidc-c2:latest
+    image: ghcr.io/gerskyking/sidc---c2---command-control:latest
     restart: unless-stopped
     depends_on:
       db:
