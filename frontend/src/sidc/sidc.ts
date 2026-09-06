@@ -95,3 +95,12 @@ export function lngLatToWorld(cal: Calibration | null, lng: number, lat: number)
   if (!cal) return [lng, lat];
   return [(lng - cal.origin_lon) * cal.scale_x, (lat - cal.origin_lat) * cal.scale_y];
 }
+export function worldToLngLat(cal: Calibration | null, wx: number, wy: number): [number, number] {
+  if (!cal) return [wx, wy];
+  return [cal.origin_lon + wx / (cal.scale_x || 1), cal.origin_lat + wy / (cal.scale_y || 1)];
+}
+export function niceStep(raw: number): number {
+  const p = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1))));
+  const n = raw / p;
+  return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * p;
+}

@@ -48,6 +48,13 @@ a { color: var(--accent); }
 .hud { position: absolute; right: 0.6rem; top: 4rem; z-index: 5; background: rgba(20,23,28,0.85);
   border: 1px solid var(--border); border-radius: 6px; padding: 0.35rem 0.6rem; font-variant-numeric: tabular-nums; font-size: 0.85rem; }
 
+.grid-canvas { position: absolute; inset: 3.2rem 0 0 0; pointer-events: none; z-index: 4; }
+.layers-panel { position: absolute; right: 0.6rem; top: 7rem; width: 14rem; z-index: 6;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem;
+  max-height: 70vh; overflow-y: auto; }
+.layers-panel label { display: block; font-size: 0.85rem; margin: 0.2rem 0; }
+#maplang { max-width: 6rem; }
+
 .line-style { position: absolute; left: 3.4rem; top: 4rem; width: 13rem; z-index: 6;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; }
 .line-style label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.4rem 0 0.2rem; }

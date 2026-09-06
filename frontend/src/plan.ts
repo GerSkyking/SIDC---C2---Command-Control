@@ -3,7 +3,7 @@
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
 import { channelLabel, loadChannels, loadPhaseLineStyle } from "./sidc/catalog";
-import { iconUrl, lngLatToWorld, type Calibration } from "./sidc/sidc";
+import { iconUrl, lngLatToWorld, niceStep, worldToLngLat, type Calibration } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { openAclEditor } from "./acl";
 import { cid, PlanSocket, type WsMessage } from "./ws";
@@ -69,6 +69,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         .map((c) => `<option value="${c.name}" ${c.name === myChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
         .join("")}</select>
       <div id="timeline" class="timeline"></div>
+      <select id="maplang" title="Sprache der Kartenbeschriftung"></select>
+      <button id="layersBtn" title="Ebenen">☰</button>
       <span class="grow"></span>
       <span class="presence" id="presence"></span>
       ${myPlan?.level === "owner" ? `<button id="acl">Freigaben</button>` : ""}
@@ -99,7 +101,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
            </div>`
         : ""
     }
-    <div class="hud" id="hud">X: – &nbsp; Y: – &nbsp; H: –</div>`;
+    <div class="hud" id="hud">X: – &nbsp; Y: – &nbsp; H: –</div>
+    <div class="layers-panel" id="layersPanel" hidden></div>
+    <canvas class="grid-canvas" id="gridCanvas"></canvas>`;
 
   const map = new maplibregl.Map({
     container: "map",
@@ -355,6 +359,178 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   root.querySelector("#acl")?.addEventListener("click", () => openAclEditor(planId, snap.plan.name));
+
+  // ── Ebenen: Basiskarte-Layer + Topo-Vektor + Map-Locations ─────────────
+  interface LocGroup {
+    key: string;
+    label: string;
+    items: { x: number; y: number; names: Record<string, string>; color: number[]; bold: boolean; italic: boolean; size: number }[];
+  }
+  let locData: { langs: string[]; groups: LocGroup[] } | null = null;
+  let mapLang = "en_us";
+  const groupVisible = new Map<string, boolean>();
+  const baseLayerVisible: Record<string, boolean> = { sat: true, grid: true };
+
+  const locFC = (): GeoJSON.FeatureCollection => ({
+    type: "FeatureCollection",
+    features: (locData?.groups ?? [])
+      .filter((g) => groupVisible.get(g.key) !== false)
+      .flatMap((g) =>
+        g.items.map((it) => ({
+          type: "Feature" as const,
+          geometry: { type: "Point" as const, coordinates: [it.x, it.y] },
+          properties: {
+            label: it.names[mapLang] || it.names.en_us || Object.values(it.names)[0] || "",
+            color: `rgb(${Math.round(it.color[0] * 255)},${Math.round(it.color[1] * 255)},${Math.round(it.color[2] * 255)})`,
+            size: 11 + (it.size - 0.75) * 6,
+          },
+        })),
+      ),
+  });
+  const refreshLoc = () => (map.getSource("locations") as GeoJSONSource)?.setData(locFC());
+
+  map.on("load", async () => {
+    // Topo-Vektor
+    try {
+      const r = await fetch(`/api/maps/${mapId}/topo.geojson`, { credentials: "include" });
+      if (r.ok) {
+        map.addSource("topo", { type: "geojson", data: await r.json() });
+        map.addLayer(
+          {
+            id: "topo",
+            type: "line",
+            source: "topo",
+            layout: { visibility: "none", "line-cap": "round" },
+            paint: { "line-color": "#d8c37a", "line-width": 1.4, "line-opacity": 0.85 },
+          },
+          "strokes",
+        );
+      }
+    } catch {
+      /* kein Topo */
+    }
+    // Map-Locations
+    try {
+      const r = await fetch(`/api/maps/${mapId}/locations.json`, { credentials: "include" });
+      if (r.ok) {
+        locData = await r.json();
+        mapLang =
+          locData!.langs.find((l) => l.startsWith(navigator.language.slice(0, 2))) ??
+          (locData!.langs.includes("en_us") ? "en_us" : locData!.langs[0]);
+        for (const g of locData!.groups) groupVisible.set(g.key, true);
+        map.addSource("locations", { type: "geojson", data: locFC() });
+        map.addLayer({
+          id: "locations",
+          type: "symbol",
+          source: "locations",
+          layout: {
+            "text-field": ["get", "label"],
+            "text-size": ["get", "size"],
+            "text-anchor": "center",
+            "text-allow-overlap": false,
+          },
+          paint: { "text-color": ["get", "color"], "text-halo-color": "#000", "text-halo-width": 1.6 },
+        });
+      }
+    } catch {
+      /* keine Locations */
+    }
+    buildLayersPanel();
+    buildMapLangSelector();
+  });
+
+  const layersPanel = root.querySelector<HTMLDivElement>("#layersPanel")!;
+  root.querySelector("#layersBtn")!.addEventListener("click", () => (layersPanel.hidden = !layersPanel.hidden));
+
+  function buildLayersPanel(): void {
+    const rows: string[] = ['<div class="fav-head">Ebenen</div>'];
+    for (const ly of ["sat", "grid", "terrain"]) {
+      if (!map.getLayer(ly)) continue;
+      rows.push(
+        `<label><input type="checkbox" data-base="${ly}" ${baseLayerVisible[ly] !== false ? "checked" : ""}/> ${ly}</label>`,
+      );
+    }
+    if (map.getLayer("topo")) rows.push(`<label><input type="checkbox" data-topo /> Topo (Straßen)</label>`);
+    if (locData) {
+      rows.push('<div class="fav-head">Orte</div>');
+      for (const g of locData.groups) {
+        rows.push(
+          `<label><input type="checkbox" data-group="${g.key}" checked/> ${g.label} <span class="muted">${g.items.length}</span></label>`,
+        );
+      }
+    }
+    layersPanel.innerHTML = rows.join("");
+    layersPanel.querySelectorAll<HTMLInputElement>("[data-base]").forEach((cb) =>
+      cb.addEventListener("change", () => {
+        baseLayerVisible[cb.dataset.base!] = cb.checked;
+        map.setLayoutProperty(cb.dataset.base!, "visibility", cb.checked ? "visible" : "none");
+      }),
+    );
+    layersPanel.querySelector<HTMLInputElement>("[data-topo]")?.addEventListener("change", (e) =>
+      map.setLayoutProperty("topo", "visibility", (e.target as HTMLInputElement).checked ? "visible" : "none"),
+    );
+    layersPanel.querySelectorAll<HTMLInputElement>("[data-group]").forEach((cb) =>
+      cb.addEventListener("change", () => {
+        groupVisible.set(cb.dataset.group!, cb.checked);
+        refreshLoc();
+      }),
+    );
+  }
+
+  function buildMapLangSelector(): void {
+    const sel = root.querySelector<HTMLSelectElement>("#maplang")!;
+    if (!locData) {
+      sel.hidden = true;
+      return;
+    }
+    sel.innerHTML = locData.langs.map((l) => `<option value="${l}" ${l === mapLang ? "selected" : ""}>${l}</option>`).join("");
+    sel.addEventListener("change", () => {
+      mapLang = sel.value;
+      refreshLoc();
+    });
+  }
+
+  // ── Koordinaten-Grid mit Randbeschriftung (wie ATAKmaps) ───────────────
+  const gridCanvas = root.querySelector<HTMLCanvasElement>("#gridCanvas")!;
+  const gctx = gridCanvas.getContext("2d")!;
+  function drawGrid(): void {
+    const w = gridCanvas.clientWidth;
+    const h = gridCanvas.clientHeight;
+    if (gridCanvas.width !== w) gridCanvas.width = w;
+    if (gridCanvas.height !== h) gridCanvas.height = h;
+    gctx.clearRect(0, 0, w, h);
+    if (!cal) return;
+    const b = map.getBounds();
+    const [x0, y0] = lngLatToWorld(cal, b.getWest(), b.getSouth());
+    const [x1, y1] = lngLatToWorld(cal, b.getEast(), b.getNorth());
+    const span = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+    const step = niceStep(span / 8);
+    gctx.strokeStyle = "rgba(255,255,255,0.18)";
+    gctx.fillStyle = "rgba(255,255,255,0.85)";
+    gctx.font = "11px system-ui";
+    gctx.lineWidth = 1;
+    for (let gx = Math.ceil(Math.min(x0, x1) / step) * step; gx <= Math.max(x0, x1); gx += step) {
+      const ll = worldToLngLat(cal, gx, y0);
+      const px = map.project(ll).x;
+      gctx.beginPath();
+      gctx.moveTo(px, 0);
+      gctx.lineTo(px, h);
+      gctx.stroke();
+      gctx.fillText(String(Math.round(gx)), px + 2, 12);
+    }
+    for (let gy = Math.ceil(Math.min(y0, y1) / step) * step; gy <= Math.max(y0, y1); gy += step) {
+      const ll = worldToLngLat(cal, x0, gy);
+      const py = map.project(ll).y;
+      gctx.beginPath();
+      gctx.moveTo(0, py);
+      gctx.lineTo(w, py);
+      gctx.stroke();
+      gctx.fillText(String(Math.round(gy)), 2, py - 2);
+    }
+  }
+  map.on("move", drawGrid);
+  map.on("resize", drawGrid);
+  map.once("idle", drawGrid);
 
   if (!canEdit) return;
 
