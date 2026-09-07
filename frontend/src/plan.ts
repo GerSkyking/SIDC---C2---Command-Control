@@ -1012,7 +1012,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
 
   const layersPanel = root.querySelector<HTMLDivElement>("#layersPanel")!;
-  root.querySelector("#layersBtn")!.addEventListener("click", () => (layersPanel.hidden = !layersPanel.hidden));
+  const layersBtn = root.querySelector<HTMLButtonElement>("#layersBtn")!;
+  layersBtn.addEventListener("click", () => {
+    layersPanel.hidden = !layersPanel.hidden;
+    if (!layersPanel.hidden) {
+      const b = layersBtn.getBoundingClientRect();
+      layersPanel.style.top = `${b.bottom + 4}px`;
+      layersPanel.style.right = `${window.innerWidth - b.right}px`;
+    }
+  });
 
   function buildLayersPanel(): void {
     const rows: string[] = [`<div class="fav-head">${t('layers.heading')}</div>`];
