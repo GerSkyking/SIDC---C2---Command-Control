@@ -167,8 +167,11 @@ a { color: var(--accent); }
 .notes-tabs button { padding: 0.15rem 0.5rem; font-size: 0.75rem; border-radius: 5px 5px 0 0; }
 .notes-tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .notes-split { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.5rem; }
-.notes-edit { width: 100%; height: 8rem; resize: vertical; font-family: ui-monospace, monospace; font-size: 0.82rem; }
-.notes-view { border-top: 1px dashed var(--border); padding-top: 0.4rem; font-size: 0.88rem; max-height: 14rem; overflow-y: auto; }
+.notes-edit { width: 100%; height: 8rem; resize: vertical; font-family: ui-monospace, monospace; font-size: 0.82rem;
+  background: #000; color: #fff; border: 1px solid var(--border); border-radius: 5px; padding: 0.4rem; }
+.notes-edit::placeholder { color: rgba(255,255,255,0.5); }
+.notes-view { border-top: 1px dashed var(--border); padding-top: 0.4rem; font-size: 0.88rem; max-height: 14rem;
+  overflow-y: auto; background: #000; color: #fff; border-radius: 5px; padding: 0.4rem; }
 .notes-view h1, .notes-view h2, .notes-view h3 { margin: 0.4rem 0 0.2rem; font-size: 1rem; }
 .notes-view p, .notes-view ul, .notes-view ol, .notes-view blockquote { margin: 0.3rem 0; }
 .notes-view blockquote { border-left: 3px solid var(--border); padding-left: 0.6rem; color: var(--muted); }
