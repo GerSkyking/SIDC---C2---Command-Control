@@ -7,6 +7,10 @@ import { openAclEditor } from "./acl";
 import { renderPlanTree } from "./planTree";
 import { renderPublicView } from "./publicview";
 import { langSelect, t, wireLangSelect } from "./i18n";
+import { initTheme } from "./theme";
+import { themeSwitch, wireThemeSwitch } from "./ui";
+
+initTheme();
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -47,7 +51,7 @@ async function renderLogin(): Promise<void> {
   const { enabled: oidc } = await api.oidcEnabled().catch(() => ({ enabled: false }));
   app.innerHTML = `
     <div class="center"><div class="card stack">
-      <div class="row"><h1 style="flex:1">${t("app.title")}</h1>${langSelect()}</div>
+      <div class="row"><h1 style="flex:1">${t("app.title")}</h1>${themeSwitch()}${langSelect()}</div>
       <input id="u" placeholder="${t("auth.username")}" autocomplete="username" />
       <input id="p" type="password" placeholder="${t("auth.password")}" autocomplete="current-password" />
       <button class="primary" id="go">${t("auth.login")}</button>
@@ -55,6 +59,7 @@ async function renderLogin(): Promise<void> {
       <div class="error" id="err"></div>
     </div></div>`;
   wireLangSelect(app);
+  wireThemeSwitch(app);
 
   const err = app.querySelector<HTMLDivElement>("#err")!;
   const submit = async () => {
@@ -90,6 +95,7 @@ async function renderPlanList(): Promise<void> {
     <div class="topbar">
       <strong>SIDC – C2</strong>
       <span class="grow"></span>
+      ${themeSwitch()}
       ${langSelect()}
       ${me!.role === "admin" ? `<a href="#/admin">${t("nav.admin")}</a>` : ""}
       <span class="muted">${me!.username} (${me!.role})</span>
@@ -115,6 +121,7 @@ async function renderPlanList(): Promise<void> {
       <div class="plan-tree" id="planTree"></div>
     </div>`;
   wireLangSelect(app);
+  wireThemeSwitch(app);
 
   renderPlanTree(app.querySelector<HTMLDivElement>("#planTree")!, plans, folders, me!.can_create_plans_effective, {
     onChanged: () => renderPlanList(),

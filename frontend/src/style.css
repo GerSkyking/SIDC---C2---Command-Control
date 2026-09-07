@@ -1,21 +1,99 @@
+@font-face {
+  font-family: "InterVar";
+  src: url("./assets/inter-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/* ── Design-Tokens ─────────────────────────────────────────────────────────
+   Standard = Dunkel. Hell über :root[data-theme="light"]. Alt-Namen
+   (--panel …) bleiben als Alias erhalten, damit vorhandenes CSS weiterläuft. */
 :root {
-  --bg: #14171c;
-  --panel: #1e232b;
-  --border: #333b47;
-  --fg: #e6e9ee;
-  --muted: #9aa4b2;
-  --accent: #4c8dff;
+  --bg: #181818;
+  --surface: #313131;
+  --surface-2: #262626;
+  --elevated: #3b3b3b;
+  --border: #454545;
+  --muted: #9a9a9a;
+  --fg: #f2f2f2;
+  --accent: #ff9900;
+  --accent-fg: #181818;
+  --accent-weak: rgba(255, 153, 0, 0.16);
+  --danger: #ff5c5c;
+  --ok: #46c26a;
+  --warn: #ffb020;
+  --focus: #ff9900;
+  --shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
+  --panel: var(--surface);
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
 }
+:root[data-theme="light"] {
+  --bg: #f4f4f5;
+  --surface: #ffffff;
+  --surface-2: #ececed;
+  --elevated: #e4e4e6;
+  --border: #d7d7da;
+  --muted: #6b6b6f;
+  --fg: #1c1c1e;
+  --accent: #e57e00;
+  --accent-fg: #ffffff;
+  --accent-weak: rgba(229, 126, 0, 0.14);
+  --danger: #d63b3b;
+  --ok: #2f9e51;
+  --warn: #b9791a;
+  --focus: #e57e00;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); }
-button, input, select {
-  font: inherit; color: inherit; background: var(--panel);
-  border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.7rem;
+body {
+  margin: 0;
+  font-family: "InterVar", system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
 }
-button { cursor: pointer; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
+button, input, select, textarea {
+  font: inherit; color: inherit; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-sm); padding: 0.5rem 0.7rem;
+}
+button { cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s; }
+button:hover:not(:disabled) { background: var(--elevated); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+button.danger { border-color: var(--danger); color: var(--danger); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 a { color: var(--accent); }
+
+/* ── Icons ────────────────────────────────────────────────────────────── */
+.ic { display: block; flex: none; }
+.ic path { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.ic .ic-a { fill: var(--accent-weak); stroke: none; }
+
+.icon-btn {
+  display: inline-grid; place-items: center;
+  width: 2.2rem; height: 2.2rem; padding: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--fg);
+}
+.icon-btn:hover:not(:disabled) { background: var(--elevated); border-color: var(--muted); }
+.icon-btn.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.icon-btn.active .ic-a { fill: rgba(0, 0, 0, 0.18); }
+
+/* ── Segmented control / Theme-Schalter ───────────────────────────────── */
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; background: var(--surface); }
+.segmented .seg-btn {
+  border: none; border-radius: 0; padding: 0.3rem 0.5rem; background: transparent; color: var(--muted);
+  display: grid; place-items: center;
+}
+.segmented .seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+.segmented .seg-btn:hover { background: var(--elevated); color: var(--fg); }
+.segmented .seg-btn.active { background: var(--accent); color: var(--accent-fg); }
+.theme-switch { flex: none; }
 
 .center { min-height: 100vh; display: grid; place-items: center; padding: 2rem; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; width: min(24rem, 92vw); }
@@ -25,8 +103,11 @@ a { color: var(--accent); }
 .error { color: #ff6b6b; font-size: 0.9rem; }
 .muted { color: var(--muted); font-size: 0.9rem; }
 
-.topbar { display: flex; align-items: center; gap: 1rem; padding: 0.6rem 1rem; border-bottom: 1px solid var(--border); background: var(--panel); }
+.topbar { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.8rem; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
 .topbar .grow { flex: 1; }
+.topbar strong { font-weight: 600; }
+.topbar > a { color: var(--fg); text-decoration: none; padding: 0.2rem 0.4rem; border-radius: var(--r-sm); }
+.topbar > a:hover { background: var(--elevated); }
 .list { max-width: 60rem; margin: 1.5rem auto; padding: 0 1rem; }
 
 /* Plan-Baum (Ordner + Drag & Drop) */
@@ -68,12 +149,17 @@ a { color: var(--accent); }
 .ph-op input[type="range"] { width: 6rem; padding: 0; }
 
 /* Kompass in der Topbar */
-.compass { width: 2rem; height: 2rem; padding: 0; border-radius: 999px; display: grid; place-items: center; }
-.compass span { display: block; font-weight: 700; line-height: 1; transform: rotate(var(--rot, 0deg)); transition: transform 0.15s linear; color: #ff6b6b; }
+.compass .ic { transform: rotate(var(--rot, 0deg)); transition: transform 0.15s linear; }
+.compass .ic .ic-a { fill: var(--danger); opacity: 0.9; }
 
-.toolbar { position: absolute; left: 0.6rem; top: 4rem; display: flex; flex-direction: column; gap: 0.3rem; z-index: 5; }
-.toolbar button { width: 2.4rem; height: 2.4rem; font-size: 1.1rem; padding: 0; }
-.toolbar button.active { background: var(--accent); border-color: var(--accent); }
+.toolbar { position: absolute; left: 0.6rem; top: 3.9rem; display: flex; flex-direction: column; gap: 0.3rem;
+  z-index: 5; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: 0.3rem; box-shadow: var(--shadow); }
+.toolbar button { width: 2.4rem; height: 2.4rem; padding: 0; display: grid; place-items: center;
+  background: transparent; border: 1px solid transparent; }
+.toolbar button:hover:not(:disabled) { background: var(--elevated); }
+.toolbar button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.toolbar button.active .ic-a { fill: rgba(0,0,0,0.18); }
 
 .hud { position: absolute; right: 0.6rem; top: 4rem; z-index: 5; background: rgba(20,23,28,0.85);
   border: 1px solid var(--border); border-radius: 6px; padding: 0.35rem 0.6rem; font-variant-numeric: tabular-nums; font-size: 0.85rem; }

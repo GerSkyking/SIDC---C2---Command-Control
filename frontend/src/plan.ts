@@ -10,6 +10,8 @@ import { openAclEditor } from "./acl";
 import { openHelp } from "./help";
 import { openVersionPanel } from "./versions";
 import { t } from "./i18n";
+import { icon } from "./icons";
+import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
 import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
 
@@ -120,38 +122,39 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   root.innerHTML = `
     <div class="topbar">
-      <a href="#/">←</a>
+      <a href="#/" title="${t("nav.back")}">${icon("back")}</a>
       <strong>${snap.plan.name}</strong>
       <span class="badge">${myPlan?.level ?? "?"}</span>
       <button id="t3d">3D</button>
-      <button id="compass" class="compass" title="${t("map.compass")}"><span>↑</span></button>
+      ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") })}
       <input type="datetime-local" id="dtg" title="${t("map.dtg")}" />
-      <button id="shot" title="${t("map.screenshot")}">📷</button>
+      ${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}
       <select id="chan" title="${t('map.channel')}">${(channels?.channels ?? [])
         .map((c) => `<option value="${c.name}" ${c.name === myChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
         .join("")}</select>
       <div id="timeline" class="timeline"></div>
-      <button id="notesBtn" title="${t("notes.open")}">🗒️</button>
+      ${iconBtn("notes", { id: "notesBtn", title: t("notes.open") })}
       <select id="maplang" title="${t("map.lang")}"></select>
-      <button id="layersBtn" title="${t("tool.layers")}">☰</button>
+      ${iconBtn("layers", { id: "layersBtn", title: t("tool.layers") })}
       <span class="grow"></span>
       <span class="presence" id="presence"></span>
-      <button id="versions" title="${t("versions.open")}">🕑</button>
-      <button id="help" title="${t("help.open")}">?</button>
+      ${iconBtn("versions", { id: "versions", title: t("versions.open") })}
+      ${iconBtn("help", { id: "help", title: t("help.open") })}
       ${myPlan?.level === "owner" ? `<button id="acl">${t("plans.shares")}</button>` : ""}
+      ${themeSwitch()}
     </div>
     <div id="map"></div>
     ${
       canEdit
         ? `<div class="toolbar" id="toolbar">
-             <button data-mode="move" class="active" title="${t("tool.move")}">✋</button>
-             <button data-mode="markermove" title="${t("tool.markermove")}">✥</button>
-             <button data-mode="point" title="${t("tool.point")}">👉</button>
-             <button data-mode="line" title="${t("tool.line")}">✏️</button>
-             <button data-mode="measure" title="${t("tool.measure")}">📏</button>
-             <button data-mode="erase" title="${t("tool.erase")}">🧽</button>
-             <button id="tool-marker" title="${t("tool.marker")}">📍</button>
-             <button id="tool-fav" title="${t("tool.fav")}">★</button>
+             ${iconBtn("pan", { data: { mode: "move" }, active: true, title: t("tool.move") })}
+             ${iconBtn("markerMove", { data: { mode: "markermove" }, title: t("tool.markermove") })}
+             ${iconBtn("point", { data: { mode: "point" }, title: t("tool.point") })}
+             ${iconBtn("line", { data: { mode: "line" }, title: t("tool.line") })}
+             ${iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") })}
+             ${iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") })}
+             ${iconBtn("marker", { id: "tool-marker", title: t("tool.marker") })}
+             ${iconBtn("star", { id: "tool-fav", title: t("tool.fav") })}
            </div>
            <div class="fav-panel" id="favPanel" hidden></div>
            <div class="line-style" id="lineStyle" hidden>
@@ -606,6 +609,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   // ── Kompass + Nach-Norden-Button ──────────────────────────────────────
+  wireThemeSwitch(root);
   const compass = root.querySelector<HTMLButtonElement>("#compass")!;
   const syncCompass = () => {
     compass.style.setProperty("--rot", `${-map.getBearing()}deg`);
