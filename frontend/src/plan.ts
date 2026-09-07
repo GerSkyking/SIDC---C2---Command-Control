@@ -826,6 +826,45 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let hasContours = false;
   let hasPeaks = false;
 
+  // Deckkraft je Ebene (0..1), pro Browser gespeichert.
+  const layerOpacity: Record<string, number> = (() => {
+    try {
+      return { ...JSON.parse(localStorage.getItem("sidc_layeropacity") || "{}") };
+    } catch {
+      return {};
+    }
+  })();
+  const opac = (name: string): number => (layerOpacity[name] ?? 1);
+
+  function setLayerOpacity(name: string, f: number): void {
+    layerOpacity[name] = f;
+    try {
+      localStorage.setItem("sidc_layeropacity", JSON.stringify(layerOpacity));
+    } catch {
+      /* ignore */
+    }
+    const has = (id: string) => !!map.getLayer(id);
+    if ((name === "sat" || name === "grid") && has(name)) {
+      map.setPaintProperty(name, "raster-opacity", f);
+    } else if (name === "contours") {
+      if (has("contours-line"))
+        map.setPaintProperty("contours-line", "line-opacity", [
+          "*",
+          f,
+          ["case", ["get", "bold"], 0.85, 0.5],
+        ]);
+      if (has("contours-label")) map.setPaintProperty("contours-label", "text-opacity", f);
+    } else if (name === "peaks") {
+      if (has("peaks-sym")) map.setPaintProperty("peaks-sym", "text-opacity", f);
+    } else if (name === "locations") {
+      if (has("locations-dots")) {
+        map.setPaintProperty("locations-dots", "circle-opacity", f);
+        map.setPaintProperty("locations-dots", "circle-stroke-opacity", f);
+      }
+      if (has("locations-labels")) map.setPaintProperty("locations-labels", "text-opacity", f);
+    }
+  }
+
   const locFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
     features: (locData?.groups ?? [])
@@ -887,6 +926,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       /* keine Locations */
     }
     await addTerrainOverlays();
+    for (const n of ["sat", "grid", "contours", "peaks", "locations"])
+      if (layerOpacity[n] != null) setLayerOpacity(n, layerOpacity[n]);
     buildLayersPanel();
     buildMapLangSelector();
   });
@@ -975,22 +1016,28 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   function buildLayersPanel(): void {
     const rows: string[] = [`<div class="fav-head">${t('layers.heading')}</div>`];
-    for (const ly of ["sat", "grid", "terrain"]) {
-      if (!map.getLayer(ly)) continue;
+    // name -> (Anzeigename, Deckkraft-Regler?)
+    const entries: [string, string, boolean][] = [];
+    for (const ly of ["sat", "grid", "terrain"])
+      if (map.getLayer(ly)) entries.push([ly, ly, ly !== "terrain"]);
+    if (hasContours) entries.push(["contours", t("layers.contours"), true]);
+    if (hasPeaks) entries.push(["peaks", t("layers.peaks"), true]);
+
+    for (const [name, label, hasSlider] of entries) {
+      const on = baseLayerVisible[name] !== false;
+      const slider = hasSlider
+        ? `<input type="range" min="0" max="100" step="5" value="${Math.round(opac(name) * 100)}" data-op="${name}" title="${t("layers.opacity")}"/>`
+        : "";
       rows.push(
-        `<label><input type="checkbox" data-base="${ly}" ${baseLayerVisible[ly] !== false ? "checked" : ""}/> ${ly}</label>`,
+        `<div class="layer-row"><label><input type="checkbox" data-base="${name}" ${on ? "checked" : ""}/> ${label}</label>${slider}</div>`,
       );
     }
-    if (hasContours)
-      rows.push(
-        `<label><input type="checkbox" data-base="contours" ${baseLayerVisible.contours ? "checked" : ""}/> ${t("layers.contours")}</label>`,
-      );
-    if (hasPeaks)
-      rows.push(
-        `<label><input type="checkbox" data-base="peaks" ${baseLayerVisible.peaks ? "checked" : ""}/> ${t("layers.peaks")}</label>`,
-      );
+
     if (locData) {
       rows.push(`<div class="fav-head">${t('layers.places')}</div>`);
+      rows.push(
+        `<div class="layer-row"><label>${t("layers.opacity")}</label><input type="range" min="0" max="100" step="5" value="${Math.round(opac("locations") * 100)}" data-op="locations" title="${t("layers.opacity")}"/></div>`,
+      );
       for (const g of locData.groups) {
         rows.push(
           `<label><input type="checkbox" data-group="${g.key}" checked/> ${g.label} <span class="muted">${g.items.length}</span></label>`,
@@ -1007,6 +1054,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", cb.checked ? "visible" : "none");
         if (name === "grid") updateGrid();
       }),
+    );
+    layersPanel.querySelectorAll<HTMLInputElement>("[data-op]").forEach((sl) =>
+      sl.addEventListener("input", () => setLayerOpacity(sl.dataset.op!, +sl.value / 100)),
     );
     layersPanel.querySelectorAll<HTMLInputElement>("[data-group]").forEach((cb) =>
       cb.addEventListener("change", () => {
