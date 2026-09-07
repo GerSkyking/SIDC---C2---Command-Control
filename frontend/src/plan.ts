@@ -969,7 +969,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
               "symbol-spacing": 320,
               "text-max-angle": 25,
             },
-            paint: { "text-color": "#6b5327", "text-halo-color": "#f5efe2", "text-halo-width": 1.4 },
+            paint: { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 2 },
           },
           beforeId,
         );
