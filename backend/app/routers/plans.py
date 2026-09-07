@@ -225,6 +225,20 @@ def get_snapshot(plan: ViewerPlan, db: DbDep) -> dict:
     from ..models import Map
 
     mp = db.get(Map, plan.map_id)
+    snap = _snapshot(db, plan)
+    # Ersteller-Namen für die Marker-Anzeige (Hover) anreichern – nur hier,
+    # nicht in _snapshot (dessen Output wird für Versionen/Klonen als Marker-kwargs
+    # wiederverwendet).
+    mk_rows = list(db.scalars(select(Marker).where(Marker.plan_id == plan.id)))
+    uids = {m.created_by for m in mk_rows if m.created_by}
+    names = (
+        {u.id: u.username for u in db.scalars(select(User).where(User.id.in_(uids)))}
+        if uids else {}
+    )
+    by_id = {m.id: m for m in mk_rows}
+    for md in snap["markers"]:
+        src = by_id.get(md["id"])
+        md["author"] = names.get(src.created_by or "") if src else None
     return {
         "plan": PlanOut.model_validate(plan).model_dump(mode="json"),
         "map_meta": mp.meta if mp else {},
@@ -238,7 +252,7 @@ def get_snapshot(plan: ViewerPlan, db: DbDep) -> dict:
              "group_id": ly.group_id, "is_default": ly.is_default}
             for ly in layers
         ],
-        **_snapshot(db, plan),
+        **snap,
     }
 
 

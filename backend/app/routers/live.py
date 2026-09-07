@@ -43,16 +43,24 @@ def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str, dict]
         return user, plan, level, effective_caps(db, user, plan)
 
 
-def _marker_out(m: Marker) -> dict:
+def _marker_out(m: Marker, author: str | None = None) -> dict:
     return {
         "id": m.id, "phase_id": m.phase_id, "layer_id": m.layer_id, "sidc": m.sidc,
         "world_x": m.world_x, "world_y": m.world_y,
         "rotation_degrees": m.rotation_degrees, "icon_rotation": m.icon_rotation,
         "unit_text": m.unit_text, "ai_text": m.ai_text, "channel": m.channel,
+        "author": author,
         "locked": m.locked, "timestamp_visible": m.timestamp_visible,
         "linked_group_id": m.linked_group_id, "point_index": m.point_index,
         "line_color": m.line_color, "line_width": m.line_width,
     }
+
+
+def _author_of(db, m: Marker) -> str | None:
+    if not m.created_by:
+        return None
+    u = db.get(User, m.created_by)
+    return u.username if u else None
 
 
 async def live_ws(websocket: WebSocket) -> None:
@@ -171,7 +179,7 @@ def _create_marker(plan_id: str, uid: str, data: dict) -> dict:
         m = Marker(plan_id=plan_id, created_by=uid, updated_by=uid, **data)
         db.add(m)
         db.commit()
-        return _marker_out(m)
+        return _marker_out(m, _author_of(db, m))
 
 
 def _update_marker(plan_id: str, marker_id: str, uid: str, is_owner: bool, fields: dict) -> dict | None:
@@ -186,7 +194,7 @@ def _update_marker(plan_id: str, marker_id: str, uid: str, is_owner: bool, field
         m.updated_by = uid
         m.updated_at = now()
         db.commit()
-        return _marker_out(m)
+        return _marker_out(m, _author_of(db, m))
 
 
 def _delete_marker(plan_id: str, marker_id: str, is_owner: bool) -> bool:

@@ -21,6 +21,7 @@ interface Marker {
   unit_text: string;
   ai_text: string;
   channel: string;
+  author?: string;
   locked: boolean;
   rotation_degrees: number;
   icon_rotation: number;
@@ -53,9 +54,38 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // SIDC (Symbolset + Entity) → subCategory, um die Modifikatoren eines
   // platzierten Markers im Bearbeiten-Panel zu kennen.
   const subCatBySidc = new Map<string, string>();
+  const nameBySidc = new Map<string, string>();
   for (const c of (await loadAllMarkers()) ?? [])
-    for (const e of c.entries)
-      if (e.subCategory) subCatBySidc.set(e.sidc.slice(4, 6) + e.sidc.slice(10, 16), e.subCategory);
+    for (const e of c.entries) {
+      const key = e.sidc.slice(4, 6) + e.sidc.slice(10, 16);
+      if (e.subCategory) subCatBySidc.set(key, e.subCategory);
+      if (e.name && !nameBySidc.has(key)) nameBySidc.set(key, e.name);
+    }
+
+  // Marker-Beschriftung: Name + (falls gesetzt) Modifikatoren, per Komma getrennt.
+  const MOD_SLOTS: [string, (s: string) => string][] = [
+    ["modifier1", (s) => s.slice(16, 18)],
+    ["modifier2", (s) => s.slice(18, 20)],
+    ["modifier3", (s) => s.slice(7, 8)],
+    ["modifier4", (s) => s.slice(6, 7)],
+  ];
+  const markerModifierLabels = (sidc: string): string[] => {
+    const sub = subCatBySidc.get(sidc.slice(4, 6) + sidc.slice(10, 16));
+    const defs = sub && modCat ? modCat[sub] : undefined;
+    if (!defs) return [];
+    const out: string[] = [];
+    for (const [slot, pick] of MOD_SLOTS) {
+      const code = Number(pick(sidc) || "0");
+      if (!code) continue;
+      const opt = (defs[slot] ?? []).find((o) => Number(o.code) === code);
+      if (opt?.description) out.push(opt.description);
+    }
+    return out;
+  };
+  const markerLabel = (m: Marker): string => {
+    const base = m.unit_text || nameBySidc.get(m.sidc.slice(4, 6) + m.sidc.slice(10, 16)) || "";
+    return [base, ...markerModifierLabels(m.sidc)].filter(Boolean).join(", ");
+  };
   const lineColors = lineStyle?.colors ?? [
     { name: "Gelb", red: 255, green: 255, blue: 0, packedColor: -256, isDefault: true },
     { name: "Rot", red: 255, green: 0, blue: 0, packedColor: -65536, isDefault: false },
@@ -85,6 +115,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const phaseListeners: (() => void)[] = []; // z. B. Notiz-Fenster bei Phasenwechsel
   const phaseOpacity = (m: Marker): number =>
     m.phase_id == null || m.phase_id === currentPhaseId ? 1 : Math.max(0, Math.min(100, outOpacity)) / 100;
+  const phaseNameOf = (id: string | null): string =>
+    id ? (phases.find((p) => p.id === id)?.name ?? "—") : t("phase.global");
 
   root.innerHTML = `
     <div class="topbar">
@@ -191,7 +223,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       properties: {
         id: m.id,
         sidc: m.sidc,
-        label: m.unit_text || m.ai_text || "",
+        label: markerLabel(m),
         rot: m.icon_rotation || 0,
         locked: m.locked,
         dot: missingIcons.has(m.sidc),
@@ -1565,9 +1597,39 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("click", "marker-icon", onMarkerClick);
   map.on("click", "marker-dot", onMarkerClick); // Marker ohne PNG-Icon klickbar halten
 
+  // Marker ziehen (siehe unten) — früh deklariert, weil der Hover-Handler prüft.
+  let dragId: string | null = null;
+
+  // Hover: Channel / Ersteller / Phase des Markers
+  const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 });
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+  const showHover = (e: maplibregl.MapLayerMouseEvent) => {
+    if (dragId) return;
+    const id = e.features?.[0]?.properties?.id as string | undefined;
+    const m = id ? markers.get(id) : undefined;
+    if (!m) return;
+    map.getCanvas().style.cursor = "pointer";
+    hoverPopup
+      .setLngLat([m.world_x, m.world_y])
+      .setHTML(
+        `<div class="mk-tip"><b>${esc(markerLabel(m) || "—")}</b><br>` +
+          `${t("map.channel")}: ${esc(m.channel || "—")}<br>` +
+          `${t("marker.author")}: ${esc(m.author || "—")}<br>` +
+          `${t("phase.assign")}: ${esc(phaseNameOf(m.phase_id))}</div>`,
+      )
+      .addTo(map);
+  };
+  const hideHover = () => {
+    map.getCanvas().style.cursor = "";
+    hoverPopup.remove();
+  };
+  for (const ly of ["marker-icon", "marker-dot"]) {
+    map.on("mouseenter", ly, showHover);
+    map.on("mouseleave", ly, hideHover);
+  }
+
   // Marker ziehen: im Modus "markermove" (linke Taste) ODER im Karten-Modus mit
   // gehaltener mittlerer Maustaste.
-  let dragId: string | null = null;
   const onMarkerMouseDown = (e: maplibregl.MapLayerMouseEvent) => {
     const midBtn = e.originalEvent.button === 1;
     const wantDrag = caps.move && (mode === "markermove" || (mode === "move" && midBtn));

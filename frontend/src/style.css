@@ -84,6 +84,11 @@ a { color: var(--accent); }
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem;
   max-height: 75vh; overflow-y: auto; }
 .layers-panel label { display: block; font-size: 0.85rem; margin: 0.2rem 0; }
+.maplibregl-popup-content { background: #000; color: #fff; border-radius: 6px; padding: 0.4rem 0.55rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+.maplibregl-popup-tip { border-top-color: #000 !important; border-bottom-color: #000 !important; }
+.mk-tip { font-size: 0.78rem; line-height: 1.35; white-space: nowrap; }
+.mk-tip b { font-size: 0.82rem; }
 .layers-panel .layer-row { display: flex; align-items: center; gap: 0.6rem; margin: 0.28rem 0; }
 .layers-panel .layer-row label { flex: 1 1 auto; margin: 0; display: flex; align-items: center;
   gap: 0.4rem; white-space: normal; }

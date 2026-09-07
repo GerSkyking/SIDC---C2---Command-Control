@@ -75,6 +75,10 @@ Instanzen wird eine Linie gezogen (`linked_group_id` / `point_index`).
 
 ### 4.3 Marker bearbeiten
 
+**Beschriftung:** dauerhaft unter jedem Marker der Name (Einheitstext, sonst der
+Symbol-Name aus dem Katalog) + gesetzte Modifikatoren, durch Komma getrennt.
+**Maus über einen Marker** → Tooltip mit **Channel**, **Ersteller** und **Phase**.
+
 Klick auf einen Marker (Modus „Karte bewegen" oder „Marker verschieben") öffnet ein
 **zentriertes Fenster** (Klick außerhalb oder **Esc** schließt): Einheits-/Zusatztext,
 Icon-Drehung, **Phase**, Sperren, **Erweitert** (Modifikatoren aus dem SIDC gelesen und
