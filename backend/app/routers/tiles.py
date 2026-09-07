@@ -86,6 +86,24 @@ def locations(map_id: str, user: CurrentUser) -> Response:
                     headers={"Cache-Control": "public, max-age=86400"})
 
 
+@router.get("/contours.geojson")
+def contours(map_id: str, user: CurrentUser) -> Response:
+    p = map_dir(map_id) / "contours.geojson"
+    if not p.is_file():
+        raise HTTPException(404, "Keine Hoehenlinien")
+    return Response(p.read_bytes(), media_type="application/geo+json",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.get("/peaks.geojson")
+def peaks(map_id: str, user: CurrentUser) -> Response:
+    p = map_dir(map_id) / "peaks.geojson"
+    if not p.is_file():
+        raise HTTPException(404, "Keine Hoehenpunkte")
+    return Response(p.read_bytes(), media_type="application/geo+json",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
 def build_style(map_id: str, tile_base: str) -> dict:
     """MapLibre-style.json für eine Karte. `tile_base` = URL-Präfix der Tile-Routen
     (authentifiziert: /api/maps/<id>/tiles, öffentlich: /public/plans/<token>/tiles)."""

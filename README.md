@@ -23,6 +23,8 @@ wählen eine Karte, und setzen gemeinsam in Echtzeit Marker und Zeichnungen.
   **Markdown-Notizfenster** je Phase
 - **Kompass**, „nach Norden", **Screenshot** (nur Karteninhalt, militärischer DTG),
   Koordinaten-Grid mit Randbeschriftung, 2D = nur Drehen, Kamera-Grenzen
+- **Höhenlinien** (alle 10 m) und **dominante Höhenpunkte** aus der Heightmap –
+  im ATAKmaps-Importer vorberechnet, in beiden Tools als Ebene zuschaltbar
 - Echtzeit-Kollaboration (WebSocket, autoritativer Server) – Marker & Zeichnungen
 - Pläne: **Ordner/Unterordner mit Drag & Drop**, erstellen, klonen (in Zielordner),
   **Versionsverlauf** mit Wiederherstellen, löschen (Trash)

@@ -817,7 +817,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let locData: { langs: string[]; groups: LocGroup[] } | null = null;
   let mapLang = "en_us";
   const groupVisible = new Map<string, boolean>();
-  const baseLayerVisible: Record<string, boolean> = { sat: true, grid: true };
+  const baseLayerVisible: Record<string, boolean> = { sat: true, grid: true, contours: false, peaks: false };
+  // Logische Overlay-Layer -> tatsaechliche MapLibre-Layer-IDs
+  const overlayLayers: Record<string, string[]> = {
+    contours: ["contours-line", "contours-label"],
+    peaks: ["peaks-sym"],
+  };
+  let hasContours = false;
+  let hasPeaks = false;
 
   const locFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
@@ -879,9 +886,89 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     } catch {
       /* keine Locations */
     }
+    await addTerrainOverlays();
     buildLayersPanel();
     buildMapLangSelector();
   });
+
+  // Hoehenlinien + dominante Hoehenpunkte (aus dem Mappack, pipeline/terrain_features.py).
+  // Standardmaessig aus — Umschalten ueber das Ebenen-Panel.
+  async function addTerrainOverlays(): Promise<void> {
+    const beforeId = map.getLayer("strokes") ? "strokes" : undefined;
+    try {
+      const r = await fetch(`/api/maps/${mapId}/contours.geojson`, { credentials: "include" });
+      if (r.ok) {
+        map.addSource("contours", { type: "geojson", data: await r.json() });
+        map.addLayer(
+          {
+            id: "contours-line",
+            type: "line",
+            source: "contours",
+            layout: { visibility: "none", "line-join": "round" },
+            paint: {
+              "line-color": "#8a6d3b",
+              "line-opacity": ["case", ["get", "bold"], 0.75, 0.45],
+              "line-width": ["interpolate", ["linear"], ["zoom"], 11, ["case", ["get", "bold"], 0.9, 0.4], 16, ["case", ["get", "bold"], 2.2, 1.0]],
+            },
+          },
+          beforeId,
+        );
+        map.addLayer(
+          {
+            id: "contours-label",
+            type: "symbol",
+            source: "contours",
+            filter: ["==", ["get", "bold"], true],
+            minzoom: 13,
+            layout: {
+              visibility: "none",
+              "symbol-placement": "line",
+              "text-field": ["concat", ["to-string", ["get", "elev"]], " m"],
+              "text-size": 10,
+              "symbol-spacing": 320,
+              "text-max-angle": 25,
+            },
+            paint: { "text-color": "#6b5327", "text-halo-color": "#f5efe2", "text-halo-width": 1.4 },
+          },
+          beforeId,
+        );
+        hasContours = true;
+      }
+    } catch {
+      /* keine Hoehenlinien */
+    }
+    try {
+      const r = await fetch(`/api/maps/${mapId}/peaks.geojson`, { credentials: "include" });
+      if (r.ok) {
+        map.addSource("peaks", { type: "geojson", data: await r.json() });
+        map.addLayer(
+          {
+            id: "peaks-sym",
+            type: "symbol",
+            source: "peaks",
+            layout: {
+              visibility: "none",
+              "text-field": ["concat", "▲ ", ["to-string", ["get", "elev"]], " m"],
+              "text-size": ["match", ["get", "type"], "dominant_peak", 13, 11],
+              "text-anchor": "top",
+              "text-offset": [0, 0.4],
+              "text-allow-overlap": false,
+              "text-optional": true,
+            },
+            paint: {
+              "text-color": ["match", ["get", "type"], "dominant_peak", "#7a2e12", "ridge", "#5a4a2a", "#4a3a1a"],
+              "text-halo-color": "#f5efe2",
+              "text-halo-width": 1.6,
+            },
+          },
+          beforeId,
+        );
+        hasPeaks = true;
+      }
+    } catch {
+      /* keine Hoehenpunkte */
+    }
+  }
 
   const layersPanel = root.querySelector<HTMLDivElement>("#layersPanel")!;
   root.querySelector("#layersBtn")!.addEventListener("click", () => (layersPanel.hidden = !layersPanel.hidden));
@@ -894,6 +981,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         `<label><input type="checkbox" data-base="${ly}" ${baseLayerVisible[ly] !== false ? "checked" : ""}/> ${ly}</label>`,
       );
     }
+    if (hasContours)
+      rows.push(
+        `<label><input type="checkbox" data-base="contours" ${baseLayerVisible.contours ? "checked" : ""}/> ${t("layers.contours")}</label>`,
+      );
+    if (hasPeaks)
+      rows.push(
+        `<label><input type="checkbox" data-base="peaks" ${baseLayerVisible.peaks ? "checked" : ""}/> ${t("layers.peaks")}</label>`,
+      );
     if (locData) {
       rows.push(`<div class="fav-head">${t('layers.places')}</div>`);
       for (const g of locData.groups) {
@@ -905,9 +1000,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     layersPanel.innerHTML = rows.join("");
     layersPanel.querySelectorAll<HTMLInputElement>("[data-base]").forEach((cb) =>
       cb.addEventListener("change", () => {
-        baseLayerVisible[cb.dataset.base!] = cb.checked;
-        map.setLayoutProperty(cb.dataset.base!, "visibility", cb.checked ? "visible" : "none");
-        if (cb.dataset.base === "grid") updateGrid();
+        const name = cb.dataset.base!;
+        baseLayerVisible[name] = cb.checked;
+        const targets = overlayLayers[name] ?? [name];
+        for (const id of targets)
+          if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", cb.checked ? "visible" : "none");
+        if (name === "grid") updateGrid();
       }),
     );
     layersPanel.querySelectorAll<HTMLInputElement>("[data-group]").forEach((cb) =>

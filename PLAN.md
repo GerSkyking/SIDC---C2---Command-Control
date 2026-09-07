@@ -83,6 +83,11 @@ C2 + ATAKmaps-Viewer deaktiviert), Undo/Redo pro User, Plan-JSON-Export/-Import,
 - **Hilfe-Overlay** (`?`) mit Werkzeugen/Topbar/Tastenkürzeln.
 - **Schema-Drift** wird ohne Alembic über `bootstrap._add_missing_columns()` abgefangen
   (ALTER TABLE ADD COLUMN für neue einfache Spalten beim Start).
+- **Höhenlinien + dominante Höhenpunkte** aus der Heightmap: `pipeline/terrain_features.py`
+  (Marching-Squares 10 m + lokale Prominenz mit Cutoff/NMS, nur numpy/scipy) erzeugt beim
+  Heightmap-Import `contours.geojson` / `peaks.geojson`; Mappack packt sie mit; C2 + ATAKmaps
+  laden sie als zuschaltbare Ebene. Heightmap-Loader auf 2‑Pass-Streaming umgestellt
+  (3‑GB‑CSV läuft nicht mehr in den RAM).
 
 ### Phase 0 – Repo & Grundgerüst  ✅
 - [ ] Monorepo-Struktur: `backend/`, `frontend/`, `deploy/`, `data/` (gemountet, im Repo leer).

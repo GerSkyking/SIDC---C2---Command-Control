@@ -91,6 +91,24 @@ def public_locations(token: str, db: DbDep) -> Response:
     return Response(p.read_bytes(), media_type="application/json")
 
 
+@router.get("/{token}/contours.geojson")
+def public_contours(token: str, db: DbDep) -> Response:
+    plan = _resolve(token, db)
+    p = map_dir(plan.map_id) / "contours.geojson"
+    if not p.is_file():
+        raise HTTPException(404)
+    return Response(p.read_bytes(), media_type="application/geo+json")
+
+
+@router.get("/{token}/peaks.geojson")
+def public_peaks(token: str, db: DbDep) -> Response:
+    plan = _resolve(token, db)
+    p = map_dir(plan.map_id) / "peaks.geojson"
+    if not p.is_file():
+        raise HTTPException(404)
+    return Response(p.read_bytes(), media_type="application/geo+json")
+
+
 @router.websocket("/{token}/live")
 async def public_live(websocket: WebSocket, token: str) -> None:
     with SessionLocal() as db:

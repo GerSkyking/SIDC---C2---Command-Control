@@ -105,12 +105,13 @@ ATAKmaps, als Vektor-Geometrie).
 | **Zeitstrahl** | Phasen – siehe 4.6. |
 | **🗒️ Notizen** | Phasen-Notizfenster – siehe 4.7. |
 | **Karten-Sprache** | 13 Sprachen für die Orts-Labels auf der Karte (separat von der UI-Sprache). |
-| **☰ Ebenen** | Sat / Grid / Terrain und die Orts-Gruppen einzeln ein-/ausblenden. |
+| **☰ Ebenen** | Sat / Grid / Terrain, **Höhenlinien**, **Höhenpunkte** und die Orts-Gruppen einzeln ein-/ausblenden. |
 | **🕑 Versionen** | Versionsverlauf – siehe 4.8. |
 | **? Hilfe** | Overlay mit Werkzeugen, Topbar und Tastenkürzeln (DE/EN). |
 | **Freigaben** (nur Owner) | Öffentliche Links + ACL – siehe 5 und 6. |
 | **Cursor-HUD** (rechts) | X / Y (Welt-Koordinaten via Kalibrierung) + Höhe (aus dem Terrain-DEM, auch in 2D). |
 | **Koordinaten-Grid** | Linien aus `grid.mbtiles`, X/Y-Beschriftung an den Bildschirmrändern, mehrstufig (10/100/1000/10000 m), mitlaufend beim Pan/Zoom, horizon-sicher bei Pitch – wie ATAKmaps. |
+| **Höhenlinien / Höhenpunkte** | Zwei Terrain-Ebenen aus der Heightmap (`contours.geojson` / `peaks.geojson` im Mappack, standardmäßig **aus**). Höhenlinien alle 10 m, jede 5. Linie (50 m) fett + beschriftet. Höhenpunkte = lokal dominante Erhebungen mit Höhe; `▲ NNN m`, Farbe nach Typ (Kuppe/Grat/Plateau/dominanter Gipfel). |
 
 ### 4.6 Phasen (Zeitstrahl)
 
@@ -178,10 +179,16 @@ mbtiles/grid.mbtiles             (optional, Koordinatengitter)
 mbtiles/dlc/<layer>_z<N>.mbtiles (optional, hochauflösende Zoomstufen)
 topo.geojson                     (optional, Straßen/Wege – Anzeige derzeit deaktiviert)
 locations.json                   (optional, benannte Orte, nach baseType gruppiert)
+contours.geojson                 (optional, Höhenlinien alle 10 m)
+peaks.geojson                    (optional, dominante Höhenpunkte)
 ```
 
 `topo.geojson` und `locations.json` werden **einmalig im ATAKmaps-Importer** erzeugt
 (`pipeline/topo_convert.py`, `pipeline/locations_convert.py`) und ins Pack gelegt.
+`contours.geojson` / `peaks.geojson` entstehen beim **Heightmap-Import**
+(`pipeline/terrain_features.py`): Höhenlinien per Marching-Squares auf einem 2‑m‑Raster,
+Höhenpunkte per lokaler Prominenz (Bottleneck-Suche im 300‑m‑Radius auf 4‑m‑Raster) mit
+hartem Prominenz-Cutoff (20 m) und räumlichem NMS (250 m). Nur `numpy`/`scipy`.
 **Wichtig:** Ältere Packs enthalten evtl. noch die rohe `mapLocations_locations.json` –
 Backend/Viewer brauchen die **verarbeitete** `locations.json` (Import-Tab
 „Verarbeiten & einpflegen", dann Export).

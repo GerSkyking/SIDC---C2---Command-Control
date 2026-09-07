@@ -131,6 +131,9 @@ def run_import(map_id: str, *, url: str | None = None, zip_path: str | None = No
             # topo.geojson + locations.json kommen FERTIG aus dem ATAKmaps-Pack
             # (pipeline/topo_convert.py + locations_convert.py) — hier nur validieren.
             meta["has_topo"] = _validate_json(dest / "topo.geojson", "FeatureCollection")
+            # Hoehenlinien + dominante Hoehenpunkte (pipeline/terrain_features.py)
+            meta["has_contours"] = _validate_json(dest / "contours.geojson", "FeatureCollection")
+            meta["has_peaks"] = _validate_json(dest / "peaks.geojson", "FeatureCollection")
             loc = _validate_locations(dest)
             meta["has_locations"] = loc is not None
             if loc is not None:
