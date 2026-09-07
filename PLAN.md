@@ -46,8 +46,9 @@ Später Open Source (AGPL-3.0).
 
 ## Stufenplan
 
-**Stand 2026-09-07:** Phasen 0–9 im Wesentlichen umgesetzt und auf dem Server deployt
-(11 pytest grün). Vollständige Funktionsbeschreibung: [`docs/HANDBUCH.md`](docs/HANDBUCH.md).
+**Version 1.0 (2026-09-07):** Phasen 0–9 umgesetzt und auf dem Server deployt
+(11 pytest grün). Vollständige Funktionsbeschreibung: [`docs/HANDBUCH.md`](docs/HANDBUCH.md),
+Änderungen: [`CHANGELOG.md`](CHANGELOG.md).
 
 Umgesetzt: Auth (lokal + OIDC), Rollen/Gruppen/ACL mit Einzel-Häkchen + `can_create_plans`,
 Karten-Import (Link **und** Direkt-Upload, Update, DLC), Tileserver + `style.json`,

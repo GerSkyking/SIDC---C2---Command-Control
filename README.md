@@ -4,9 +4,9 @@ Browser-basiertes, mehrbenutzerfähiges Einsatz-Planungstool auf Basis der Karte
 Markerlogik von **ATAKmaps** – aber ohne Ingame-Anbindung. Nutzer melden sich an,
 wählen eine Karte, und setzen gemeinsam in Echtzeit Marker und Zeichnungen.
 
-> Status (2026-09-07): lauffähig und deployt, Phasen 0–9 im Wesentlichen umgesetzt.
+> **Version 1.0** (2026-09-07) – lauffähig und deployt, Phasen 0–9 umgesetzt.
 > **Vollständiges Handbuch: [`docs/HANDBUCH.md`](docs/HANDBUCH.md).**
-> Stufenplan & Abweichungen: [`PLAN.md`](PLAN.md).
+> Änderungen: [`CHANGELOG.md`](CHANGELOG.md) · Stufenplan: [`PLAN.md`](PLAN.md).
 
 ## Features
 
