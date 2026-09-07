@@ -189,6 +189,10 @@ peaks.geojson                    (optional, dominante Höhenpunkte)
 (`pipeline/terrain_features.py`): Höhenlinien per Marching-Squares auf einem 2‑m‑Raster,
 Höhenpunkte per lokaler Prominenz (Bottleneck-Suche im 300‑m‑Radius auf 4‑m‑Raster) mit
 hartem Prominenz-Cutoff (20 m) und räumlichem NMS (250 m). Nur `numpy`/`scipy`.
+Die Parameter (Linienabstand, Fett-Intervall, min. Prominenz/Abstand/Suchradius,
+Arbeitsraster) stehen im Importer direkt bei „Heightmap CSV". Button
+**„Nur Höhenlinien / Höhenpunkte neu berechnen"** justiert nach, ohne neu zu kacheln;
+danach Mappack neu exportieren und in C2 hochladen.
 **Wichtig:** Ältere Packs enthalten evtl. noch die rohe `mapLocations_locations.json` –
 Backend/Viewer brauchen die **verarbeitete** `locations.json` (Import-Tab
 „Verarbeiten & einpflegen", dann Export).
