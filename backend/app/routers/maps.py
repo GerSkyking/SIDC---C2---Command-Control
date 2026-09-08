@@ -9,11 +9,14 @@ import shutil
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import select
 
+from urllib.parse import urlparse
+
 from .. import audit
 from ..config import get_settings
 from ..deps import AdminUser, CurrentUser, DbDep
-from ..models import Map, Plan, now
-from ..schemas import MapImportIn, MapOut
+from ..models import Map, MapSource, Plan, now
+from ..schemas import MapImportFromSourceIn, MapImportIn, MapOut
+from .map_sources import _list_files
 from ..services.maps_import import map_dir, run_import
 
 router = APIRouter(prefix="/api/maps", tags=["maps"])
@@ -84,6 +87,36 @@ async def upload_map(
     audit.record(db, "map.import" if existing is None else "map.update", user_id=admin.id,
                  target_type="map", target_id=map_id, request=request, via="upload", bytes=written)
     bg.add_task(run_import, map_id, zip_path=str(dest))
+    return m
+
+
+@router.post("/import-from-source", response_model=MapOut, status_code=status.HTTP_202_ACCEPTED)
+def import_from_source(
+    body: MapImportFromSourceIn, request: Request, bg: BackgroundTasks, admin: AdminUser, db: DbDep
+) -> Map:
+    if db.get(Map, body.id) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Karten-ID existiert bereits")
+    src = db.get(MapSource, body.source_id)
+    if src is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Quelle unbekannt")
+
+    files = {f.name: f for f in _list_files(src)}
+    entry = files.get(body.file)
+    if entry is None or not entry.download_url:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Datei nicht in der Quelle")
+
+    # SSRF-Schutz: nur der konfigurierte Host bekommt den Token / wird geladen.
+    if urlparse(entry.download_url).netloc != urlparse(src.base_url).netloc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Download-URL außerhalb der Quelle")
+    headers = {"Authorization": f"token {src.token}"} if src.token else None
+
+    m = Map(id=body.id, name=body.name, status="importing",
+            source_url=entry.download_url, created_at=now())
+    db.add(m)
+    db.commit()
+    audit.record(db, "map.import", user_id=admin.id, target_type="map", target_id=body.id,
+                 request=request, name=body.name, via="source", source=src.repo)
+    bg.add_task(run_import, body.id, url=entry.download_url, headers=headers)
     return m
 
 

@@ -142,13 +142,17 @@ Radius-/Abstands-Tokens: `--r-sm 6px`, `--r-md 10px`, `--r-lg 14px`, Spacing-Ska
 
 ## Phasen & Checkpoints
 
-| Phase | Inhalt | Checkpoint |
+| Phase | Inhalt | Status |
 |---|---|---|
-| **A** | `theme.ts` + Tokens (Dunkel + Hell), Theme-Schalter überall, Inter, `icons.ts` (~35 SVGs), `components.css` + `ui.ts`, Emojis in Toolbar/Topbar ersetzt | **Look beurteilen, grün geben** |
-| **B** | App-Shell (Sidebar + Topbar), Einstellungs-Menü-Gerüst, Login, Pläne-Arbeitsbereich, öffentliche Ansicht | |
-| **C** | Admin-Bereich neu + **Gitea-Import** (Backend `MapSource` + Endpunkte + Test, Frontend Quellen-UI + Import-aus-Quelle) | |
-| **D** | Karten-/Planansicht: Befehlsleiste, angedocktes Dock, **Modus-Tastenkürzel**, einheitliche Panels (Wizard/Bearbeiten/Ebenen/Notizen/Versionen/Hilfe) | |
-| **E** | Hell-Theme-Feinschliff, alle States (Hover/Aktiv/Fokus/Disabled) in beiden Themes, Fokus-Ringe/Kontrast (WCAG AA), i18n-Restarbeiten | |
+| **A** | `theme.ts` + Tokens (Dunkel + Hell), Theme-Schalter überall, Inter, `icons.ts` (~35 SVGs), `ui.ts`, Emojis in Toolbar/Topbar ersetzt | ✅ `ee85f15` |
+| **B** | App-Shell (Sidebar + Topbar, einklappbar) für Plan-Liste + Admin, Einstellungs-Menü (`settings.ts`) | ✅ |
+| **C** | **Gitea-Import** (Backend `MapSource` + Endpunkte + Test, Frontend Quellen-UI + Import-aus-Quelle), Admin-Icons | ✅ |
+| **D** | **Modus-Tastenkürzel** (umbelegbar), Emoji-Sweep über alle Views (Wizard, Baum, Hilfe, ACL, Versionen), angedockte Werkzeugleiste, ⚙ in der Topbar | ✅ |
+| **E** | Farb-Tokens für Hell/Dunkel in allen Komponenten, Panel-/Overlay-Feinschliff, Fokus-Ringe | ✅ (Grobpass; Detail-Feinschliff bei Bedarf) |
+
+Offen für später: vollständiger „Pläne-Arbeitsbereich" mit Plan-Karten statt Baum,
+tieferer Panel-Umbau der Kartenansicht (einheitliches Panel-Bauteil), öffentliche
+Ansicht im neuen Look, erschöpfender State-/Kontrast-Pass (WCAG AA).
 
 Build-/Test-Gate pro Phase: `tsc --noEmit` + `vite build` grün, `pytest -q` grün.
 Jede Phase = eigener Commit (bzw. wenige), damit rücknehmbar.

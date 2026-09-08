@@ -40,3 +40,38 @@ export function wireThemeSwitch(root: ParentNode): void {
     }),
   );
 }
+
+/** Linke Navigationsleiste für die Nicht-Karten-Ansichten. */
+export function sidebar(
+  active: "plans" | "admin",
+  opts: { isAdmin: boolean; username: string },
+): string {
+  const collapsed = localStorage.getItem("sidc_sidebar") === "1";
+  const item = (id: string, ic: string, label: string, href: string) =>
+    `<a class="sb-item ${active === id ? "active" : ""}" href="${href}" title="${label}">${icon(ic)}<span>${label}</span></a>`;
+  return `<nav class="sidebar ${collapsed ? "collapsed" : ""}" id="sidebar">
+    <div class="sb-top">
+      <button class="sb-toggle icon-btn" id="sbToggle" title="Menü">${icon("chevron")}</button>
+      <span class="sb-brand">SIDC – C2</span>
+    </div>
+    <div class="sb-nav">
+      ${item("plans", "plan", t("nav.plans"), "#/")}
+      ${opts.isAdmin ? item("admin", "settings", t("nav.admin"), "#/admin") : ""}
+    </div>
+    <div class="sb-foot">
+      <div class="sb-user">${icon("users", 16)}<span>${opts.username}</span></div>
+    </div>
+  </nav>`;
+}
+
+export function wireSidebar(root: ParentNode): void {
+  const sb = root.querySelector<HTMLElement>("#sidebar");
+  root.querySelector("#sbToggle")?.addEventListener("click", () => {
+    const now = sb?.classList.toggle("collapsed");
+    try {
+      localStorage.setItem("sidc_sidebar", now ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  });
+}

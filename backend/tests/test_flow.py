@@ -144,6 +144,46 @@ def test_granular_caps_block_ops(admin):
 
 
 
+def test_map_source_gitea(admin, monkeypatch):
+    import httpx
+
+    from app.routers import map_sources
+
+    r = admin.post("/api/map-sources", json={"url": "https://git.example/root/ReforgerMapData"})
+    assert r.status_code == 201
+    s = r.json()
+    assert s["base_url"] == "https://git.example" and s["repo"] == "root/ReforgerMapData"
+    assert s["has_token"] is False
+    sid = s["id"]
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [
+                {"type": "file", "name": "arland_mappack_v1.zip", "size": 123,
+                 "download_url": "https://git.example/root/ReforgerMapData/raw/arland_mappack_v1.zip"},
+                {"type": "file", "name": "readme.md", "size": 10, "download_url": "x"},
+            ]
+
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _Resp())
+
+    files = admin.get(f"/api/map-sources/{sid}/files").json()
+    assert [f["name"] for f in files] == ["arland_mappack_v1.zip"]
+
+    from app.routers import maps as maps_router
+
+    called: dict = {}
+    monkeypatch.setattr(maps_router, "run_import", lambda *a, **k: called.setdefault("hit", (a, k)))
+    imp = admin.post("/api/maps/import-from-source",
+                     json={"id": "arl", "name": "Arland", "source_id": sid, "file": "arland_mappack_v1.zip"})
+    assert imp.status_code == 202
+    assert called["hit"][1]["url"].endswith("arland_mappack_v1.zip")
+
+    assert admin.delete(f"/api/map-sources/{sid}").status_code == 200
+
+
 def test_public_share(admin):
     from app.db import SessionLocal
     from app.models import Map, now

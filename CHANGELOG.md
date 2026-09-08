@@ -3,6 +3,20 @@
 Alle nennenswerten Änderungen an **SIDC – C2 – Command & Control**.
 Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung [SemVer](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Neu
+- **UI-Redesign**: Dunkel als Standard + vollwertiger Hell-Modus, Orange-Akzent
+  (`#ff9900`), Schrift **Inter** (selbst-gehostet). **Theme-Schalter** (Dunkel/Hell/
+  System) dauerhaft oben rechts. Einheitliches Duotone-Icon-Set statt Emojis in
+  allen Ansichten. Einklappbare **Sidebar** für Plan-Liste + Admin.
+- **Einstellungs-Menü** (⚙ in der Topbar) mit **umbelegbaren Tastenkürzeln** für die
+  Karten-Werkzeuge (V/M/Q/L/R/E/P, pro Browser gespeichert).
+- **Gitea-Import**: Admin trägt eine Repo-URL ein (`Karten-Quellen`), das Backend
+  listet die `*.zip` über die Gitea-Contents-API; Datei auswählen → Import über den
+  vorhandenen Streaming-Weg. Optionaler Token, SSRF-Schutz (nur der konfigurierte Host).
+  Neues Modell `MapSource`, Endpunkte unter `/api/map-sources` + `/api/maps/import-from-source`.
+
 ## [1.0.0] – 2026-09-07
 
 Erste stabile Version. Browser-basiertes, mehrbenutzerfähiges Einsatz-Planungstool

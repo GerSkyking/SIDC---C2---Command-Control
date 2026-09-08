@@ -40,6 +40,38 @@ class MapOut(BaseModel):
     meta: dict = {}
 
 
+class MapSourceIn(BaseModel):
+    url: str                       # z. B. https://git.jensr.de/root/ReforgerMapData
+    name: str = ""
+    token: str | None = None
+    subpath: str = ""
+    ref: str = ""
+
+
+class MapSourceOut(BaseModel):
+    id: str
+    kind: str
+    name: str
+    base_url: str
+    repo: str
+    subpath: str
+    ref: str
+    has_token: bool
+
+
+class MapSourceFile(BaseModel):
+    name: str
+    size: int
+    download_url: str
+
+
+class MapImportFromSourceIn(BaseModel):
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{1,63}$")
+    name: str
+    source_id: str
+    file: str
+
+
 # ─── Pläne ─────────────────────────────────────────────────────────────────
 
 class PlanCreateIn(BaseModel):

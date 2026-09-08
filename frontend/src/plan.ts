@@ -12,6 +12,7 @@ import { openVersionPanel } from "./versions";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
+import { modeForKey, openSettings } from "./settings";
 import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
 
@@ -140,6 +141,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <span class="presence" id="presence"></span>
       ${iconBtn("versions", { id: "versions", title: t("versions.open") })}
       ${iconBtn("help", { id: "help", title: t("help.open") })}
+      ${iconBtn("settings", { id: "settingsBtn", title: t("settings.open") })}
       ${myPlan?.level === "owner" ? `<button id="acl">${t("plans.shares")}</button>` : ""}
       ${themeSwitch()}
     </div>
@@ -688,7 +690,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         (p) =>
           `<span class="ph-chip ${p.id === currentPhaseId ? "active" : ""}" data-ph="${p.id}">` +
           `<button data-pick="${p.id}">${p.name}</button>` +
-          (canEdit && phases.length > 1 ? `<button data-delph="${p.id}" title="✕">✕</button>` : "") +
+          (canEdit && phases.length > 1
+            ? `<button class="icon-btn" data-delph="${p.id}" title="${t("common.delete")}">${icon("x", 14)}</button>`
+            : "") +
           `</span>`,
       )
       .join("");
@@ -746,7 +750,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   notesWin.className = "notes-win";
   notesWin.hidden = true;
   notesWin.innerHTML = `
-    <div class="notes-head"><span>${t("notes.title")}</span><button class="notes-x">✕</button></div>
+    <div class="notes-head"><span>${t("notes.title")}</span><button class="notes-x icon-btn">${icon("x", 16)}</button></div>
     <div class="notes-tabs"></div>
     <div class="notes-split">
       <textarea class="notes-edit" placeholder="${t("notes.hint")}" ${canEdit ? "" : "readonly"}></textarea>
@@ -1450,6 +1454,26 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     b.addEventListener("click", () => setMode(b.dataset.mode as Mode)),
   );
 
+  root.querySelector("#settingsBtn")!.addEventListener("click", openSettings);
+
+  // Tastenkürzel für die Werkzeug-Modi (im Einstellungs-Menü umbelegbar).
+  const onModeKey = (ev: KeyboardEvent) => {
+    if (!canEdit) return;
+    const m = modeForKey(ev);
+    if (!m) return;
+    if (m === "place") {
+      const b = toolbar.querySelector<HTMLButtonElement>("#tool-marker");
+      if (b && !b.disabled) b.click();
+      return;
+    }
+    const b = toolbar.querySelector<HTMLButtonElement>(`[data-mode="${m}"]`);
+    if (b && !b.disabled) setMode(m);
+  };
+  document.addEventListener("keydown", onModeKey);
+  window.addEventListener("hashchange", () => document.removeEventListener("keydown", onModeKey), {
+    once: true,
+  });
+
   function placeMarker(pos: [number, number], tpl: MarkerTemplate): void {
     const data: Record<string, unknown> = {
       sidc: tpl.sidc,
@@ -1542,7 +1566,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             .map(
               (f) => `<div class="fav" data-fav="${f.id}">
                 <img src="${iconSrc(f.sidc)}" width="24" height="24" onerror="this.style.visibility='hidden'"/>
-                <span>${f.label}</span><button data-delfav="${f.id}">✕</button></div>`,
+                <span>${f.label}</span><button class="icon-btn" data-delfav="${f.id}">${icon("x", 14)}</button></div>`,
             )
             .join("")
         : `<div class="muted">${t("fav.hint")}</div>`);

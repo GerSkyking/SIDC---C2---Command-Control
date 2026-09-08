@@ -37,6 +37,17 @@ export interface MapItem {
   status: string;
   error: string | null;
 }
+
+export interface MapSource {
+  id: string;
+  kind: string;
+  name: string;
+  base_url: string;
+  repo: string;
+  subpath: string;
+  ref: string;
+  has_token: boolean;
+}
 export interface PlanItem {
   id: string;
   name: string;
@@ -154,6 +165,15 @@ export const api = {
     }),
   deleteMap: (id: string) => req<void>("DELETE", `/api/maps/${id}`),
   restartBackend: () => req<{ message: string }>("POST", "/api/admin/restart"),
+
+  mapSources: () => req<MapSource[]>("GET", "/api/map-sources"),
+  createMapSource: (url: string, name = "", token = "") =>
+    req<MapSource>("POST", "/api/map-sources", { url, name, token: token || null }),
+  deleteMapSource: (id: string) => req<void>("DELETE", `/api/map-sources/${id}`),
+  mapSourceFiles: (id: string) =>
+    req<{ name: string; size: number; download_url: string }[]>("GET", `/api/map-sources/${id}/files`),
+  importFromSource: (id: string, name: string, source_id: string, file: string) =>
+    req<MapItem>("POST", "/api/maps/import-from-source", { id, name, source_id, file }),
 
   catalogStatus: () => req<Record<string, boolean>>("GET", "/api/catalog"),
   uploadCatalog: async (name: string, file: File) => {

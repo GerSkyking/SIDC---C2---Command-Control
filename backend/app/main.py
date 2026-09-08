@@ -18,7 +18,18 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import __version__
 from .bootstrap import ensure_bootstrap_admin, init_db
 from .config import get_settings
-from .routers import admin, auth, catalog, favorites, live, maps, plans, public, tiles
+from .routers import (
+    admin,
+    auth,
+    catalog,
+    favorites,
+    live,
+    map_sources,
+    maps,
+    plans,
+    public,
+    tiles,
+)
 from .services.realtime import hub
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -46,6 +57,7 @@ app.add_middleware(SessionMiddleware, secret_key=_settings.resolved_secret_key()
 
 app.include_router(auth.router)
 app.include_router(maps.router)
+app.include_router(map_sources.router)
 app.include_router(tiles.router)
 app.include_router(plans.router)
 app.include_router(plans.folders_router)

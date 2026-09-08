@@ -86,6 +86,24 @@ class Map(Base):
     imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class MapSource(Base):
+    """Externe Bezugsquelle für Mappack-ZIPs (aktuell: Gitea-Repo). Admin trägt
+    die Repo-URL ein; das Backend listet die ``*.zip`` über die Gitea-API."""
+
+    __tablename__ = "map_sources"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    kind: Mapped[str] = mapped_column(String(16), default="gitea")
+    name: Mapped[str] = mapped_column(String(128), default="")
+    base_url: Mapped[str] = mapped_column(String(512))   # https://git.jensr.de
+    repo: Mapped[str] = mapped_column(String(256))        # owner/name
+    subpath: Mapped[str] = mapped_column(String(256), default="")
+    ref: Mapped[str] = mapped_column(String(128), default="")  # branch/tag, "" = default
+    token: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 # ─── Pläne ──────────────────────────────────────────────────────────────────
 
 class PlanFolder(Base):

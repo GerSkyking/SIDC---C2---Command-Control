@@ -1,6 +1,8 @@
 // Admin-Bereich: SIDC-Katalog-Upload, lokale User, Gruppen.
 import { api, ApiError, type AdminGroup, type AdminUser } from "./api";
 import { langSelect, t, wireLangSelect } from "./i18n";
+import { icon } from "./icons";
+import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
 const CATALOGS: { key: string; label: string; file: string }[] = [
   { key: "all-markers", label: "Alle Marker", file: "SIDC_AllMarkersCatalog.json" },
@@ -18,7 +20,10 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
   ]);
 
   app.innerHTML = `
-    <div class="topbar"><a href="#/">← ${t("nav.plans")}</a><strong>${t("admin.heading")}</strong><span class="grow"></span>${langSelect()}</div>
+   <div class="shell">
+    ${sidebar("admin", { isAdmin: true, username: "" })}
+    <div class="shell-main">
+    <div class="topbar"><strong>${t("admin.heading")}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
     <div class="list stack">
       <h2>${t("admin.catalog")}</h2>
       <p class="muted">${t("admin.catalogHint")}</p>
@@ -59,9 +64,13 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
         <button id="lg-more">${t("admin.logMore")}</button>
       </div>
       <div id="lg-out"><table class="acl-tbl"><tbody></tbody></table></div>
-    </div>`;
+    </div>
+    </div>
+   </div>`;
 
   wireLangSelect(app);
+  wireThemeSwitch(app);
+  wireSidebar(app);
   const reload = () => renderAdmin(app);
   const guard = async (fn: () => Promise<unknown>) => {
     try {
@@ -171,7 +180,7 @@ function userRow(u: AdminUser): string {
     <td><span class="badge">${u.role}</span></td>
     <td><button data-toggle-active>${u.is_active ? "aktiv" : "deaktiviert"}</button></td>
     <td><button data-toggle-ccp>Pläne: ${u.can_create_plans ? "ja" : "nein"}</button></td>
-    <td>${u.is_local ? "<button data-reset>PW</button>" : ""} <button data-del>✕</button></td>
+    <td>${u.is_local ? "<button data-reset>PW</button>" : ""} <button class="icon-btn" data-del>${icon("x", 16)}</button></td>
   </tr>`;
 }
 
@@ -186,6 +195,6 @@ function groupRow(g: AdminGroup, users: AdminUser[]): string {
           }/> ${u.username}</label>`,
       )
       .join("")}</td>
-    <td><button data-delg>✕</button></td>
+    <td><button class="icon-btn" data-delg>${icon("x", 16)}</button></td>
   </tr>`;
 }

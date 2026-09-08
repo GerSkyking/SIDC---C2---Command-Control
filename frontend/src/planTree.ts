@@ -2,6 +2,7 @@
 // Klonen (mit Zielordner). Reines Vanilla-DOM.
 import { api, ApiError, type PlanFolder, type PlanItem } from "./api";
 import { t } from "./i18n";
+import { icon } from "./icons";
 
 interface TreeOpts {
   onChanged: () => void; // neu laden
@@ -82,7 +83,7 @@ export function renderPlanTree(
     row.className = "tree-row tree-plan";
     row.draggable = true;
     row.innerHTML =
-      `<span class="tree-ico">📄</span>` +
+      `<span class="tree-ico">${icon("plan", 16)}</span>` +
       `<a href="#/plans/${p.id}" class="tree-name">${p.name}</a>` +
       `<span class="badge">${p.level}</span>` +
       `<span class="tree-actions">` +
@@ -106,14 +107,14 @@ export function renderPlanTree(
       fRow.style.paddingLeft = `${depth * 1.1}rem`;
       fRow.draggable = true;
       fRow.innerHTML =
-        `<button class="tree-tw">${isOpen ? "▾" : "▸"}</button>` +
-        `<span class="tree-ico">📁</span><span class="tree-name">${f.name}</span>` +
+        `<button class="tree-tw icon-btn">${icon(isOpen ? "chevronDown" : "chevron", 16)}</button>` +
+        `<span class="tree-ico">${icon(isOpen ? "folderOpen" : "folder", 16)}</span><span class="tree-name">${f.name}</span>` +
         `<span class="tree-count">${(folderPlans.get(f.id) ?? []).length}</span>` +
         (canCreateFolders
           ? `<span class="tree-actions">` +
-            `<button data-newsub title="${t("folder.newSub")}">＋</button>` +
-            `<button data-ren title="${t("common.rename")}">✎</button>` +
-            `<button data-delf title="${t("common.delete")}">✕</button></span>`
+            `<button class="icon-btn" data-newsub title="${t("folder.newSub")}">${icon("plus", 16)}</button>` +
+            `<button class="icon-btn" data-ren title="${t("common.rename")}">${icon("edit", 16)}</button>` +
+            `<button class="icon-btn" data-delf title="${t("common.delete")}">${icon("x", 16)}</button></span>`
           : "");
       fRow.addEventListener("dragstart", (e) => {
         e.stopPropagation();
@@ -157,7 +158,7 @@ export function renderPlanTree(
   const rootHead = document.createElement("div");
   rootHead.className = "tree-row tree-root";
   rootHead.innerHTML =
-    `<span class="tree-ico">🗂️</span><span class="tree-name">${t("folder.root")}</span>` +
+    `<span class="tree-ico">${icon("map", 16)}</span><span class="tree-name">${t("folder.root")}</span>` +
     (canCreateFolders ? `<span class="tree-actions"><button id="tree-newfolder">${t("folder.new")}</button></span>` : "");
   wireDropzone(rootHead, null);
   host.appendChild(rootHead);

@@ -73,6 +73,14 @@ Instanzen wird eine Linie gezogen (`linked_group_id` / `point_index`).
   für **Modifikator 1/2**, **HQ / Task Force / Dummy** und **Zustand / Einsatzbereitschaft**
   aus `SIDC_ModifierCatalog.json`. Die Icon-Vorschau rendert live mit.
 
+### 4.2b Werkzeug-Tastenkürzel & Einstellungen
+
+Das **⚙-Menü** (Topbar) enthält die pro Browser gespeicherten Einstellungen. Dort sind
+die **Tastenkürzel für die Werkzeuge** umbelegbar (Standard: `V` bewegen, `M` Marker
+verschieben, `Q` zeigen, `L` Linie, `R` Lineal, `E` Radierer, `P` Marker). Auf eine
+Taste klicken, dann die neue Taste drücken; Esc bricht ab. Das ⚙-Menü hat außerdem den
+Theme-Schalter (Dunkel / Hell / System).
+
 ### 4.3 Marker bearbeiten
 
 **Beschriftung:** dauerhaft unter jedem Marker der Name (Einheitstext, sonst der
@@ -157,11 +165,17 @@ Live-Updates über einen Empfangs-WebSocket.
   `SIDC_PhaseLineStyleCatalog.json`, `SIDC_ChannelSettings.json`, `SIDC_ModifierCatalog.json`.
   Upload als roher `application/json`-Body (kein Multipart) – bei sehr großen Dateien ggf.
   im NPM `client_max_body_size` erhöhen.
-- **Karten**: Import per **Download-Link** oder **Direkt-Upload** (Limit per
-  `MAP_IMPORT_MAX_MB`), gestreamt auf Platte. Button **Aktualisieren** = neue ZIP für eine
-  bestehende Karte hochladen. „Vom Link" = erneut vom hinterlegten Link laden. Löschen.
-  DLC-Zoomstufen (`mbtiles/dlc/<layer>_z<N>.mbtiles`) werden für Zoom über die Basis-maxzoom
-  hinaus ausgeliefert.
+- **Karten**: Import per **Download-Link**, **Direkt-Upload** oder **aus einer
+  Gitea-Quelle** (Limit per `MAP_IMPORT_MAX_MB`), gestreamt auf Platte. Button
+  **Aktualisieren** = neue ZIP für eine bestehende Karte hochladen. „Vom Link" = erneut
+  vom hinterlegten Link laden. Löschen. DLC-Zoomstufen
+  (`mbtiles/dlc/<layer>_z<N>.mbtiles`) werden für Zoom über die Basis-maxzoom hinaus
+  ausgeliefert.
+- **Karten-Quellen (Gitea)**: unter „Karten" die Repo-URL eintragen (z. B.
+  `https://git.jensr.de/root/ReforgerMapData`). „Dateien" listet die `*.zip` im Repo-Root
+  über die Gitea-API; je Datei ID + Anzeigename eintragen → **Importieren**. Für private
+  Repos kann optional ein Token hinterlegt werden (wird nur an den konfigurierten Host
+  geschickt). Kein Zwischenspeichern – das Backend streamt direkt vom Repo.
 - **Lokale Benutzer**: anlegen, Rolle, `can_create_plans`, aktiv/deaktiviert,
   Passwort-Reset, löschen.
 - **Gruppen**: anlegen, Mitglieder verwalten, `can_create_plans` je Gruppe.

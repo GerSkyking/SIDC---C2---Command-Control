@@ -8,7 +8,7 @@ import { renderPlanTree } from "./planTree";
 import { renderPublicView } from "./publicview";
 import { langSelect, t, wireLangSelect } from "./i18n";
 import { initTheme } from "./theme";
-import { themeSwitch, wireThemeSwitch } from "./ui";
+import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
 initTheme();
 
@@ -36,7 +36,7 @@ async function route(): Promise<void> {
       app.innerHTML = `<div class="center"><div class="card stack">
         <h1>${t("plan.loadFailed")}</h1>
         <p class="error">${e instanceof Error ? e.message : String(e)}</p>
-        <a href="#/">← ${t("nav.back")}</a></div></div>`;
+        <a href="#/">${t("nav.back")}</a></div></div>`;
       console.error(e);
       return;
     }
@@ -84,25 +84,28 @@ async function renderLogin(): Promise<void> {
 // ─── Plan-Liste ───────────────────────────────────────────────────────────
 
 async function renderPlanList(): Promise<void> {
-  const [plans, maps, folders] = await Promise.all([
+  const [plans, maps, folders, sources] = await Promise.all([
     api.plans(),
     api.maps().catch(() => []),
     api.folders().catch(() => []),
+    me?.role === "admin" ? api.mapSources().catch(() => []) : Promise.resolve([]),
   ]);
   const canCreate = me!.can_create_plans_effective && maps.some((m) => m.status === "ready");
 
   app.innerHTML = `
+   <div class="shell">
+    ${sidebar("plans", { isAdmin: me!.role === "admin", username: me!.username })}
+    <div class="shell-main">
     <div class="topbar">
-      <strong>SIDC – C2</strong>
+      <strong>${t("plans.heading")}</strong>
       <span class="grow"></span>
       ${themeSwitch()}
       ${langSelect()}
-      ${me!.role === "admin" ? `<a href="#/admin">${t("nav.admin")}</a>` : ""}
       <span class="muted">${me!.username} (${me!.role})</span>
       <button id="logout">${t("auth.logout")}</button>
     </div>
     <div class="list stack">
-      ${me!.role === "admin" ? adminMapsBlock(maps) : ""}
+      ${me!.role === "admin" ? adminMapsBlock(maps, sources) : ""}
       <h2>${t("plans.heading")}</h2>
       ${
         canCreate
@@ -119,9 +122,12 @@ async function renderPlanList(): Promise<void> {
             }</div>`
       }
       <div class="plan-tree" id="planTree"></div>
-    </div>`;
+    </div>
+    </div>
+   </div>`;
   wireLangSelect(app);
   wireThemeSwitch(app);
+  wireSidebar(app);
 
   renderPlanTree(app.querySelector<HTMLDivElement>("#planTree")!, plans, folders, me!.can_create_plans_effective, {
     onChanged: () => renderPlanList(),
@@ -213,6 +219,64 @@ async function renderPlanList(): Promise<void> {
       }
     }),
   );
+  // ─── Gitea-Quellen ─────────────────────────────────────────────────────
+  app.querySelector("#src-add")?.addEventListener("click", async () => {
+    const url = app.querySelector<HTMLInputElement>("#src-url")!.value.trim();
+    if (!url) return;
+    try {
+      await api.createMapSource(url);
+      renderPlanList();
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : "Fehler");
+    }
+  });
+  app.querySelectorAll<HTMLButtonElement>("[data-src-del]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm(t("common.delete") + "?")) return;
+      await api.deleteMapSource(b.dataset.srcDel!);
+      renderPlanList();
+    }),
+  );
+  app.querySelectorAll<HTMLButtonElement>("[data-src-files]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const sid = b.dataset.srcFiles!;
+      const box = app.querySelector<HTMLDivElement>(`[data-src-files-for="${sid}"]`)!;
+      box.innerHTML = `<span class="muted">${t("src.loading")}</span>`;
+      try {
+        const files = await api.mapSourceFiles(sid);
+        box.innerHTML = files.length
+          ? files
+              .map((f) => {
+                const guessId = f.name.replace(/_mappack.*$/i, "").replace(/[^a-z0-9_-]/gi, "").toLowerCase();
+                return `<div class="row src-file">
+                  <span class="grow">${f.name} <span class="muted">${(f.size / 1048576).toFixed(0)} MB</span></span>
+                  <input data-sf-id="${sid}|${f.name}" value="${guessId}" style="width:8rem" />
+                  <input data-sf-name="${sid}|${f.name}" value="${guessId}" style="width:9rem" />
+                  <button class="primary" data-sf-imp="${sid}|${f.name}">${t("src.import")}</button>
+                </div>`;
+              })
+              .join("")
+          : `<span class="muted">${t("src.noZips")}</span>`;
+        box.querySelectorAll<HTMLButtonElement>("[data-sf-imp]").forEach((ib) =>
+          ib.addEventListener("click", async () => {
+            const [s, file] = ib.dataset.sfImp!.split("|");
+            const idEl = box.querySelector<HTMLInputElement>(`[data-sf-id="${ib.dataset.sfImp}"]`)!;
+            const nameEl = box.querySelector<HTMLInputElement>(`[data-sf-name="${ib.dataset.sfImp}"]`)!;
+            if (!idEl.value.trim() || !nameEl.value.trim()) return;
+            try {
+              await api.importFromSource(idEl.value.trim(), nameEl.value.trim(), s, file);
+              setTimeout(route, 800);
+            } catch (e) {
+              alert(e instanceof ApiError ? e.message : "Fehler");
+            }
+          }),
+        );
+      } catch (e) {
+        box.innerHTML = `<span class="error">${e instanceof ApiError ? e.message : "Fehler"}</span>`;
+      }
+    }),
+  );
+
   app.querySelector("#restart")?.addEventListener("click", async () => {
     if (!confirm(t("admin.restartConfirm"))) return;
     try {
@@ -224,7 +288,10 @@ async function renderPlanList(): Promise<void> {
   });
 }
 
-function adminMapsBlock(maps: { id: string; name: string; status: string; error: string | null }[]): string {
+function adminMapsBlock(
+  maps: { id: string; name: string; status: string; error: string | null }[],
+  sources: import("./api").MapSource[],
+): string {
   return `
     <div class="row">
       <h2 style="margin:0">${t("admin.maps")}</h2>
@@ -261,7 +328,27 @@ function adminMapsBlock(maps: { id: string; name: string; status: string; error:
       <input type="file" id="mfile" accept=".zip,application/zip" style="flex:1" />
       <button id="mu">${t("admin.upload")}</button>
     </div>
-    <div id="mprogress" class="muted"></div>`;
+    <div id="mprogress" class="muted"></div>
+
+    <details class="src-box" ${sources.length ? "open" : ""}>
+      <summary>${t("src.heading")}</summary>
+      <div class="stack" style="margin-top:.5rem">
+        ${sources
+          .map(
+            (s) => `<div class="row src-row" data-src="${s.id}">
+              <span class="grow"><strong>${s.name}</strong> <span class="muted">${s.base_url}/${s.repo}</span></span>
+              <button data-src-files="${s.id}">${t("src.browse")}</button>
+              <button class="danger" data-src-del="${s.id}">${t("common.delete")}</button>
+            </div>
+            <div class="src-files" data-src-files-for="${s.id}"></div>`,
+          )
+          .join("")}
+        <div class="row">
+          <input id="src-url" placeholder="${t("src.urlPlaceholder")}" style="flex:1" />
+          <button id="src-add">${t("src.add")}</button>
+        </div>
+      </div>
+    </details>`;
 }
 
 window.addEventListener("hashchange", route);

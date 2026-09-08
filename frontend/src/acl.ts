@@ -2,6 +2,7 @@
 // feingranulare Rechte (setzen / bewegen / löschen / malen).
 import { api, ApiError, type AclEntry } from "./api";
 import { t } from "./i18n";
+import { icon } from "./icons";
 
 type Row = Omit<AclEntry, "id">;
 
@@ -27,7 +28,7 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
   const draw = () => {
     backdrop.innerHTML = `
       <div class="wiz" style="width:min(44rem,95vw)">
-        <div class="wiz-head"><strong>${t("acl.heading")} — ${planName}</strong><span class="grow"></span><button data-x>✕</button></div>
+        <div class="wiz-head"><strong>${t("acl.heading")} — ${planName}</strong><span class="grow"></span><button class="icon-btn" data-x>${icon("x")}</button></div>
         <div class="wiz-body">
           <table class="acl-tbl"><thead><tr>
             <th>${t("acl.who")}</th><th>${t("acl.role")}</th><th>${t("acl.place")}</th><th>${t("acl.move")}</th><th>${t("acl.deletePerm")}</th><th>${t("acl.draw")}</th><th></th>
@@ -47,7 +48,7 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
                       }/></td>`,
                   )
                   .join("")}
-                <td><button data-del="${i}">✕</button></td>
+                <td><button class="icon-btn" data-del="${i}">${icon("x", 16)}</button></td>
               </tr>`,
             )
             .join("")}

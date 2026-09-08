@@ -3,6 +3,7 @@
 // das die Plan-Ansicht per Linksklick platziert (wie ATAKmaps placeOnClick).
 
 import { t } from "../i18n";
+import { icon } from "../icons";
 import {
   channelLabel,
   findEntry,
@@ -62,7 +63,7 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
         <button data-tab="cat">${t("wiz.catalog")}</button>
         <input class="wiz-search" placeholder="${t('wiz.search')}" />
         <span class="grow"></span>
-        <button data-close>✕</button>
+        <button class="icon-btn" data-close>${icon("x")}</button>
       </div>
       <div class="wiz-body"></div>
       <div class="wiz-config" hidden></div>

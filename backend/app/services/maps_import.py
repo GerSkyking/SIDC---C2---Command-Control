@@ -64,13 +64,13 @@ def effective_maxzoom(map_id: str, layer: str, base_maxzoom: int) -> int:
     return z
 
 
-def download_to_tmp(map_id: str, url: str) -> Path:
+def download_to_tmp(map_id: str, url: str, headers: dict | None = None) -> Path:
     """Streamt die URL auf Platte (kein Voll-Puffer) und gibt den Pfad zurück."""
     tmp = _import_tmp(map_id)
     tmp.parent.mkdir(parents=True, exist_ok=True)
     limit = _settings.map_import_max_mb * 1024 * 1024
     written = 0
-    with httpx.stream("GET", url, follow_redirects=True, timeout=None) as r:
+    with httpx.stream("GET", url, follow_redirects=True, timeout=None, headers=headers or {}) as r:
         r.raise_for_status()
         with tmp.open("wb") as f:
             for chunk in r.iter_bytes():
@@ -83,7 +83,10 @@ def download_to_tmp(map_id: str, url: str) -> Path:
     return tmp
 
 
-def run_import(map_id: str, *, url: str | None = None, zip_path: str | None = None) -> None:
+def run_import(
+    map_id: str, *, url: str | None = None, zip_path: str | None = None,
+    headers: dict | None = None,
+) -> None:
     """Blockierend — vom Router in einem Thread/Task ausgeführt. Genau eins von
     url / zip_path angeben. zip_path (Direkt-Upload) wird nach dem Import gelöscht."""
     src: Path | None = None
@@ -92,7 +95,7 @@ def run_import(map_id: str, *, url: str | None = None, zip_path: str | None = No
         if m is None:
             return
         try:
-            src = Path(zip_path) if zip_path else download_to_tmp(map_id, url or "")
+            src = Path(zip_path) if zip_path else download_to_tmp(map_id, url or "", headers)
             if not src.is_file():
                 raise ValueError("Upload-Datei fehlt")
 
