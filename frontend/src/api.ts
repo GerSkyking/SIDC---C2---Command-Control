@@ -221,6 +221,8 @@ export const api = {
   deleteUser: (id: string) => req<void>("DELETE", `/api/admin/users/${id}`),
   adminGroups: () => req<AdminGroup[]>("GET", "/api/admin/groups"),
   createGroup: (b: { name: string; can_create_plans: boolean; is_mission_builder?: boolean }) => req<AdminGroup>("POST", "/api/admin/groups", b),
+  patchGroup: (id: string, b: { name: string; can_create_plans: boolean; is_mission_builder: boolean }) =>
+    req<AdminGroup>("PATCH", `/api/admin/groups/${id}`, b),
   setGroupMembers: (id: string, userIds: string[]) => req<AdminGroup>("PUT", `/api/admin/groups/${id}/members`, userIds),
   deleteGroup: (id: string) => req<void>("DELETE", `/api/admin/groups/${id}`),
   adminAudit: (q: { limit?: number; offset?: number; action?: string; user?: string }) => {

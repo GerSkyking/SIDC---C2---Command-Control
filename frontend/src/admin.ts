@@ -126,14 +126,20 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   );
   app.querySelectorAll<HTMLElement>("[data-u]").forEach((el) => {
     const id = el.dataset.u!;
-    el.querySelector("[data-toggle-active]")?.addEventListener("click", () =>
-      guard(() => api.patchUser(id, { is_active: el.dataset.active !== "true" })),
-    );
-    el.querySelector("[data-toggle-ccp]")?.addEventListener("click", () =>
-      guard(() => api.patchUser(id, { can_create_plans: el.dataset.ccp !== "true" })),
-    );
-    el.querySelector("[data-toggle-mb]")?.addEventListener("click", () =>
-      guard(() => api.patchUser(id, { is_mission_builder: el.dataset.mb !== "true" })),
+    const field: Record<string, "is_active" | "can_create_plans" | "is_mission_builder"> = {
+      active: "is_active",
+      ccp: "can_create_plans",
+      mb: "is_mission_builder",
+    };
+    el.querySelectorAll<HTMLInputElement>("[data-ur]").forEach((cb) =>
+      cb.addEventListener("change", async () => {
+        try {
+          await api.patchUser(id, { [field[cb.dataset.ur!]]: cb.checked });
+        } catch (e) {
+          cb.checked = !cb.checked;
+          alert(e instanceof ApiError ? e.message : t("common.error"));
+        }
+      }),
     );
     el.querySelector("[data-reset]")?.addEventListener("click", () => {
       const pw = prompt(t("admin.newPassword"));
@@ -155,13 +161,37 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   );
   app.querySelectorAll<HTMLElement>("[data-g]").forEach((el) => {
     const id = el.dataset.g!;
+    const g = groups.find((x) => x.id === id)!;
     el.querySelector("[data-delg]")?.addEventListener("click", () => {
       if (confirm(t("admin.confirmDeleteGroup"))) guard(() => api.deleteGroup(id));
     });
+    // Rechte: Checkboxen im Dropdown → PATCH (kein Reload, Dropdown bleibt offen)
+    el.querySelectorAll<HTMLInputElement>("[data-gr]").forEach((cb) =>
+      cb.addEventListener("change", async () => {
+        const body = {
+          name: g.name,
+          can_create_plans: el.querySelector<HTMLInputElement>('[data-gr="ccp"]')!.checked,
+          is_mission_builder: el.querySelector<HTMLInputElement>('[data-gr="mb"]')!.checked,
+        };
+        try {
+          await api.patchGroup(id, body);
+        } catch (e) {
+          cb.checked = !cb.checked;
+          alert(e instanceof ApiError ? e.message : t("common.error"));
+        }
+      }),
+    );
     el.querySelectorAll<HTMLInputElement>("[data-member]").forEach((cb) =>
-      cb.addEventListener("change", () => {
+      cb.addEventListener("change", async () => {
         const ids = [...el.querySelectorAll<HTMLInputElement>("[data-member]:checked")].map((x) => x.dataset.member!);
-        guard(() => api.setGroupMembers(id, ids));
+        try {
+          const upd = await api.setGroupMembers(id, ids);
+          const sum = el.querySelector(".mem-drop summary");
+          if (sum) sum.textContent = `${t("admin.members")} (${upd.member_ids.length})`;
+        } catch (e) {
+          cb.checked = !cb.checked;
+          alert(e instanceof ApiError ? e.message : t("common.error"));
+        }
       }),
     );
   });
@@ -174,27 +204,51 @@ function postShell(app: HTMLElement): void {
 }
 
 function userRow(u: AdminUser): string {
-  return `<tr data-u="${u.id}" data-active="${u.is_active}" data-ccp="${u.can_create_plans}" data-mb="${u.is_mission_builder}">
-    <td>${u.username} ${u.is_local ? "" : '<span class="badge">OIDC</span>'}</td>
-    <td><span class="badge">${u.role}</span></td>
-    <td><button data-toggle-active>${u.is_active ? "aktiv" : "deaktiviert"}</button></td>
-    <td><button data-toggle-ccp>Pläne: ${u.can_create_plans ? "ja" : "nein"}</button>
-        <button data-toggle-mb>Missionsbau: ${u.is_mission_builder ? "ja" : "nein"}</button></td>
-    <td>${u.is_local ? "<button data-reset>PW</button>" : ""} <button class="icon-btn" data-del>${icon("x", 16)}</button></td>
+  return `<tr data-u="${u.id}">
+    <td><strong>${u.username}</strong> ${u.is_local ? "" : '<span class="badge">OIDC</span>'}
+        <span class="badge">${u.role}</span> ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}</td>
+    <td>
+      <details class="admin-drop">
+        <summary>${t("admin.rights")}</summary>
+        <div class="drop-body">
+          <label class="chk"><input type="checkbox" data-ur="active" ${u.is_active ? "checked" : ""}/> ${t("admin.active")}</label>
+          <label class="chk"><input type="checkbox" data-ur="ccp" ${u.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
+          <label class="chk"><input type="checkbox" data-ur="mb" ${u.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
+        </div>
+      </details>
+    </td>
+    <td>${u.is_local ? `<button data-reset>${t("admin.passwordShort")}</button>` : ""}
+        <button class="icon-btn" data-del>${icon("x", 16)}</button></td>
   </tr>`;
 }
 
 function groupRow(g: AdminGroup, users: AdminUser[]): string {
   return `<tr data-g="${g.id}">
-    <td>${g.name} ${g.can_create_plans ? '<span class="badge">Pläne</span>' : ""} ${g.is_mission_builder ? '<span class="badge">Missionsbau</span>' : ""}</td>
-    <td>${users
-      .map(
-        (u) =>
-          `<label style="margin-right:.6rem"><input type="checkbox" data-member="${u.id}" ${
-            g.member_ids.includes(u.id) ? "checked" : ""
-          }/> ${u.username}</label>`,
-      )
-      .join("")}</td>
+    <td><strong>${g.name}</strong></td>
+    <td>
+      <details class="admin-drop">
+        <summary>${t("admin.rights")}</summary>
+        <div class="drop-body">
+          <label class="chk"><input type="checkbox" data-gr="ccp" ${g.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
+          <label class="chk"><input type="checkbox" data-gr="mb" ${g.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
+        </div>
+      </details>
+    </td>
+    <td>
+      <details class="admin-drop mem-drop">
+        <summary>${t("admin.members")} (${g.member_ids.length})</summary>
+        <div class="drop-body drop-grid">
+          ${users
+            .map(
+              (u) =>
+                `<label class="chk"><input type="checkbox" data-member="${u.id}" ${
+                  g.member_ids.includes(u.id) ? "checked" : ""
+                }/> ${u.username}</label>`,
+            )
+            .join("")}
+        </div>
+      </details>
+    </td>
     <td><button class="icon-btn" data-delg>${icon("x", 16)}</button></td>
   </tr>`;
 }
