@@ -53,6 +53,8 @@ interface Annot {
   world_y: number;
   text: string;
   width: number;
+  scale_fixed?: boolean;
+  ref_zoom?: number;
 }
 
 export async function openPlanView(root: HTMLElement, planId: string, me: Me): Promise<void> {
@@ -683,6 +685,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       case "annotation.upsert":
         annots.set(msg.annotation.id, msg.annotation);
         renderAnnots();
+        if (msg.cid && msg.cid === pendingAnnotCid) {
+          pendingAnnotCid = null;
+          openAnnotEditor(msg.annotation.id, true);
+        }
         break;
       case "annotation.delete":
         annots.delete(msg.id);
@@ -1226,9 +1232,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const ph = phases.find((p) => p.id === notesTabId) ?? phases[0];
     if (!ph) return;
     notesTabId = ph.id;
-    nTabs.innerHTML = phases
-      .map((p) => `<button data-nt="${p.id}" class="${p.id === notesTabId ? "active" : ""}">${p.name}</button>`)
-      .join("");
+    const tabBtn = (p: (typeof phases)[number]) =>
+      `<button data-nt="${p.id}" class="${p.id === notesTabId ? "active" : ""}">${p.name}</button>`;
+    const playerP = phases.filter((p) => (p.plane ?? "player") !== "builder");
+    const builderP = phases.filter((p) => (p.plane ?? "player") === "builder");
+    nTabs.innerHTML =
+      `<div class="notes-tab-grp"><span class="notes-grp-h">${t("mb.player")}</span>${playerP.map(tabBtn).join("")}</div>` +
+      (builderP.length
+        ? `<div class="notes-tab-sep"></div><div class="notes-tab-grp"><span class="notes-grp-h">${t("mb.builder")}</span>${builderP.map(tabBtn).join("")}</div>`
+        : "");
     nTabs.querySelectorAll<HTMLButtonElement>("[data-nt]").forEach((b) =>
       b.addEventListener("click", () => {
         flushNotes();
@@ -2301,27 +2313,52 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // ── Annotationen (platzierbare Markdown-Textfelder) ───────────────────
   const annotsEl = root.querySelector<HTMLDivElement>("#annots")!;
   let annotDragId: string | null = null;
+  let pendingAnnotCid: string | null = null;
   const annotOpacity = (a: Annot): number => phaseOpacityOf(a.phase_id);
+  const ANNOT_COLL_KEY = `sidc_annot_coll_${planId}`;
+  const collapsedAnnots = new Set<string>(
+    (() => {
+      try {
+        return JSON.parse(localStorage.getItem(ANNOT_COLL_KEY) || "[]");
+      } catch {
+        return [];
+      }
+    })(),
+  );
+  const saveCollapsed = () => {
+    try {
+      localStorage.setItem(ANNOT_COLL_KEY, JSON.stringify([...collapsedAnnots]));
+    } catch {
+      /* ignore */
+    }
+  };
+  const annotFirstLine = (s: string): string =>
+    (s.split("\n").find((l) => l.trim()) ?? "").replace(/^#{1,6}\s+/, "").trim() || t("annot.placeholder");
+  const annotScale = (a: Annot): number =>
+    a.scale_fixed
+      ? 1
+      : Math.max(0.4, Math.min(2.4, 2 ** (map.getZoom() - (a.ref_zoom ?? map.getZoom()))));
 
   function positionAnnots(): void {
     for (const el of Array.from(annotsEl.children) as HTMLElement[]) {
       const a = annots.get(el.dataset.aid ?? "");
       if (!a) continue;
       const p = map.project([a.world_x, a.world_y]);
-      el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+      el.style.transform = `translate(${p.x}px, ${p.y}px) scale(${annotScale(a)})`;
     }
   }
 
-  function openAnnotEditor(id: string): void {
+  function openAnnotEditor(id: string, isNew = false): void {
     const a = annots.get(id);
     if (!a || !canEdit) return;
     const back = document.createElement("div");
     back.className = "edit-modal";
     back.innerHTML = `<div class="card" style="width:min(34rem,96vw)">
       <div class="row"><h1 style="flex:1;margin:0">${t("annot.title")}</h1><button class="icon-btn" data-x>${icon("x")}</button></div>
-      <textarea class="notes-edit annot-edit" rows="6"></textarea>
+      <textarea class="notes-edit annot-edit" rows="6" placeholder="${t("annot.hint")}"></textarea>
       <label class="ph-op" style="margin-top:.4rem">${t("annot.width")}
         <input type="range" min="140" max="480" step="10" value="${a.width}" data-w /></label>
+      <label class="chk" style="margin-top:.3rem"><input type="checkbox" data-fix ${a.scale_fixed ? "checked" : ""}/> <span>${t("annot.fixSize")}</span></label>
       <div class="notes-view annot-prev"></div>
       <div class="row" style="margin-top:.6rem">
         <button class="primary" data-save style="flex:1">${t("common.save")}</button>
@@ -2333,23 +2370,44 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     ta.value = a.text;
     const prev = back.querySelector<HTMLDivElement>(".annot-prev")!;
     const wIn = back.querySelector<HTMLInputElement>("[data-w]")!;
+    const fixIn = back.querySelector<HTMLInputElement>("[data-fix]")!;
     const upd = () => (prev.innerHTML = renderMarkdown(ta.value));
     ta.addEventListener("input", upd);
     upd();
-    const close = () => back.remove();
+    setTimeout(() => ta.focus(), 0);
+    const removeIfEmpty = () => {
+      if (isNew && !ta.value.trim()) socket.send({ type: "annotation.delete", id });
+    };
+    const close = () => {
+      removeIfEmpty();
+      back.remove();
+    };
     back.addEventListener("mousedown", (e) => e.target === back && close());
     back.querySelector("[data-x]")!.addEventListener("click", close);
     back.querySelector("[data-save]")!.addEventListener("click", () => {
-      socket.send({
-        type: "annotation.modify",
-        id,
-        data: { text: ta.value, width: Number(wIn.value), phase_id: a.phase_id },
-      });
-      close();
+      const text = ta.value.trim();
+      if (!text) {
+        socket.send({ type: "annotation.delete", id }); // leere Notiz nicht speichern
+        back.remove();
+        return;
+      }
+      const wantFix = fixIn.checked;
+      const data: Record<string, unknown> = {
+        text: ta.value,
+        width:
+          wantFix && !a.scale_fixed
+            ? Math.round(Number(wIn.value) * annotScale(a)) // aktuelle Größe einfrieren
+            : Number(wIn.value),
+        phase_id: a.phase_id,
+        scale_fixed: wantFix,
+      };
+      if (!wantFix && a.scale_fixed) data.ref_zoom = map.getZoom(); // wieder mitskalieren ab jetzt
+      socket.send({ type: "annotation.modify", id, data });
+      back.remove();
     });
     back.querySelector("[data-del]")!.addEventListener("click", () => {
       socket.send({ type: "annotation.delete", id });
-      close();
+      back.remove();
     });
   }
 
@@ -2390,25 +2448,41 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   function renderAnnots(): void {
     annotsEl.innerHTML = "";
     for (const a of annots.values()) {
+      const collapsed = collapsedAnnots.has(a.id);
       const el = document.createElement("div");
-      el.className = "annot";
+      el.className = "annot" + (collapsed ? " annot-collapsed" : "");
       el.dataset.aid = a.id;
       el.style.width = `${a.width}px`;
       el.style.opacity = String(annotOpacity(a));
+      const body = collapsed
+        ? `<div class="annot-body">${esc(annotFirstLine(a.text))}</div>`
+        : `<div class="annot-body">${renderMarkdown(a.text || "")}</div>`;
       el.innerHTML =
-        `<div class="annot-body">${renderMarkdown(a.text || "")}</div>` +
+        body +
+        `<div class="annot-tools">` +
+        `<button class="icon-btn" data-acoll title="${t(collapsed ? "annot.expand" : "annot.collapse")}">${icon(collapsed ? "chevron" : "chevronDown", 14)}</button>` +
         (canEdit
-          ? `<div class="annot-tools">` +
-            `<button class="icon-btn" data-aedit title="${t("common.rename")}">${icon("edit", 14)}</button>` +
-            `<button class="icon-btn" data-adel title="${t("common.delete")}">${icon("x", 14)}</button></div>`
-          : "");
+          ? `<button class="icon-btn" data-aedit title="${t("common.rename")}">${icon("edit", 14)}</button>` +
+            `<button class="icon-btn" data-adel title="${t("common.delete")}">${icon("x", 14)}</button>`
+          : "") +
+        `</div>`;
+      el.querySelector("[data-acoll]")?.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        collapsed ? collapsedAnnots.delete(a.id) : collapsedAnnots.add(a.id);
+        saveCollapsed();
+        renderAnnots();
+      });
       el.querySelector("[data-aedit]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
         openAnnotEditor(a.id);
       });
       el.querySelector("[data-adel]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        if (confirm(t("annot.confirmDelete"))) socket.send({ type: "annotation.delete", id: a.id });
+        const tools = el.querySelector<HTMLElement>(".annot-tools")!;
+        tools.innerHTML = `<label class="annot-delok"><input type="checkbox" data-adok/> ${t("common.delete")}</label>`;
+        tools.querySelector("[data-adok]")!.addEventListener("change", () =>
+          socket.send({ type: "annotation.delete", id: a.id }),
+        );
       });
       el.addEventListener("mousedown", (ev) => onAnnotDown(ev, a.id));
       el.addEventListener("dblclick", (ev) => {
@@ -2431,17 +2505,21 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
     if (mode === "text") {
       if (!caps.place) return;
+      const ac = cid();
+      pendingAnnotCid = ac; // Antwort öffnet direkt den Editor
       socket.send({
         type: "annotation.create",
-        cid: cid(),
+        cid: ac,
         data: {
           world_x: e.lngLat.lng,
           world_y: e.lngLat.lat,
-          text: t("annot.placeholder"),
+          text: "",
           width: 220,
           phase_id: currentPhaseId || null,
+          ref_zoom: map.getZoom(),
         },
       });
+      setMode("move");
       return;
     }
 

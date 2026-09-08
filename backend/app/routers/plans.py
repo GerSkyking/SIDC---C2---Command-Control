@@ -126,6 +126,7 @@ def _annotation_dict(a: Annotation) -> dict:
     return {
         "id": a.id, "phase_id": a.phase_id, "world_x": a.world_x, "world_y": a.world_y,
         "text": a.text, "width": a.width,
+        "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom,
     }
 
 

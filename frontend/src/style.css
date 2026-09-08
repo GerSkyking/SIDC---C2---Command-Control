@@ -261,7 +261,10 @@ a { color: var(--accent); }
 .notes-head { display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 0.6rem;
   border-bottom: 1px solid var(--border); cursor: move; font-weight: 600; font-size: 0.9rem; }
 .notes-head .notes-x { border: none; background: transparent; cursor: pointer; }
-.notes-tabs { display: flex; flex-wrap: wrap; gap: 0.2rem; padding: 0.4rem 0.5rem 0; }
+.notes-tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.2rem; padding: 0.4rem 0.5rem 0; }
+.notes-tab-grp { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.2rem; }
+.notes-grp-h { width: 100%; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.notes-tab-sep { width: 100%; border-top: 1px solid var(--border); margin: 0.25rem 0 0.1rem; }
 .notes-tabs button { padding: 0.15rem 0.5rem; font-size: 0.75rem; border-radius: 5px 5px 0 0; }
 .notes-tabs button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .notes-split { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.5rem; }
@@ -382,8 +385,13 @@ a { color: var(--accent); }
 .annot { position: absolute; top: 0; left: 0; pointer-events: auto;
   background: var(--surface); color: var(--fg); border: 1px solid var(--border);
   border-radius: var(--r-sm); box-shadow: var(--shadow); padding: 0.45rem 0.6rem;
-  font-size: 0.82rem; line-height: 1.4; cursor: default; transform: translate(-9999px, -9999px); }
+  font-size: 0.82rem; line-height: 1.4; cursor: default;
+  transform: translate(-9999px, -9999px); transform-origin: top left; }
 .annot.dragging { cursor: grabbing; opacity: 0.85 !important; }
+.annot-collapsed .annot-body { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.annot-delok { display: flex; align-items: center; gap: 0.25rem; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-sm); padding: 0.1rem 0.35rem;
+  font-size: 0.72rem; white-space: nowrap; }
 .annot-body > :first-child { margin-top: 0; }
 .annot-body > :last-child { margin-bottom: 0; }
 .annot-body h1, .annot-body h2, .annot-body h3 { font-size: 0.95rem; margin: 0.3rem 0 0.2rem; }

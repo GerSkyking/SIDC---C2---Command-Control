@@ -236,7 +236,7 @@ async def _handle(
     elif t in ("annotation.move", "annotation.modify"):
         fields = {
             k: v for k, v in msg.get("data", {}).items()
-            if k in ("world_x", "world_y", "text", "width", "phase_id")
+            if k in ("world_x", "world_y", "text", "width", "phase_id", "scale_fixed", "ref_zoom")
         }
         res = await run_in_threadpool(_update_annotation, plan_id, msg["id"], user.id, fields)
         if res is not None:
@@ -372,6 +372,7 @@ def _annotation_out(a: Annotation) -> dict:
     return {
         "id": a.id, "plan_id": a.plan_id, "phase_id": a.phase_id,
         "world_x": a.world_x, "world_y": a.world_y, "text": a.text, "width": a.width,
+        "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom,
     }
 
 
@@ -382,6 +383,8 @@ def _create_annotation(plan_id: str, uid: str, data: dict) -> dict:
             phase_id=data.get("phase_id"),
             world_x=float(data.get("world_x", 0)), world_y=float(data.get("world_y", 0)),
             text=str(data.get("text", ""))[:8000], width=float(data.get("width", 220)),
+            scale_fixed=bool(data.get("scale_fixed", False)),
+            ref_zoom=float(data.get("ref_zoom", 0)),
         )
         db.add(a)
         db.commit()

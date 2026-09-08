@@ -253,6 +253,10 @@ class Annotation(Base):
     world_y: Mapped[float] = mapped_column(Float)
     text: Mapped[str] = mapped_column(Text, default="")
     width: Mapped[float] = mapped_column(Float, default=220)
+    # Zoom-Skalierung: standardmäßig skaliert die Notiz mit der Karte; scale_fixed
+    # friert sie auf Bildschirmgröße ein. ref_zoom = Zoom, bei dem width "natürlich" ist.
+    scale_fixed: Mapped[bool] = mapped_column(Boolean, default=False)
+    ref_zoom: Mapped[float] = mapped_column(Float, default=0)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
