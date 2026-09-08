@@ -145,8 +145,9 @@ a { color: var(--accent); }
 .ph-chip [data-delph] { padding: 0.15rem 0.35rem; opacity: 0.6; }
 .ph-chip [data-delph]:hover { opacity: 1; color: var(--danger); }
 #ph-add { padding: 0.15rem 0.5rem; font-size: 0.9rem; }
-.ph-op { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: var(--muted); }
-.ph-op input[type="range"] { width: 6rem; padding: 0; }
+.ph-op { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: var(--muted);
+  flex-wrap: wrap; max-width: 14rem; }
+.ph-op input[type="range"] { width: 6rem; padding: 0; flex: none; }
 
 /* Kompass in der Topbar */
 .compass .ic { transform: rotate(var(--rot, 0deg)); transition: transform 0.15s linear; }
@@ -175,10 +176,10 @@ a { color: var(--accent); }
 .maplibregl-popup-tip { border-top-color: #000 !important; border-bottom-color: #000 !important; }
 .mk-tip { font-size: 0.78rem; line-height: 1.35; white-space: nowrap; }
 .mk-tip b { font-size: 0.82rem; }
-.layers-panel .layer-row { display: flex; align-items: center; gap: 0.6rem; margin: 0.28rem 0; }
-.layers-panel .layer-row label { flex: 1 1 auto; margin: 0; display: flex; align-items: center;
-  gap: 0.4rem; white-space: normal; }
-.layers-panel .layer-row input[type="range"] { flex: 0 0 5rem; margin: 0; }
+.layers-panel .layer-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.28rem 0; flex-wrap: wrap; }
+.layers-panel .layer-row label { flex: 1 1 8rem; min-width: 6rem; margin: 0; display: flex; align-items: center;
+  gap: 0.4rem; white-space: normal; overflow-wrap: anywhere; }
+.layers-panel .layer-row input[type="range"] { flex: 1 1 5rem; min-width: 4.5rem; max-width: 8rem; margin: 0; }
 #maplang { max-width: 6rem; }
 
 .line-style { position: absolute; left: 3.4rem; top: 4rem; width: 13rem; z-index: 6;
@@ -302,8 +303,8 @@ a { color: var(--accent); }
 /* ── Redesign: Einstellungs-Menü ─────────────────────────────────────── */
 .set-card { width: min(30rem, 96vw); }
 .set-card h4 { margin: 1rem 0 0.4rem; font-size: 0.95rem; }
-.set-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
-.set-row span { flex: 1; }
+.set-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.set-row span { flex: 1 1 8rem; overflow-wrap: anywhere; }
 .kb-key { min-width: 3rem; text-align: center; font-weight: 600; font-family: ui-monospace, monospace;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 0.3rem 0.5rem; }
 .kb-key:hover { border-color: var(--accent); }
