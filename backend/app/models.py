@@ -213,6 +213,9 @@ class Marker(Base):
     layer_id: Mapped[str | None] = mapped_column(
         ForeignKey("layers.id", ondelete="SET NULL"), index=True
     )
+    orbat_node_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orbat_nodes.id", ondelete="SET NULL"), index=True
+    )
 
     sidc: Mapped[str] = mapped_column(String(64))
     world_x: Mapped[float] = mapped_column(Float)

@@ -15,8 +15,10 @@ from sqlalchemy import select
 
 from .. import audit
 from ..deps import CurrentUser, DbDep
-from ..models import GroupMember, Orbat, OrbatACL, OrbatNode, Plan, PlanOrbat
+from ..models import GroupMember, Marker, Orbat, OrbatACL, OrbatNode, Plan, PlanOrbat
 from ..permissions import effective_level, effective_mission_builder, rank
+from ..services.realtime import hub
+from ..sidc_status import sidc_with_status
 
 router = APIRouter(prefix="/api/orbats", tags=["orbat"])
 plan_orbat_router = APIRouter(prefix="/plans/{plan_id}/orbats", tags=["orbat"])
@@ -219,7 +221,9 @@ def create_node(orbat_id: str, body: NodeIn, user: CurrentUser, db: DbDep) -> di
 
 
 @router.patch("/{orbat_id}/nodes/{node_id}")
-def patch_node(orbat_id: str, node_id: str, body: NodePatch, user: CurrentUser, db: DbDep) -> dict:
+async def patch_node(
+    orbat_id: str, node_id: str, body: NodePatch, user: CurrentUser, db: DbDep
+) -> dict:
     _load(orbat_id, db, user, "editor")
     n = db.get(OrbatNode, node_id)
     if n is None or n.orbat_id != orbat_id:
@@ -231,10 +235,36 @@ def patch_node(orbat_id: str, node_id: str, body: NodePatch, user: CurrentUser, 
         data.pop("status")
     if "rel_strength" in data and data["rel_strength"] is not None:
         data["rel_strength"] = max(-1, min(100, data["rel_strength"]))
+    status_changed = "status" in data and data["status"] != n.status
     for k, v in data.items():
         setattr(n, k, v)
     db.commit()
+    if status_changed:
+        await _propagate_node_status(db, n)
     return _node_out(n)
+
+
+async def _propagate_node_status(db, n: OrbatNode) -> None:
+    """Knoten-Status → SIDC-Statusstelle aller verknüpften Marker; live an alle
+    Pläne, in denen das ORBAT hängt."""
+    from .live import _phase_is_builder, _marker_out, _author_of
+
+    linked = list(db.scalars(select(Marker).where(Marker.orbat_node_id == n.id)))
+    if not linked:
+        return
+    touched: list[Marker] = []
+    for m in linked:
+        new_sidc = sidc_with_status(m.sidc, n.status)
+        if new_sidc != m.sidc:
+            m.sidc = new_sidc
+            touched.append(m)
+    if touched:
+        db.commit()
+    for m in touched:
+        await hub.broadcast(
+            m.plan_id, {"type": "marker.upsert", "marker": _marker_out(m, _author_of(db, m))},
+            builder_only=_phase_is_builder(m.plan_id, m.phase_id),
+        )
 
 
 @router.delete("/{orbat_id}/nodes/{node_id}")

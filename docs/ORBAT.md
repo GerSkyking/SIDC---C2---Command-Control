@@ -5,15 +5,25 @@ Alle Entscheidungen unten sind final, sofern nicht als *offen* markiert.
 
 ---
 
-**Status:** Baustein A ✅ + Baustein B ✅ umgesetzt & deployt (2026-09-08). C offen.
+**Status:** Baustein A ✅ + B ✅ + C ✅ umgesetzt & deployt (2026-09-08).
 
-Baustein B umgesetzt: `Orbat` / `OrbatNode` / `OrbatACL` / `PlanOrbat` (Migration 0004),
-`/api/orbats` CRUD + Knoten-CRUD + ORBAT-ACL + `/plans/{id}/orbats`. Frontend:
-ORBAT-Bibliothek (`#/orbat`, `orbat.ts`) mit Baum (Drag & Drop, Ein-/Ausklappen,
-Knoten-Editor inkl. Freigabe-Feldern), ORBAT-Panel in der Planansicht (Missionsbau:
-voller Baum + hinzufügen/entfernen; Spieler: nur `rel_visible`-Knoten, reduziert).
-Offen für C: Marker↔Knoten-Verknüpfung, Status-Sync über SIDC, Briefing-Seite,
-Kartendarstellung der freigegebenen Feind-Marker.
+Baustein C umgesetzt (Migration 0005 `markers.orbat_node_id`):
+- Marker↔Knoten: beim Platzieren aus dem ORBAT-Panel (Knoten-Button) **und** über ein
+  Feld „ORBAT-Knoten" im Marker-Editor (nur Missionsbau).
+- Status-Sync über die SIDC-Statusstelle (`app/sidc_status.py`):
+  Marker geändert → `_sync_node` zieht Knoten-Status (schlimmster) + `qty_current`
+  (nicht-zerstörte Marker) nach. Knoten-Status geändert → `_propagate_node_status`
+  setzt die SIDC-Statusstelle aller verknüpften Marker und broadcastet live.
+- Freigegebene Feind-Marker: `released_markers()` hängt Marker von einer Builder-Phase,
+  deren Knoten `rel_visible` ist, auf die gepaarte Spieler-Phase um — Typ ggf. auf
+  `GENERIC_HOSTILE_SIDC` reduziert, Texte entfernt, `locked`, `released:true`
+  (Frontend: halbtransparent, nicht anfassbar). Gilt für Snapshot **und** öffentliche
+  Links (die jetzt zusätzlich die Builder-Ebene sauber ausfiltern).
+- Briefing-PDF: Zusatzseite „Kräfteübersicht" — Missionsbau: Knoten mit Marker auf der
+  Karte; Spieler: freigegebene Knoten.
+
+Bekannte Grenze: Live-Bewegung eines freigegebenen Feind-Markers wird Spielern erst
+beim nächsten Snapshot-Load gezeigt (Bewegungs-Broadcasts bleiben `builder_only`).
 
 ## Baustein A — Rolle „Missionsbau" + parallele Ebenen/Phasen
 

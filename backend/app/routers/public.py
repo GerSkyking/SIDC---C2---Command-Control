@@ -14,7 +14,7 @@ from ..models import Annotation, Layer, Map, Marker, Phase, Plan, PublicShare, S
 from ..services.maps_import import map_dir
 from ..services.realtime import hub
 from .live import _marker_out
-from .plans import _stroke_dict
+from .plans import _builder_phase_ids, _stroke_dict, released_markers
 from .tiles import build_style, read_tile
 
 router = APIRouter(prefix="/public/plans", tags=["public"])
@@ -36,6 +36,12 @@ def _resolve(token: str, db) -> Plan:
 def public_snapshot(token: str, db: DbDep) -> dict:
     plan = _resolve(token, db)
     mp = db.get(Map, plan.map_id)
+    hide = _builder_phase_ids(db, plan.id)  # Missionsbau-Ebene nie öffentlich
+    markers = [
+        _marker_out(m)
+        for m in db.scalars(select(Marker).where(Marker.plan_id == plan.id))
+        if m.phase_id not in hide
+    ] + released_markers(db, plan.id)
     return {
         "plan": {"id": plan.id, "name": plan.name, "map_id": plan.map_id},
         "map_meta": (mp.meta if mp else {}),
@@ -43,19 +49,28 @@ def public_snapshot(token: str, db: DbDep) -> dict:
         "phases": [
             {"id": p.id, "name": p.name, "ordering": p.ordering,
              "start_at": p.start_at.isoformat() if p.start_at else None}
-            for p in db.scalars(select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering))
+            for p in db.scalars(
+                select(Phase)
+                .where(Phase.plan_id == plan.id, Phase.plane.is_distinct_from("builder"))
+                .order_by(Phase.ordering)
+            )
         ],
         "layers": [
             {"id": ly.id, "name": ly.name, "color": ly.color, "ordering": ly.ordering,
              "group_id": ly.group_id, "is_default": ly.is_default}
             for ly in db.scalars(select(Layer).where(Layer.plan_id == plan.id).order_by(Layer.ordering))
         ],
-        "markers": [_marker_out(m) for m in db.scalars(select(Marker).where(Marker.plan_id == plan.id))],
-        "strokes": [_stroke_dict(s) for s in db.scalars(select(Stroke).where(Stroke.plan_id == plan.id))],
+        "markers": markers,
+        "strokes": [
+            _stroke_dict(s)
+            for s in db.scalars(select(Stroke).where(Stroke.plan_id == plan.id))
+            if s.phase_id not in hide
+        ],
         "annotations": [
             {"id": a.id, "phase_id": a.phase_id, "world_x": a.world_x, "world_y": a.world_y,
              "text": a.text, "width": a.width}
             for a in db.scalars(select(Annotation).where(Annotation.plan_id == plan.id))
+            if a.phase_id not in hide
         ],
     }
 

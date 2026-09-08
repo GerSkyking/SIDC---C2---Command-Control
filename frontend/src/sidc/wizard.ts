@@ -38,6 +38,7 @@ export interface MarkerTemplate {
   rotation_degrees: number;
   is_multipoint: boolean;
   max_line_points: number;
+  orbat_node_id?: string | null;
 }
 
 type Done = (t: MarkerTemplate) => void;

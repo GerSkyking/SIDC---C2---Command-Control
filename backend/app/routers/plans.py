@@ -18,6 +18,7 @@ from ..models import (
     Annotation,
     Layer,
     Marker,
+    OrbatNode,
     Phase,
     Plan,
     PlanACL,
@@ -27,6 +28,7 @@ from ..models import (
     User,
     now,
 )
+from ..sidc_status import GENERIC_HOSTILE_SIDC, sidc_with_status
 from ..permissions import (
     can_create_plans,
     effective_level,
@@ -80,6 +82,46 @@ def _snapshot(db: Session, plan: Plan, *, include_builder: bool = True) -> dict:
     }
 
 
+def _builder_parent_map(db: Session, plan_id: str) -> dict[str, str | None]:
+    return {
+        p.id: p.parent_id
+        for p in db.scalars(
+            select(Phase).where(Phase.plan_id == plan_id, Phase.plane == "builder")
+        )
+    }
+
+
+def released_markers(db: Session, plan_id: str) -> list[dict]:
+    """Für Spieler freigegebene Feind-Marker: liegen auf einer Builder-Phase, sind mit
+    einem ORBAT-Knoten mit ``rel_visible`` verknüpft. Rückgabe auf die gepaarte
+    Spieler-Phase umgehängt, Typ ggf. auf ein generisches Feindsymbol reduziert."""
+    bmap = _builder_parent_map(db, plan_id)
+    if not bmap:
+        return []
+    out: list[dict] = []
+    rows = db.scalars(
+        select(Marker).where(
+            Marker.plan_id == plan_id, Marker.orbat_node_id.is_not(None)
+        )
+    )
+    for m in rows:
+        if m.phase_id not in bmap:
+            continue
+        n = db.get(OrbatNode, m.orbat_node_id)
+        if n is None or not n.rel_visible:
+            continue
+        base = m.sidc if n.rel_show_type else GENERIC_HOSTILE_SIDC
+        d = _marker_dict(m)
+        d.update(
+            sidc=sidc_with_status(base, n.status),
+            phase_id=bmap[m.phase_id],
+            unit_text="", ai_text="", channel="",
+            locked=True, orbat_node_id=None, released=True,
+        )
+        out.append(d)
+    return out
+
+
 def _annotation_dict(a: Annotation) -> dict:
     return {
         "id": a.id, "phase_id": a.phase_id, "world_x": a.world_x, "world_y": a.world_y,
@@ -89,7 +131,8 @@ def _annotation_dict(a: Annotation) -> dict:
 
 def _marker_dict(m: Marker) -> dict:
     return {
-        "id": m.id, "phase_id": m.phase_id, "layer_id": m.layer_id, "sidc": m.sidc,
+        "id": m.id, "phase_id": m.phase_id, "layer_id": m.layer_id,
+        "orbat_node_id": m.orbat_node_id, "sidc": m.sidc,
         "world_x": m.world_x, "world_y": m.world_y, "rotation_degrees": m.rotation_degrees, "icon_rotation": m.icon_rotation,
         "unit_text": m.unit_text, "ai_text": m.ai_text, "channel": m.channel,
         "locked": m.locked, "timestamp_visible": m.timestamp_visible,
@@ -356,6 +399,8 @@ def get_snapshot(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> dict:
     for md in snap["markers"]:
         src = by_id.get(md["id"])
         md["author"] = names.get(src.created_by or "") if src else None
+    if not builder:
+        snap["markers"].extend(released_markers(db, plan.id))
     return {
         "plan": PlanOut.model_validate(plan).model_dump(mode="json"),
         "map_meta": mp.meta if mp else {},

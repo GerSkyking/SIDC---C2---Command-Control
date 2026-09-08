@@ -353,3 +353,67 @@ def test_orbat_library(admin):
         assert [n["id"] for n in pv[0]["nodes"]] == [child["id"]]
         # Spieler darf die ORBAT-Bibliothek nicht sehen
         assert c.get("/api/orbats").status_code == 403
+
+
+def test_orbat_marker_link(admin):
+    """Marker ↔ ORBAT-Knoten: Status-Sync in beide Richtungen + freigegebener
+    Feind-Marker in der Spieler-Sicht."""
+    from fastapi.testclient import TestClient
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.models import Map, User, now
+    from app.security import hash_password
+
+    admin.post("/api/maps", json={"id": "oc", "name": "OC", "url": "http://x.invalid/a.zip"})
+    with SessionLocal() as db:
+        db.get(Map, "oc").status = "ready"
+        db.get(Map, "oc").imported_at = now()
+        db.add(User(username="plc", password_hash=hash_password("plc-pass-123456")))
+        db.commit()
+        plc_id = db.scalar(__import__("sqlalchemy").select(User.id).where(User.username == "plc"))
+
+    oid = admin.post("/api/orbats", json={"name": "Feind", "affiliation": "enemy"}).json()["id"]
+    node = admin.post(f"/api/orbats/{oid}/nodes", json={
+        "name": "Panzerzug", "sidc": "100600000000000000000000000000", "qty_planned": 3,
+        "rel_visible": True, "rel_show_type": True, "rel_strength": 100,
+    }).json()
+
+    pid = admin.post("/plans", json={"name": "OCPlan", "map_id": "oc"}).json()["id"]
+    admin.put(f"/plans/{pid}/acl", json=[
+        {"subject_type": "user", "subject_id": admin.get("/auth/me").json()["id"], "level": "owner"},
+        {"subject_type": "user", "subject_id": plc_id, "level": "viewer"},
+    ])
+    admin.post(f"/plans/{pid}/orbats", json={"orbat_id": oid})
+
+    phases = admin.get(f"/plans/{pid}/phases").json()
+    builder_ph = next(p for p in phases if p["plane"] == "builder")
+    player_ph = next(p for p in phases if p["plane"] == "player")
+
+    with admin.websocket_connect(f"/plans/{pid}/live") as ws:
+        ws.receive_json(); ws.receive_json()
+        ws.send_json({"type": "marker.create", "cid": "m1", "data": {
+            "sidc": "100600000000000000000000000000", "world_x": 5.0, "world_y": 5.0,
+            "phase_id": builder_ph["id"], "orbat_node_id": node["id"]}})
+        mid = ws.receive_json()["marker"]["id"]
+        # Marker zerstört -> Knoten übernimmt
+        ws.send_json({"type": "marker.modify", "id": mid, "data": {
+            "sidc": "100600400000000000000000000000"}})
+        ws.receive_json()
+
+    n2 = next(n for n in admin.get(f"/api/orbats/{oid}").json()["nodes"] if n["id"] == node["id"])
+    assert n2["status"] == "destroyed" and n2["qty_current"] == 0
+
+    # Knoten wieder einsatzbereit -> Marker-SIDC zieht nach
+    admin.patch(f"/api/orbats/{oid}/nodes/{node['id']}", json={"status": "active"})
+    snap = admin.get(f"/plans/{pid}/snapshot").json()
+    linked = next(m for m in snap["markers"] if m.get("orbat_node_id") == node["id"])
+    assert linked["sidc"][6] == "0"
+
+    # Spieler: freigegebener Feind-Marker auf der Spieler-Phase, als Anzeige markiert
+    with TestClient(app) as c:
+        c.post("/auth/login", json={"username": "plc", "password": "plc-pass-123456"})
+        psnap = c.get(f"/plans/{pid}/snapshot").json()
+        rel = [m for m in psnap["markers"] if m.get("released")]
+        assert len(rel) == 1
+        assert rel[0]["phase_id"] == player_ph["id"] and rel[0]["locked"] is True

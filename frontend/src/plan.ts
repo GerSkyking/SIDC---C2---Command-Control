@@ -30,6 +30,8 @@ interface Marker {
   icon_rotation: number;
   phase_id: string | null;
   layer_id: string | null;
+  orbat_node_id?: string | null;
+  released?: boolean;
   linked_group_id: number;
   point_index: number;
   line_color: number;
@@ -158,7 +160,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (phaseId === currentPhaseId) return 1;
     return Math.max(0, Math.min(100, outOpacity)) / 100; // Fremdphase (gleiche Ebene)
   };
-  const phaseOpacity = (m: Marker): number => phaseOpacityOf(m.phase_id);
+  const phaseOpacity = (m: Marker): number =>
+    phaseOpacityOf(m.phase_id) * (m.released ? 0.6 : 1);
   const phaseNameOf = (id: string | null): string =>
     id ? (phases.find((p) => p.id === id)?.name ?? "—") : t("phase.global");
 
@@ -850,6 +853,40 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           doc.text(doc.splitTextToSize(notes, pw - nx - 10), nx, 26);
         }
       }
+      // ── Kräfteübersicht: ORBAT-Knoten, die auf der Karte stehen ──
+      await ensureOrbatCache();
+      const nodesOnMap = new Set(
+        [...markers.values()].map((m) => m.orbat_node_id).filter(Boolean) as string[],
+      );
+      const forceItems = planOrbatCache.flatMap((o) =>
+        (o.nodes ?? [])
+          .filter((n) => o.released || nodesOnMap.has(n.id))
+          .map((n) => ({ orbat: o.name, aff: o.affiliation, n })),
+      );
+      if (forceItems.length) {
+        doc.addPage();
+        doc.setFontSize(16);
+        doc.text(`${snap.plan.name} — ${t("orbat.forcesTitle")}`, 12, 14);
+        let y = 26;
+        let curOrbat = "";
+        for (const it of forceItems) {
+          if (y > ph - 14) {
+            doc.addPage();
+            y = 20;
+          }
+          if (it.orbat !== curOrbat) {
+            curOrbat = it.orbat;
+            doc.setFontSize(12);
+            doc.text(`${curOrbat}  (${t("orbat.aff." + it.aff)})`, 12, y);
+            y += 7;
+          }
+          doc.setFontSize(10);
+          const strength =
+            it.n.qty_planned == null ? "?" : `${it.n.qty_current ?? "?"}/${it.n.qty_planned}`;
+          doc.text(`• ${it.n.name}    ${strength}    ${t("orbat.status." + it.n.status)}`, 16, y);
+          y += 6;
+        }
+      }
       const fileStamp =
         `${p2(d.getDate())}${p2(d.getMonth() + 1)}${d.getFullYear()}-` +
         `${p2(d.getHours())}${p2(d.getMinutes())}`;
@@ -1449,6 +1486,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const orbatPanel = root.querySelector<HTMLDivElement>("#orbatPanel")!;
   const orbatBtn = root.querySelector<HTMLButtonElement>("#orbatBtn")!;
   const orbOpen = new Set<string>();
+  let planOrbatCache: import("./api").Orbat[] = [];
+  async function ensureOrbatCache(): Promise<void> {
+    if (planOrbatCache.length) return;
+    planOrbatCache = await api.planOrbats(planId).catch(() => []);
+  }
   async function buildOrbatPanel(): Promise<void> {
     let linked: import("./api").Orbat[] = [];
     try {
@@ -1456,6 +1498,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     } catch {
       /* keine */
     }
+    planOrbatCache = linked;
     let avail: import("./api").Orbat[] = [];
     if (isMB) avail = await api.orbats().catch(() => []);
     const st = (s: string) => `<span class="st-pill st-${s}">${t("orbat.status." + s)}</span>`;
@@ -1476,7 +1519,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
               `<div class="orb-row" style="margin-left:${d * 0.9}rem">` +
               (ch.length ? `<button class="orb-tw" data-otw="${n.id}">${icon(op ? "chevronDown" : "chevron", 12)}</button>` : `<span class="orb-tw"></span>`) +
               `<span class="orb-name">${n.name}</span>` +
-              `<span class="orb-qty">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}</span>${st(n.status)}</div>` +
+              `<span class="orb-qty">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}</span>${st(n.status)}` +
+              (isMB && canEdit && !o.released
+                ? `<button class="icon-btn" data-oplace="${n.id}" data-osidc="${n.sidc ?? ""}" title="${t("orbat.placeOnMap")}">${icon("marker", 12)}</button>`
+                : "") +
+              `</div>` +
               (op ? rec(n.id, d + 1) : "")
             );
           })
@@ -1515,6 +1562,26 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       b.addEventListener("click", async () => {
         await api.removePlanOrbat(planId, b.dataset.orm!).catch(() => {});
         void buildOrbatPanel();
+      }),
+    );
+    orbatPanel.querySelectorAll<HTMLButtonElement>("[data-oplace]").forEach((b) =>
+      b.addEventListener("click", () => {
+        chainGroup = null;
+        awaitingPos = false;
+        pending = {
+          sidc: b.dataset.osidc || "10060000000000000000",
+          unit_text: "",
+          ai_text: "",
+          channel: myChannel,
+          locked: false,
+          timestamp_visible: true,
+          rotation_degrees: -1,
+          is_multipoint: false,
+          max_line_points: 0,
+          orbat_node_id: b.dataset.oplace!,
+        };
+        setMode("place");
+        orbatPanel.hidden = true;
       }),
     );
     orbatPanel.querySelector("#orb-link")?.addEventListener("click", async () => {
@@ -1960,6 +2027,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       rotation_degrees: tpl.rotation_degrees,
       phase_id: currentPhaseId || null,
     };
+    if (tpl.orbat_node_id) data.orbat_node_id = tpl.orbat_node_id;
     if (chainGroup != null) {
       data.linked_group_id = chainGroup;
       data.point_index = chainIndex;
@@ -2090,6 +2158,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const id = e.features?.[0]?.properties?.id as string;
     const m = markers.get(id);
     if (!m) return;
+    if (m.released) return; // freigegebene Feind-Marker sind nur Anzeige
     if (mode === "erase") {
       if (caps.delete) socket.send({ type: "marker.delete", id: m.id });
     } else if (mode === "move" || mode === "markermove") {
@@ -2405,8 +2474,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   // ── Marker-Edit-Panel (zentriertes Fenster, Klick außerhalb schließt) ──
-  function openEditPanel(m: Marker): void {
+  async function openEditPanel(m: Marker): Promise<void> {
     root.querySelector("#editModal")?.remove();
+    if (isMB) await ensureOrbatCache();
+    const orbatNodeOpts = isMB
+      ? planOrbatCache
+          .flatMap((o) => (o.nodes ?? []).map((n) => ({ id: n.id, label: `${o.name} · ${n.name}` })))
+      : [];
     const back = document.createElement("div");
     back.className = "edit-modal";
     back.id = "editModal";
@@ -2455,6 +2529,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           .join("")}
       </select>
       <label class="chk"><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> <span>${t("marker.locked")}</span></label>
+      ${
+        isMB
+          ? `<label>${t("orbat.nodeLink")}</label>
+             <select data-onode>
+               <option value="">${t("orbat.nodeNone")}</option>
+               ${orbatNodeOpts
+                 .map((o) => `<option value="${o.id}" ${o.id === m.orbat_node_id ? "selected" : ""}>${o.label}</option>`)
+                 .join("")}
+             </select>`
+          : ""
+      }
       ${advHtml}
       <div class="row">
         <button class="primary" data-apply>${t("common.apply")}</button>
@@ -2497,6 +2582,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         icon_rotation: Number(p.querySelector<HTMLInputElement>("[data-rot]")!.value) || 0,
         phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || null,
         ...(modDefs ? { sidc: nextSidc() } : {}),
+        ...(isMB ? { orbat_node_id: p.querySelector<HTMLSelectElement>("[data-onode]")!.value || null } : {}),
       };
       const wantLock = p.querySelector<HTMLInputElement>("[data-lock]")!.checked;
       const beforeData: Record<string, unknown> = {};
