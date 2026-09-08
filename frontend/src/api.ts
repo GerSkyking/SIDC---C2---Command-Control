@@ -224,9 +224,10 @@ export const api = {
   },
 
   plans: () => req<PlanItem[]>("GET", "/plans"),
-  createPlan: (name: string, map_id: string) =>
-    req<PlanItem>("POST", "/plans", { name, map_id }),
+  createPlan: (name: string, map_id: string, folder_id: string | null = null) =>
+    req<PlanItem>("POST", "/plans", { name, map_id, folder_id }),
   snapshot: (planId: string) => req<any>("GET", `/plans/${planId}/snapshot`),
+  renamePlan: (planId: string, name: string) => req<PlanItem>("PATCH", `/plans/${planId}`, { name }),
   deletePlan: (planId: string) => req<void>("DELETE", `/plans/${planId}`),
   createPhase: (planId: string, name: string) =>
     req<Phase>("POST", `/plans/${planId}/phases`, { name }),

@@ -41,14 +41,16 @@ export function wireThemeSwitch(root: ParentNode): void {
   );
 }
 
+export type NavSection = "plans" | "users" | "log" | "config";
+
 /** Linke Navigationsleiste für die Nicht-Karten-Ansichten. */
 export function sidebar(
-  active: "plans" | "admin",
+  active: NavSection,
   opts: { isAdmin: boolean; username: string },
 ): string {
   const collapsed = localStorage.getItem("sidc_sidebar") === "1";
-  const item = (id: string, ic: string, label: string, href: string) =>
-    `<a class="sb-item ${active === id ? "active" : ""}" href="${href}" title="${label}">${icon(ic)}<span>${label}</span></a>`;
+  const item = (id: NavSection, ic: string, label: string, href: string, sub = false) =>
+    `<a class="sb-item ${sub ? "sb-sub" : ""} ${active === id ? "active" : ""}" href="${href}" title="${label}">${icon(ic)}<span>${label}</span></a>`;
   return `<nav class="sidebar ${collapsed ? "collapsed" : ""}" id="sidebar">
     <div class="sb-top">
       <button class="sb-toggle icon-btn" id="sbToggle" title="Menü">${icon("chevron")}</button>
@@ -56,7 +58,14 @@ export function sidebar(
     </div>
     <div class="sb-nav">
       ${item("plans", "plan", t("nav.plans"), "#/")}
-      ${opts.isAdmin ? item("admin", "settings", t("nav.admin"), "#/admin") : ""}
+      ${
+        opts.isAdmin
+          ? `<div class="sb-group">${t("nav.admin")}</div>` +
+            item("users", "users", t("admin.usersGroups"), "#/admin/users", true) +
+            item("log", "audit", t("admin.log"), "#/admin/log", true) +
+            item("config", "settings", t("admin.config"), "#/admin/config", true)
+          : ""
+      }
     </div>
     <div class="sb-foot">
       <div class="sb-user">${icon("users", 16)}<span>${opts.username}</span></div>

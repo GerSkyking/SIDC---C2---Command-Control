@@ -90,7 +90,10 @@ def list_plans(user: CurrentUser, db: DbDep) -> list[PlanListItem]:
 def create_plan(body: PlanCreateIn, request: Request, user: CurrentUser, db: DbDep) -> Plan:
     if not can_create_plans(db, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Berechtigung, Pläne zu erstellen")
-    plan = Plan(name=body.name, map_id=body.map_id, created_by=user.id)
+    folder_id = body.folder_id or None
+    if folder_id is not None and db.get(PlanFolder, folder_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ordner nicht gefunden")
+    plan = Plan(name=body.name, map_id=body.map_id, folder_id=folder_id, created_by=user.id)
     db.add(plan)
     db.flush()
     db.add(PlanACL(plan_id=plan.id, subject_type="user", subject_id=user.id, level="owner"))

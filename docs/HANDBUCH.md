@@ -159,6 +159,9 @@ Live-Updates über einen Empfangs-WebSocket.
 
 ## 6. Admin-Bereich
 
+Kategorisiert über die Sidebar: **Benutzer & Gruppen**, **Log**, **Config**
+(`#/admin/users` · `/log` · `/config`).
+
 - **SIDC-Kataloge hochladen** (Format 1:1 wie ingame `LocalMapData`), persistent im
   `uploads`-Volume:
   `SIDC_AllMarkersCatalog.json`, `SIDC_QuickMarkerMenuCatalog.json`,

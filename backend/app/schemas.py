@@ -77,6 +77,7 @@ class MapImportFromSourceIn(BaseModel):
 class PlanCreateIn(BaseModel):
     name: str
     map_id: str
+    folder_id: str | None = None
 
 
 class PlanPatchIn(BaseModel):

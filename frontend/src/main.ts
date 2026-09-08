@@ -41,7 +41,10 @@ async function route(): Promise<void> {
       return;
     }
   }
-  if (location.hash === "#/admin" && me.role === "admin") return renderAdmin(app);
+  const adminMatch = location.hash.match(/^#\/admin(?:\/(users|log|config))?$/);
+  if (adminMatch && me.role === "admin") {
+    return renderAdmin(app, (adminMatch[1] as "users" | "log" | "config") || "users");
+  }
   return renderPlanList();
 }
 
@@ -84,13 +87,15 @@ async function renderLogin(): Promise<void> {
 // ─── Plan-Liste ───────────────────────────────────────────────────────────
 
 async function renderPlanList(): Promise<void> {
-  const [plans, maps, folders, sources] = await Promise.all([
+  const [plans, maps, folders] = await Promise.all([
     api.plans(),
     api.maps().catch(() => []),
     api.folders().catch(() => []),
-    me?.role === "admin" ? api.mapSources().catch(() => []) : Promise.resolve([]),
   ]);
   const canCreate = me!.can_create_plans_effective && maps.some((m) => m.status === "ready");
+  const folderOpts =
+    `<option value="">${t("folder.root")}</option>` +
+    [...folders].sort((a, b) => a.name.localeCompare(b.name)).map((f) => `<option value="${f.id}">${f.name}</option>`).join("");
 
   app.innerHTML = `
    <div class="shell">
@@ -105,8 +110,6 @@ async function renderPlanList(): Promise<void> {
       <button id="logout">${t("auth.logout")}</button>
     </div>
     <div class="list stack">
-      ${me!.role === "admin" ? adminMapsBlock(maps, sources) : ""}
-      <h2>${t("plans.heading")}</h2>
       ${
         canCreate
           ? `<div class="row">
@@ -115,6 +118,7 @@ async function renderPlanList(): Promise<void> {
                  .filter((m) => m.status === "ready")
                  .map((m) => `<option value="${m.id}">${m.name}</option>`)
                  .join("")}</select>
+               <select id="pf" title="${t("plans.moveTo")}">${folderOpts}</select>
                <button class="primary" id="pc">${t("plans.new")}</button>
              </div>`
           : `<div class="muted">${
@@ -148,208 +152,16 @@ async function renderPlanList(): Promise<void> {
   app.querySelector("#pc")?.addEventListener("click", async () => {
     const name = app.querySelector<HTMLInputElement>("#pn")!.value.trim();
     const mapId = app.querySelector<HTMLSelectElement>("#pm")!.value;
+    const folderId = app.querySelector<HTMLSelectElement>("#pf")?.value || null;
     if (!name) return;
-    const p = await api.createPlan(name, mapId);
-    location.hash = `#/plans/${p.id}`;
-    route();
-  });
-  const mapId = () => app.querySelector<HTMLInputElement>("#mid")!.value.trim();
-  const mapName = () => app.querySelector<HTMLInputElement>("#mname")!.value.trim();
-  app.querySelector("#mi")?.addEventListener("click", async () => {
-    const url = app.querySelector<HTMLInputElement>("#murl")!.value.trim();
-    if (!mapId() || !mapName() || !url) return;
     try {
-      await api.importMap(mapId(), mapName(), url);
-      setTimeout(route, 500);
+      const p = await api.createPlan(name, mapId, folderId);
+      location.hash = `#/plans/${p.id}`;
+      route();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : "Fehler");
+      alert(e instanceof ApiError ? e.message : t("common.error"));
     }
-  });
-  app.querySelector("#mu")?.addEventListener("click", async () => {
-    const f = app.querySelector<HTMLInputElement>("#mfile")!.files?.[0];
-    const prog = app.querySelector<HTMLDivElement>("#mprogress")!;
-    if (!mapId() || !mapName() || !f) return;
-    try {
-      await api.uploadMapFile(mapId(), mapName(), f, (p) => (prog.textContent = `Upload ${p.toFixed(0)} %`));
-      prog.textContent = "Upload fertig – Verarbeitung läuft…";
-      setTimeout(route, 1500);
-    } catch (e) {
-      prog.textContent = "";
-      alert(e instanceof ApiError ? e.message : "Fehler");
-    }
-  });
-  app.querySelectorAll<HTMLButtonElement>("[data-reimport]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      try {
-        await api.reimportMap(b.dataset.reimport!);
-        setTimeout(route, 800);
-      } catch (e) {
-        alert(e instanceof ApiError ? e.message : "Fehler");
-      }
-    }),
-  );
-  app.querySelectorAll<HTMLButtonElement>("[data-updbtn]").forEach((b) =>
-    b.addEventListener("click", () =>
-      app.querySelector<HTMLInputElement>(`[data-upd="${b.dataset.updbtn}"]`)!.click(),
-    ),
-  );
-  app.querySelectorAll<HTMLInputElement>("[data-upd]").forEach((inp) =>
-    inp.addEventListener("change", async () => {
-      const f = inp.files?.[0];
-      if (!f) return;
-      const prog = app.querySelector<HTMLDivElement>("#mprogress")!;
-      try {
-        await api.uploadMapFile(inp.dataset.upd!, "", f, (p) => (prog.textContent = `Update ${p.toFixed(0)} %`));
-        prog.textContent = "Upload fertig – Verarbeitung läuft…";
-        setTimeout(route, 1500);
-      } catch (e) {
-        prog.textContent = "";
-        alert(e instanceof ApiError ? e.message : "Fehler");
-      }
-    }),
-  );
-  app.querySelectorAll<HTMLButtonElement>("[data-delmap]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (!confirm(`${t("common.delete")}: ${b.dataset.delmap}?`)) return;
-      try {
-        await api.deleteMap(b.dataset.delmap!);
-        route();
-      } catch (e) {
-        alert(e instanceof ApiError ? e.message : t("common.error"));
-      }
-    }),
-  );
-  // ─── Gitea-Quellen ─────────────────────────────────────────────────────
-  app.querySelector("#src-add")?.addEventListener("click", async () => {
-    const url = app.querySelector<HTMLInputElement>("#src-url")!.value.trim();
-    if (!url) return;
-    try {
-      await api.createMapSource(url);
-      renderPlanList();
-    } catch (e) {
-      alert(e instanceof ApiError ? e.message : "Fehler");
-    }
-  });
-  app.querySelectorAll<HTMLButtonElement>("[data-src-del]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (!confirm(t("common.delete") + "?")) return;
-      await api.deleteMapSource(b.dataset.srcDel!);
-      renderPlanList();
-    }),
-  );
-  app.querySelectorAll<HTMLButtonElement>("[data-src-files]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      const sid = b.dataset.srcFiles!;
-      const box = app.querySelector<HTMLDivElement>(`[data-src-files-for="${sid}"]`)!;
-      box.innerHTML = `<span class="muted">${t("src.loading")}</span>`;
-      try {
-        const files = await api.mapSourceFiles(sid);
-        box.innerHTML = files.length
-          ? files
-              .map((f) => {
-                const guessId = f.name.replace(/_mappack.*$/i, "").replace(/[^a-z0-9_-]/gi, "").toLowerCase();
-                return `<div class="row src-file">
-                  <span class="grow">${f.name} <span class="muted">${(f.size / 1048576).toFixed(0)} MB</span></span>
-                  <input data-sf-id="${sid}|${f.name}" value="${guessId}" style="width:8rem" />
-                  <input data-sf-name="${sid}|${f.name}" value="${guessId}" style="width:9rem" />
-                  <button class="primary" data-sf-imp="${sid}|${f.name}">${t("src.import")}</button>
-                </div>`;
-              })
-              .join("")
-          : `<span class="muted">${t("src.noZips")}</span>`;
-        box.querySelectorAll<HTMLButtonElement>("[data-sf-imp]").forEach((ib) =>
-          ib.addEventListener("click", async () => {
-            const [s, file] = ib.dataset.sfImp!.split("|");
-            const idEl = box.querySelector<HTMLInputElement>(`[data-sf-id="${ib.dataset.sfImp}"]`)!;
-            const nameEl = box.querySelector<HTMLInputElement>(`[data-sf-name="${ib.dataset.sfImp}"]`)!;
-            if (!idEl.value.trim() || !nameEl.value.trim()) return;
-            try {
-              await api.importFromSource(idEl.value.trim(), nameEl.value.trim(), s, file);
-              setTimeout(route, 800);
-            } catch (e) {
-              alert(e instanceof ApiError ? e.message : "Fehler");
-            }
-          }),
-        );
-      } catch (e) {
-        box.innerHTML = `<span class="error">${e instanceof ApiError ? e.message : "Fehler"}</span>`;
-      }
-    }),
-  );
-
-  app.querySelector("#restart")?.addEventListener("click", async () => {
-    if (!confirm(t("admin.restartConfirm"))) return;
-    try {
-      await api.restartBackend();
-    } catch {
-      /* Verbindung bricht beim Neustart erwartungsgemäß ab */
-    }
-    setTimeout(() => location.reload(), 6000);
   });
 }
-
-function adminMapsBlock(
-  maps: { id: string; name: string; status: string; error: string | null }[],
-  sources: import("./api").MapSource[],
-): string {
-  return `
-    <div class="row">
-      <h2 style="margin:0">${t("admin.maps")}</h2>
-      <span class="grow"></span>
-      <button id="restart">${t("admin.restart")}</button>
-    </div>
-    <table><tbody>
-      ${maps
-        .map(
-          (m) =>
-            `<tr>
-               <td>${m.name} <span class="muted">${m.id}</span></td>
-               <td><span class="badge">${m.status}</span></td>
-               <td class="muted">${m.error ?? ""}</td>
-               <td>
-                 <input type="file" accept=".zip" data-upd="${m.id}" style="display:none" />
-                 <button data-updbtn="${m.id}">${t("admin.update")}</button>
-                 <button data-reimport="${m.id}">${t("admin.fromLink")}</button>
-                 <button data-delmap="${m.id}">${t("common.delete")}</button>
-               </td>
-             </tr>`,
-        )
-        .join("")}
-    </tbody></table>
-    <div class="row">
-      <input id="mid" placeholder="${t("admin.mapId")}" />
-      <input id="mname" placeholder="${t("admin.displayName")}" />
-    </div>
-    <div class="row">
-      <input id="murl" placeholder="${t("admin.downloadUrl")}" style="flex:1" />
-      <button id="mi">${t("admin.viaLink")}</button>
-    </div>
-    <div class="row">
-      <input type="file" id="mfile" accept=".zip,application/zip" style="flex:1" />
-      <button id="mu">${t("admin.upload")}</button>
-    </div>
-    <div id="mprogress" class="muted"></div>
-
-    <details class="src-box" ${sources.length ? "open" : ""}>
-      <summary>${t("src.heading")}</summary>
-      <div class="stack" style="margin-top:.5rem">
-        ${sources
-          .map(
-            (s) => `<div class="row src-row" data-src="${s.id}">
-              <span class="grow"><strong>${s.name}</strong> <span class="muted">${s.base_url}/${s.repo}</span></span>
-              <button data-src-files="${s.id}">${t("src.browse")}</button>
-              <button class="danger" data-src-del="${s.id}">${t("common.delete")}</button>
-            </div>
-            <div class="src-files" data-src-files-for="${s.id}"></div>`,
-          )
-          .join("")}
-        <div class="row">
-          <input id="src-url" placeholder="${t("src.urlPlaceholder")}" style="flex:1" />
-          <button id="src-add">${t("src.add")}</button>
-        </div>
-      </div>
-    </details>`;
-}
-
 window.addEventListener("hashchange", route);
 route();

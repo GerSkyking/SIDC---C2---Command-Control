@@ -47,6 +47,27 @@ export function renderPlanTree(
   for (const list of subFolders.values()) list.sort((a, b) => a.ordering - b.ordering || a.name.localeCompare(b.name));
   for (const list of folderPlans.values()) list.sort((a, b) => a.name.localeCompare(b.name));
 
+  // Flache, eingerückte Ordnerliste für die „Verschieben nach"-Auswahl
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const depthOf = (id: string | null): number => {
+    let d = 0;
+    let cur = id ? byId.get(id) : undefined;
+    while (cur?.parent_id) {
+      d++;
+      cur = byId.get(cur.parent_id);
+    }
+    return d;
+  };
+  const folderOptions = (selected: string | null): string =>
+    `<option value="">${t("folder.root")}</option>` +
+    [...folders]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(
+        (f) =>
+          `<option value="${f.id}" ${f.id === selected ? "selected" : ""}>${"  ".repeat(depthOf(f.id))}${f.name}</option>`,
+      )
+      .join("");
+
   const guard = async (fn: () => Promise<unknown>) => {
     try {
       await fn();
@@ -82,17 +103,31 @@ export function renderPlanTree(
     const row = document.createElement("div");
     row.className = "tree-row tree-plan";
     row.draggable = true;
+    const canManage = p.level === "owner" || p.level === "editor";
     row.innerHTML =
       `<span class="tree-ico">${icon("plan", 16)}</span>` +
       `<a href="#/plans/${p.id}" class="tree-name">${p.name}</a>` +
       `<span class="badge">${p.level}</span>` +
       `<span class="tree-actions">` +
+      (canManage
+        ? `<select class="tree-move" title="${t("plans.moveTo")}">${folderOptions(p.folder_id)}</select>`
+        : "") +
       `<button data-clone>${t("plans.clone")}</button>` +
       (p.level === "owner"
-        ? `<button data-shares>${t("plans.shares")}</button><button data-del>${t("common.delete")}</button>`
+        ? `<button class="icon-btn" data-ren title="${t("common.rename")}">${icon("edit", 16)}</button>` +
+          `<button data-shares>${t("plans.shares")}</button>` +
+          `<button class="icon-btn" data-del title="${t("common.delete")}">${icon("trash", 16)}</button>`
         : "") +
       `</span>`;
     row.addEventListener("dragstart", (e) => e.dataTransfer?.setData("text/plain", `plan:${p.id}`));
+    row.querySelector<HTMLSelectElement>(".tree-move")?.addEventListener("change", (e) => {
+      const v = (e.target as HTMLSelectElement).value;
+      void guard(() => api.movePlan(p.id, v || null));
+    });
+    row.querySelector("[data-ren]")?.addEventListener("click", () => {
+      const name = prompt(t("plans.renamePrompt"), p.name);
+      if (name && name.trim() && name.trim() !== p.name) void guard(() => api.renamePlan(p.id, name.trim()));
+    });
     row.querySelector("[data-clone]")!.addEventListener("click", () => cloneDialog(p, folders, guard));
     row.querySelector("[data-shares]")?.addEventListener("click", () => opts.onOpenShares(p));
     row.querySelector("[data-del]")?.addEventListener("click", () => opts.onDeletePlan(p));

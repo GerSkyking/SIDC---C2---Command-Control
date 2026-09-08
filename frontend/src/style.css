@@ -340,3 +340,11 @@ a { color: var(--accent); }
   .sidebar { width: 3.4rem; }
   .sidebar .sb-brand, .sidebar .sb-item span, .sidebar .sb-user span { display: none; }
 }
+
+/* Sidebar: Admin-Untergruppen */
+.sb-group { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+  padding: 0.6rem 0.55rem 0.2rem; white-space: nowrap; }
+.sidebar.collapsed .sb-group { display: none; }
+.sb-item.sb-sub { padding-left: 1.1rem; }
+.sidebar.collapsed .sb-item.sb-sub { padding-left: 0.55rem; }
+.tree-move { padding: 0.2rem 0.3rem; font-size: 0.75rem; max-width: 9rem; }

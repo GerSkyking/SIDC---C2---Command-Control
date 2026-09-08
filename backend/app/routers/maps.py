@@ -94,8 +94,6 @@ async def upload_map(
 def import_from_source(
     body: MapImportFromSourceIn, request: Request, bg: BackgroundTasks, admin: AdminUser, db: DbDep
 ) -> Map:
-    if db.get(Map, body.id) is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Karten-ID existiert bereits")
     src = db.get(MapSource, body.source_id)
     if src is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Quelle unbekannt")
@@ -110,12 +108,22 @@ def import_from_source(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Download-URL außerhalb der Quelle")
     headers = {"Authorization": f"token {src.token}"} if src.token else None
 
-    m = Map(id=body.id, name=body.name, status="importing",
-            source_url=entry.download_url, created_at=now())
-    db.add(m)
+    existing = db.get(Map, body.id)
+    if existing is not None:
+        # gleiche ID → vorhandene Karte ersetzen/erneuern
+        existing.name = body.name or existing.name
+        existing.status = "importing"
+        existing.error = None
+        existing.source_url = entry.download_url
+        m = existing
+    else:
+        m = Map(id=body.id, name=body.name, status="importing",
+                source_url=entry.download_url, created_at=now())
+        db.add(m)
     db.commit()
-    audit.record(db, "map.import", user_id=admin.id, target_type="map", target_id=body.id,
-                 request=request, name=body.name, via="source", source=src.repo)
+    audit.record(db, "map.update" if existing is not None else "map.import", user_id=admin.id,
+                 target_type="map", target_id=body.id, request=request, name=body.name,
+                 via="source", source=src.repo)
     bg.add_task(run_import, body.id, url=entry.download_url, headers=headers)
     return m
 

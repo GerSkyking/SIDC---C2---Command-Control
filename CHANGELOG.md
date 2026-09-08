@@ -5,6 +5,18 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### Neu (2. Runde)
+- **Pläne**: Zielordner schon beim Anlegen wählbar; **umbenennen** (Owner) und
+  **„Verschieben nach…"**-Dropdown je Plan (zusätzlich zu Drag & Drop).
+- **Admin-Bereich kategorisiert**: Sidebar mit *Benutzer & Gruppen* / *Log* /
+  *Config* (Karten + Gitea-Quellen + SIDC-Kataloge); Routen `#/admin/users|log|config`.
+  Karten-Verwaltung aus der Plan-Übersicht nach *Config* verschoben.
+- **Gitea-Import**: gleiche Karten-ID → vorhandene Karte wird **ersetzt/erneuert**
+  statt 409. Token-Feld beim Anlegen der Quelle.
+- **SIDC-Kataloge**: klare **Aktualisieren/Löschen**-Buttons wie bei den Karten.
+- **Freigaben-Dialog**: Rollen als *Lesen / Bearbeiten / Voll*, Erklärtext zu
+  User- vs. Gruppen-Zugriff.
+
 ### Neu
 - **UI-Redesign**: Dunkel als Standard + vollwertiger Hell-Modus, Orange-Akzent
   (`#ff9900`), Schrift **Inter** (selbst-gehostet). **Theme-Schalter** (Dunkel/Hell/

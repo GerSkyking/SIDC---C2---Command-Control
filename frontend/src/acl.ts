@@ -38,7 +38,9 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
               (r, i) => `<tr>
                 <td>${nameOf(r.subject_type, r.subject_id)}</td>
                 <td><select data-i="${i}" data-f="level">
-                  ${["viewer", "editor", "owner"].map((l) => `<option ${l === r.level ? "selected" : ""}>${l}</option>`).join("")}
+                  ${(["viewer", "editor", "owner"] as const)
+                    .map((l) => `<option value="${l}" ${l === r.level ? "selected" : ""}>${t("acl.role." + l)}</option>`)
+                    .join("")}
                 </select></td>
                 ${(["can_place", "can_move", "can_delete", "can_draw"] as const)
                   .map(
@@ -62,7 +64,7 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
                 .join("")}
             </select>
           </div>
-          <p class="muted">Feingranulare Häkchen gelten nur für Rolle „editor". „owner" darf alles + Freigaben verwalten, „viewer" nur sehen.</p>
+          <p class="muted">${t("acl.legend")}</p>
           <hr style="border-color:var(--border)"/>
           <h3 style="margin:.4rem 0">${t("acl.publicLink")}</h3>
           <div id="shares"></div>

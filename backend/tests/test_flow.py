@@ -56,6 +56,10 @@ def test_plan_lifecycle_and_permissions(admin):
     assert admin.post(f"/plans/{pid}/move", json={"folder_id": sub["id"]}).json()["folder_id"] == sub["id"]
     cl = admin.post(f"/plans/{pid}/clone", json={"name": "Op Alpha 2", "folder_id": root["id"]})
     assert cl.status_code == 201 and cl.json()["folder_id"] == root["id"]
+    # Plan direkt in einem Ordner anlegen
+    inf = admin.post("/plans", json={"name": "In Ordner", "map_id": "m1", "folder_id": sub["id"]})
+    assert inf.status_code == 201 and inf.json()["folder_id"] == sub["id"]
+    assert admin.patch(f"/plans/{inf.json()['id']}", json={"name": "Umbenannt"}).json()["name"] == "Umbenannt"
     # Zyklus-Schutz
     assert admin.patch(f"/folders/{root['id']}", json={"parent_id": sub["id"]}).status_code == 400
     # Löschen zieht Inhalt eine Ebene hoch
@@ -180,6 +184,10 @@ def test_map_source_gitea(admin, monkeypatch):
                      json={"id": "arl", "name": "Arland", "source_id": sid, "file": "arland_mappack_v1.zip"})
     assert imp.status_code == 202
     assert called["hit"][1]["url"].endswith("arland_mappack_v1.zip")
+    # gleiche ID erneut → ersetzt statt 409
+    again = admin.post("/api/maps/import-from-source",
+                       json={"id": "arl", "name": "Arland 2", "source_id": sid, "file": "arland_mappack_v1.zip"})
+    assert again.status_code == 202 and again.json()["name"] == "Arland 2"
 
     assert admin.delete(f"/api/map-sources/{sid}").status_code == 200
 

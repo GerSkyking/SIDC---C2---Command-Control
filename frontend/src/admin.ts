@@ -1,77 +1,24 @@
-// Admin-Bereich: SIDC-Katalog-Upload, lokale User, Gruppen.
+// Admin-Bereich, kategorisiert: Benutzer & Gruppen / Log / Config (Karten + Kataloge).
 import { api, ApiError, type AdminGroup, type AdminUser } from "./api";
+import { configHtml, wireConfig } from "./adminConfig";
 import { langSelect, t, wireLangSelect } from "./i18n";
 import { icon } from "./icons";
-import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
+import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch, type NavSection } from "./ui";
 
-const CATALOGS: { key: string; label: string; file: string }[] = [
-  { key: "all-markers", label: "Alle Marker", file: "SIDC_AllMarkersCatalog.json" },
-  { key: "quick-menu", label: "QuickMenü", file: "SIDC_QuickMarkerMenuCatalog.json" },
-  { key: "phaseline-style", label: "Phase-Line-Stil", file: "SIDC_PhaseLineStyleCatalog.json" },
-  { key: "channels", label: "Channels", file: "SIDC_ChannelSettings.json" },
-  { key: "modifiers", label: "Modifikatoren", file: "SIDC_ModifierCatalog.json" },
-];
+export type AdminSection = "users" | "log" | "config";
 
-export async function renderAdmin(app: HTMLElement): Promise<void> {
-  const [status, users, groups] = await Promise.all([
-    api.catalogStatus().catch(() => ({}) as Record<string, boolean>),
-    api.adminUsers(),
-    api.adminGroups(),
-  ]);
-
-  app.innerHTML = `
+export async function renderAdmin(app: HTMLElement, section: AdminSection = "users"): Promise<void> {
+  const me = await api.me().catch(() => null);
+  const shell = (body: string, title: string) => `
    <div class="shell">
-    ${sidebar("admin", { isAdmin: true, username: "" })}
+    ${sidebar(section as NavSection, { isAdmin: true, username: me?.username ?? "" })}
     <div class="shell-main">
-    <div class="topbar"><strong>${t("admin.heading")}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
-    <div class="list stack">
-      <h2>${t("admin.catalog")}</h2>
-      <p class="muted">${t("admin.catalogHint")}</p>
-      <table><tbody>${CATALOGS.map(
-        (c) => `<tr>
-          <td>${c.label} <span class="muted">${c.file}</span></td>
-          <td><span class="badge">${status[c.key] ? t("admin.loaded") : t("admin.missing")}</span></td>
-          <td>
-            <input type="file" accept="application/json,.json" data-cat="${c.key}" />
-            ${status[c.key] ? `<button data-delcat="${c.key}">${t("common.delete")}</button>` : ""}
-          </td>
-        </tr>`,
-      ).join("")}</tbody></table>
-
-      <h2>${t("admin.users")}</h2>
-      <table><tbody>${users.map(userRow).join("")}</tbody></table>
-      <div class="row">
-        <input id="nu-name" placeholder="${t('auth.username')}" />
-        <input id="nu-pw" type="password" placeholder="${t('auth.password')} (min. 12)" />
-        <select id="nu-role"><option value="user">user</option><option value="admin">admin</option></select>
-        <label><input type="checkbox" id="nu-ccp" /> ${t("admin.canCreatePlans")}</label>
-        <button class="primary" id="nu-add">${t("common.create")}</button>
-      </div>
-
-      <h2>${t("admin.groups")}</h2>
-      <table><tbody>${groups.map((g) => groupRow(g, users)).join("")}</tbody></table>
-      <div class="row">
-        <input id="ng-name" placeholder="${t('admin.groupName')}" />
-        <label><input type="checkbox" id="ng-ccp" /> ${t("admin.canCreatePlans")}</label>
-        <button class="primary" id="ng-add">${t("common.create")}</button>
-      </div>
-
-      <h2>${t("admin.log")}</h2>
-      <div class="row">
-        <input id="lg-action" placeholder="action (login, plan, map, …)" />
-        <input id="lg-user" placeholder="${t('auth.username')}" />
-        <button id="lg-load">${t("admin.logFilter")}</button>
-        <button id="lg-more">${t("admin.logMore")}</button>
-      </div>
-      <div id="lg-out"><table class="acl-tbl"><tbody></tbody></table></div>
-    </div>
+    <div class="topbar"><strong>${title}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
+    <div class="list stack">${body}</div>
     </div>
    </div>`;
 
-  wireLangSelect(app);
-  wireThemeSwitch(app);
-  wireSidebar(app);
-  const reload = () => renderAdmin(app);
+  const reload = () => renderAdmin(app, section);
   const guard = async (fn: () => Promise<unknown>) => {
     try {
       await fn();
@@ -81,16 +28,88 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
     }
   };
 
-  app.querySelectorAll<HTMLInputElement>("[data-cat]").forEach((inp) =>
-    inp.addEventListener("change", () =>
-      guard(async () => {
-        if (inp.files?.[0]) await api.uploadCatalog(inp.dataset.cat!, inp.files[0]);
-      }),
-    ),
+  if (section === "config") {
+    const [maps, sources, catStatus] = await Promise.all([
+      api.maps().catch(() => []),
+      api.mapSources().catch(() => []),
+      api.catalogStatus().catch(() => ({}) as Record<string, boolean>),
+    ]);
+    app.innerHTML = shell(configHtml(maps, sources, catStatus), t("admin.config"));
+    postShell(app);
+    wireConfig(app.querySelector<HTMLElement>(".list")!, reload);
+    return;
+  }
+
+  if (section === "log") {
+    app.innerHTML = shell(
+      `<h2>${t("admin.log")}</h2>
+       <div class="row">
+         <input id="lg-action" placeholder="action (login, plan, map, …)" />
+         <input id="lg-user" placeholder="${t("auth.username")}" />
+         <button id="lg-load">${t("admin.logFilter")}</button>
+         <button id="lg-more">${t("admin.logMore")}</button>
+       </div>
+       <div id="lg-out"><table class="acl-tbl"><tbody></tbody></table></div>`,
+      t("admin.log"),
+    );
+    postShell(app);
+    let logOffset = 0;
+    const loadLog = async (reset: boolean, count = 30) => {
+      if (reset) logOffset = 0;
+      const r = await api.adminAudit({
+        limit: count,
+        offset: logOffset,
+        action: (app.querySelector("#lg-action") as HTMLInputElement).value.trim(),
+        user: (app.querySelector("#lg-user") as HTMLInputElement).value.trim(),
+      });
+      const tb = app.querySelector("#lg-out tbody")!;
+      if (reset) tb.innerHTML = "";
+      tb.insertAdjacentHTML(
+        "beforeend",
+        r.items
+          .map(
+            (x) => `<tr>
+              <td style="text-align:left">${new Date(x.ts).toLocaleString()}</td>
+              <td>${x.user}</td><td><code>${x.action}</code></td><td>${x.target}</td>
+              <td style="text-align:left;color:var(--muted)">${Object.entries(x.detail)
+                .map(([k, v]) => `${k}=${v}`)
+                .join(" ")}</td>
+            </tr>`,
+          )
+          .join(""),
+      );
+      logOffset += r.items.length;
+    };
+    app.querySelector("#lg-load")!.addEventListener("click", () => void loadLog(true).catch(() => {}));
+    app.querySelector("#lg-more")!.addEventListener("click", () => void loadLog(false).catch(() => {}));
+    void loadLog(true, 20);
+    return;
+  }
+
+  // section === "users"
+  const [users, groups] = await Promise.all([api.adminUsers(), api.adminGroups()]);
+  app.innerHTML = shell(
+    `<h2>${t("admin.users")}</h2>
+     <table><tbody>${users.map(userRow).join("")}</tbody></table>
+     <div class="row">
+       <input id="nu-name" placeholder="${t("auth.username")}" />
+       <input id="nu-pw" type="password" placeholder="${t("auth.password")} (min. 12)" />
+       <select id="nu-role"><option value="user">user</option><option value="admin">admin</option></select>
+       <label><input type="checkbox" id="nu-ccp" /> ${t("admin.canCreatePlans")}</label>
+       <button class="primary" id="nu-add">${t("common.create")}</button>
+     </div>
+
+     <h2>${t("admin.groups")}</h2>
+     <p class="muted">${t("admin.groupsHint")}</p>
+     <table><tbody>${groups.map((g) => groupRow(g, users)).join("")}</tbody></table>
+     <div class="row">
+       <input id="ng-name" placeholder="${t("admin.groupName")}" />
+       <label><input type="checkbox" id="ng-ccp" /> ${t("admin.canCreatePlans")}</label>
+       <button class="primary" id="ng-add">${t("common.create")}</button>
+     </div>`,
+    t("admin.usersGroups"),
   );
-  app.querySelectorAll<HTMLButtonElement>("[data-delcat]").forEach((b) =>
-    b.addEventListener("click", () => guard(() => api.deleteCatalog(b.dataset.delcat!))),
-  );
+  postShell(app);
 
   app.querySelector("#nu-add")!.addEventListener("click", () =>
     guard(() =>
@@ -119,39 +138,6 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
     });
   });
 
-  let logOffset = 0;
-  const loadLog = async (reset: boolean, count = 30) => {
-    if (reset) logOffset = 0;
-    const r = await api.adminAudit({
-      limit: count,
-      offset: logOffset,
-      action: (app.querySelector("#lg-action") as HTMLInputElement).value.trim(),
-      user: (app.querySelector("#lg-user") as HTMLInputElement).value.trim(),
-    });
-    const tb = app.querySelector("#lg-out tbody")!;
-    if (reset) tb.innerHTML = "";
-    tb.insertAdjacentHTML(
-      "beforeend",
-      r.items
-        .map(
-          (x) => `<tr>
-            <td style="text-align:left">${new Date(x.ts).toLocaleString()}</td>
-            <td>${x.user}</td><td><code>${x.action}</code></td><td>${x.target}</td>
-            <td style="text-align:left;color:var(--muted)">${
-              Object.entries(x.detail)
-                .map(([k, v]) => `${k}=${v}`)
-                .join(" ")
-            }</td>
-          </tr>`,
-        )
-        .join(""),
-    );
-    logOffset += r.items.length;
-  };
-  app.querySelector("#lg-load")!.addEventListener("click", () => guard(() => loadLog(true)));
-  app.querySelector("#lg-more")!.addEventListener("click", () => guard(() => loadLog(false)));
-  void loadLog(true, 20); // beim Öffnen: die letzten 20 Ereignisse
-
   app.querySelector("#ng-add")!.addEventListener("click", () =>
     guard(() =>
       api.createGroup({
@@ -172,6 +158,12 @@ export async function renderAdmin(app: HTMLElement): Promise<void> {
       }),
     );
   });
+}
+
+function postShell(app: HTMLElement): void {
+  wireLangSelect(app);
+  wireThemeSwitch(app);
+  wireSidebar(app);
 }
 
 function userRow(u: AdminUser): string {
