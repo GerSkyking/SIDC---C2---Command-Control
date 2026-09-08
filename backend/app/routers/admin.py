@@ -82,6 +82,10 @@ def create_user(body: UserCreate, request: Request, admin: AdminUser, db: DbDep)
         role=body.role, can_create_plans=body.can_create_plans,
     )
     db.add(u)
+    db.flush()
+    from ..permissions import assign_default_group
+
+    assign_default_group(db, u.id)
     db.commit()
     audit.record(db, "user.create", user_id=admin.id, target_type="user", target_id=u.id,
                  request=request, username=u.username, role=u.role)

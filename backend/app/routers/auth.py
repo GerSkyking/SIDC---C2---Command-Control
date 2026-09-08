@@ -141,6 +141,9 @@ async def oidc_callback(request: Request, response: Response, db: DbDep):
         db.add(user)
         db.flush()
         db.add(OidcIdentity(user_id=user.id, issuer=issuer, subject=subject))
+        from ..permissions import assign_default_group
+
+        assign_default_group(db, user.id)
         db.commit()
         log.info("OIDC-User '%s' angelegt", username)
 

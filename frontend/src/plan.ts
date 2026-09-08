@@ -128,6 +128,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <span class="badge">${myPlan?.level ?? "?"}</span>
       <button id="t3d">3D</button>
       ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") })}
+      ${
+        canEdit
+          ? iconBtn("undo", { id: "undo", title: t("edit.undo") }) +
+            iconBtn("redo", { id: "redo", title: t("edit.redo") })
+          : ""
+      }
       <input type="datetime-local" id="dtg" title="${t("map.dtg")}" />
       ${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}
       <select id="chan" title="${t('map.channel')}">${(channels?.channels ?? [])
@@ -522,6 +528,40 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // ── WebSocket ──────────────────────────────────────────────────────────
   const socket = new PlanSocket(planId);
+
+  // ── Undo/Redo (eigene Aktionen: verschieben, bearbeiten, sperren) ─────
+  interface Cmd {
+    undo: () => void;
+    redo: () => void;
+  }
+  const undoStack: Cmd[] = [];
+  const redoStack: Cmd[] = [];
+  const UNDO_MAX = 60;
+  const updateUndoBtns = (): void => {
+    root.querySelector<HTMLButtonElement>("#undo")?.toggleAttribute("disabled", !undoStack.length);
+    root.querySelector<HTMLButtonElement>("#redo")?.toggleAttribute("disabled", !redoStack.length);
+  };
+  const pushCmd = (c: Cmd): void => {
+    undoStack.push(c);
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    redoStack.length = 0;
+    updateUndoBtns();
+  };
+  const doUndo = (): void => {
+    const c = undoStack.pop();
+    if (!c) return;
+    c.undo();
+    redoStack.push(c);
+    updateUndoBtns();
+  };
+  const doRedo = (): void => {
+    const c = redoStack.pop();
+    if (!c) return;
+    c.redo();
+    undoStack.push(c);
+    updateUndoBtns();
+  };
+
   const presenceEl = root.querySelector<HTMLSpanElement>("#presence")!;
   const names = new Map<string, string>();
   const renderPresence = () =>
@@ -680,6 +720,26 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   root.querySelector("#acl")?.addEventListener("click", () => openAclEditor(planId, snap.plan.name));
   root.querySelector("#help")!.addEventListener("click", openHelp);
   root.querySelector("#present")!.addEventListener("click", startPresent);
+  root.querySelector("#undo")?.addEventListener("click", doUndo);
+  root.querySelector("#redo")?.addEventListener("click", doRedo);
+  updateUndoBtns();
+  if (canEdit) {
+    const onUndoKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        doUndo();
+      } else if (k === "y" || (k === "z" && e.shiftKey)) {
+        e.preventDefault();
+        doRedo();
+      }
+    };
+    document.addEventListener("keydown", onUndoKey);
+    window.addEventListener("hashchange", () => document.removeEventListener("keydown", onUndoKey), {
+      once: true,
+    });
+  }
 
   // Plan-Vorschaubild (Thumbnail) — bei Versions-Speichern + einmal kurz nach dem Laden.
   async function captureThumb(): Promise<void> {
@@ -1746,6 +1806,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (!m || m.locked) return;
     e.preventDefault();
     e.originalEvent.preventDefault(); // Mittelklick-Autoscroll unterdrücken
+    const dragFromX = m.world_x;
+    const dragFromY = m.world_y;
     dragId = id;
     map.dragPan.disable();
     map.getCanvas().style.cursor = "grabbing";
@@ -1765,7 +1827,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       if (mode === "move") map.dragPan.enable();
       map.getCanvas().style.cursor = mode === "markermove" ? "move" : "";
       if (finished) {
-        socket.send({ type: "marker.move", id: finished, world_x: ev.lngLat.lng, world_y: ev.lngLat.lat });
+        const ax = ev.lngLat.lng;
+        const ay = ev.lngLat.lat;
+        socket.send({ type: "marker.move", id: finished, world_x: ax, world_y: ay });
+        pushCmd({
+          undo: () => socket.send({ type: "marker.move", id: finished, world_x: dragFromX, world_y: dragFromY }),
+          redo: () => socket.send({ type: "marker.move", id: finished, world_x: ax, world_y: ay }),
+        });
       }
     };
     map.on("mousemove", onMove);
@@ -1944,18 +2012,30 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     };
     document.addEventListener("keydown", onEsc);
     p.querySelector("[data-apply]")!.addEventListener("click", () => {
-      socket.send({
-        type: "marker.modify",
-        id: m.id,
-        data: {
-          unit_text: p.querySelector<HTMLInputElement>("[data-unit]")!.value,
-          ai_text: p.querySelector<HTMLInputElement>("[data-ai]")!.value,
-          icon_rotation: Number(p.querySelector<HTMLInputElement>("[data-rot]")!.value) || 0,
-          phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || null,
-          ...(modDefs ? { sidc: nextSidc() } : {}),
+      const data: Record<string, unknown> = {
+        unit_text: p.querySelector<HTMLInputElement>("[data-unit]")!.value,
+        ai_text: p.querySelector<HTMLInputElement>("[data-ai]")!.value,
+        icon_rotation: Number(p.querySelector<HTMLInputElement>("[data-rot]")!.value) || 0,
+        phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || null,
+        ...(modDefs ? { sidc: nextSidc() } : {}),
+      };
+      const wantLock = p.querySelector<HTMLInputElement>("[data-lock]")!.checked;
+      const beforeData: Record<string, unknown> = {};
+      for (const k of Object.keys(data)) beforeData[k] = (m as unknown as Record<string, unknown>)[k];
+      const beforeLock = m.locked;
+      socket.send({ type: "marker.modify", id: m.id, data });
+      socket.send({ type: "marker.lock", id: m.id, locked: wantLock });
+      const mid = m.id;
+      pushCmd({
+        undo: () => {
+          socket.send({ type: "marker.modify", id: mid, data: beforeData });
+          socket.send({ type: "marker.lock", id: mid, locked: beforeLock });
+        },
+        redo: () => {
+          socket.send({ type: "marker.modify", id: mid, data });
+          socket.send({ type: "marker.lock", id: mid, locked: wantLock });
         },
       });
-      socket.send({ type: "marker.lock", id: m.id, locked: p.querySelector<HTMLInputElement>("[data-lock]")!.checked });
       close();
     });
     p.querySelector("[data-del]")!.addEventListener("click", () => {

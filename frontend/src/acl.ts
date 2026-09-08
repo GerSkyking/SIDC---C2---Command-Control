@@ -103,7 +103,7 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
       rows.push({
         subject_type: t as "user" | "group",
         subject_id: id,
-        level: "editor",
+        level: "viewer",
         can_place: true,
         can_move: true,
         can_delete: true,

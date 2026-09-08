@@ -71,3 +71,23 @@ def can_create_plans(db: Session, user: User) -> bool:
             select(Group.id).where(Group.id.in_(gids), Group.can_create_plans.is_(True))
         ).first()
     )
+
+
+def assign_default_group(db: Session, user_id: str) -> None:
+    """Neuen Nutzer der konfigurierten Default-Gruppe zuordnen (falls gesetzt/vorhanden)."""
+    from .config import get_settings
+    from .models import Group, GroupMember
+
+    name = (get_settings().default_user_group or "").strip()
+    if not name:
+        return
+    g = db.scalar(select(Group).where(Group.name == name))
+    if g is None:
+        return
+    exists = db.scalar(
+        select(GroupMember.group_id).where(
+            GroupMember.group_id == g.id, GroupMember.user_id == user_id
+        )
+    )
+    if not exists:
+        db.add(GroupMember(group_id=g.id, user_id=user_id))

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     bootstrap_admin_user: str = "admin"
     bootstrap_admin_password: str = ""
+    # Neue Nutzer (lokal + OIDC-Erstlogin) automatisch dieser Gruppe zuordnen (Name).
+    # Leer = aus. Nützlich für externe Auth: eine "Alle"-Gruppe mit Basis-Zugriff.
+    default_user_group: str = ""
 
     maps_dir: Path = Path("/data/maps")
     uploads_dir: Path = Path("/data/uploads")
