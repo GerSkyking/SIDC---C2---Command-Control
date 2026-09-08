@@ -155,7 +155,7 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
       : "";
     modRow.querySelectorAll<HTMLSelectElement>("[data-mod]").forEach((sel) =>
       sel.addEventListener("change", () => {
-        modSel[sel.dataset.mod as keyof SidcModifiers] = Number(sel.value) || undefined;
+        modSel[sel.dataset.mod as keyof SidcModifiers] = Number(sel.value) || 0;
         refresh();
       }),
     );
@@ -166,21 +166,32 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
     entry = cats.flatMap((c) => c.entries).find((e) => e.sidc + "|" + e.name === v) ?? null;
     refresh();
   });
-  const setMarkerItems = (catKey: string) => {
-    const cat = cats.find((c) => c.key === catKey);
-    markerBox.setItems(
-      (cat?.entries ?? []).map((e) => ({
-        value: e.sidc + "|" + e.name,
-        label: translate(e.name),
-        icon: iconSrc(withAffiliation(e.sidc, "1"), 22),
-      })),
-    );
+  let catKey = "";
+  const setMarkerItems = () => {
+    // ohne Kategorie: über alle Kategorien hinweg durchsuchbar
+    const src = catKey
+      ? cats.find((c) => c.key === catKey)?.entries ?? []
+      : cats.flatMap((c) => c.entries.map((e) => ({ e, cat: c.label })));
+    const items = catKey
+      ? (src as CatalogEntry[]).map((e) => ({
+          value: e.sidc + "|" + e.name,
+          label: translate(e.name),
+          icon: iconSrc(withAffiliation(e.sidc, aff), 22),
+        }))
+      : (src as { e: CatalogEntry; cat: string }[]).map(({ e, cat }) => ({
+          value: e.sidc + "|" + e.name,
+          label: translate(e.name),
+          sub: cat,
+          icon: iconSrc(withAffiliation(e.sidc, aff), 22),
+        }));
+    markerBox.setItems(items);
   };
   const catBox = combobox(
-    cats.map((c) => ({ value: c.key, label: c.label, sub: `${c.entries.length}` })),
+    [{ value: "", label: t("wiz.builder.allCats") }, ...cats.map((c) => ({ value: c.key, label: c.label, sub: `${c.entries.length}` }))],
     { placeholder: t("wiz.catalog") },
     (v) => {
-      setMarkerItems(v);
+      catKey = v;
+      setMarkerItems();
       entry = null;
       refresh();
     },
@@ -191,13 +202,18 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
   if (entry) {
     const cat = cats.find((c) => c.entries.includes(entry!));
     if (cat) {
+      catKey = cat.key;
       catBox.set(cat.key);
-      setMarkerItems(cat.key);
-      markerBox.set(entry.sidc + "|" + entry.name);
     }
   }
+  setMarkerItems();
+  if (entry) markerBox.set(entry.sidc + "|" + entry.name);
 
-  affSel.addEventListener("change", () => { aff = affSel.value; refresh(); });
+  affSel.addEventListener("change", () => {
+    aff = affSel.value;
+    setMarkerItems(); // Icons der Liste an die Fraktion anpassen
+    refresh();
+  });
   echSel.addEventListener("change", () => { echelon = echSel.value; refresh(); });
 
   host.querySelector("[data-submit]")!.addEventListener("click", () => {

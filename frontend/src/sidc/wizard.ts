@@ -92,7 +92,9 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
   // ── Konfig-Panel für einen gewählten Eintrag ────────────────────────────
   function configure(entry: CatalogEntry, identity: string | null, btn?: QuickMenuButton): void {
     const isLandUnit =
-      entry.languageKey.includes("-LandUnits-") || entry.subCategory === "Land_Unit";
+      entry.languageKey.includes("-LandUnits-") ||
+      entry.subCategory === "Land_Unit" ||
+      btn?.needsAmp === true;
     let aff = identity ? IDENTITY_TO_AFFILIATION[identity] ?? "1" : "1";
     let echelon = "00";
     let dir = -1;
@@ -269,20 +271,30 @@ function renderQuick(
   nav.className = "wiz-quick";
   host.appendChild(nav);
 
+  const isMain = (label: string) => /^\s*main\s*$/i.test(label);
+
   const renderButtons = (
     rows: import("./catalog").QuickMenuRow[],
     identity: string | null,
     back: () => void,
   ) => {
+    // Ebene mit nur einer Gruppe → direkt hineinspringen (Punkt „Main"/leere Zwischenstufen)
+    const flat = rows.flatMap((r) => r.buttons);
+    if (flat.length === 1 && flat[0].isGroup && flat[0].nestedRows.length) {
+      renderButtons(flat[0].nestedRows, identity, back);
+      return;
+    }
     nav.innerHTML = `<button class="wiz-back">${t("wiz.back")}</button>`;
     nav.querySelector(".wiz-back")!.addEventListener("click", back);
     for (const row of rows) {
       const rEl = document.createElement("div");
       rEl.className = "wiz-row";
       for (const btn of row.buttons) {
+        const label = translate(btn.buttonLanguageKey) || btn.markerDescription;
+        if (isMain(label) && !(btn.isGroup && btn.nestedRows.length)) continue;
         const b = document.createElement("button");
         b.className = "wiz-qbtn";
-        b.textContent = translate(btn.buttonLanguageKey) || btn.markerDescription;
+        b.textContent = label;
         b.addEventListener("click", () => {
           if (btn.isGroup && btn.nestedRows.length) {
             renderButtons(btn.nestedRows, identity, () => renderButtons(rows, identity, back));
@@ -294,32 +306,42 @@ function renderQuick(
         });
         rEl.appendChild(b);
       }
-      nav.appendChild(rEl);
+      if (rEl.childElementCount) nav.appendChild(rEl);
+    }
+  };
+
+  const openSubs = (cat: import("./catalog").QuickMenuCategory, back: () => void) => {
+    const ident = cat.setsIdentity ? cat.identity : null;
+    const subs = cat.subCategories.filter(
+      (s) => !isMain(translate(s.buttonLanguageKey || s.subCategoryName)),
+    );
+    const eff = subs.length ? subs : cat.subCategories;
+    if (eff.length === 1) {
+      renderButtons(eff[0].rows, ident, back);
+      return;
+    }
+    nav.innerHTML = `<button class="wiz-back">${t("wiz.back")}</button>`;
+    nav.querySelector(".wiz-back")!.addEventListener("click", back);
+    for (const sub of eff) {
+      const sb = document.createElement("button");
+      sb.className = "wiz-qbtn";
+      sb.textContent = translate(sub.buttonLanguageKey || sub.subCategoryName);
+      sb.addEventListener("click", () => renderButtons(sub.rows, ident, () => openSubs(cat, back)));
+      nav.appendChild(sb);
     }
   };
 
   const top = () => {
+    if (categories.length === 1) {
+      openSubs(categories[0], top);
+      return;
+    }
     nav.innerHTML = "";
     for (const cat of categories) {
       const b = document.createElement("button");
       b.className = "wiz-qbtn wiz-qcat";
       b.textContent = translate(cat.buttonLanguageKey || cat.categoryName);
-      b.addEventListener("click", () => {
-        const subNav = () => {
-          nav.innerHTML = `<button class="wiz-back">${t("wiz.back")}</button>`;
-          nav.querySelector(".wiz-back")!.addEventListener("click", top);
-          for (const sub of cat.subCategories) {
-            const sb = document.createElement("button");
-            sb.className = "wiz-qbtn";
-            sb.textContent = translate(sub.buttonLanguageKey || sub.subCategoryName);
-            sb.addEventListener("click", () =>
-              renderButtons(sub.rows, cat.setsIdentity ? cat.identity : null, subNav),
-            );
-            nav.appendChild(sb);
-          }
-        };
-        subNav();
-      });
+      b.addEventListener("click", () => openSubs(cat, top));
       nav.appendChild(b);
     }
   };

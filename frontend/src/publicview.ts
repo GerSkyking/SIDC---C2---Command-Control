@@ -214,7 +214,8 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         "text-field": ["get", "label"],
         "text-optional": true,
         "text-size": 11,
-        "text-offset": [0, 1.6],
+        "text-anchor": "top",
+        "text-offset": [0, 1.4],
       },
       paint: { "text-color": "#e6e9ee", "text-halo-color": "#000", "text-halo-width": 1.4 },
     });

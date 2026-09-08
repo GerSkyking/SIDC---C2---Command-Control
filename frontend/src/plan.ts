@@ -540,7 +540,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "text-field": ["get", "label"],
         "text-optional": true,
         "text-size": 11,
-        "text-offset": [0, 1.6],
+        "text-anchor": "top",
+        "text-offset": [0, 1.4],
         "text-allow-overlap": false,
       },
       paint: {
@@ -1479,9 +1480,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
               "text-optional": true,
             },
             paint: {
-              "text-color": ["match", ["get", "type"], "dominant_peak", "#7a2e12", "ridge", "#5a4a2a", "#4a3a1a"],
-              "text-halo-color": "#f5efe2",
-              "text-halo-width": 1.6,
+              "text-color": "#ffffff",
+              "text-halo-color": "#000000",
+              "text-halo-width": 2,
             },
           },
           beforeId,
@@ -1531,6 +1532,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         const k = n.parent_id ?? "";
         (kids.get(k) ?? kids.set(k, []).get(k)!).push(n);
       }
+      const descSum = (id: string): number =>
+        (kids.get(id) ?? []).reduce((a, n) => a + (n.qty_current ?? 0) + descSum(n.id), 0);
       const rec = (pid: string, d: number): string =>
         (kids.get(pid) ?? [])
           .sort((a, b) => a.ordering - b.ordering)
@@ -1541,9 +1544,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
               `<div class="orb-row" style="margin-left:${d * 0.9}rem">` +
               (ch.length ? `<button class="orb-tw" data-otw="${n.id}">${icon(op ? "chevronDown" : "chevron", 12)}</button>` : `<span class="orb-tw"></span>`) +
               `<span class="orb-name">${n.name}</span>` +
-              `<span class="orb-qty">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}</span>${st(n.status)}` +
+              `<span class="orb-qty">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}${ch.length ? ` <span class="orb-sub-sum">+${descSum(n.id)}</span>` : ""}</span>${st(n.status)}` +
               (isMB && canEdit && !o.released
-                ? `<button class="icon-btn" data-oplace="${n.id}" data-osidc="${n.sidc ?? ""}" title="${t("orbat.placeOnMap")}">${icon("marker", 12)}</button>`
+                ? `<button class="icon-btn" data-oplace="${n.id}" data-osidc="${n.sidc ?? ""}" data-oname="${(n.name ?? "").replace(/"/g, "&quot;")}" title="${t("orbat.placeOnMap")}">${icon("marker", 12)}</button>`
                 : "") +
               `</div>` +
               (op ? rec(n.id, d + 1) : "")
@@ -1592,7 +1595,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         awaitingPos = false;
         pending = {
           sidc: b.dataset.osidc || "10060000000000000000",
-          unit_text: "",
+          unit_text: b.dataset.oname || "",
           ai_text: "",
           channel: myChannel,
           locked: false,
@@ -1974,19 +1977,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     src.setData({ type: "FeatureCollection", features: feats });
   };
 
+  const modeCursor = (m: Mode = mode): string =>
+    m === "place" || m === "line" || m === "point" || m === "measure" || m === "text"
+      ? "crosshair"
+      : m === "erase"
+        ? "not-allowed"
+        : m === "markermove"
+          ? "move"
+          : "";
   const setMode = (m: Mode) => {
     mode = m;
     toolbar.querySelectorAll("[data-mode]").forEach((b) =>
       b.classList.toggle("active", (b as HTMLElement).dataset.mode === m),
     );
-    map.getCanvas().style.cursor =
-      m === "place" || m === "line" || m === "measure" || m === "text"
-        ? "crosshair"
-        : m === "erase"
-          ? "not-allowed"
-          : m === "markermove"
-            ? "move"
-            : "";
+    map.getCanvas().style.cursor = modeCursor(m);
     // Zeigen + Linie + Radierer + Messen + Marker-Verschieben: Karte fixieren
     if (m === "point" || m === "line" || m === "erase" || m === "measure" || m === "markermove") {
       map.dragPan.disable();
@@ -2217,7 +2221,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       .addTo(map);
   };
   const hideHover = () => {
-    map.getCanvas().style.cursor = "";
+    map.getCanvas().style.cursor = modeCursor(); // nicht hart auf Default zurück
     hoverPopup.remove();
   };
   for (const ly of ["marker-icon", "marker-dot"]) {
@@ -2255,7 +2259,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       suppressClick = true;
       setTimeout(() => (suppressClick = false), 0);
       if (mode === "move") map.dragPan.enable();
-      map.getCanvas().style.cursor = mode === "markermove" ? "move" : "";
+      map.getCanvas().style.cursor = modeCursor();
       if (finished) {
         const ax = ev.lngLat.lng;
         const ay = ev.lngLat.lat;
@@ -2580,8 +2584,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const readModSel = (): SidcModifiers => {
       const s: SidcModifiers = {};
       p.querySelectorAll<HTMLSelectElement>("[data-mod]").forEach((sel) => {
-        const v = Number(sel.value);
-        s[sel.dataset.mod as keyof SidcModifiers] = v || undefined;
+        // 0 = "kein Modifikator" muss die SIDC-Stelle aktiv zurücksetzen, nicht ignorieren
+        s[sel.dataset.mod as keyof SidcModifiers] = Number(sel.value) || 0;
       });
       return s;
     };

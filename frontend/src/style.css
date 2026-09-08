@@ -125,6 +125,8 @@ a { color: var(--accent); }
 .tree-ico { opacity: 0.85; }
 .tree-tw { border: none; background: transparent; padding: 0 0.2rem; width: 1.2rem; }
 .tree-count { font-size: 0.75rem; color: var(--muted); min-width: 1.2rem; text-align: center; }
+.tree-map { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+.tree-map .ic { opacity: 0.7; }
 .tree-actions { display: flex; gap: 0.3rem; }
 .tree-actions button { padding: 0.15rem 0.45rem; font-size: 0.78rem; }
 .tree-row[draggable="true"] { cursor: grab; }
@@ -426,6 +428,7 @@ label.chk input { width: auto; }
 .badge.aff-enemy, .badge.aff-hostile { border-color: var(--danger); color: var(--danger); }
 .badge.aff-neutral { border-color: var(--warn); color: var(--warn); }
 
+.orb-sub-sum { color: var(--accent); font-size: 0.85em; }
 .orb-total { margin: 0.4rem 0; font-size: 0.9rem; color: var(--muted); }
 .orb-total strong { color: var(--fg); }
 .orb-sym-pick { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
@@ -454,16 +457,19 @@ label.chk input { width: auto; }
 .cbx-list img { width: 20px; height: 20px; }
 .cbx-sub { margin-left: auto; color: var(--muted); font-size: 0.8rem; }
 
-/* Marker-Baukasten */
-.mkb { display: flex; gap: 1rem; flex-wrap: wrap; }
-.mkb-fields { flex: 1 1 20rem; display: flex; flex-direction: column; gap: 0.25rem; }
+/* Marker-Baukasten — alles untereinander */
+.mkb { display: flex; flex-direction: column; gap: 0.5rem; }
+.mkb-fields { display: flex; flex-direction: column; gap: 0.25rem; }
 .mkb-fields > label { font-size: 0.82rem; color: var(--muted); margin-top: 0.3rem; }
+.mkb-fields select { width: 100%; }
 .mkb-flags { display: flex; gap: 1rem; margin-top: 0.4rem; }
 .mkb-preview {
-  flex: 0 0 9rem; display: flex; flex-direction: column; align-items: center;
-  gap: 0.6rem; padding-top: 0.5rem;
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  border-top: 1px solid var(--border); padding-top: 0.6rem; margin-top: 0.2rem;
 }
-.mkb-preview code { font-size: 0.7rem; color: var(--muted); word-break: break-all; text-align: center; }
+.mkb-preview img { flex: none; }
+.mkb-preview code { flex: 1 1 8rem; font-size: 0.72rem; color: var(--muted); word-break: break-all; }
+.mkb-preview [data-submit] { flex: none; }
 
 .orb-head { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .orb-title { flex: 1 1 12rem; font-weight: 600; }

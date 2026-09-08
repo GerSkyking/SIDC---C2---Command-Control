@@ -86,6 +86,10 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
   }
   for (const arr of byParent.values()) arr.sort((a, b) => a.ordering - b.ordering);
 
+  // Summe der Ist-Stärke aller Nachfahren eines Knotens (für die "+N"-Anzeige)
+  const descSum = (id: string): number =>
+    (byParent.get(id) ?? []).reduce((a, n) => a + (n.qty_current ?? 0) + descSum(n.id), 0);
+
   const reload = async () => {
     const fresh = await api.orbat(o.id).catch(() => null);
     if (fresh) renderDetail(host, fresh);
@@ -110,7 +114,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
           ${kids.length ? `<button class="orb-tw" data-tw="${n.id}">${icon(isOpen ? "chevronDown" : "chevron", 14)}</button>` : `<span class="orb-tw"></span>`}
           <img class="orb-ico" src="${n.sidc ? iconSrc(n.sidc) : ""}" alt="" onerror="this.style.visibility='hidden'" />
           <span class="orb-name">${n.name}</span>
-          <span class="orb-qty">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}</span>
+          <span class="orb-qty" title="${t("orbat.qtyCurrent")} / ${t("orbat.maxStrength")}${kids.length ? " (+ Untergliederungen)" : ""}">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}${kids.length ? ` <span class="orb-sub-sum">+${descSum(n.id)}</span>` : ""}</span>
           ${statusPill(n.status)}
           <span class="orb-rel">${relSummary(n)}</span>
           ${

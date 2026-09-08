@@ -142,6 +142,7 @@ async function renderPlanList(): Promise<void> {
   wireSidebar(app);
 
   renderPlanTree(app.querySelector<HTMLDivElement>("#planTree")!, plans, folders, me!.can_create_plans_effective, {
+    mapName: (id) => maps.find((m) => m.id === id)?.name ?? id,
     onChanged: () => renderPlanList(),
     onDeletePlan: async (p) => {
       if (confirm(t("plans.confirmDelete"))) {

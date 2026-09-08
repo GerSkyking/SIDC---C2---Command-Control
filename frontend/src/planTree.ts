@@ -8,6 +8,7 @@ interface TreeOpts {
   onChanged: () => void; // neu laden
   onDeletePlan: (p: PlanItem) => void;
   onOpenShares: (p: PlanItem) => void;
+  mapName?: (id: string) => string;
 }
 
 const OPEN_KEY = "sidc_folders_open";
@@ -108,6 +109,7 @@ export function renderPlanTree(
       `<img class="tree-thumb" src="/plans/${p.id}/thumbnail" alt="" onerror="this.style.display='none'" />` +
       `<a href="#/plans/${p.id}" class="tree-name">${p.name}</a>` +
       `<span class="badge">${p.level}</span>` +
+      (opts.mapName ? `<span class="tree-map" title="${t("plans.map")}">${icon("map", 12)} ${opts.mapName(p.map_id)}</span>` : "") +
       `<span class="tree-actions">` +
       (canManage
         ? `<select class="tree-move" title="${t("plans.moveTo")}">${folderOptions(p.folder_id)}</select>`
