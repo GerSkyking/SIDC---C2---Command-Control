@@ -11,6 +11,8 @@ import {
   loadChannels,
   loadModifiers,
   loadQuickMenu,
+  loadTranslations,
+  translate,
   type CatalogCategory,
   type CatalogEntry,
   type ModifierCatalog,
@@ -50,6 +52,7 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
     loadQuickMenu(),
     loadChannels(),
     loadModifiers(),
+    loadTranslations(),
   ]);
   if (!cats) {
     alert(t("wiz.noCatalog"));
@@ -279,7 +282,7 @@ function renderQuick(
       for (const btn of row.buttons) {
         const b = document.createElement("button");
         b.className = "wiz-qbtn";
-        b.textContent = btn.buttonLanguageKey;
+        b.textContent = translate(btn.buttonLanguageKey) || btn.markerDescription;
         b.addEventListener("click", () => {
           if (btn.isGroup && btn.nestedRows.length) {
             renderButtons(btn.nestedRows, identity, () => renderButtons(rows, identity, back));
@@ -300,7 +303,7 @@ function renderQuick(
     for (const cat of categories) {
       const b = document.createElement("button");
       b.className = "wiz-qbtn wiz-qcat";
-      b.textContent = cat.buttonLanguageKey || cat.categoryName;
+      b.textContent = translate(cat.buttonLanguageKey || cat.categoryName);
       b.addEventListener("click", () => {
         const subNav = () => {
           nav.innerHTML = `<button class="wiz-back">${t("wiz.back")}</button>`;
@@ -308,7 +311,7 @@ function renderQuick(
           for (const sub of cat.subCategories) {
             const sb = document.createElement("button");
             sb.className = "wiz-qbtn";
-            sb.textContent = sub.buttonLanguageKey || sub.subCategoryName;
+            sb.textContent = translate(sub.buttonLanguageKey || sub.subCategoryName);
             sb.addEventListener("click", () =>
               renderButtons(sub.rows, cat.setsIdentity ? cat.identity : null, subNav),
             );

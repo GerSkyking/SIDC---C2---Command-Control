@@ -147,6 +147,54 @@ export function loadPhaseLineStyle(): Promise<PhaseLineStyle | null> {
   return _phase;
 }
 
+// ── #Namen → lesbarer Name (Admin lädt SIDC_Translations.json nach) ──────────
+let _trMap: Record<string, string> = {};
+let _tr: Promise<Record<string, string>> | null = null;
+
+function flattenTranslations(d: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!d || typeof d !== "object") return out;
+  const obj = d as Record<string, unknown>;
+  const arr =
+    (Array.isArray(obj) && obj) ||
+    (Array.isArray(obj.entries) && obj.entries) ||
+    (Array.isArray(obj.translations) && obj.translations) ||
+    null;
+  if (arr) {
+    for (const e of arr as Record<string, unknown>[]) {
+      const k = (e.key ?? e.languageKey ?? e.id) as string | undefined;
+      const v = (e.value ?? e.name ?? e.text ?? e.translation) as string | undefined;
+      if (typeof k === "string" && typeof v === "string") out[k] = v;
+    }
+    return out;
+  }
+  const src = (obj.translations && typeof obj.translations === "object"
+    ? obj.translations
+    : obj) as Record<string, unknown>;
+  for (const [k, v] of Object.entries(src)) if (typeof v === "string") out[k] = v;
+  return out;
+}
+
+export function loadTranslations(): Promise<Record<string, string>> {
+  _tr ??= tryFetch<unknown>("/api/catalog/translations").then((d) => {
+    _trMap = flattenTranslations(d);
+    return _trMap;
+  });
+  return _tr;
+}
+
+/** #Name → lesbarer Name; ohne Tabelle bzw. bei Fehltreffer heuristische Bereinigung. */
+export function translate(raw: string | undefined | null): string {
+  if (!raw) return raw ?? "";
+  if (_trMap[raw]) return _trMap[raw];
+  return raw
+    .replace(/^#SIDC-Channel-/, "")
+    .replace(/^#SIDC-UI-text_/, "")
+    .replace(/^#SIDC-[A-Za-z]+-/, "")
+    .replace(/^#/, "")
+    .replace(/_/g, " ");
+}
+
 let _mods: Promise<ModifierCatalog | null> | null = null;
 export function loadModifiers(): Promise<ModifierCatalog | null> {
   _mods ??= tryFetch<ModifierCatalog>("/api/catalog/modifiers");
@@ -170,6 +218,5 @@ export function findEntry(cats: CatalogCategory[], description: string): Catalog
 }
 
 export function channelLabel(c: { name: string; languageKey: string }): string {
-  const n = c.languageKey || c.name;
-  return n.replace(/^#SIDC-Channel-/, "").replace(/^#SIDC-UI-text_/, "").replace(/^#/, "");
+  return translate(c.languageKey || c.name);
 }

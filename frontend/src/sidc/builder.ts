@@ -6,6 +6,8 @@ import {
   loadAllMarkers,
   loadChannels,
   loadModifiers,
+  loadTranslations,
+  translate,
   channelLabel,
   type CatalogEntry,
   type ModifierCatalog,
@@ -48,6 +50,7 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
     loadAllMarkers(),
     loadModifiers(),
     opts.templateFields ? loadChannels() : Promise.resolve(null),
+    loadTranslations(),
   ]);
   if (!cats) {
     host.innerHTML = `<p class="muted">${t("wiz.noCatalog")}</p>`;
@@ -168,7 +171,7 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
     markerBox.setItems(
       (cat?.entries ?? []).map((e) => ({
         value: e.sidc + "|" + e.name,
-        label: e.name,
+        label: translate(e.name),
         icon: iconSrc(withAffiliation(e.sidc, "1"), 22),
       })),
     );

@@ -22,6 +22,7 @@ CATALOGS = {
     "phaseline-style": "SIDC_PhaseLineStyleCatalog.json",
     "channels": "SIDC_ChannelSettings.json",
     "modifiers": "SIDC_ModifierCatalog.json",
+    "translations": "SIDC_Translations.json",
 }
 _MAX_BYTES = 8 * 1024 * 1024
 

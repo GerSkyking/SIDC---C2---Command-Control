@@ -10,6 +10,7 @@ export const CATALOGS: { key: string; label: string; file: string }[] = [
   { key: "phaseline-style", label: "Phase-Line-Stil", file: "SIDC_PhaseLineStyleCatalog.json" },
   { key: "channels", label: "Channels", file: "SIDC_ChannelSettings.json" },
   { key: "modifiers", label: "Modifikatoren", file: "SIDC_ModifierCatalog.json" },
+  { key: "translations", label: "Übersetzungen (#Namen)", file: "SIDC_Translations.json" },
 ];
 
 export function configHtml(
