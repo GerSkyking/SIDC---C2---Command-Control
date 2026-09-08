@@ -66,6 +66,17 @@ def test_plan_lifecycle_and_permissions(admin):
     assert admin.delete(f"/folders/{sub['id']}").status_code == 200
     assert admin.get(f"/plans/{pid}").json()["folder_id"] == root["id"]
 
+    # Papierkorb: löschen -> im Trash -> wiederherstellen -> weg aus Trash
+    admin.delete(f"/plans/{pid}")
+    assert pid in [p["id"] for p in admin.get("/plans/trash").json()]
+    assert admin.get("/plans").json() == [] or pid not in [p["id"] for p in admin.get("/plans").json()]
+    assert admin.post(f"/plans/{pid}/undelete").status_code == 200
+    assert pid not in [p["id"] for p in admin.get("/plans/trash").json()]
+    # erneut löschen + endgültig entfernen
+    admin.delete(f"/plans/{pid}")
+    assert admin.delete(f"/plans/{pid}/purge").status_code == 200
+    assert admin.get(f"/plans/{pid}/snapshot").status_code == 404
+
 
 def test_live_marker_authority(admin):
     _make_map(admin)

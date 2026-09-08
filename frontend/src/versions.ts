@@ -3,7 +3,12 @@ import { api, ApiError } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 
-export function openVersionPanel(planId: string, canSave: boolean, canRestore: boolean): void {
+export function openVersionPanel(
+  planId: string,
+  canSave: boolean,
+  canRestore: boolean,
+  onSaved?: () => void,
+): void {
   const back = document.createElement("div");
   back.className = "edit-modal";
   back.innerHTML = `<div class="card ver-card">
@@ -64,6 +69,7 @@ export function openVersionPanel(planId: string, canSave: boolean, canRestore: b
     try {
       await api.saveVersion(planId, name);
       back.querySelector<HTMLInputElement>(".ver-name")!.value = "";
+      onSaved?.();
       void load();
     } catch (e) {
       alert(e instanceof ApiError ? e.message : t("common.error"));

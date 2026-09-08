@@ -139,6 +139,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ${iconBtn("layers", { id: "layersBtn", title: t("tool.layers") })}
       <span class="grow"></span>
       <span class="presence" id="presence"></span>
+      ${iconBtn("present", { id: "present", title: t("present.start") })}
       ${iconBtn("versions", { id: "versions", title: t("versions.open") })}
       ${iconBtn("help", { id: "help", title: t("help.open") })}
       ${iconBtn("settings", { id: "settingsBtn", title: t("settings.open") })}
@@ -678,12 +679,95 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   root.querySelector("#acl")?.addEventListener("click", () => openAclEditor(planId, snap.plan.name));
   root.querySelector("#help")!.addEventListener("click", openHelp);
+  root.querySelector("#present")!.addEventListener("click", startPresent);
+
+  // Plan-Vorschaubild (Thumbnail) — bei Versions-Speichern + einmal kurz nach dem Laden.
+  async function captureThumb(): Promise<void> {
+    if (!canEdit) return;
+    try {
+      await new Promise<void>((res) => {
+        if (map.loaded() && !map.isMoving()) return res();
+        map.once("idle", () => res());
+      });
+      map.redraw();
+      const mc = map.getCanvas();
+      const w = 400;
+      const h = Math.round((w * mc.height) / mc.width);
+      const out = document.createElement("canvas");
+      out.width = w;
+      out.height = h;
+      out.getContext("2d")!.drawImage(mc, 0, 0, w, h);
+      const blob = await new Promise<Blob | null>((r) => out.toBlob(r, "image/png"));
+      if (blob) await api.uploadThumbnail(planId, blob);
+    } catch {
+      /* Thumbnail ist optional */
+    }
+  }
+  if (canEdit) setTimeout(() => void captureThumb(), 5000);
+
   root
     .querySelector("#versions")!
-    .addEventListener("click", () => openVersionPanel(planId, canEdit, myPlan?.level === "owner"));
+    .addEventListener("click", () =>
+      openVersionPanel(planId, canEdit, myPlan?.level === "owner", () => void captureThumb()),
+    );
 
   // ── Zeitstrahl / Phasen ───────────────────────────────────────────────
   const timelineEl = root.querySelector<HTMLDivElement>("#timeline")!;
+  function selectPhase(id: string): void {
+    if (id === currentPhaseId || !phases.some((p) => p.id === id)) return;
+    currentPhaseId = id;
+    renderTimeline();
+    void refreshMarkers();
+    phaseListeners.forEach((f) => f());
+    updatePresentBar();
+  }
+
+  // ── Präsentationsmodus (Vollbild, nur Karte + Phasen-Umschalter) ──────
+  let presentBar: HTMLElement | null = null;
+  function updatePresentBar(): void {
+    if (!presentBar) return;
+    const cur = phases.find((p) => p.id === currentPhaseId);
+    const idx = phases.findIndex((p) => p.id === currentPhaseId);
+    presentBar.querySelector(".pb-name")!.textContent =
+      `${cur?.name ?? "—"}  (${idx + 1}/${phases.length})`;
+  }
+  function stepPhase(dir: number): void {
+    const idx = phases.findIndex((p) => p.id === currentPhaseId);
+    const next = phases[(idx + dir + phases.length) % phases.length];
+    if (next) selectPhase(next.id);
+  }
+  function exitPresent(): void {
+    root.classList.remove("presenting");
+    presentBar?.remove();
+    presentBar = null;
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    document.removeEventListener("keydown", onPresentKey);
+    map.resize();
+  }
+  const onPresentKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") exitPresent();
+    else if (e.key === "ArrowRight" || e.key === "PageDown") stepPhase(1);
+    else if (e.key === "ArrowLeft" || e.key === "PageUp") stepPhase(-1);
+  };
+  function startPresent(): void {
+    root.classList.add("presenting");
+    presentBar = document.createElement("div");
+    presentBar.className = "present-bar";
+    presentBar.innerHTML =
+      `<button class="icon-btn" data-pb="prev">${icon("back")}</button>` +
+      `<span class="pb-name"></span>` +
+      `<button class="icon-btn" data-pb="next">${icon("chevron")}</button>` +
+      `<button class="icon-btn" data-pb="exit" title="${t("present.exit")}">${icon("x")}</button>`;
+    root.appendChild(presentBar);
+    presentBar.querySelector('[data-pb="prev"]')!.addEventListener("click", () => stepPhase(-1));
+    presentBar.querySelector('[data-pb="next"]')!.addEventListener("click", () => stepPhase(1));
+    presentBar.querySelector('[data-pb="exit"]')!.addEventListener("click", exitPresent);
+    document.addEventListener("keydown", onPresentKey);
+    document.documentElement.requestFullscreen?.().catch(() => {});
+    updatePresentBar();
+    setTimeout(() => map.resize(), 60);
+  }
+
   function renderTimeline(): void {
     const chips = phases
       .map(
@@ -704,12 +788,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       `<span id="ph-op-v">${outOpacity}%</span></label>`;
 
     timelineEl.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((b) =>
-      b.addEventListener("click", () => {
-        currentPhaseId = b.dataset.pick!;
-        renderTimeline();
-        void refreshMarkers();
-        phaseListeners.forEach((f) => f());
-      }),
+      b.addEventListener("click", () => selectPhase(b.dataset.pick!)),
     );
     timelineEl.querySelectorAll<HTMLButtonElement>("[data-delph]").forEach((b) =>
       b.addEventListener("click", async () => {

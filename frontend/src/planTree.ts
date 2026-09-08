@@ -105,7 +105,7 @@ export function renderPlanTree(
     row.draggable = true;
     const canManage = p.level === "owner" || p.level === "editor";
     row.innerHTML =
-      `<span class="tree-ico">${icon("plan", 16)}</span>` +
+      `<img class="tree-thumb" src="/plans/${p.id}/thumbnail" alt="" onerror="this.style.display='none'" />` +
       `<a href="#/plans/${p.id}" class="tree-name">${p.name}</a>` +
       `<span class="badge">${p.level}</span>` +
       `<span class="tree-actions">` +

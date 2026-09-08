@@ -59,6 +59,11 @@ const ICONS: Record<string, string> = {
   sun: `${A("M12 16a4 4 0 100-8 4 4 0 000 8z")}${L("M12 16a4 4 0 100-8 4 4 0 000 8zM12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4")}`,
   moon: `${A("M20 14a8 8 0 01-10-10 8 8 0 1010 10z")}${L("M20 14a8 8 0 01-10-10 8 8 0 1010 10z")}`,
   monitor: L("M4 5h16v11H4zM9 20h6M12 16v4"),
+  present: `${A("M10 9l5 3-5 3z")}${L("M4 5h16v11H4zM9 20h6M12 16v4M10 9l5 3-5 3z")}`,
+  undo: L("M9 7L4 12l5 5M4 12h11a5 5 0 010 10h-3"),
+  redo: L("M15 7l5 5-5 5M20 12H9a5 5 0 000 10h3"),
+  textbox: `${A("M5 5h14v14H5z")}${L("M5 5h14v14H5zM9 9h6M9 12h6M9 15h3")}`,
+  pdf: `${L("M7 3h8l4 4v14H7z")}${A("M7 3h8l4 4v14H7z")}${L("M15 3v4h4M9 13h1.5a1.5 1.5 0 000-3H9zM14 10h3M14 10v6")}`,
 };
 
 export function icon(name: keyof typeof ICONS | string, size = 20): string {

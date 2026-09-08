@@ -348,3 +348,23 @@ a { color: var(--accent); }
 .sb-item.sb-sub { padding-left: 1.1rem; }
 .sidebar.collapsed .sb-item.sb-sub { padding-left: 0.55rem; }
 .tree-move { padding: 0.2rem 0.3rem; font-size: 0.75rem; max-width: 9rem; }
+
+/* ── Präsentationsmodus ──────────────────────────────────────────────── */
+.presenting .topbar,
+.presenting .toolbar,
+.presenting .layers-panel,
+.presenting .grid-canvas,
+.presenting .fav-panel,
+.presenting .line-style,
+.presenting .hud,
+.presenting .maplibregl-ctrl { display: none !important; }
+.presenting #map { inset: 0 !important; }
+.present-bar { position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%);
+  z-index: 40; display: flex; align-items: center; gap: 0.6rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  padding: 0.35rem 0.6rem; box-shadow: var(--shadow); }
+.present-bar .pb-name { font-weight: 600; min-width: 8rem; text-align: center; }
+
+/* Plan-Vorschaubild in der Baumzeile */
+.tree-thumb { width: 3rem; height: 1.9rem; object-fit: cover; border: 1px solid var(--border);
+  border-radius: 4px; flex: none; background: var(--surface-2); }

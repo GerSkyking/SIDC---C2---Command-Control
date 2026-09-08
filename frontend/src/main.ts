@@ -41,6 +41,8 @@ async function route(): Promise<void> {
       return;
     }
   }
+  if (location.hash === "#/trash") return renderTrash();
+
   const adminMatch = location.hash.match(/^#\/admin(?:\/(users|log|config))?$/);
   if (adminMatch && me.role === "admin") {
     return renderAdmin(app, (adminMatch[1] as "users" | "log" | "config") || "users");
@@ -120,6 +122,7 @@ async function renderPlanList(): Promise<void> {
                  .join("")}</select>
                <select id="pf" title="${t("plans.moveTo")}">${folderOpts}</select>
                <button class="primary" id="pc">${t("plans.new")}</button>
+               <button id="pcs" title="${t("plans.newWithAccess")}">${t("plans.newWithAccess")}</button>
              </div>`
           : `<div class="muted">${
               me!.can_create_plans_effective ? t("plans.noMap") : t("plans.noPerm")
@@ -149,18 +152,77 @@ async function renderPlanList(): Promise<void> {
     location.hash = "#/";
     route();
   });
-  app.querySelector("#pc")?.addEventListener("click", async () => {
+  const doCreate = async (withAccess: boolean) => {
     const name = app.querySelector<HTMLInputElement>("#pn")!.value.trim();
     const mapId = app.querySelector<HTMLSelectElement>("#pm")!.value;
     const folderId = app.querySelector<HTMLSelectElement>("#pf")?.value || null;
     if (!name) return;
     try {
       const p = await api.createPlan(name, mapId, folderId);
-      location.hash = `#/plans/${p.id}`;
-      route();
+      if (withAccess) {
+        openAclEditor(p.id, name, () => {
+          location.hash = `#/plans/${p.id}`;
+          route();
+        });
+      } else {
+        location.hash = `#/plans/${p.id}`;
+        route();
+      }
     } catch (e) {
       alert(e instanceof ApiError ? e.message : t("common.error"));
     }
+  };
+  app.querySelector("#pc")?.addEventListener("click", () => doCreate(false));
+  app.querySelector("#pcs")?.addEventListener("click", () => doCreate(true));
+}
+
+async function renderTrash(): Promise<void> {
+  const items = await api.trash().catch(() => []);
+  app.innerHTML = `
+   <div class="shell">
+    ${sidebar("trash", { isAdmin: me!.role === "admin", username: me!.username })}
+    <div class="shell-main">
+    <div class="topbar"><strong>${t("nav.trash")}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
+    <div class="list stack">
+      <p class="muted">${t("trash.hint")}</p>
+      ${
+        items.length
+          ? `<table><tbody>${items
+              .map(
+                (p) => `<tr data-p="${p.id}">
+                  <td>${p.name}</td>
+                  <td><button data-restore>${t("trash.restore")}</button>
+                      <button class="danger" data-purge>${t("trash.purge")}</button></td>
+                </tr>`,
+              )
+              .join("")}</tbody></table>`
+          : `<div class="muted">${t("trash.empty")}</div>`
+      }
+    </div>
+    </div>
+   </div>`;
+  wireLangSelect(app);
+  wireThemeSwitch(app);
+  wireSidebar(app);
+  app.querySelectorAll<HTMLElement>("[data-p]").forEach((row) => {
+    const id = row.dataset.p!;
+    row.querySelector("[data-restore]")!.addEventListener("click", async () => {
+      try {
+        await api.undeletePlan(id);
+        renderTrash();
+      } catch (e) {
+        alert(e instanceof ApiError ? e.message : t("common.error"));
+      }
+    });
+    row.querySelector("[data-purge]")!.addEventListener("click", async () => {
+      if (!confirm(t("trash.purgeConfirm"))) return;
+      try {
+        await api.purgePlan(id);
+        renderTrash();
+      } catch (e) {
+        alert(e instanceof ApiError ? e.message : t("common.error"));
+      }
+    });
   });
 }
 window.addEventListener("hashchange", route);

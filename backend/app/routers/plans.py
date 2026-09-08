@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
+
+from ..config import get_settings
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
@@ -23,7 +25,7 @@ from ..models import (
     User,
     now,
 )
-from ..permissions import can_create_plans, effective_level
+from ..permissions import can_create_plans, effective_level, rank
 from ..schemas import (
     ACLCandidate,
     ACLEntryIn,
@@ -84,6 +86,47 @@ def list_plans(user: CurrentUser, db: DbDep) -> list[PlanListItem]:
         if level is not None:
             out.append(PlanListItem(**PlanOut.model_validate(plan).model_dump(), level=level))
     return out
+
+
+@router.get("/trash", response_model=list[PlanListItem])
+def list_trash(user: CurrentUser, db: DbDep) -> list[PlanListItem]:
+    """Gelöschte Pläne, die man wiederherstellen darf (Owner/Admin)."""
+    out: list[PlanListItem] = []
+    for plan in db.scalars(select(Plan).where(Plan.deleted_at.is_not(None)).order_by(Plan.deleted_at.desc())):
+        level = effective_level(db, user, plan)
+        if rank(level) >= rank("owner"):
+            out.append(PlanListItem(**PlanOut.model_validate(plan).model_dump(), level=level))
+    return out
+
+
+def _deleted_plan_owned(plan_id: str, user, db) -> Plan:
+    plan = db.get(Plan, plan_id)
+    if plan is None or plan.deleted_at is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nicht im Papierkorb")
+    if rank(effective_level(db, user, plan)) < rank("owner"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Recht 'owner' erforderlich")
+    return plan
+
+
+@router.post("/{plan_id}/undelete", response_model=PlanOut)
+def undelete_plan(plan_id: str, request: Request, user: CurrentUser, db: DbDep) -> Plan:
+    plan = _deleted_plan_owned(plan_id, user, db)
+    plan.deleted_at = None
+    db.commit()
+    audit.record(db, "plan.restore", user_id=user.id, target_type="plan", target_id=plan.id,
+                 request=request, name=plan.name)
+    return plan
+
+
+@router.delete("/{plan_id}/purge")
+def purge_plan(plan_id: str, request: Request, user: CurrentUser, db: DbDep) -> dict:
+    plan = _deleted_plan_owned(plan_id, user, db)
+    audit.record(db, "plan.purge", user_id=user.id, target_type="plan", target_id=plan.id,
+                 request=request, name=plan.name)
+    db.delete(plan)
+    db.commit()
+    _thumb_path(plan_id).unlink(missing_ok=True)
+    return {"ok": True}
 
 
 @router.post("", response_model=PlanOut, status_code=status.HTTP_201_CREATED)
@@ -214,6 +257,34 @@ def delete_plan(plan: OwnerPlan, request: Request, user: CurrentUser, db: DbDep)
     db.commit()
     audit.record(db, "plan.delete", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request, name=plan.name)
+
+
+_settings = get_settings()
+
+
+def _thumb_path(plan_id: str):
+    d = _settings.uploads_dir / "thumbs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{plan_id}.png"
+
+
+@router.put("/{plan_id}/thumbnail")
+async def put_thumbnail(plan: EditorPlan, request: Request) -> dict:
+    raw = await request.body()
+    if len(raw) > 600_000:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Vorschaubild zu groß")
+    if raw[:8] != b"\x89PNG\r\n\x1a\n":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Kein PNG")
+    _thumb_path(plan.id).write_bytes(raw)
+    return {"ok": True}
+
+
+@router.get("/{plan_id}/thumbnail")
+def get_thumbnail(plan: ViewerPlan) -> Response:
+    p = _thumb_path(plan.id)
+    if not p.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    return Response(p.read_bytes(), media_type="image/png", headers={"Cache-Control": "max-age=60"})
 
 
 @router.get("/{plan_id}/snapshot")

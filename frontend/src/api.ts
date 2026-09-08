@@ -229,6 +229,16 @@ export const api = {
   snapshot: (planId: string) => req<any>("GET", `/plans/${planId}/snapshot`),
   renamePlan: (planId: string, name: string) => req<PlanItem>("PATCH", `/plans/${planId}`, { name }),
   deletePlan: (planId: string) => req<void>("DELETE", `/plans/${planId}`),
+  uploadThumbnail: (planId: string, png: Blob) =>
+    fetch(`/plans/${planId}/thumbnail`, {
+      method: "PUT",
+      credentials: "include",
+      headers: { "content-type": "image/png" },
+      body: png,
+    }),
+  trash: () => req<PlanItem[]>("GET", "/plans/trash"),
+  undeletePlan: (planId: string) => req<PlanItem>("POST", `/plans/${planId}/undelete`),
+  purgePlan: (planId: string) => req<void>("DELETE", `/plans/${planId}/purge`),
   createPhase: (planId: string, name: string) =>
     req<Phase>("POST", `/plans/${planId}/phases`, { name }),
   renamePhase: (planId: string, phaseId: string, name: string) =>

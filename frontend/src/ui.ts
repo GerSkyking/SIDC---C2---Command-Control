@@ -41,7 +41,7 @@ export function wireThemeSwitch(root: ParentNode): void {
   );
 }
 
-export type NavSection = "plans" | "users" | "log" | "config";
+export type NavSection = "plans" | "trash" | "users" | "log" | "config";
 
 /** Linke Navigationsleiste für die Nicht-Karten-Ansichten. */
 export function sidebar(
@@ -58,6 +58,7 @@ export function sidebar(
     </div>
     <div class="sb-nav">
       ${item("plans", "plan", t("nav.plans"), "#/")}
+      ${item("trash", "trash", t("nav.trash"), "#/trash")}
       ${
         opts.isAdmin
           ? `<div class="sb-group">${t("nav.admin")}</div>` +
