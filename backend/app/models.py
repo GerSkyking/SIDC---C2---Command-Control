@@ -230,6 +230,25 @@ class Marker(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class Annotation(Base):
+    """Frei platzierbares Markdown-Textfeld auf der Karte (wie ein Klebezettel).
+    Wird wie Marker per WebSocket synchronisiert."""
+
+    __tablename__ = "annotations"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
+    phase_id: Mapped[str | None] = mapped_column(ForeignKey("phases.id", ondelete="SET NULL"), index=True)
+    world_x: Mapped[float] = mapped_column(Float)
+    world_y: Mapped[float] = mapped_column(Float)
+    text: Mapped[str] = mapped_column(Text, default="")
+    width: Mapped[float] = mapped_column(Float, default=220)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class Stroke(Base):
     __tablename__ = "strokes"
 

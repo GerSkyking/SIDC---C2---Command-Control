@@ -41,7 +41,16 @@ interface Stroke {
   color: number;
   width: number;
 }
-type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure";
+type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text";
+
+interface Annot {
+  id: string;
+  phase_id: string | null;
+  world_x: number;
+  world_y: number;
+  text: string;
+  width: number;
+}
 
 export async function openPlanView(root: HTMLElement, planId: string, me: Me): Promise<void> {
   const snap = await api.snapshot(planId);
@@ -49,6 +58,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const cal: Calibration | null = snap.map_meta?.calibration ?? null;
   const markers = new Map<string, Marker>(snap.markers.map((m: Marker) => [m.id, m]));
   const strokes = new Map<string, Stroke>(snap.strokes.map((s: Stroke) => [s.id, s]));
+  const annots = new Map<string, Annot>(
+    (snap.annotations ?? []).map((a: Annot) => [a.id, a]),
+  );
   const myPlan = (await api.plans()).find((p) => p.id === planId);
   const canEdit = myPlan?.level === "editor" || myPlan?.level === "owner";
   const channels = await loadChannels();
@@ -136,6 +148,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
       <input type="datetime-local" id="dtg" title="${t("map.dtg")}" />
       ${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}
+      ${iconBtn("pdf", { id: "briefing", title: t("briefing.export") })}
       <select id="chan" title="${t('map.channel')}">${(channels?.channels ?? [])
         .map((c) => `<option value="${c.name}" ${c.name === myChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
         .join("")}</select>
@@ -153,6 +166,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ${themeSwitch()}
     </div>
     <div id="map"></div>
+    <div id="annots" class="annots"></div>
     ${
       canEdit
         ? `<div class="toolbar" id="toolbar">
@@ -162,6 +176,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              ${iconBtn("line", { data: { mode: "line" }, title: t("tool.line") })}
              ${iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") })}
              ${iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") })}
+             ${iconBtn("textbox", { data: { mode: "text" }, title: t("tool.text") })}
              ${iconBtn("marker", { id: "tool-marker", title: t("tool.marker") })}
              ${iconBtn("star", { id: "tool-fav", title: t("tool.fav") })}
            </div>
@@ -608,6 +623,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         strokes.delete(msg.id);
         refreshStrokes();
         break;
+      case "annotation.upsert":
+        annots.set(msg.annotation.id, msg.annotation);
+        renderAnnots();
+        break;
+      case "annotation.delete":
+        annots.delete(msg.id);
+        renderAnnots();
+        break;
     }
   });
   socket.connect();
@@ -714,6 +737,100 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       a.click();
     } finally {
       shotBtn.disabled = false;
+    }
+  });
+
+  // ── Briefing-PDF: je Phase eine Seite (Karte auf Phasen-Marker gerahmt) ──
+  const briefingBtn = root.querySelector<HTMLButtonElement>("#briefing")!;
+  briefingBtn.addEventListener("click", async () => {
+    briefingBtn.disabled = true;
+    const origPhase = currentPhaseId;
+    const origCenter = map.getCenter();
+    const origZoom = map.getZoom();
+    const origBearing = map.getBearing();
+    const safe = (s: string) => s.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "plan";
+    const stripMd = (s: string) =>
+      s
+        .replace(/^#{1,6}\s+/gm, "")
+        .replace(/[*_`>#]/g, "")
+        .replace(/^\s*[-*]\s+/gm, "• ")
+        .trim();
+    const idle = () =>
+      new Promise<void>((res) => {
+        if (map.loaded() && !map.isMoving()) return res();
+        map.once("idle", () => res());
+      });
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const pw = doc.internal.pageSize.getWidth();
+      const ph = doc.internal.pageSize.getHeight();
+      const d = shotDate();
+
+      for (let pi = 0; pi < phases.length; pi++) {
+        const phase = phases[pi];
+        if (pi > 0) doc.addPage();
+        currentPhaseId = phase.id;
+        // Marker dieser Phase (+ globale) für den Bildausschnitt
+        const pts = [...markers.values()]
+          .filter((m) => m.phase_id === phase.id || m.phase_id == null)
+          .map((m) => [m.world_x, m.world_y] as [number, number]);
+        if (pts.length) {
+          let m0 = pts[0].slice() as [number, number];
+          let m1 = pts[0].slice() as [number, number];
+          for (const p of pts) {
+            m0 = [Math.min(m0[0], p[0]), Math.min(m0[1], p[1])];
+            m1 = [Math.max(m1[0], p[0]), Math.max(m1[1], p[1])];
+          }
+          const padX = (m1[0] - m0[0]) * 0.1 || 0.0005;
+          const padY = (m1[1] - m0[1]) * 0.1 || 0.0005;
+          map.fitBounds(
+            [
+              [m0[0] - padX, m0[1] - padY],
+              [m1[0] + padX, m1[1] + padY],
+            ],
+            { padding: 40, duration: 0, bearing: 0 },
+          );
+        }
+        await refreshMarkers();
+        await idle();
+        map.redraw();
+        const mc = map.getCanvas();
+        const cvs = document.createElement("canvas");
+        cvs.width = mc.width;
+        cvs.height = mc.height;
+        const cx = cvs.getContext("2d")!;
+        cx.drawImage(mc, 0, 0);
+        if (baseLayerVisible.grid !== false) cx.drawImage(gridCanvas, 0, 0, cvs.width, cvs.height);
+        const img = cvs.toDataURL("image/jpeg", 0.9);
+
+        // Layout: Titel oben, Karte links, Notizen rechts
+        doc.setFontSize(16);
+        doc.text(`${snap.plan.name} — ${phase.name}  (${pi + 1}/${phases.length})`, 12, 14);
+        doc.setFontSize(9);
+        doc.text(militaryDtg(d), pw - 12, 14, { align: "right" });
+        const imgW = pw * 0.62 - 12;
+        const imgH = (imgW * cvs.height) / cvs.width;
+        doc.addImage(img, "JPEG", 12, 20, imgW, Math.min(imgH, ph - 28));
+        const notes = stripMd(phase.notes || "");
+        if (notes) {
+          doc.setFontSize(10);
+          const nx = 12 + imgW + 8;
+          doc.text(doc.splitTextToSize(notes, pw - nx - 10), nx, 26);
+        }
+      }
+      const fileStamp =
+        `${p2(d.getDate())}${p2(d.getMonth() + 1)}${d.getFullYear()}-` +
+        `${p2(d.getHours())}${p2(d.getMinutes())}`;
+      doc.save(`${safe(snap.plan.name)}_Briefing_${fileStamp}.pdf`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "PDF-Export fehlgeschlagen");
+    } finally {
+      currentPhaseId = origPhase;
+      map.jumpTo({ center: origCenter, zoom: origZoom, bearing: origBearing });
+      await refreshMarkers();
+      renderTimeline();
+      briefingBtn.disabled = false;
     }
   });
 
@@ -1556,7 +1673,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       b.classList.toggle("active", (b as HTMLElement).dataset.mode === m),
     );
     map.getCanvas().style.cursor =
-      m === "place" || m === "line" || m === "measure"
+      m === "place" || m === "line" || m === "measure" || m === "text"
         ? "crosshair"
         : m === "erase"
           ? "not-allowed"
@@ -1689,6 +1806,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     tb.querySelector<HTMLButtonElement>('[data-mode="line"]')?.toggleAttribute("disabled", !caps.draw);
     tb.querySelector<HTMLButtonElement>('[data-mode="markermove"]')?.toggleAttribute("disabled", !caps.move);
     tb.querySelector<HTMLButtonElement>('[data-mode="erase"]')?.toggleAttribute("disabled", !caps.delete);
+    tb.querySelector<HTMLButtonElement>('[data-mode="text"]')?.toggleAttribute("disabled", !caps.place);
     tb.querySelector<HTMLButtonElement>("#tool-marker")?.toggleAttribute("disabled", !caps.place);
     tb.querySelector<HTMLButtonElement>("#tool-fav")?.toggleAttribute("disabled", !caps.place);
   }
@@ -1864,8 +1982,153 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   });
 
+  // ── Annotationen (platzierbare Markdown-Textfelder) ───────────────────
+  const annotsEl = root.querySelector<HTMLDivElement>("#annots")!;
+  let annotDragId: string | null = null;
+  const annotOpacity = (a: Annot): number =>
+    a.phase_id == null || a.phase_id === currentPhaseId ? 1 : Math.max(0, Math.min(100, outOpacity)) / 100;
+
+  function positionAnnots(): void {
+    for (const el of Array.from(annotsEl.children) as HTMLElement[]) {
+      const a = annots.get(el.dataset.aid ?? "");
+      if (!a) continue;
+      const p = map.project([a.world_x, a.world_y]);
+      el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    }
+  }
+
+  function openAnnotEditor(id: string): void {
+    const a = annots.get(id);
+    if (!a || !canEdit) return;
+    const back = document.createElement("div");
+    back.className = "edit-modal";
+    back.innerHTML = `<div class="card" style="width:min(34rem,96vw)">
+      <div class="row"><h1 style="flex:1;margin:0">${t("annot.title")}</h1><button class="icon-btn" data-x>${icon("x")}</button></div>
+      <textarea class="notes-edit annot-edit" rows="6"></textarea>
+      <label class="ph-op" style="margin-top:.4rem">${t("annot.width")}
+        <input type="range" min="140" max="480" step="10" value="${a.width}" data-w /></label>
+      <div class="notes-view annot-prev"></div>
+      <div class="row" style="margin-top:.6rem">
+        <button class="primary" data-save style="flex:1">${t("common.save")}</button>
+        <button class="danger" data-del>${t("common.delete")}</button>
+      </div>
+    </div>`;
+    document.body.appendChild(back);
+    const ta = back.querySelector<HTMLTextAreaElement>(".annot-edit")!;
+    ta.value = a.text;
+    const prev = back.querySelector<HTMLDivElement>(".annot-prev")!;
+    const wIn = back.querySelector<HTMLInputElement>("[data-w]")!;
+    const upd = () => (prev.innerHTML = renderMarkdown(ta.value));
+    ta.addEventListener("input", upd);
+    upd();
+    const close = () => back.remove();
+    back.addEventListener("mousedown", (e) => e.target === back && close());
+    back.querySelector("[data-x]")!.addEventListener("click", close);
+    back.querySelector("[data-save]")!.addEventListener("click", () => {
+      socket.send({
+        type: "annotation.modify",
+        id,
+        data: { text: ta.value, width: Number(wIn.value), phase_id: a.phase_id },
+      });
+      close();
+    });
+    back.querySelector("[data-del]")!.addEventListener("click", () => {
+      socket.send({ type: "annotation.delete", id });
+      close();
+    });
+  }
+
+  function onAnnotDown(ev: MouseEvent, id: string): void {
+    if (!canEdit || (mode !== "move" && mode !== "markermove")) return;
+    if ((ev.target as HTMLElement).closest(".annot-tools")) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    annotDragId = id;
+    const el = annotsEl.querySelector<HTMLElement>(`[data-aid="${id}"]`)!;
+    el.classList.add("dragging");
+    if (mode === "move") map.dragPan.disable();
+    const canvasRect = () => map.getCanvas().getBoundingClientRect();
+    const onMove = (e: MouseEvent) => {
+      const r = canvasRect();
+      const ll = map.unproject([e.clientX - r.left, e.clientY - r.top]);
+      const a = annots.get(id);
+      if (a) {
+        a.world_x = ll.lng;
+        a.world_y = ll.lat;
+        positionAnnots();
+      }
+    };
+    const onUp = (e: MouseEvent) => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      el.classList.remove("dragging");
+      if (mode === "move") map.dragPan.enable();
+      annotDragId = null;
+      const r = canvasRect();
+      const ll = map.unproject([e.clientX - r.left, e.clientY - r.top]);
+      socket.send({ type: "annotation.move", id, data: { world_x: ll.lng, world_y: ll.lat } });
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+
+  function renderAnnots(): void {
+    annotsEl.innerHTML = "";
+    for (const a of annots.values()) {
+      const el = document.createElement("div");
+      el.className = "annot";
+      el.dataset.aid = a.id;
+      el.style.width = `${a.width}px`;
+      el.style.opacity = String(annotOpacity(a));
+      el.innerHTML =
+        `<div class="annot-body">${renderMarkdown(a.text || "")}</div>` +
+        (canEdit
+          ? `<div class="annot-tools">` +
+            `<button class="icon-btn" data-aedit title="${t("common.rename")}">${icon("edit", 14)}</button>` +
+            `<button class="icon-btn" data-adel title="${t("common.delete")}">${icon("x", 14)}</button></div>`
+          : "");
+      el.querySelector("[data-aedit]")?.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        openAnnotEditor(a.id);
+      });
+      el.querySelector("[data-adel]")?.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (confirm(t("annot.confirmDelete"))) socket.send({ type: "annotation.delete", id: a.id });
+      });
+      el.addEventListener("mousedown", (ev) => onAnnotDown(ev, a.id));
+      el.addEventListener("dblclick", (ev) => {
+        ev.stopPropagation();
+        openAnnotEditor(a.id);
+      });
+      annotsEl.appendChild(el);
+    }
+    positionAnnots();
+  }
+
+  map.on("move", () => {
+    if (!annotDragId) positionAnnots();
+  });
+  phaseListeners.push(() => renderAnnots());
+  renderAnnots();
+
   map.on("click", (e) => {
     if ((e as { defaultPrevented?: boolean }).defaultPrevented) return;
+
+    if (mode === "text") {
+      if (!caps.place) return;
+      socket.send({
+        type: "annotation.create",
+        cid: cid(),
+        data: {
+          world_x: e.lngLat.lng,
+          world_y: e.lngLat.lat,
+          text: t("annot.placeholder"),
+          width: 220,
+          phase_id: currentPhaseId || null,
+        },
+      });
+      return;
+    }
 
     if (mode === "erase") {
       // Linien haben eine schmale Trefferfläche — mit etwas Toleranz suchen.

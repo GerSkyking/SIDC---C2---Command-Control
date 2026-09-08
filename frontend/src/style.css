@@ -368,3 +368,22 @@ a { color: var(--accent); }
 /* Plan-Vorschaubild in der Baumzeile */
 .tree-thumb { width: 3rem; height: 1.9rem; object-fit: cover; border: 1px solid var(--border);
   border-radius: 4px; flex: none; background: var(--surface-2); }
+
+/* ── Annotationen (platzierbare Markdown-Textfelder) ─────────────────── */
+.annots { position: absolute; inset: 3.2rem 0 0 0; pointer-events: none; z-index: 4; overflow: hidden; }
+.presenting .annots { inset: 0; }
+.annot { position: absolute; top: 0; left: 0; pointer-events: auto;
+  background: var(--surface); color: var(--fg); border: 1px solid var(--border);
+  border-radius: var(--r-sm); box-shadow: var(--shadow); padding: 0.45rem 0.6rem;
+  font-size: 0.82rem; line-height: 1.4; cursor: default; transform: translate(-9999px, -9999px); }
+.annot.dragging { cursor: grabbing; opacity: 0.85 !important; }
+.annot-body > :first-child { margin-top: 0; }
+.annot-body > :last-child { margin-bottom: 0; }
+.annot-body h1, .annot-body h2, .annot-body h3 { font-size: 0.95rem; margin: 0.3rem 0 0.2rem; }
+.annot-body p, .annot-body ul, .annot-body ol { margin: 0.25rem 0; }
+.annot-body code { background: var(--surface-2); padding: 0 0.2rem; border-radius: 3px; }
+.annot-tools { position: absolute; top: -0.7rem; right: -0.6rem; display: none; gap: 0.2rem; }
+.annot:hover .annot-tools { display: flex; }
+.annot-tools .icon-btn { width: 1.5rem; height: 1.5rem; }
+.annot-edit { min-height: 8rem; }
+.annot-prev { margin-top: 0.5rem; min-height: 3rem; }

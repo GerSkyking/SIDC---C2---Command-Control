@@ -14,6 +14,7 @@ from .. import audit
 
 from ..deps import CurrentUser, DbDep, load_plan, require_plan_level
 from ..models import (
+    Annotation,
     Layer,
     Marker,
     Phase,
@@ -52,9 +53,18 @@ ViewerPlan = Annotated[Plan, Depends(require_plan_level("viewer"))]
 def _snapshot(db: Session, plan: Plan) -> dict:
     markers = db.scalars(select(Marker).where(Marker.plan_id == plan.id))
     strokes = db.scalars(select(Stroke).where(Stroke.plan_id == plan.id))
+    anns = db.scalars(select(Annotation).where(Annotation.plan_id == plan.id))
     return {
         "markers": [_marker_dict(m) for m in markers],
         "strokes": [_stroke_dict(s) for s in strokes],
+        "annotations": [_annotation_dict(a) for a in anns],
+    }
+
+
+def _annotation_dict(a: Annotation) -> dict:
+    return {
+        "id": a.id, "phase_id": a.phase_id, "world_x": a.world_x, "world_y": a.world_y,
+        "text": a.text, "width": a.width,
     }
 
 

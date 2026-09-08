@@ -253,17 +253,17 @@ Bestätigt mit dem Nutzer. „Aufwand" grob: S = < ½ Tag, M = 1–2 Tage, L = m
 
 | # | Feature | Aufwand | Notiz |
 |---|---|---|---|
-| R1 | **Umbenennen für Editor** (nicht nur Owner) | S | ✅ erledigt (`patch_plan` = EditorPlan) |
-| R2 | **ACL beim Plan-Erstellen** – Gruppen/User direkt beim Anlegen hinzufügen | M | Create-Flow bekommt einen optionalen ACL-Schritt |
-| R3 | **Papierkorb / Archiv** – gelöschte Pläne wiederherstellen | M | Pläne sind schon soft-deleted; UI + Restore/Purge-Endpunkte |
-| R4 | **Undo/Redo pro Nutzer** – 2 Buttons + Tastenkürzel | M | lokaler Command-Stack über die WS-Ops |
-| R5 | **Platzierbare Markdown-Textfelder** auf der Karte | L | neue Entität (Schema + Live + Render), an Marker-Logik angelehnt |
-| R6 | **Präsentationsmodus** – Vollbild, nur Karte + Phasen-Umschalter | S–M | für Briefings am Beamer |
-| R7 | **Briefing-PDF-Export** – je Phase 1 Screenshot (auto-gerahmt auf alle Phasen-Marker + 10 %) + Notizen + DTG | L | Frontend jsPDF **oder** Server-seitig; Viewport-Framing ist der Knackpunkt |
-| R8 | **Dynamisches Rechte-/User-Modell** – vorbereiten für viele User + externe Auth-Quellen | M | ACL bleibt pro Plan; ggf. Gruppen-Verschachtelung, Rollen-Vorlagen, SCIM-tauglich |
-| R9 | **`pg_dump`-Backup-Container** (Cron, rotierend) + Restore-Doku | S–M | aktuell kein Backup |
-| R10 | **Alembic-Baseline** – weg vom `create_all` + Auto-ALTER | M | wichtig bevor das Schema weiter wächst |
-| R11 | **Plan-Thumbnails** – Vorschaubild beim Versions-Speichern, in der Liste zeigen | M | |
+| R1 | **Umbenennen für Editor** (nicht nur Owner) | S | ✅ |
+| R2 | **ACL beim Plan-Erstellen** – Gruppen/User direkt beim Anlegen hinzufügen | M | ✅ |
+| R3 | **Papierkorb / Archiv** – gelöschte Pläne wiederherstellen | M | ✅ |
+| R4 | **Undo/Redo pro Nutzer** – 2 Buttons + Tastenkürzel | M | ✅ (move/modify/lock; create/delete folgt) |
+| R5 | **Platzierbare Markdown-Textfelder** auf der Karte | L | ✅ |
+| R6 | **Präsentationsmodus** – Vollbild, nur Karte + Phasen-Umschalter | S–M | ✅ |
+| R7 | **Briefing-PDF-Export** – je Phase 1 Screenshot (auto-gerahmt auf alle Phasen-Marker + 10 %) + Notizen + DTG | L | ✅ |
+| R8 | **Dynamisches Rechte-/User-Modell** – vorbereiten für viele User + externe Auth-Quellen | M | ✅ (DEFAULT_USER_GROUP; ACL-Default=viewer) |
+| R9 | **`pg_dump`-Backup-Container** (Cron, rotierend) + Restore-Doku | S–M | ✅ |
+| R10 | **Alembic-Baseline** – weg vom `create_all` + Auto-ALTER | M | ✅ (Baseline; create_all bleibt Sicherheitsnetz) |
+| R11 | **Plan-Thumbnails** – Vorschaubild beim Versions-Speichern, in der Liste zeigen | M | ✅ |
 | — | **ORBAT / Kräfteübersicht** | L | eigene Design-Session, danach |
 
 Nicht gewünscht: Viewshed, Range Rings / Marschrouten (widerspricht SIDC-Logik), separate MGRS-Anzeige (Spiel-Grid ist bereits MGRS-artig).

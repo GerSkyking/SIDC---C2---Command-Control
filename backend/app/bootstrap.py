@@ -36,12 +36,14 @@ def init_db() -> None:
         tables = set(inspect(engine).get_table_names())
         cfg = _alembic_cfg()
         if "alembic_version" not in tables and "users" in tables:
-            command.stamp(cfg, "head")
+            command.stamp(cfg, "0001_baseline")
             log.info("Alembic: Bestandsschema auf Baseline gestampt")
         command.upgrade(cfg, "head")
     except Exception:  # noqa: BLE001 — Fallback auf create_all, nie den Start blockieren
         log.exception("Alembic-Migration fehlgeschlagen — Fallback create_all")
-        Base.metadata.create_all(bind=engine)
+    # Sicherheitsnetz während der Umstellung: fehlende Tabellen/Spalten ergänzen
+    # (create_all fasst bestehende Tabellen nicht an).
+    Base.metadata.create_all(bind=engine)
     _add_missing_columns()
 
 

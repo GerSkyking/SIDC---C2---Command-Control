@@ -101,7 +101,19 @@ def test_live_marker_authority(admin):
         ws.send_json({"type": "marker.lock", "id": mid, "locked": True})
         assert ws.receive_json()["marker"]["locked"] is True
 
+        # Annotation (platzierbares Textfeld) — anlegen / ändern / löschen
+        ws.send_json({"type": "annotation.create", "cid": "a1",
+                      "data": {"world_x": 1.0, "world_y": 1.0, "text": "**Hinweis**"}})
+        amsg = ws.receive_json()
+        assert amsg["type"] == "annotation.upsert" and amsg["cid"] == "a1"
+        aid = amsg["annotation"]["id"]
+        ws.send_json({"type": "annotation.modify", "id": aid, "data": {"text": "neu", "width": 300}})
+        assert ws.receive_json()["annotation"]["width"] == 300
+        ws.send_json({"type": "annotation.delete", "id": aid})
+        assert ws.receive_json() == {"type": "annotation.delete", "id": aid}
+
     assert len(admin.get(f"/plans/{pid}/snapshot").json()["markers"]) == 1
+    assert admin.get(f"/plans/{pid}/snapshot").json()["annotations"] == []
 
     # Versionsverlauf: sichern, Marker ändern, zurück, Sicherungs-Version entsteht
     v = admin.post(f"/plans/{pid}/versions", json={"label": "Stand A"})

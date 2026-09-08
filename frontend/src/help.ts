@@ -10,8 +10,10 @@ const DE = `
 - **Linie** – gerade Segmente klicken; **Rechtsklick** oder „Linie fertig" beendet.
 - **Lineal** – 2 Punkte klicken → gestrichelte Linie mit Entfernung; 3. Klick löscht.
 - **Radierer** – Klick auf Marker oder Linie löscht sofort.
+- **Textfeld** – auf die Karte klicken → platzierbares Markdown-Notizfeld. Bearbeiten per Doppelklick, verschieben im Bewegen-Modus.
 - **Marker** – erst Position auf der Karte klicken, dann öffnet der Auswahl-Wizard (mit „Erweitert" für Modifikatoren). Verbindungs-Marker: weiter klicken, **Rechtsklick** beendet.
 - **Favoriten** – gespeicherte Marker per Klick platzieren.
+- **Rückgängig / Wiederholen** (Topbar) – eigene Verschiebe-/Bearbeiten-Aktionen zurücknehmen (**Strg+Z / Strg+Y**).
 
 ### Topbar
 - **3D** – Kippen an/aus (in 2D nur Drehen).
@@ -23,6 +25,8 @@ const DE = `
 - **Notizen** – verschiebbares Fenster, ein Reiter je Phase, Markdown.
 - **Ebenen** – Sat/Grid/Orte ein- und ausblenden.
 - **Versionsverlauf** – Stände sichern und wiederherstellen.
+- **Präsentationsmodus** – Vollbild, nur Karte + Phasen (‹ ›, Pfeiltasten, Esc beendet).
+- **Briefing-PDF** – je Phase eine Seite (Karte auf die Phasen-Marker gerahmt) + Notizen.
 
 ### Tastenkürzel
 - **Esc** – Werkzeug zurück auf „Karte bewegen" / offenes Fenster schließen.
@@ -42,8 +46,10 @@ const EN = `
 - **Line** – click straight segments; **right-click** or "Finish line" ends it.
 - **Ruler** – click 2 points → dashed line with distance; a 3rd click clears it.
 - **Eraser** – clicking a marker or line deletes it immediately.
+- **Text box** – click the map → a placeable Markdown note. Double-click to edit, drag in pan mode.
 - **Marker** – click the position on the map first, then the picker wizard opens ("Advanced" for modifiers). Multi-point markers: keep clicking, **right-click** ends.
 - **Favorites** – place a saved marker with one click.
+- **Undo / Redo** (top bar) – revert your own move/edit actions (**Ctrl+Z / Ctrl+Y**).
 
 ### Top bar
 - **3D** – tilt on/off (2D only rotates).
@@ -55,6 +61,8 @@ const EN = `
 - **Notes** – movable window, one tab per phase, Markdown.
 - **Layers** – toggle sat/grid/places.
 - **Version history** – save and restore states.
+- **Presentation mode** – fullscreen, map + phases only (‹ ›, arrow keys, Esc exits).
+- **Briefing PDF** – one page per phase (map framed to that phase's markers) + notes.
 
 ### Keyboard
 - **Esc** – tool back to "Pan" / close the open window.

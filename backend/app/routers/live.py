@@ -13,7 +13,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..db import SessionLocal
-from ..models import Marker, Plan, Stroke, User, now
+from ..models import Annotation, Marker, Plan, Stroke, User, now
 from ..permissions import effective_caps, effective_level, rank
 from ..security import SESSION_COOKIE, read_session
 from ..services.realtime import hub
@@ -114,6 +114,10 @@ async def _handle(
         "stroke.begin": "draw",
         "stroke.append": "draw",
         "stroke.delete": "draw",
+        "annotation.create": "place",
+        "annotation.move": "move",
+        "annotation.modify": "move",
+        "annotation.delete": "delete",
     }.get(t or "")
     if need is None:
         await _reject(ws, msg.get("cid"), f"Unbekannter Typ: {t}")
@@ -163,6 +167,23 @@ async def _handle(
     elif t == "stroke.delete":
         await run_in_threadpool(_delete_stroke, plan_id, msg["id"])
         await hub.broadcast(plan_id, {"type": "stroke.delete", "id": msg["id"]})
+
+    elif t == "annotation.create":
+        a = await run_in_threadpool(_create_annotation, plan_id, user.id, msg.get("data", {}))
+        await hub.broadcast(plan_id, {"type": "annotation.upsert", "cid": msg.get("cid"), "annotation": a})
+
+    elif t in ("annotation.move", "annotation.modify"):
+        fields = {
+            k: v for k, v in msg.get("data", {}).items()
+            if k in ("world_x", "world_y", "text", "width", "phase_id")
+        }
+        res = await run_in_threadpool(_update_annotation, plan_id, msg["id"], user.id, fields)
+        if res is not None:
+            await hub.broadcast(plan_id, {"type": "annotation.upsert", "annotation": res})
+
+    elif t == "annotation.delete":
+        await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
+        await hub.broadcast(plan_id, {"type": "annotation.delete", "id": msg["id"]})
 
 
 async def _emit_update(ws: WebSocket, plan_id: str, msg: dict, res: dict | None) -> None:
@@ -228,4 +249,47 @@ def _delete_stroke(plan_id: str, stroke_id: str) -> None:
         s = db.get(Stroke, stroke_id)
         if s is not None and s.plan_id == plan_id:
             db.delete(s)
+            db.commit()
+
+
+def _annotation_out(a: Annotation) -> dict:
+    return {
+        "id": a.id, "plan_id": a.plan_id, "phase_id": a.phase_id,
+        "world_x": a.world_x, "world_y": a.world_y, "text": a.text, "width": a.width,
+    }
+
+
+def _create_annotation(plan_id: str, uid: str, data: dict) -> dict:
+    with SessionLocal() as db:
+        a = Annotation(
+            plan_id=plan_id, created_by=uid, updated_by=uid,
+            phase_id=data.get("phase_id"),
+            world_x=float(data.get("world_x", 0)), world_y=float(data.get("world_y", 0)),
+            text=str(data.get("text", ""))[:8000], width=float(data.get("width", 220)),
+        )
+        db.add(a)
+        db.commit()
+        return _annotation_out(a)
+
+
+def _update_annotation(plan_id: str, ann_id: str, uid: str, fields: dict) -> dict | None:
+    with SessionLocal() as db:
+        a = db.get(Annotation, ann_id)
+        if a is None or a.plan_id != plan_id:
+            return None
+        if "text" in fields:
+            fields["text"] = str(fields["text"])[:8000]
+        for k, v in fields.items():
+            setattr(a, k, v)
+        a.updated_by = uid
+        a.updated_at = now()
+        db.commit()
+        return _annotation_out(a)
+
+
+def _delete_annotation(plan_id: str, ann_id: str) -> None:
+    with SessionLocal() as db:
+        a = db.get(Annotation, ann_id)
+        if a is not None and a.plan_id == plan_id:
+            db.delete(a)
             db.commit()

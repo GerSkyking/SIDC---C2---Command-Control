@@ -10,7 +10,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..db import SessionLocal
 from ..deps import DbDep
-from ..models import Layer, Map, Marker, Phase, Plan, PublicShare, Stroke
+from ..models import Annotation, Layer, Map, Marker, Phase, Plan, PublicShare, Stroke
 from ..services.maps_import import map_dir
 from ..services.realtime import hub
 from .live import _marker_out
@@ -52,6 +52,11 @@ def public_snapshot(token: str, db: DbDep) -> dict:
         ],
         "markers": [_marker_out(m) for m in db.scalars(select(Marker).where(Marker.plan_id == plan.id))],
         "strokes": [_stroke_dict(s) for s in db.scalars(select(Stroke).where(Stroke.plan_id == plan.id))],
+        "annotations": [
+            {"id": a.id, "phase_id": a.phase_id, "world_x": a.world_x, "world_y": a.world_y,
+             "text": a.text, "width": a.width}
+            for a in db.scalars(select(Annotation).where(Annotation.plan_id == plan.id))
+        ],
     }
 
 

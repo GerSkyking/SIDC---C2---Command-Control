@@ -5,6 +5,21 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### Neu (Roadmap-Batches)
+- **ACL beim Erstellen** ("Erstellen + Zugriff"), **Papierkorb** (`/plans/trash`,
+  undelete/purge, `#/trash`), **Plan umbenennen** für Editor (nicht nur Owner).
+- **Präsentationsmodus** (Vollbild, nur Karte + Phasen-Umschalter, ‹ › / Pfeile / Esc).
+- **Plan-Thumbnails** (Vorschaubild in der Baumzeile, erzeugt beim Versions-Speichern).
+- **Undo/Redo** für eigene Aktionen (verschieben / bearbeiten / sperren), Strg+Z / Strg+Y.
+- **Platzierbare Markdown-Textfelder** auf der Karte (`Annotation`-Entität, WS-synchron,
+  Werkzeug „Textfeld", Doppelklick = bearbeiten, im Bewegen-Modus verschiebbar).
+- **Briefing-PDF** – je Phase eine Seite: Karte auf die Marker der Phase gerahmt (+10 %)
+  plus die Phasen-Notizen, militärischer DTG. (jsPDF, lazy geladen.)
+- **`DEFAULT_USER_GROUP`** – neue Nutzer (lokal + OIDC) automatisch einer Gruppe zuordnen.
+- **pg_dump-Backup-Container** (`backup`-Service, Volume `backups`, rotierend).
+- **Alembic** – Baseline + `stamp`/`upgrade` beim Start; `_add_missing_columns` +
+  `create_all` bleiben als Übergangs-Sicherheitsnetz.
+
 ### Neu (2. Runde)
 - **Pläne**: Zielordner schon beim Anlegen wählbar; **umbenennen** (Owner) und
   **„Verschieben nach…"**-Dropdown je Plan (zusätzlich zu Drag & Drop).

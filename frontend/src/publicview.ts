@@ -4,6 +4,7 @@ import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import { api } from "./api";
 import { ensureMapIcon } from "./sidc/symbol";
 import { t } from "./i18n";
+import { renderMarkdown } from "./md";
 
 interface M {
   id: string;
@@ -38,9 +39,18 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   const markers = new Map<string, M>(snap.markers.map((m: M) => [m.id, m]));
   const strokes = new Map<string, S>(snap.strokes.map((s: S) => [s.id, s]));
 
+  const annotations: {
+    id: string;
+    world_x: number;
+    world_y: number;
+    text: string;
+    width: number;
+  }[] = snap.annotations ?? [];
+
   root.innerHTML = `
     <div class="topbar"><strong>${snap.plan.name}</strong><span class="badge">${t("plan.public")}</span></div>
-    <div id="map"></div>`;
+    <div id="map"></div>
+    <div id="annots" class="annots"></div>`;
 
   const map = new maplibregl.Map({
     container: "map",
@@ -69,6 +79,27 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   };
   map.on("load", applyCameraBounds);
   map.on("style.load", applyCameraBounds);
+
+  // Annotationen (nur Ansehen)
+  const annotsEl = root.querySelector<HTMLDivElement>("#annots")!;
+  annotsEl.innerHTML = annotations
+    .map(
+      (a) =>
+        `<div class="annot" data-aid="${a.id}" style="width:${a.width}px"><div class="annot-body">${renderMarkdown(
+          a.text || "",
+        )}</div></div>`,
+    )
+    .join("");
+  const positionAnnots = () => {
+    for (const el of Array.from(annotsEl.children) as HTMLElement[]) {
+      const a = annotations.find((x) => x.id === el.dataset.aid);
+      if (!a) continue;
+      const p = map.project([a.world_x, a.world_y]);
+      el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    }
+  };
+  map.on("move", positionAnnots);
+  map.on("load", positionAnnots);
 
   const loaded = new Set<string>();
   const missingIcons = new Set<string>();
