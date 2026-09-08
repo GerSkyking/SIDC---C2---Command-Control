@@ -323,3 +323,59 @@ class AuditLog(Base):
     target_type: Mapped[str | None] = mapped_column(String(32))
     target_id: Mapped[str | None] = mapped_column(String(64))
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+# ─── ORBAT (globale Kräfteübersicht) ────────────────────────────────────────
+
+class Orbat(Base):
+    __tablename__ = "orbats"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    name: Mapped[str] = mapped_column(String(128))
+    affiliation: Mapped[str] = mapped_column(String(12), default="own")  # own|enemy|neutral|unknown
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class OrbatNode(Base):
+    __tablename__ = "orbat_nodes"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    orbat_id: Mapped[str] = mapped_column(ForeignKey("orbats.id", ondelete="CASCADE"), index=True)
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("orbat_nodes.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(128))
+    sidc: Mapped[str] = mapped_column(String(64), default="")
+    qty_planned: Mapped[int] = mapped_column(Integer, default=1)
+    qty_current: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(12), default="active")  # active|damaged|destroyed
+    ordering: Mapped[int] = mapped_column(Integer, default=0)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    # Freigabe an Spieler (global pro ORBAT)
+    rel_visible: Mapped[bool] = mapped_column(Boolean, default=False)
+    rel_show_type: Mapped[bool] = mapped_column(Boolean, default=False)
+    rel_strength: Mapped[int] = mapped_column(Integer, default=50)  # -1 = verborgen, sonst % von Soll
+
+
+class OrbatACL(Base):
+    __tablename__ = "orbat_acl"
+    __table_args__ = (
+        UniqueConstraint("orbat_id", "subject_type", "subject_id", name="uq_orbat_acl_subject"),
+    )
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    orbat_id: Mapped[str] = mapped_column(ForeignKey("orbats.id", ondelete="CASCADE"), index=True)
+    subject_type: Mapped[str] = mapped_column(String(8))   # user|group
+    subject_id: Mapped[str] = mapped_column(UuidPk)
+    level: Mapped[str] = mapped_column(String(8))          # viewer|editor
+    can_place: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_move: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class PlanOrbat(Base):
+    __tablename__ = "plan_orbats"
+
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), primary_key=True)
+    orbat_id: Mapped[str] = mapped_column(ForeignKey("orbats.id", ondelete="CASCADE"), primary_key=True)
+    added_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

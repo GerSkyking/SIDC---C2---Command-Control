@@ -304,3 +304,52 @@ def test_mission_builder_planes(admin):
             ws.send_json({"type": "marker.create", "cid": "x", "data": {
                 "sidc": "1", "world_x": 0.0, "world_y": 0.0, "phase_id": builder_ph["id"]}})
             assert ws.receive_json()["type"] == "reject"
+
+
+def test_orbat_library(admin):
+    """ORBAT anlegen, Baum bauen, an einen Plan hängen, freigegebene Spieler-Sicht."""
+    from fastapi.testclient import TestClient
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.models import Map, User, now
+    from app.security import hash_password
+
+    admin.post("/api/maps", json={"id": "ob", "name": "OB", "url": "http://x.invalid/a.zip"})
+    with SessionLocal() as db:
+        db.get(Map, "ob").status = "ready"
+        db.get(Map, "ob").imported_at = now()
+        db.add(User(username="pl", password_hash=hash_password("pl-pass-123456")))
+        db.commit()
+        plid_user = db.scalar(__import__("sqlalchemy").select(User.id).where(User.username == "pl"))
+
+    # admin ist Missionsbau (Admin impliziert)
+    o = admin.post("/api/orbats", json={"name": "1. Kompanie", "affiliation": "enemy"})
+    assert o.status_code == 201
+    oid = o.json()["id"]
+    root = admin.post(f"/api/orbats/{oid}/nodes", json={"name": "1. Zug", "sidc": "S", "qty_planned": 3}).json()
+    child = admin.post(f"/api/orbats/{oid}/nodes",
+                       json={"name": "1. Gruppe", "parent_id": root["id"], "qty_planned": 1,
+                             "rel_visible": True, "rel_show_type": True, "rel_strength": 50}).json()
+    full = admin.get(f"/api/orbats/{oid}").json()
+    assert len(full["nodes"]) == 2 and full["level"] == "editor"
+
+    pid = admin.post("/plans", json={"name": "OBPlan", "map_id": "ob"}).json()["id"]
+    admin.put(f"/plans/{pid}/acl", json=[
+        {"subject_type": "user", "subject_id": admin.get("/auth/me").json()["id"], "level": "owner"},
+        {"subject_type": "user", "subject_id": plid_user, "level": "viewer"},
+    ])
+    assert admin.post(f"/plans/{pid}/orbats", json={"orbat_id": oid}).status_code == 201
+
+    # Missionsbauer (admin) sieht die volle Struktur
+    mb_view = admin.get(f"/plans/{pid}/orbats").json()
+    assert mb_view[0]["released"] is False and len(mb_view[0]["nodes"]) == 2
+
+    # Spieler sieht nur den freigegebenen Knoten, Stärke ~50 % von 1 = 1 (gerundet)
+    with TestClient(app) as c:
+        c.post("/auth/login", json={"username": "pl", "password": "pl-pass-123456"})
+        pv = c.get(f"/plans/{pid}/orbats").json()
+        assert pv[0]["released"] is True
+        assert [n["id"] for n in pv[0]["nodes"]] == [child["id"]]
+        # Spieler darf die ORBAT-Bibliothek nicht sehen
+        assert c.get("/api/orbats").status_code == 403

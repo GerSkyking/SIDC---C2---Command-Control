@@ -5,7 +5,15 @@ Alle Entscheidungen unten sind final, sofern nicht als *offen* markiert.
 
 ---
 
-**Status:** Baustein A ✅ umgesetzt & deployt (2026-09-08). B/C offen.
+**Status:** Baustein A ✅ + Baustein B ✅ umgesetzt & deployt (2026-09-08). C offen.
+
+Baustein B umgesetzt: `Orbat` / `OrbatNode` / `OrbatACL` / `PlanOrbat` (Migration 0004),
+`/api/orbats` CRUD + Knoten-CRUD + ORBAT-ACL + `/plans/{id}/orbats`. Frontend:
+ORBAT-Bibliothek (`#/orbat`, `orbat.ts`) mit Baum (Drag & Drop, Ein-/Ausklappen,
+Knoten-Editor inkl. Freigabe-Feldern), ORBAT-Panel in der Planansicht (Missionsbau:
+voller Baum + hinzufügen/entfernen; Spieler: nur `rel_visible`-Knoten, reduziert).
+Offen für C: Marker↔Knoten-Verknüpfung, Status-Sync über SIDC, Briefing-Seite,
+Kartendarstellung der freigegebenen Feind-Marker.
 
 ## Baustein A — Rolle „Missionsbau" + parallele Ebenen/Phasen
 

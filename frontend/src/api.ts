@@ -121,6 +121,31 @@ export interface AclCandidate {
   subject_id: string;
   name: string;
 }
+export interface OrbatNode {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  sidc: string;
+  qty_planned: number | null;
+  qty_current: number | null;
+  status: "active" | "damaged" | "destroyed";
+  ordering: number;
+  notes: string;
+  rel_visible?: boolean;
+  rel_show_type?: boolean;
+  rel_strength?: number;
+  released?: boolean;
+}
+export interface Orbat {
+  id: string;
+  name: string;
+  affiliation: "own" | "enemy" | "neutral" | "unknown";
+  notes?: string;
+  level?: "viewer" | "editor" | null;
+  is_owner?: boolean;
+  nodes?: OrbatNode[];
+  released?: boolean;
+}
 export interface PublicShareRow {
   token: string;
   label: string;
@@ -223,6 +248,27 @@ export const api = {
   createGroup: (b: { name: string; can_create_plans: boolean; is_mission_builder?: boolean }) => req<AdminGroup>("POST", "/api/admin/groups", b),
   patchGroup: (id: string, b: { name: string; can_create_plans: boolean; is_mission_builder: boolean }) =>
     req<AdminGroup>("PATCH", `/api/admin/groups/${id}`, b),
+
+  orbats: () => req<Orbat[]>("GET", "/api/orbats"),
+  createOrbat: (b: { name: string; affiliation: string; notes?: string }) =>
+    req<Orbat>("POST", "/api/orbats", b),
+  orbat: (id: string) => req<Orbat>("GET", `/api/orbats/${id}`),
+  patchOrbat: (id: string, b: Partial<{ name: string; affiliation: string; notes: string }>) =>
+    req<Orbat>("PATCH", `/api/orbats/${id}`, b),
+  deleteOrbat: (id: string) => req<void>("DELETE", `/api/orbats/${id}`),
+  createNode: (oid: string, b: Partial<OrbatNode> & { parent_id?: string | null }) =>
+    req<OrbatNode>("POST", `/api/orbats/${oid}/nodes`, b),
+  patchNode: (oid: string, nid: string, b: Partial<OrbatNode>) =>
+    req<OrbatNode>("PATCH", `/api/orbats/${oid}/nodes/${nid}`, b),
+  deleteNode: (oid: string, nid: string) => req<void>("DELETE", `/api/orbats/${oid}/nodes/${nid}`),
+  orbatAcl: (id: string) =>
+    req<{ entries: any[]; candidates: AclCandidate[] }>("GET", `/api/orbats/${id}/acl`),
+  putOrbatAcl: (id: string, entries: any[]) => req<any>("PUT", `/api/orbats/${id}/acl`, entries),
+  planOrbats: (planId: string) => req<Orbat[]>("GET", `/plans/${planId}/orbats`),
+  addPlanOrbat: (planId: string, orbat_id: string) =>
+    req<void>("POST", `/plans/${planId}/orbats`, { orbat_id }),
+  removePlanOrbat: (planId: string, orbatId: string) =>
+    req<void>("DELETE", `/plans/${planId}/orbats/${orbatId}`),
   setGroupMembers: (id: string, userIds: string[]) => req<AdminGroup>("PUT", `/api/admin/groups/${id}/members`, userIds),
   deleteGroup: (id: string) => req<void>("DELETE", `/api/admin/groups/${id}`),
   adminAudit: (q: { limit?: number; offset?: number; action?: string; user?: string }) => {

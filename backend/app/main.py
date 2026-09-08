@@ -26,6 +26,7 @@ from .routers import (
     live,
     map_sources,
     maps,
+    orbat,
     plans,
     public,
     tiles,
@@ -61,6 +62,8 @@ app.include_router(map_sources.router)
 app.include_router(tiles.router)
 app.include_router(plans.router)
 app.include_router(plans.folders_router)
+app.include_router(orbat.router)
+app.include_router(orbat.plan_orbat_router)
 app.include_router(admin.router)
 app.include_router(catalog.router)
 app.include_router(favorites.router)

@@ -1,7 +1,7 @@
 // Plan-Ansicht: Karte + Werkzeugleiste + HUD + Marker/Zeichnen/Präsenz live.
 // Nähert sich der ATAKmaps-UI an (D:\Mods\ATAKmaps).
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
-import { api, type Me } from "./api";
+import { api, ApiError, type Me } from "./api";
 import { channelLabel, loadAllMarkers, loadChannels, loadModifiers, loadPhaseLineStyle } from "./sidc/catalog";
 import { lngLatToWorld, withModifiers, worldToLngLat, type Calibration, type SidcModifiers } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
@@ -185,6 +185,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ${iconBtn("notes", { id: "notesBtn", title: t("notes.open") })}
       <select id="maplang" title="${t("map.lang")}"></select>
       ${iconBtn("layers", { id: "layersBtn", title: t("tool.layers") })}
+      ${iconBtn("groups", { id: "orbatBtn", title: t("orbat.inPlan") })}
       <span class="grow"></span>
       <span class="presence" id="presence"></span>
       ${iconBtn("present", { id: "present", title: t("present.start") })}
@@ -225,6 +226,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
     <div class="hud" id="hud">X: –  Y: –  H: –</div>
     <div class="layers-panel" id="layersPanel" hidden></div>
+    <div class="layers-panel orbat-panel" id="orbatPanel" hidden></div>
     <canvas class="grid-canvas" id="gridCanvas"></canvas>`;
 
   const map = new maplibregl.Map({
@@ -1440,6 +1442,96 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const b = layersBtn.getBoundingClientRect();
       layersPanel.style.top = `${b.bottom + 4}px`;
       layersPanel.style.right = `${window.innerWidth - b.right}px`;
+    }
+  });
+
+  // ── ORBAT-Panel (Kräfteübersicht im Plan) ─────────────────────────────
+  const orbatPanel = root.querySelector<HTMLDivElement>("#orbatPanel")!;
+  const orbatBtn = root.querySelector<HTMLButtonElement>("#orbatBtn")!;
+  const orbOpen = new Set<string>();
+  async function buildOrbatPanel(): Promise<void> {
+    let linked: import("./api").Orbat[] = [];
+    try {
+      linked = await api.planOrbats(planId);
+    } catch {
+      /* keine */
+    }
+    let avail: import("./api").Orbat[] = [];
+    if (isMB) avail = await api.orbats().catch(() => []);
+    const st = (s: string) => `<span class="st-pill st-${s}">${t("orbat.status." + s)}</span>`;
+    const nodeRows = (o: import("./api").Orbat): string => {
+      const ns = o.nodes ?? [];
+      const kids = new Map<string, typeof ns>();
+      for (const n of ns) {
+        const k = n.parent_id ?? "";
+        (kids.get(k) ?? kids.set(k, []).get(k)!).push(n);
+      }
+      const rec = (pid: string, d: number): string =>
+        (kids.get(pid) ?? [])
+          .sort((a, b) => a.ordering - b.ordering)
+          .map((n) => {
+            const ch = kids.get(n.id) ?? [];
+            const op = orbOpen.has(n.id);
+            return (
+              `<div class="orb-row" style="margin-left:${d * 0.9}rem">` +
+              (ch.length ? `<button class="orb-tw" data-otw="${n.id}">${icon(op ? "chevronDown" : "chevron", 12)}</button>` : `<span class="orb-tw"></span>`) +
+              `<span class="orb-name">${n.name}</span>` +
+              `<span class="orb-qty">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}</span>${st(n.status)}</div>` +
+              (op ? rec(n.id, d + 1) : "")
+            );
+          })
+          .join("");
+      return rec("", 0) || `<div class="muted">${t("orbat.noNodes")}</div>`;
+    };
+    orbatPanel.innerHTML =
+      `<div class="fav-head">${t("orbat.inPlan")}</div>` +
+      linked
+        .map(
+          (o) =>
+            `<div class="orb-plan-item"><div class="row">` +
+            `<span class="badge aff-${o.affiliation}">${t("orbat.aff." + o.affiliation)}</span>` +
+            `<strong class="grow">${o.name}</strong>` +
+            (o.released ? `<span class="muted">${t("plan.readonly")}</span>` : "") +
+            (isMB ? `<button class="icon-btn" data-orm="${o.id}" title="${t("common.delete")}">${icon("x", 14)}</button>` : "") +
+            `</div>${nodeRows(o)}</div>`,
+        )
+        .join("") +
+      (isMB && avail.length
+        ? `<div class="row" style="margin-top:.5rem"><select id="orb-pick">${avail
+            .filter((a) => !linked.some((l) => l.id === a.id))
+            .map((a) => `<option value="${a.id}">${a.name}</option>`)
+            .join("")}</select><button id="orb-link">${t("orbat.addToPlan")}</button></div>`
+        : "") +
+      (isMB ? `<a href="#/orbat" class="muted">${t("nav.orbat")} →</a>` : "");
+
+    orbatPanel.querySelectorAll<HTMLButtonElement>("[data-otw]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const id = b.dataset.otw!;
+        orbOpen.has(id) ? orbOpen.delete(id) : orbOpen.add(id);
+        void buildOrbatPanel();
+      }),
+    );
+    orbatPanel.querySelectorAll<HTMLButtonElement>("[data-orm]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        await api.removePlanOrbat(planId, b.dataset.orm!).catch(() => {});
+        void buildOrbatPanel();
+      }),
+    );
+    orbatPanel.querySelector("#orb-link")?.addEventListener("click", async () => {
+      const id = orbatPanel.querySelector<HTMLSelectElement>("#orb-pick")!.value;
+      if (id) {
+        await api.addPlanOrbat(planId, id).catch((e) => alert(e instanceof ApiError ? e.message : ""));
+        void buildOrbatPanel();
+      }
+    });
+  }
+  orbatBtn.addEventListener("click", () => {
+    orbatPanel.hidden = !orbatPanel.hidden;
+    if (!orbatPanel.hidden) {
+      const b = orbatBtn.getBoundingClientRect();
+      orbatPanel.style.top = `${b.bottom + 4}px`;
+      orbatPanel.style.right = `${window.innerWidth - b.right}px`;
+      void buildOrbatPanel();
     }
   });
 
