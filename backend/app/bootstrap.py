@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from sqlalchemy import inspect, select, text
 
@@ -12,11 +13,35 @@ from .security import MIN_PASSWORD_LEN, hash_password
 
 log = logging.getLogger("sidc.bootstrap")
 
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+
+def _alembic_cfg():
+    from alembic.config import Config
+
+    cfg = Config(str(_BACKEND_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(_BACKEND_DIR / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", get_settings().database_url)
+    return cfg
+
 
 def init_db() -> None:
-    # Phase 1: create_all + einfacher Spalten-Abgleich. Echte Alembic-Baseline folgt
-    # (siehe PLAN.md) — bis dahin fängt _add_missing_columns() Modell-Erweiterungen ab.
-    Base.metadata.create_all(bind=engine)
+    """Alembic ist die Wahrheit fürs Schema. Bestehende (per create_all gebaute)
+    Datenbanken werden einmalig auf die Baseline gestampt (keine DDL); danach läuft
+    ``upgrade head``. ``_add_missing_columns()`` bleibt als Sicherheitsnetz während
+    der Umstellung."""
+    try:
+        from alembic import command
+
+        tables = set(inspect(engine).get_table_names())
+        cfg = _alembic_cfg()
+        if "alembic_version" not in tables and "users" in tables:
+            command.stamp(cfg, "head")
+            log.info("Alembic: Bestandsschema auf Baseline gestampt")
+        command.upgrade(cfg, "head")
+    except Exception:  # noqa: BLE001 — Fallback auf create_all, nie den Start blockieren
+        log.exception("Alembic-Migration fehlgeschlagen — Fallback create_all")
+        Base.metadata.create_all(bind=engine)
     _add_missing_columns()
 
 

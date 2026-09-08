@@ -17,6 +17,8 @@ COPY backend/requirements.txt ./
 RUN pip install -r requirements.txt
 
 COPY backend/app ./app
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/migrations ./migrations
 COPY --from=frontend /fe/dist ./app/static
 
 EXPOSE 8080

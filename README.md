@@ -35,7 +35,7 @@ wählen eine Karte, und setzen gemeinsam in Echtzeit Marker und Zeichnungen.
 
 | Komponente | Technik |
 |---|---|
-| Backend | FastAPI (Python), SQLAlchemy 2.0 (Schema via `create_all` + Auto-`ALTER TABLE`, noch kein Alembic) |
+| Backend | FastAPI (Python), SQLAlchemy 2.0, **Alembic** (Baseline = Modelle; Bestands-DBs werden beim Start gestampt, `_add_missing_columns()` als Übergangs-Sicherheitsnetz) |
 | Frontend | TypeScript + Vite + MapLibre-GL 5 + milsymbol.js (im Backend-Image mitgebaut) |
 | DB | PostgreSQL |
 | Realtime-Backplane | Redis Pub/Sub |
@@ -69,6 +69,27 @@ cd frontend && npm install && npm run dev
 ```
 
 Tests: `cd backend && pip install -r requirements-dev.txt && pytest -q`
+
+### Schema-Migrationen (Alembic)
+
+Beim Container-Start läuft automatisch `alembic upgrade head`; eine bestehende, per
+`create_all` gebaute DB wird davor einmalig auf die Baseline `0001_baseline` gestampt
+(keine DDL). Neue Migration erzeugen:
+
+```bash
+cd backend && alembic revision --autogenerate -m "beschreibung"
+# generierte Datei in migrations/versions/ prüfen, committen — wird beim nächsten Deploy angewandt
+```
+
+### Datenbank-Backup / Restore
+
+Der `backup`-Container legt `pg_dump`-Dumps ins Volume `backups` (Intervall/Anzahl via
+`BACKUP_INTERVAL` / `BACKUP_KEEP`). Restore:
+
+```bash
+gunzip -c <dump>.sql.gz | docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+# Dumps auflisten:  docker compose run --rm backup ls -lt /backups
+```
 
 > Hinweis: Enthält der lokale Repo-Pfad ein `&` (wie „SIDC - C2 - Command & Control"),
 > brechen npm-Scripts unter Windows. Dann `npm run build` durch

@@ -21,6 +21,24 @@ services:
       timeout: 5s
       retries: 5
 
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-86400}
+    volumes:
+      - backups:/backups
+      - ./deploy/backup.sh:/backup.sh:ro
+    entrypoint: ["/bin/sh", "/backup.sh"]
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -72,3 +90,4 @@ volumes:
   pgdata:
   maps:
   uploads:
+  backups:
