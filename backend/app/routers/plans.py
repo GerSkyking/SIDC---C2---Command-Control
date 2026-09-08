@@ -111,9 +111,10 @@ def get_plan(plan: ViewerPlan) -> Plan:
 
 
 @router.patch("/{plan_id}", response_model=PlanOut)
-def patch_plan(body: PlanPatchIn, plan: OwnerPlan, db: DbDep) -> Plan:
-    if body.name is not None:
-        plan.name = body.name
+def patch_plan(body: PlanPatchIn, plan: EditorPlan, db: DbDep) -> Plan:
+    """Umbenennen — Editor genügt (nicht nur Owner)."""
+    if body.name is not None and body.name.strip():
+        plan.name = body.name.strip()
     db.commit()
     return plan
 

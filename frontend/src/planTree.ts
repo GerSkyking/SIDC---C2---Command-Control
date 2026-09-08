@@ -112,10 +112,12 @@ export function renderPlanTree(
       (canManage
         ? `<select class="tree-move" title="${t("plans.moveTo")}">${folderOptions(p.folder_id)}</select>`
         : "") +
+      (canManage
+        ? `<button class="icon-btn" data-ren title="${t("common.rename")}">${icon("edit", 16)}</button>`
+        : "") +
       `<button data-clone>${t("plans.clone")}</button>` +
       (p.level === "owner"
-        ? `<button class="icon-btn" data-ren title="${t("common.rename")}">${icon("edit", 16)}</button>` +
-          `<button data-shares>${t("plans.shares")}</button>` +
+        ? `<button data-shares>${t("plans.shares")}</button>` +
           `<button class="icon-btn" data-del title="${t("common.delete")}">${icon("trash", 16)}</button>`
         : "") +
       `</span>`;

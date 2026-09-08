@@ -244,3 +244,26 @@ Ziel: **UI und Marker-Workflow so identisch wie möglich zu ATAKmaps** (`D:\Mods
 - [ ] README: NPM-Setup (Proxy Host, Websockets an, Port 8080), Bootstrap-Admin, Karten-Import.
 - [ ] GHCR-Image-Build via GitHub Actions → User macht nur `docker compose up -d`.
 - [ ] Tests: pytest (Auth, Rechte-Matrix, Marker-CRUD), WS-Integrationstest (zwei Clients, Konfliktfall).
+
+---
+
+## Roadmap nach 1.0 (Stand 2026-09-08, priorisiert)
+
+Bestätigt mit dem Nutzer. „Aufwand" grob: S = < ½ Tag, M = 1–2 Tage, L = mehr.
+
+| # | Feature | Aufwand | Notiz |
+|---|---|---|---|
+| R1 | **Umbenennen für Editor** (nicht nur Owner) | S | ✅ erledigt (`patch_plan` = EditorPlan) |
+| R2 | **ACL beim Plan-Erstellen** – Gruppen/User direkt beim Anlegen hinzufügen | M | Create-Flow bekommt einen optionalen ACL-Schritt |
+| R3 | **Papierkorb / Archiv** – gelöschte Pläne wiederherstellen | M | Pläne sind schon soft-deleted; UI + Restore/Purge-Endpunkte |
+| R4 | **Undo/Redo pro Nutzer** – 2 Buttons + Tastenkürzel | M | lokaler Command-Stack über die WS-Ops |
+| R5 | **Platzierbare Markdown-Textfelder** auf der Karte | L | neue Entität (Schema + Live + Render), an Marker-Logik angelehnt |
+| R6 | **Präsentationsmodus** – Vollbild, nur Karte + Phasen-Umschalter | S–M | für Briefings am Beamer |
+| R7 | **Briefing-PDF-Export** – je Phase 1 Screenshot (auto-gerahmt auf alle Phasen-Marker + 10 %) + Notizen + DTG | L | Frontend jsPDF **oder** Server-seitig; Viewport-Framing ist der Knackpunkt |
+| R8 | **Dynamisches Rechte-/User-Modell** – vorbereiten für viele User + externe Auth-Quellen | M | ACL bleibt pro Plan; ggf. Gruppen-Verschachtelung, Rollen-Vorlagen, SCIM-tauglich |
+| R9 | **`pg_dump`-Backup-Container** (Cron, rotierend) + Restore-Doku | S–M | aktuell kein Backup |
+| R10 | **Alembic-Baseline** – weg vom `create_all` + Auto-ALTER | M | wichtig bevor das Schema weiter wächst |
+| R11 | **Plan-Thumbnails** – Vorschaubild beim Versions-Speichern, in der Liste zeigen | M | |
+| — | **ORBAT / Kräfteübersicht** | L | eigene Design-Session, danach |
+
+Nicht gewünscht: Viewshed, Range Rings / Marschrouten (widerspricht SIDC-Logik), separate MGRS-Anzeige (Spiel-Grid ist bereits MGRS-artig).
