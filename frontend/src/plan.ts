@@ -31,6 +31,7 @@ interface Marker {
   phase_id: string | null;
   layer_id: string | null;
   orbat_node_id?: string | null;
+  orbat_strength?: number;
   released?: boolean;
   linked_group_id: number;
   point_index: number;
@@ -1579,6 +1580,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           is_multipoint: false,
           max_line_points: 0,
           orbat_node_id: b.dataset.oplace!,
+          orbat_strength: 1,
         };
         setMode("place");
         orbatPanel.hidden = true;
@@ -2027,7 +2029,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       rotation_degrees: tpl.rotation_degrees,
       phase_id: currentPhaseId || null,
     };
-    if (tpl.orbat_node_id) data.orbat_node_id = tpl.orbat_node_id;
+    if (tpl.orbat_node_id) {
+      data.orbat_node_id = tpl.orbat_node_id;
+      data.orbat_strength = tpl.orbat_strength ?? 1;
+    }
     if (chainGroup != null) {
       data.linked_group_id = chainGroup;
       data.point_index = chainIndex;
@@ -2537,7 +2542,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
                ${orbatNodeOpts
                  .map((o) => `<option value="${o.id}" ${o.id === m.orbat_node_id ? "selected" : ""}>${o.label}</option>`)
                  .join("")}
-             </select>`
+             </select>
+             <label>${t("orbat.markerStrength")}</label>
+             <input data-ostr type="number" min="1" value="${m.orbat_strength ?? 1}" />`
           : ""
       }
       ${advHtml}
@@ -2582,7 +2589,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         icon_rotation: Number(p.querySelector<HTMLInputElement>("[data-rot]")!.value) || 0,
         phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || null,
         ...(modDefs ? { sidc: nextSidc() } : {}),
-        ...(isMB ? { orbat_node_id: p.querySelector<HTMLSelectElement>("[data-onode]")!.value || null } : {}),
+        ...(isMB
+          ? {
+              orbat_node_id: p.querySelector<HTMLSelectElement>("[data-onode]")!.value || null,
+              orbat_strength: Math.max(1, Number(p.querySelector<HTMLInputElement>("[data-ostr]")!.value) || 1),
+            }
+          : {}),
       };
       const wantLock = p.querySelector<HTMLInputElement>("[data-lock]")!.checked;
       const beforeData: Record<string, unknown> = {};

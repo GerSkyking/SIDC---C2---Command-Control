@@ -5,7 +5,7 @@ import { icon } from "./icons";
 import { iconSrc } from "./sidc/symbol";
 import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
-const AFFIL = ["own", "enemy", "neutral", "unknown"] as const;
+const AFFIL = ["friend", "hostile", "neutral", "unknown"] as const;
 const OPEN_KEY = "sidc_orbat_open";
 
 function openSet(): Set<string> {
@@ -128,6 +128,9 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
   };
 
   const roots = byParent.get("") ?? [];
+  const leaves = nodes.filter((n) => !(byParent.get(n.id) ?? []).length);
+  const sumCur = leaves.reduce((a, n) => a + (n.qty_current ?? 0), 0);
+  const sumMax = leaves.reduce((a, n) => a + (n.qty_planned ?? 0), 0);
   host.innerHTML = `
     <div class="orb-head">
       <input class="orb-title" value="${o.name}" ${canEdit ? "" : "disabled"} />
@@ -138,6 +141,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
       ${o.is_owner ? `<button class="danger" data-delo>${t("common.delete")}</button>` : ""}
     </div>
     <textarea class="orb-notes" placeholder="${t("orbat.notes")}" ${canEdit ? "" : "readonly"}>${o.notes ?? ""}</textarea>
+    <div class="orb-total">${t("orbat.totalStrength")}: <strong>${sumCur} / ${sumMax}</strong></div>
     <div class="orb-tree" data-drop-root>
       ${roots.map((r) => nodeHtml(r, 0)).join("") || `<p class="muted">${t("orbat.noNodes")}</p>`}
     </div>
@@ -238,9 +242,15 @@ function editNode(
     <div class="row"><h1 style="flex:1;margin:0">${isNew ? t("orbat.newNode") : t("orbat.editNode")}</h1>
       <button class="icon-btn" data-x>${icon("x")}</button></div>
     <label class="chk-lbl">${t("common.name")}<input data-f="name" value="${n.name ?? ""}" /></label>
-    <label class="chk-lbl">SIDC<input data-f="sidc" value="${n.sidc ?? ""}" placeholder="30-stelliges SIDC" /></label>
+    <label class="chk-lbl">${t("marker.heading")}
+      <span class="orb-sym-pick">
+        <img data-sym-prev width="30" height="30" src="${n.sidc ? iconSrc(n.sidc) : ""}" onerror="this.style.visibility='hidden'"/>
+        <button type="button" data-sym-btn>${t("orbat.pickSymbol")}</button>
+        <code data-sym-code>${n.sidc ?? ""}</code>
+      </span>
+    </label>
     <div class="row">
-      <label class="chk-lbl" style="flex:1">${t("orbat.qtyPlanned")}<input type="number" min="0" data-f="qty_planned" value="${n.qty_planned ?? 1}" /></label>
+      <label class="chk-lbl" style="flex:1">${t("orbat.maxStrength")}<input type="number" min="0" data-f="qty_planned" value="${n.qty_planned ?? 1}" /></label>
       <label class="chk-lbl" style="flex:1">${t("orbat.qtyCurrent")}<input type="number" min="0" data-f="qty_current" value="${n.qty_current ?? 1}" /></label>
     </div>
     <label class="chk-lbl">${t("orbat.statusLabel")}
@@ -262,6 +272,16 @@ function editNode(
   const close = () => back.remove();
   back.addEventListener("mousedown", (e) => e.target === back && close());
   back.querySelector("[data-x]")!.addEventListener("click", close);
+  let symSidc = n.sidc ?? "";
+  back.querySelector<HTMLButtonElement>("[data-sym-btn]")!.addEventListener("click", () => {
+    void import("./sidc/builder").then(({ openMarkerBuilderModal }) =>
+      openMarkerBuilderModal(symSidc, (s) => {
+        symSidc = s;
+        back.querySelector<HTMLImageElement>("[data-sym-prev]")!.src = iconSrc(s);
+        back.querySelector<HTMLElement>("[data-sym-code]")!.textContent = s;
+      }),
+    );
+  });
   const rel = back.querySelector<HTMLInputElement>('[data-f="rel_strength"]')!;
   const relv = back.querySelector<HTMLSpanElement>("[data-relv]")!;
   rel.addEventListener("input", () => {
@@ -271,7 +291,7 @@ function editNode(
     const g = <T extends HTMLElement>(s: string) => back.querySelector<T>(`[data-f="${s}"]`)!;
     const body: Record<string, unknown> = {
       name: (g("name") as HTMLInputElement).value.trim() || "Einheit",
-      sidc: (g("sidc") as HTMLInputElement).value.trim(),
+      sidc: symSidc,
       qty_planned: Number((g("qty_planned") as HTMLInputElement).value) || 0,
       qty_current: Number((g("qty_current") as HTMLInputElement).value) || 0,
       status: (g("status") as HTMLSelectElement).value,

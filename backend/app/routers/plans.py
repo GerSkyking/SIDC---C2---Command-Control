@@ -132,7 +132,7 @@ def _annotation_dict(a: Annotation) -> dict:
 def _marker_dict(m: Marker) -> dict:
     return {
         "id": m.id, "phase_id": m.phase_id, "layer_id": m.layer_id,
-        "orbat_node_id": m.orbat_node_id, "sidc": m.sidc,
+        "orbat_node_id": m.orbat_node_id, "orbat_strength": m.orbat_strength, "sidc": m.sidc,
         "world_x": m.world_x, "world_y": m.world_y, "rotation_degrees": m.rotation_degrees, "icon_rotation": m.icon_rotation,
         "unit_text": m.unit_text, "ai_text": m.ai_text, "channel": m.channel,
         "locked": m.locked, "timestamp_visible": m.timestamp_visible,

@@ -18,12 +18,12 @@ from ..deps import CurrentUser, DbDep
 from ..models import GroupMember, Marker, Orbat, OrbatACL, OrbatNode, Plan, PlanOrbat
 from ..permissions import effective_level, effective_mission_builder, rank
 from ..services.realtime import hub
-from ..sidc_status import sidc_with_status
+from ..sidc_status import sidc_with_affiliation, sidc_with_status
 
 router = APIRouter(prefix="/api/orbats", tags=["orbat"])
 plan_orbat_router = APIRouter(prefix="/plans/{plan_id}/orbats", tags=["orbat"])
 
-_AFFIL = {"own", "enemy", "neutral", "unknown"}
+_AFFIL = {"friend", "hostile", "neutral", "unknown"}
 _STATUS = {"active", "damaged", "destroyed"}
 
 
@@ -146,7 +146,7 @@ def list_orbats(user: CurrentUser, db: DbDep) -> list[dict]:
 def create_orbat(body: OrbatIn, request: Request, user: CurrentUser, db: DbDep) -> dict:
     if not effective_mission_builder(db, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Missionsbau-Rolle erforderlich")
-    aff = body.affiliation if body.affiliation in _AFFIL else "own"
+    aff = body.affiliation if body.affiliation in _AFFIL else "friend"
     o = Orbat(name=body.name.strip() or "ORBAT", affiliation=aff, notes=body.notes, created_by=user.id)
     db.add(o)
     db.commit()
@@ -162,16 +162,47 @@ def get_orbat(orbat_id: str, user: CurrentUser, db: DbDep) -> dict:
 
 
 @router.patch("/{orbat_id}")
-def patch_orbat(orbat_id: str, body: OrbatPatch, user: CurrentUser, db: DbDep) -> dict:
+async def patch_orbat(orbat_id: str, body: OrbatPatch, user: CurrentUser, db: DbDep) -> dict:
     o = _load(orbat_id, db, user, "editor")
     if body.name is not None and body.name.strip():
         o.name = body.name.strip()
-    if body.affiliation is not None and body.affiliation in _AFFIL:
+    aff_changed = (
+        body.affiliation is not None
+        and body.affiliation in _AFFIL
+        and body.affiliation != o.affiliation
+    )
+    if aff_changed:
         o.affiliation = body.affiliation
     if body.notes is not None:
         o.notes = body.notes
     db.commit()
+    if aff_changed:
+        await _propagate_affiliation(db, o)
     return _orbat_out(db, user, o, with_nodes=True)
+
+
+async def _propagate_affiliation(db, o: Orbat) -> None:
+    """ORBAT-Zugehörigkeit → Identitätsstelle aller Knoten-SIDC und verknüpften Marker."""
+    from .live import _author_of, _marker_out, _phase_is_builder
+
+    nodes = list(db.scalars(select(OrbatNode).where(OrbatNode.orbat_id == o.id)))
+    node_ids = [n.id for n in nodes]
+    for n in nodes:
+        if n.sidc:
+            n.sidc = sidc_with_affiliation(n.sidc, o.affiliation)
+    touched: list[Marker] = []
+    if node_ids:
+        for m in db.scalars(select(Marker).where(Marker.orbat_node_id.in_(node_ids))):
+            new_sidc = sidc_with_affiliation(m.sidc, o.affiliation)
+            if new_sidc != m.sidc:
+                m.sidc = new_sidc
+                touched.append(m)
+    db.commit()
+    for m in touched:
+        await hub.broadcast(
+            m.plan_id, {"type": "marker.upsert", "marker": _marker_out(m, _author_of(db, m))},
+            builder_only=_phase_is_builder(m.plan_id, m.phase_id),
+        )
 
 
 @router.delete("/{orbat_id}")
@@ -192,7 +223,7 @@ def delete_orbat(orbat_id: str, request: Request, user: CurrentUser, db: DbDep) 
 
 @router.post("/{orbat_id}/nodes", status_code=status.HTTP_201_CREATED)
 def create_node(orbat_id: str, body: NodeIn, user: CurrentUser, db: DbDep) -> dict:
-    _load(orbat_id, db, user, "editor")
+    orbat = _load(orbat_id, db, user, "editor")
     if body.parent_id is not None:
         p = db.get(OrbatNode, body.parent_id)
         if p is None or p.orbat_id != orbat_id:
@@ -209,7 +240,8 @@ def create_node(orbat_id: str, body: NodeIn, user: CurrentUser, db: DbDep) -> di
         nxt = (max(list(siblings), default=-1) + 1)
     n = OrbatNode(
         orbat_id=orbat_id, parent_id=body.parent_id, name=body.name.strip() or "Einheit",
-        sidc=body.sidc, qty_planned=max(0, body.qty_planned),
+        sidc=sidc_with_affiliation(body.sidc, orbat.affiliation) if body.sidc else "",
+        qty_planned=max(0, body.qty_planned),
         qty_current=body.qty_current if body.qty_current is not None else max(0, body.qty_planned),
         status=body.status if body.status in _STATUS else "active", ordering=nxt, notes=body.notes,
         rel_visible=body.rel_visible, rel_show_type=body.rel_show_type,
@@ -235,6 +267,8 @@ async def patch_node(
         data.pop("status")
     if "rel_strength" in data and data["rel_strength"] is not None:
         data["rel_strength"] = max(-1, min(100, data["rel_strength"]))
+    if data.get("sidc"):
+        data["sidc"] = sidc_with_affiliation(data["sidc"], db.get(Orbat, orbat_id).affiliation)
     status_changed = "status" in data and data["status"] != n.status
     for k, v in data.items():
         setattr(n, k, v)

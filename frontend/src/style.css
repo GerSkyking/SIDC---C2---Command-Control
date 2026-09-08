@@ -418,9 +418,48 @@ label.chk input { width: auto; }
 .orbat-li.active { border-color: var(--accent); background: var(--accent-weak); }
 .orbat-new { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.3rem; }
 .orbat-main { flex: 1; min-width: 0; }
-.badge.aff-own { border-color: var(--ok); color: var(--ok); }
-.badge.aff-enemy { border-color: var(--danger); color: var(--danger); }
+.badge.aff-own, .badge.aff-friend { border-color: var(--ok); color: var(--ok); }
+.badge.aff-enemy, .badge.aff-hostile { border-color: var(--danger); color: var(--danger); }
 .badge.aff-neutral { border-color: var(--warn); color: var(--warn); }
+
+.orb-total { margin: 0.4rem 0; font-size: 0.9rem; color: var(--muted); }
+.orb-total strong { color: var(--fg); }
+.orb-sym-pick { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.orb-sym-pick code { font-size: 0.75rem; color: var(--muted); word-break: break-all; }
+
+/* Durchsuchbares Dropdown */
+.cbx { position: relative; }
+.cbx-trigger {
+  display: flex; align-items: center; gap: 0.4rem; width: 100%;
+  justify-content: flex-start; text-align: left; min-height: 2rem;
+}
+.cbx-trigger img { width: 20px; height: 20px; }
+.cbx-pop {
+  position: absolute; z-index: 40; top: calc(100% + 2px); left: 0; right: 0;
+  background: var(--elevated); border: 1px solid var(--border);
+  border-radius: var(--r-sm); box-shadow: var(--shadow); padding: 0.35rem;
+}
+.cbx-search { width: 100%; margin-bottom: 0.3rem; }
+.cbx-list { list-style: none; margin: 0; padding: 0; max-height: 15rem; overflow-y: auto; }
+.cbx-list li {
+  display: flex; align-items: center; gap: 0.45rem; padding: 0.3rem 0.4rem;
+  border-radius: var(--r-sm); cursor: pointer;
+}
+.cbx-list li:hover { background: var(--surface-2); }
+.cbx-list li.sel { background: var(--accent-weak); }
+.cbx-list img { width: 20px; height: 20px; }
+.cbx-sub { margin-left: auto; color: var(--muted); font-size: 0.8rem; }
+
+/* Marker-Baukasten */
+.mkb { display: flex; gap: 1rem; flex-wrap: wrap; }
+.mkb-fields { flex: 1 1 20rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.mkb-fields > label { font-size: 0.82rem; color: var(--muted); margin-top: 0.3rem; }
+.mkb-flags { display: flex; gap: 1rem; margin-top: 0.4rem; }
+.mkb-preview {
+  flex: 0 0 9rem; display: flex; flex-direction: column; align-items: center;
+  gap: 0.6rem; padding-top: 0.5rem;
+}
+.mkb-preview code { font-size: 0.7rem; color: var(--muted); word-break: break-all; text-align: center; }
 
 .orb-head { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .orb-title { flex: 1 1 12rem; font-weight: 600; }

@@ -28,7 +28,7 @@ from ..services.realtime import hub
 log = logging.getLogger("sidc.live")
 
 MARKER_FIELDS = (
-    "phase_id", "layer_id", "orbat_node_id", "sidc", "world_x", "world_y",
+    "phase_id", "layer_id", "orbat_node_id", "orbat_strength", "sidc", "world_x", "world_y",
     "rotation_degrees", "icon_rotation",
     "unit_text", "ai_text", "channel", "timestamp_visible",
     "linked_group_id", "point_index", "line_color", "line_width",
@@ -75,7 +75,7 @@ def _phase_is_builder(plan_id: str, phase_id: str | None) -> bool:
 def _marker_out(m: Marker, author: str | None = None) -> dict:
     return {
         "id": m.id, "phase_id": m.phase_id, "layer_id": m.layer_id,
-        "orbat_node_id": m.orbat_node_id, "sidc": m.sidc,
+        "orbat_node_id": m.orbat_node_id, "orbat_strength": m.orbat_strength, "sidc": m.sidc,
         "world_x": m.world_x, "world_y": m.world_y,
         "rotation_degrees": m.rotation_degrees, "icon_rotation": m.icon_rotation,
         "unit_text": m.unit_text, "ai_text": m.ai_text, "channel": m.channel,
@@ -264,25 +264,31 @@ async def _emit_update(ws: WebSocket, plan_id: str, msg: dict, res: dict | None)
 
 # ─── DB-Operationen (im Threadpool) ────────────────────────────────────────
 
-def _sync_node(db, node_id: str | None) -> None:
-    """ORBAT-Knoten aus seinen verknüpften Markern nachziehen: Status = schlimmster
-    Status unter den Markern, qty_current = Anzahl nicht zerstörter Marker."""
+def _losses(status: str, strength: int) -> int:
+    return int(strength or 0) if status == "destroyed" else 0
+
+
+def _sync_node(db, node_id: str | None, *, delta: int = 0) -> None:
+    """ORBAT-Knoten pflegen: ``qty_current`` um ``delta`` verschieben (Verluste
+    durch zerstörte Marker; manuelle Korrektur bleibt erhalten), Status = schlimmster
+    Status der verknüpften Marker."""
     if not node_id:
         return
     n = db.get(OrbatNode, node_id)
     if n is None:
         return
-    linked = list(db.scalars(select(Marker).where(Marker.orbat_node_id == node_id)))
-    if not linked:
-        return
-    states = [status_from_sidc(m.sidc) for m in linked]
-    if "destroyed" in states:
-        n.status = "destroyed"
-    elif "damaged" in states:
-        n.status = "damaged"
-    else:
-        n.status = "active"
-    n.qty_current = max(0, sum(1 for s in states if s != "destroyed"))
+    if delta:
+        n.qty_current = max(0, (n.qty_current or 0) + delta)
+    states = [
+        status_from_sidc(m.sidc)
+        for m in db.scalars(select(Marker).where(Marker.orbat_node_id == node_id))
+    ]
+    if states:
+        n.status = (
+            "destroyed" if "destroyed" in states
+            else "damaged" if "damaged" in states
+            else "active"
+        )
     db.commit()
 
 
@@ -291,7 +297,8 @@ def _create_marker(plan_id: str, uid: str, data: dict) -> dict:
         m = Marker(plan_id=plan_id, created_by=uid, updated_by=uid, **data)
         db.add(m)
         db.commit()
-        _sync_node(db, m.orbat_node_id)
+        _sync_node(db, m.orbat_node_id,
+                   delta=-_losses(status_from_sidc(m.sidc), m.orbat_strength))
         return _marker_out(m, _author_of(db, m))
 
 
@@ -303,14 +310,18 @@ def _update_marker(plan_id: str, marker_id: str, uid: str, is_owner: bool, field
         if m.locked and not is_owner and "locked" not in fields:
             return None
         old_node = m.orbat_node_id
+        old_loss = _losses(status_from_sidc(m.sidc), m.orbat_strength)
         for k, v in fields.items():
             setattr(m, k, v)
         m.updated_by = uid
         m.updated_at = now()
         db.commit()
+        new_loss = _losses(status_from_sidc(m.sidc), m.orbat_strength)
         if old_node and old_node != m.orbat_node_id:
-            _sync_node(db, old_node)
-        _sync_node(db, m.orbat_node_id)
+            _sync_node(db, old_node, delta=old_loss)          # Verlust zieht mit dem Marker weg
+            _sync_node(db, m.orbat_node_id, delta=-new_loss)  # am neuen Knoten neu ansetzen
+        else:
+            _sync_node(db, m.orbat_node_id, delta=old_loss - new_loss)
         return _marker_out(m, _author_of(db, m))
 
 
@@ -323,9 +334,10 @@ def _delete_marker(plan_id: str, marker_id: str, is_owner: bool):
             return False
         pid = m.phase_id
         node_id = m.orbat_node_id
+        loss = _losses(status_from_sidc(m.sidc), m.orbat_strength)
         db.delete(m)
         db.commit()
-        _sync_node(db, node_id)
+        _sync_node(db, node_id, delta=loss)  # Verlust dieses Markers entfällt
         return pid
 
 

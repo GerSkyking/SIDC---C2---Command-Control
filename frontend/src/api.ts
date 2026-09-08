@@ -139,7 +139,7 @@ export interface OrbatNode {
 export interface Orbat {
   id: string;
   name: string;
-  affiliation: "own" | "enemy" | "neutral" | "unknown";
+  affiliation: "friend" | "hostile" | "neutral" | "unknown";
   notes?: string;
   level?: "viewer" | "editor" | null;
   is_owner?: boolean;

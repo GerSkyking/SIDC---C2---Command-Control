@@ -25,6 +25,20 @@ Baustein C umgesetzt (Migration 0005 `markers.orbat_node_id`):
 Bekannte Grenze: Live-Bewegung eines freigegebenen Feind-Markers wird Spielern erst
 beim nächsten Snapshot-Load gezeigt (Bewegungs-Broadcasts bleiben `builder_only`).
 
+### Nacharbeit 2026-09-08 (Nutzer-Feedback)
+- **Zugehörigkeit** = die 4 SIDC-Standard-Identitäten (`friend`/`hostile`/`neutral`/
+  `unknown`, Migration 0006 mappt `own→friend`, `enemy→hostile`). Sie setzt die
+  Identitätsstelle **aller** Knoten-SIDC und verknüpften Marker (`_propagate_affiliation`).
+- **Stärke**: `qty_planned` = Maximalstärke (frei), `qty_current` = Ist (frei editierbar,
+  manuelles +/−). Marker rechnen die Ist-Stärke **nicht** neu, sondern verschieben sie
+  nur um Verluste: neues Feld `markers.orbat_strength` (Einheiten je Marker); wird ein
+  Marker zerstört, sinkt `qty_current` um dessen Stärke, bei „wiederbelebt" steigt sie.
+  Gesamtstärke-Zähler (Σ über Blattknoten) in der ORBAT-Bibliothek.
+- **Marker-Baukasten** (`sidc/builder.ts` + `sidc/combobox.ts`): Dropdown-Editor mit
+  Kategorie/Marker/Identität/Echelon/Modifikatoren, je Dropdown Suchfeld, Live-Vorschau
+  + SIDC-Anzeige. Ersetzt das SIDC-Textfeld im Knoten-Editor und ist im QuickMenü der
+  zweite Reiter neben „QuickMenü".
+
 ## Baustein A — Rolle „Missionsbau" + parallele Ebenen/Phasen
 
 ### Rolle

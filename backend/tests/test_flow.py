@@ -324,7 +324,7 @@ def test_orbat_library(admin):
         plid_user = db.scalar(__import__("sqlalchemy").select(User.id).where(User.username == "pl"))
 
     # admin ist Missionsbau (Admin impliziert)
-    o = admin.post("/api/orbats", json={"name": "1. Kompanie", "affiliation": "enemy"})
+    o = admin.post("/api/orbats", json={"name": "1. Kompanie", "affiliation": "hostile"})
     assert o.status_code == 201
     oid = o.json()["id"]
     root = admin.post(f"/api/orbats/{oid}/nodes", json={"name": "1. Zug", "sidc": "S", "qty_planned": 3}).json()
@@ -373,11 +373,12 @@ def test_orbat_marker_link(admin):
         db.commit()
         plc_id = db.scalar(__import__("sqlalchemy").select(User.id).where(User.username == "plc"))
 
-    oid = admin.post("/api/orbats", json={"name": "Feind", "affiliation": "enemy"}).json()["id"]
+    oid = admin.post("/api/orbats", json={"name": "Feind", "affiliation": "hostile"}).json()["id"]
     node = admin.post(f"/api/orbats/{oid}/nodes", json={
         "name": "Panzerzug", "sidc": "100600000000000000000000000000", "qty_planned": 3,
         "rel_visible": True, "rel_show_type": True, "rel_strength": 100,
     }).json()
+    assert node["qty_current"] == 3
 
     pid = admin.post("/plans", json={"name": "OCPlan", "map_id": "oc"}).json()["id"]
     admin.put(f"/plans/{pid}/acl", json=[
@@ -394,15 +395,15 @@ def test_orbat_marker_link(admin):
         ws.receive_json(); ws.receive_json()
         ws.send_json({"type": "marker.create", "cid": "m1", "data": {
             "sidc": "100600000000000000000000000000", "world_x": 5.0, "world_y": 5.0,
-            "phase_id": builder_ph["id"], "orbat_node_id": node["id"]}})
+            "phase_id": builder_ph["id"], "orbat_node_id": node["id"], "orbat_strength": 2}})
         mid = ws.receive_json()["marker"]["id"]
-        # Marker zerstört -> Knoten übernimmt
+        # Marker zerstört -> Knoten übernimmt Status, Ist-Stärke -2
         ws.send_json({"type": "marker.modify", "id": mid, "data": {
             "sidc": "100600400000000000000000000000"}})
         ws.receive_json()
 
     n2 = next(n for n in admin.get(f"/api/orbats/{oid}").json()["nodes"] if n["id"] == node["id"])
-    assert n2["status"] == "destroyed" and n2["qty_current"] == 0
+    assert n2["status"] == "destroyed" and n2["qty_current"] == 1
 
     # Knoten wieder einsatzbereit -> Marker-SIDC zieht nach
     admin.patch(f"/api/orbats/{oid}/nodes/{node['id']}", json={"status": "active"})

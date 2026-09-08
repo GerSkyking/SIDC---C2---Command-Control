@@ -20,3 +20,13 @@ def status_from_sidc(sidc: str) -> str:
 def sidc_with_status(sidc: str, status: str) -> str:
     s = (sidc or "").ljust(30, "0")[:30]
     return s[:6] + _STATUS_TO_DIGIT.get(status, "0") + s[7:]
+
+
+# ─── Zugehörigkeit (APP6-D Identitätsstelle, 0-indexiert 3) ─────────────────
+
+AFFIL_DIGIT = {"friend": "3", "hostile": "6", "neutral": "4", "unknown": "1"}
+
+
+def sidc_with_affiliation(sidc: str, affiliation: str) -> str:
+    s = (sidc or "").ljust(30, "0")[:30]
+    return s[:3] + AFFIL_DIGIT.get(affiliation, "1") + s[4:]

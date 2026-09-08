@@ -39,6 +39,7 @@ export interface MarkerTemplate {
   is_multipoint: boolean;
   max_line_points: number;
   orbat_node_id?: string | null;
+  orbat_strength?: number;
 }
 
 type Done = (t: MarkerTemplate) => void;
@@ -61,8 +62,7 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
     <div class="wiz">
       <div class="wiz-head">
         <button data-tab="quick" class="active">${t("wiz.quickMenu")}</button>
-        <button data-tab="cat">${t("wiz.catalog")}</button>
-        <input class="wiz-search" placeholder="${t('wiz.search')}" />
+        <button data-tab="builder">${t("wiz.builder")}</button>
         <span class="grow"></span>
         <button class="icon-btn" data-close>${icon("x")}</button>
       </div>
@@ -73,20 +73,18 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
 
   const body = wrap.querySelector<HTMLDivElement>(".wiz-body")!;
   const config = wrap.querySelector<HTMLDivElement>(".wiz-config")!;
-  const search = wrap.querySelector<HTMLInputElement>(".wiz-search")!;
   const close = () => wrap.remove();
   wrap.querySelector("[data-close]")!.addEventListener("click", close);
   wrap.addEventListener("click", (e) => e.target === wrap && close());
 
-  let tab: "quick" | "cat" = "quick";
+  let tab: "quick" | "builder" = "quick";
   wrap.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach((b) =>
     b.addEventListener("click", () => {
-      tab = b.dataset.tab as "quick" | "cat";
+      tab = b.dataset.tab as "quick" | "builder";
       wrap.querySelectorAll("[data-tab]").forEach((x) => x.classList.toggle("active", x === b));
       render();
     }),
   );
-  search.addEventListener("input", render);
 
   // ── Konfig-Panel für einen gewählten Eintrag ────────────────────────────
   function configure(entry: CatalogEntry, identity: string | null, btn?: QuickMenuButton): void {
@@ -231,29 +229,20 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
 
   // ── Baum-/Listen-Rendering ─────────────────────────────────────────────
   function render(): void {
-    const q = search.value.trim().toLowerCase();
     config.hidden = true;
     body.innerHTML = "";
 
-    if (tab === "cat" || q) {
-      const list = document.createElement("div");
-      list.className = "wiz-list";
-      for (const cat of cats!) {
-        const hits = cat.entries.filter((e) => !q || e.name.toLowerCase().includes(q));
-        if (!hits.length) continue;
-        const h = document.createElement("div");
-        h.className = "wiz-cat-h";
-        h.textContent = cat.label;
-        list.appendChild(h);
-        for (const e of hits) {
-          const row = document.createElement("button");
-          row.className = "wiz-entry";
-          row.innerHTML = `<img src="${iconSrc(withAffiliation(e.sidc, "1"))}" width="22" height="22" onerror="this.style.visibility='hidden'"/> ${e.name}`;
-          row.addEventListener("click", () => configure(e, null));
-          list.appendChild(row);
-        }
-      }
-      body.appendChild(list);
+    if (tab === "builder") {
+      void import("./builder").then(({ renderMarkerBuilder }) =>
+        renderMarkerBuilder(body, {
+          templateFields: true,
+          submitLabel: t("wiz.place"),
+          onTemplate: (tpl) => {
+            onPick(tpl);
+            close();
+          },
+        }),
+      );
       return;
     }
 

@@ -216,6 +216,7 @@ class Marker(Base):
     orbat_node_id: Mapped[str | None] = mapped_column(
         ForeignKey("orbat_nodes.id", ondelete="SET NULL"), index=True
     )
+    orbat_strength: Mapped[int] = mapped_column(Integer, default=1)  # Einheiten, die dieser Marker abbildet
 
     sidc: Mapped[str] = mapped_column(String(64))
     world_x: Mapped[float] = mapped_column(Float)
@@ -335,7 +336,7 @@ class Orbat(Base):
 
     id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
     name: Mapped[str] = mapped_column(String(128))
-    affiliation: Mapped[str] = mapped_column(String(12), default="own")  # own|enemy|neutral|unknown
+    affiliation: Mapped[str] = mapped_column(String(12), default="friend")  # friend|hostile|neutral|unknown
     notes: Mapped[str] = mapped_column(Text, default="")
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
