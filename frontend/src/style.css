@@ -105,6 +105,10 @@ a { color: var(--accent); }
 
 .topbar { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.8rem; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
 .topbar .grow { flex: 1; }
+/* Planansicht: Topbar liegt über der Karte, Karte richtet sich nach --topbar-h */
+#app > .topbar { position: absolute; inset: 0 0 auto 0; z-index: 7; }
+/* Zeitleiste immer auf eine eigene, volle Zeile unter den Buttons */
+#app > .topbar .timeline { flex: 1 1 100%; order: 20; margin-top: 0.15rem; }
 .topbar strong { font-weight: 600; }
 .topbar > a { color: var(--fg); text-decoration: none; padding: 0.2rem 0.4rem; border-radius: var(--r-sm); }
 .topbar > a:hover { background: var(--elevated); }
@@ -129,7 +133,7 @@ a { color: var(--accent); }
 .list table { width: 100%; border-collapse: collapse; }
 .list td, .list th { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); }
 
-#map { position: absolute; inset: 3.2rem 0 0 0; }
+#map { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0; }
 .badge { font-size: 0.75rem; padding: 0.1rem 0.4rem; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); }
 .presence { display: flex; gap: 0.4rem; }
 .topbar button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
@@ -153,7 +157,7 @@ a { color: var(--accent); }
 .compass .ic { transform: rotate(var(--rot, 0deg)); transition: transform 0.15s linear; }
 .compass .ic .ic-a { fill: var(--danger); opacity: 0.9; }
 
-.toolbar { position: absolute; left: 0.6rem; top: 3.9rem; display: flex; flex-direction: column; gap: 0.3rem;
+.toolbar { position: absolute; left: 0.6rem; top: calc(var(--topbar-h, 3.2rem) + 0.6rem); display: flex; flex-direction: column; gap: 0.3rem;
   z-index: 5; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
   padding: 0.3rem; box-shadow: var(--shadow); }
 .toolbar button { width: 2.4rem; height: 2.4rem; padding: 0; display: grid; place-items: center;
@@ -162,11 +166,11 @@ a { color: var(--accent); }
 .toolbar button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .toolbar button.active .ic-a { fill: rgba(0,0,0,0.18); }
 
-.hud { position: absolute; right: 0.6rem; top: 4rem; z-index: 5; background: var(--surface); opacity: 0.96;
+.hud { position: absolute; right: 0.6rem; top: calc(var(--topbar-h, 3.2rem) + 0.7rem); z-index: 5; background: var(--surface); opacity: 0.96;
   border: 1px solid var(--border); border-radius: 6px; padding: 0.35rem 0.6rem; font-variant-numeric: tabular-nums; font-size: 0.85rem; }
 
-.grid-canvas { position: absolute; inset: 3.2rem 0 0 0; pointer-events: none; z-index: 4; }
-.layers-panel { position: fixed; right: 0.6rem; top: 3.6rem; width: auto;
+.grid-canvas { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0; pointer-events: none; z-index: 4; }
+.layers-panel { position: fixed; right: 0.6rem; top: calc(var(--topbar-h, 3.2rem) + 0.4rem); width: auto;
   min-width: 16rem; max-width: min(24rem, 90vw); z-index: 6;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem;
   max-height: 75vh; overflow-y: auto; }
@@ -182,7 +186,7 @@ a { color: var(--accent); }
 .layers-panel .layer-row input[type="range"] { flex: 1 1 5rem; min-width: 4.5rem; max-width: 8rem; margin: 0; }
 #maplang { max-width: 6rem; }
 
-.line-style { position: absolute; left: 3.4rem; top: 4rem; width: 13rem; z-index: 6;
+.line-style { position: absolute; left: 3.4rem; top: calc(var(--topbar-h, 3.2rem) + 0.7rem); width: 13rem; z-index: 6;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; }
 .line-style label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.4rem 0 0.2rem; }
 .line-style select { width: 100%; }
@@ -191,7 +195,7 @@ a { color: var(--accent); }
 .line-colors button { width: 1.6rem; height: 1.6rem; padding: 0; border-radius: 4px; border: 2px solid transparent; }
 .line-colors button.active { border-color: var(--fg); }
 
-.fav-panel, .edit-panel { position: absolute; left: 3.4rem; top: 4rem; width: 15rem; z-index: 6;
+.fav-panel, .edit-panel { position: absolute; left: 3.4rem; top: calc(var(--topbar-h, 3.2rem) + 0.7rem); width: 15rem; z-index: 6;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; max-height: 70vh; overflow-y: auto; }
 /* Marker-Bearbeiten: zentriertes Fenster mit Backdrop */
 .edit-modal { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,0.45); display: grid; place-items: center; padding: 1rem; }
@@ -371,7 +375,7 @@ a { color: var(--accent); }
   border-radius: 4px; flex: none; background: var(--surface-2); }
 
 /* ── Annotationen (platzierbare Markdown-Textfelder) ─────────────────── */
-.annots { position: absolute; inset: 3.2rem 0 0 0; pointer-events: none; z-index: 4; overflow: hidden; }
+.annots { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0; pointer-events: none; z-index: 4; overflow: hidden; }
 .presenting .annots { inset: 0; }
 .annot { position: absolute; top: 0; left: 0; pointer-events: auto;
   background: var(--surface); color: var(--fg); border: 1px solid var(--border);

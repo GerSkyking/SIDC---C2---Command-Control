@@ -170,8 +170,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     <div class="topbar">
       <a href="#/" title="${t("nav.back")}">${icon("back")}</a>
       <strong>${snap.plan.name}</strong>
-      <span class="badge">${myPlan?.level ?? "?"}</span>
-      <button id="t3d">3D</button>
+      <span class="badge" title="${t("plan.yourRole")}">${myPlan?.level ?? "?"}</span>
+      <button id="t3d" title="${t("map.threeD")}">3D</button>
       ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") })}
       ${
         canEdit
@@ -244,6 +244,27 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+
+  // Topbar bricht je nach Fensterbreite/Zeitleiste auf mehrere Zeilen um — die
+  // Karte darunter richtet sich nach der tatsächlichen Topbar-Höhe (CSS-Variable).
+  const topbarEl = root.querySelector<HTMLElement>(".topbar")!;
+  const syncTopbarH = () => {
+    root.style.setProperty("--topbar-h", `${topbarEl.offsetHeight}px`);
+    map.resize();
+  };
+  syncTopbarH();
+  const topbarRO = new ResizeObserver(syncTopbarH);
+  topbarRO.observe(topbarEl);
+  window.addEventListener("resize", syncTopbarH);
+  window.addEventListener(
+    "hashchange",
+    () => {
+      topbarRO.disconnect();
+      window.removeEventListener("resize", syncTopbarH);
+      root.style.removeProperty("--topbar-h");
+    },
+    { once: true },
+  );
 
   // Kamera-Grenzen: nicht endlos von der Karte wegscrollen/-zoomen (wie ATAKmaps).
   function applyCameraBounds(): void {
@@ -1076,7 +1097,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
               .join("") +
             (canEdit ? `<button id="sub-add" title="${t("mb.subPhase")}">+</button>` : "")
           : "") +
-        `<label class="ph-op" title="${t("mb.crossOpacity")}">${t("mb.crossOpacity")}` +
+        `<label class="ph-op" title="${t("mb.crossOpacityHint")}">${t("mb.crossOpacity")}` +
         `<input type="range" id="cross-op" min="0" max="100" step="5" value="${crossOpacity}"/>` +
         `<span id="cross-op-v">${crossOpacity}%</span></label>` +
         `</div>`;
@@ -1085,7 +1106,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     timelineEl.innerHTML =
       `<div class="ph-main"><span class="ph-label">${t("phase.heading")}:</span>${chips}` +
       (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+</button>` : "") +
-      `<label class="ph-op" title="${t("phase.outOpacity")}">` +
+      `<label class="ph-op" title="${t("phase.outOpacityHint")}">${t("phase.outOpacity")}` +
       `<input type="range" id="ph-op" min="0" max="100" step="5" value="${outOpacity}"/>` +
       `<span id="ph-op-v">${outOpacity}%</span></label></div>` +
       mbRow;
@@ -1616,7 +1637,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     for (const [name, label, hasSlider] of entries) {
       const on = baseLayerVisible[name] !== false;
       const slider = hasSlider
-        ? `<input type="range" min="0" max="100" step="5" value="${Math.round(opac(name) * 100)}" data-op="${name}" title="${t("layers.opacity")}"/>`
+        ? `<input type="range" min="0" max="100" step="5" value="${Math.round(opac(name) * 100)}" data-op="${name}" title="${t("layers.opacityHint")}"/>`
         : "";
       rows.push(
         `<div class="layer-row"><label><input type="checkbox" data-base="${name}" ${on ? "checked" : ""}/> ${label}</label>${slider}</div>`,
@@ -1626,7 +1647,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (locData) {
       rows.push(`<div class="fav-head">${t('layers.places')}</div>`);
       rows.push(
-        `<div class="layer-row"><label>${t("layers.opacity")}</label><input type="range" min="0" max="100" step="5" value="${Math.round(opac("locations") * 100)}" data-op="locations" title="${t("layers.opacity")}"/></div>`,
+        `<div class="layer-row"><label>${t("layers.opacity")}</label><input type="range" min="0" max="100" step="5" value="${Math.round(opac("locations") * 100)}" data-op="locations" title="${t("layers.opacityHint")}"/></div>`,
       );
       for (const g of locData.groups) {
         rows.push(
