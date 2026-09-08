@@ -91,3 +91,19 @@ def assign_default_group(db: Session, user_id: str) -> None:
     )
     if not exists:
         db.add(GroupMember(group_id=g.id, user_id=user_id))
+
+
+def effective_mission_builder(db: Session, user: User) -> bool:
+    """Globale Missionsbau-Rolle: User-Flag ODER eine Gruppen-Flag ODER Admin."""
+    if user.is_admin or getattr(user, "is_mission_builder", False):
+        return True
+    from .models import Group
+
+    gids = list(db.scalars(select(GroupMember.group_id).where(GroupMember.user_id == user.id)))
+    if not gids:
+        return False
+    return bool(
+        db.scalars(
+            select(Group.id).where(Group.id.in_(gids), Group.is_mission_builder.is_(True))
+        ).first()
+    )

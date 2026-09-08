@@ -17,10 +17,12 @@ class UserOut(BaseModel):
     username: str
     role: str
     can_create_plans: bool
+    is_mission_builder: bool = False
 
 
 class MeOut(UserOut):
     can_create_plans_effective: bool
+    is_mission_builder_effective: bool = False
 
 
 # ─── Karten ────────────────────────────────────────────────────────────────

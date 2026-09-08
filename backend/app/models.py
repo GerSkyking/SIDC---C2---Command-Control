@@ -33,6 +33,7 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255))  # None = nur OIDC
     role: Mapped[str] = mapped_column(String(16), default="user")   # 'admin' | 'user'
     can_create_plans: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_mission_builder: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -59,6 +60,7 @@ class Group(Base):
     id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
     name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     can_create_plans: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_mission_builder: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
     members: Mapped[list[User]] = relationship(secondary="group_members", back_populates="groups")
@@ -173,6 +175,10 @@ class Phase(Base):
     plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(128))
     ordering: Mapped[int] = mapped_column(Integer, default=0)
+    # Parallele Ebenen: 'player' (Standard) | 'builder' (nur Missionsbau sichtbar).
+    plane: Mapped[str] = mapped_column(String(8), default="player")
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("phases.id", ondelete="CASCADE"))
+    sub_ordering: Mapped[int] = mapped_column(Integer, default=0)
     start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # optionale Zeit
     notes: Mapped[str] = mapped_column(Text, default="")  # Markdown-Notizen zur Phase
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

@@ -36,19 +36,30 @@ def test_plan_lifecycle_and_permissions(admin):
     plans = admin.get("/plans").json()
     assert plans[0]["level"] == "owner"
 
+    def player_phases(p):
+        return [x for x in admin.get(f"/plans/{p}/phases").json() if x["plane"] == "player"]
+
     snap = admin.get(f"/plans/{pid}/snapshot").json()
     assert snap["markers"] == [] and len(snap["layers"]) == 1
-    # Standard-Phase "Base" wird beim Anlegen erzeugt
-    assert [p["name"] for p in snap["phases"]] == ["Base"]
+    # Standard-Phase "Base" (player) + automatisch gepaarte builder-Phase (admin sieht beide)
+    assert [p["name"] for p in snap["phases"] if p["plane"] == "player"] == ["Base"]
+    assert any(p["plane"] == "builder" and p["parent_id"] for p in snap["phases"])
 
     ph = admin.post(f"/plans/{pid}/phases", json={"name": "Angriff"})
     assert ph.status_code == 201
     phid = ph.json()["id"]
-    assert len(admin.get(f"/plans/{pid}/phases").json()) == 2
+    assert ph.json()["plane"] == "player"
+    assert len(player_phases(pid)) == 2
+    # Missionsbau-Zwischenphase 1.1 unter der Angriff-Phase
+    sub = admin.post(f"/plans/{pid}/phases", json={"name": "1.1", "plane": "builder", "parent_id": phid})
+    assert sub.status_code == 201 and sub.json()["plane"] == "builder"
     admin.patch(f"/plans/{pid}/phases/{phid}", json={"notes": "# Plan\n- 1 Zug hält"})
-    assert "1 Zug" in admin.get(f"/plans/{pid}/snapshot").json()["phases"][1]["notes"]
+    notes = {p["id"]: p["notes"] for p in admin.get(f"/plans/{pid}/snapshot").json()["phases"]}
+    assert "1 Zug" in notes[phid]
     assert admin.delete(f"/plans/{pid}/phases/{phid}").status_code == 200
-    assert len(admin.get(f"/plans/{pid}/phases").json()) == 1
+    assert len(player_phases(pid)) == 1
+    # die Builder-Zwischenphase ist mit der Spieler-Phase weg
+    assert sub.json()["id"] not in [p["id"] for p in admin.get(f"/plans/{pid}/phases").json()]
 
     # Ordner: anlegen, Plan verschieben, klonen in Ordner, Ordner löschen
     root = admin.post("/folders", json={"name": "Übung"}).json()
@@ -239,3 +250,57 @@ def test_public_share(admin):
     admin.delete(f"/plans/{pid}/shares/{tok}")
     with TestClient(app) as anon:
         assert anon.get(f"/public/plans/{tok}").status_code == 404
+
+
+def test_mission_builder_planes(admin):
+    """Builder-Phasen + deren Marker sind für Nicht-Missionsbauer unsichtbar."""
+    from fastapi.testclient import TestClient
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.models import Map, PlanACL, User, now
+    from app.security import hash_password
+
+    admin.post("/api/maps", json={"id": "mb", "name": "MB", "url": "http://x.invalid/a.zip"})
+    with SessionLocal() as db:
+        db.get(Map, "mb").status = "ready"
+        db.get(Map, "mb").imported_at = now()
+        db.add(User(username="grunt", password_hash=hash_password("grunt-pass-1234")))
+        db.commit()
+        gid = db.scalar(__import__("sqlalchemy").select(User.id).where(User.username == "grunt"))
+
+    pid = admin.post("/plans", json={"name": "MBPlan", "map_id": "mb"}).json()["id"]
+    admin.put(f"/plans/{pid}/acl", json=[
+        {"subject_type": "user", "subject_id": admin.get("/auth/me").json()["id"], "level": "owner"},
+        {"subject_type": "user", "subject_id": gid, "level": "editor",
+         "can_place": True, "can_move": True, "can_delete": True, "can_draw": True},
+    ])
+
+    phases = admin.get(f"/plans/{pid}/phases").json()
+    builder_ph = next(p for p in phases if p["plane"] == "builder")
+    player_ph = next(p for p in phases if p["plane"] == "player")
+
+    # Admin (= Missionsbauer) legt einen Marker auf der Builder-Phase an
+    with admin.websocket_connect(f"/plans/{pid}/live") as ws:
+        assert ws.receive_json()["mission_builder"] is True
+        ws.receive_json()
+        ws.send_json({"type": "marker.create", "cid": "b1", "data": {
+            "sidc": "1", "world_x": 1.0, "world_y": 1.0, "phase_id": builder_ph["id"]}})
+        ws.receive_json()
+        ws.send_json({"type": "marker.create", "cid": "p1", "data": {
+            "sidc": "1", "world_x": 2.0, "world_y": 2.0, "phase_id": player_ph["id"]}})
+        ws.receive_json()
+
+    # grunt (kein Missionsbauer): sieht nur die Spieler-Phase + den Spieler-Marker
+    with TestClient(app) as c:
+        c.post("/auth/login", json={"username": "grunt", "password": "grunt-pass-1234"})
+        snap = c.get(f"/plans/{pid}/snapshot").json()
+        assert all(p["plane"] == "player" for p in snap["phases"])
+        assert [m["world_x"] for m in snap["markers"]] == [2.0]
+        # grunt darf nicht auf einer Builder-Phase setzen
+        with c.websocket_connect(f"/plans/{pid}/live") as ws:
+            assert ws.receive_json()["mission_builder"] is False
+            ws.receive_json()
+            ws.send_json({"type": "marker.create", "cid": "x", "data": {
+                "sidc": "1", "world_x": 0.0, "world_y": 0.0, "phase_id": builder_ph["id"]}})
+            assert ws.receive_json()["type"] == "reject"

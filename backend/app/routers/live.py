@@ -9,12 +9,18 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..db import SessionLocal
-from ..models import Annotation, Marker, Plan, Stroke, User, now
-from ..permissions import effective_caps, effective_level, rank
+from ..models import Annotation, Marker, Phase, Plan, Stroke, User, now
+from ..permissions import (
+    effective_caps,
+    effective_level,
+    effective_mission_builder,
+    rank,
+)
 from ..security import SESSION_COOKIE, read_session
 from ..services.realtime import hub
 
@@ -27,7 +33,7 @@ MARKER_FIELDS = (
 )
 
 
-def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str, dict] | None:
+def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str, dict, bool] | None:
     token = cookies.get(SESSION_COOKIE)
     uid = read_session(token) if token else None
     if not uid:
@@ -40,7 +46,28 @@ def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str, dict]
         level = effective_level(db, user, plan)
         if level is None:
             return None
-        return user, plan, level, effective_caps(db, user, plan)
+        return user, plan, level, effective_caps(db, user, plan), effective_mission_builder(db, user)
+
+
+_BUILDER_PHASES: dict[str, set[str]] = {}
+
+
+def _refresh_builder_phases(plan_id: str) -> set[str]:
+    with SessionLocal() as db:
+        ids = set(
+            db.scalars(select(Phase.id).where(Phase.plan_id == plan_id, Phase.plane == "builder"))
+        )
+    _BUILDER_PHASES[plan_id] = ids
+    return ids
+
+
+def _phase_is_builder(plan_id: str, phase_id: str | None) -> bool:
+    if not phase_id:
+        return False
+    ids = _BUILDER_PHASES.get(plan_id)
+    if ids is None or phase_id not in ids:
+        ids = _refresh_builder_phases(plan_id)
+    return phase_id in ids
 
 
 def _marker_out(m: Marker, author: str | None = None) -> dict:
@@ -69,18 +96,20 @@ async def live_ws(websocket: WebSocket) -> None:
     if auth is None:
         await websocket.close(code=4403)
         return
-    user, _plan, level, caps = auth
+    user, _plan, level, caps, is_builder = auth
     is_owner = rank(level) >= rank("owner")
 
     await websocket.accept()
-    await hub.join(plan_id, websocket)
-    await websocket.send_json({"type": "hello", "level": level, "caps": caps})
+    await hub.join(plan_id, websocket, is_builder=is_builder)
+    await websocket.send_json(
+        {"type": "hello", "level": level, "caps": caps, "mission_builder": is_builder}
+    )
     await hub.broadcast(plan_id, {"type": "presence.join", "user": user.username, "uid": user.id})
 
     try:
         while True:
             msg = await websocket.receive_json()
-            await _handle(websocket, plan_id, user, caps, is_owner, msg)
+            await _handle(websocket, plan_id, user, caps, is_owner, is_builder, msg)
     except WebSocketDisconnect:
         pass
     except Exception:  # noqa: BLE001
@@ -95,9 +124,14 @@ async def _reject(ws: WebSocket, cid: str | None, reason: str) -> None:
 
 
 async def _handle(
-    ws: WebSocket, plan_id: str, user: User, caps: dict, is_owner: bool, msg: dict
+    ws: WebSocket, plan_id: str, user: User, caps: dict, is_owner: bool,
+    is_builder: bool, msg: dict,
 ) -> None:
     t = msg.get("type")
+
+    def bo(phase_id: str | None) -> bool:
+        """builder_only: Op betrifft eine Builder-Phase → nur an Missionsbau-Sockets."""
+        return _phase_is_builder(plan_id, phase_id)
 
     # presence.cursor immer erlaubt (auch für Nur-Leser sinnvoll: "Zeigen")
     if t == "presence.cursor":
@@ -126,14 +160,28 @@ async def _handle(
         await _reject(ws, msg.get("cid"), f"Keine Berechtigung: {need}")
         return
 
+    # Nicht-Missionsbauer dürfen keine Objekte auf Builder-Phasen anlegen/ändern.
+    if not is_builder and t in (
+        "marker.create", "marker.modify", "stroke.commit", "annotation.create",
+        "annotation.move", "annotation.modify",
+    ):
+        pid = (msg.get("data") or {}).get("phase_id")
+        if bo(pid):
+            await _reject(ws, msg.get("cid"), "Keine Berechtigung: Missionsbau-Ebene")
+            return
+
     if t in ("stroke.begin", "stroke.append"):
+        # Freihand-Zwischenschritte: an alle (die endgültige stroke.commit filtert)
         await hub.broadcast(plan_id, {**msg, "uid": user.id})
         return
 
     if t == "marker.create":
         data = {k: msg["data"].get(k) for k in MARKER_FIELDS if k in msg.get("data", {})}
         m = await run_in_threadpool(_create_marker, plan_id, user.id, data)
-        await hub.broadcast(plan_id, {"type": "marker.upsert", "cid": msg.get("cid"), "marker": m})
+        await hub.broadcast(
+            plan_id, {"type": "marker.upsert", "cid": msg.get("cid"), "marker": m},
+            builder_only=bo(m.get("phase_id")),
+        )
 
     elif t == "marker.move":
         res = await run_in_threadpool(
@@ -154,23 +202,33 @@ async def _handle(
         await _emit_update(ws, plan_id, msg, res)
 
     elif t == "marker.delete":
-        ok = await run_in_threadpool(_delete_marker, plan_id, msg["id"], is_owner)
-        if ok:
-            await hub.broadcast(plan_id, {"type": "marker.delete", "id": msg["id"]})
+        pid = await run_in_threadpool(_delete_marker, plan_id, msg["id"], is_owner)
+        if pid is not False:
+            await hub.broadcast(
+                plan_id, {"type": "marker.delete", "id": msg["id"]}, builder_only=bo(pid)
+            )
         else:
             await _reject(ws, msg.get("cid"), "Marker gesperrt oder nicht vorhanden")
 
     elif t == "stroke.commit":
         s = await run_in_threadpool(_create_stroke, plan_id, user.id, msg.get("data", {}))
-        await hub.broadcast(plan_id, {"type": "stroke.upsert", "cid": msg.get("cid"), "stroke": s})
+        await hub.broadcast(
+            plan_id, {"type": "stroke.upsert", "cid": msg.get("cid"), "stroke": s},
+            builder_only=bo(s.get("phase_id")),
+        )
 
     elif t == "stroke.delete":
-        await run_in_threadpool(_delete_stroke, plan_id, msg["id"])
-        await hub.broadcast(plan_id, {"type": "stroke.delete", "id": msg["id"]})
+        pid = await run_in_threadpool(_delete_stroke, plan_id, msg["id"])
+        await hub.broadcast(
+            plan_id, {"type": "stroke.delete", "id": msg["id"]}, builder_only=bo(pid)
+        )
 
     elif t == "annotation.create":
         a = await run_in_threadpool(_create_annotation, plan_id, user.id, msg.get("data", {}))
-        await hub.broadcast(plan_id, {"type": "annotation.upsert", "cid": msg.get("cid"), "annotation": a})
+        await hub.broadcast(
+            plan_id, {"type": "annotation.upsert", "cid": msg.get("cid"), "annotation": a},
+            builder_only=bo(a.get("phase_id")),
+        )
 
     elif t in ("annotation.move", "annotation.modify"):
         fields = {
@@ -179,18 +237,26 @@ async def _handle(
         }
         res = await run_in_threadpool(_update_annotation, plan_id, msg["id"], user.id, fields)
         if res is not None:
-            await hub.broadcast(plan_id, {"type": "annotation.upsert", "annotation": res})
+            await hub.broadcast(
+                plan_id, {"type": "annotation.upsert", "annotation": res},
+                builder_only=bo(res.get("phase_id")),
+            )
 
     elif t == "annotation.delete":
-        await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
-        await hub.broadcast(plan_id, {"type": "annotation.delete", "id": msg["id"]})
+        pid = await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
+        await hub.broadcast(
+            plan_id, {"type": "annotation.delete", "id": msg["id"]}, builder_only=bo(pid)
+        )
 
 
 async def _emit_update(ws: WebSocket, plan_id: str, msg: dict, res: dict | None) -> None:
     if res is None:
         await _reject(ws, msg.get("cid"), "Marker gesperrt oder nicht vorhanden")
     else:
-        await hub.broadcast(plan_id, {"type": "marker.upsert", "marker": res})
+        await hub.broadcast(
+            plan_id, {"type": "marker.upsert", "marker": res},
+            builder_only=_phase_is_builder(plan_id, res.get("phase_id")),
+        )
 
 
 # ─── DB-Operationen (im Threadpool) ────────────────────────────────────────
@@ -218,14 +284,17 @@ def _update_marker(plan_id: str, marker_id: str, uid: str, is_owner: bool, field
         return _marker_out(m, _author_of(db, m))
 
 
-def _delete_marker(plan_id: str, marker_id: str, is_owner: bool) -> bool:
+def _delete_marker(plan_id: str, marker_id: str, is_owner: bool):
+    """Gibt die phase_id des gelöschten Markers zurück (kann None sein), oder
+    ``False`` wenn nicht gelöscht (gesperrt / nicht vorhanden)."""
     with SessionLocal() as db:
         m = db.get(Marker, marker_id)
         if m is None or m.plan_id != plan_id or (m.locked and not is_owner):
             return False
+        pid = m.phase_id
         db.delete(m)
         db.commit()
-        return True
+        return pid
 
 
 def _create_stroke(plan_id: str, uid: str, data: dict) -> dict:
@@ -244,12 +313,15 @@ def _create_stroke(plan_id: str, uid: str, data: dict) -> dict:
         }
 
 
-def _delete_stroke(plan_id: str, stroke_id: str) -> None:
+def _delete_stroke(plan_id: str, stroke_id: str) -> str | None:
     with SessionLocal() as db:
         s = db.get(Stroke, stroke_id)
-        if s is not None and s.plan_id == plan_id:
-            db.delete(s)
-            db.commit()
+        if s is None or s.plan_id != plan_id:
+            return None
+        pid = s.phase_id
+        db.delete(s)
+        db.commit()
+        return pid
 
 
 def _annotation_out(a: Annotation) -> dict:
@@ -287,9 +359,12 @@ def _update_annotation(plan_id: str, ann_id: str, uid: str, fields: dict) -> dic
         return _annotation_out(a)
 
 
-def _delete_annotation(plan_id: str, ann_id: str) -> None:
+def _delete_annotation(plan_id: str, ann_id: str) -> str | None:
     with SessionLocal() as db:
         a = db.get(Annotation, ann_id)
-        if a is not None and a.plan_id == plan_id:
-            db.delete(a)
-            db.commit()
+        if a is None or a.plan_id != plan_id:
+            return None
+        pid = a.phase_id
+        db.delete(a)
+        db.commit()
+        return pid

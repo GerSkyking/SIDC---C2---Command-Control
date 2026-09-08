@@ -30,6 +30,7 @@ export interface Me {
   username: string;
   role: string;
   can_create_plans_effective: boolean;
+  is_mission_builder_effective: boolean;
 }
 export interface MapItem {
   id: string;
@@ -77,6 +78,9 @@ export interface Phase {
   name: string;
   ordering: number;
   notes: string;
+  plane?: "player" | "builder";
+  parent_id?: string | null;
+  sub_ordering?: number;
 }
 export interface PlanVersionRow {
   id: string;
@@ -91,6 +95,7 @@ export interface AdminUser {
   username: string;
   role: string;
   can_create_plans: boolean;
+  is_mission_builder: boolean;
   is_active: boolean;
   is_local: boolean;
 }
@@ -98,6 +103,7 @@ export interface AdminGroup {
   id: string;
   name: string;
   can_create_plans: boolean;
+  is_mission_builder: boolean;
   member_ids: string[];
 }
 export interface AclEntry {
@@ -208,13 +214,13 @@ export const api = {
   deleteFavorite: (id: string) => req<void>("DELETE", `/api/favorites/${id}`),
 
   adminUsers: () => req<AdminUser[]>("GET", "/api/admin/users"),
-  createUser: (b: { username: string; password: string; role: string; can_create_plans: boolean }) =>
+  createUser: (b: { username: string; password: string; role: string; can_create_plans: boolean; is_mission_builder?: boolean }) =>
     req<AdminUser>("POST", "/api/admin/users", b),
-  patchUser: (id: string, b: Partial<{ role: string; can_create_plans: boolean; is_active: boolean; password: string }>) =>
+  patchUser: (id: string, b: Partial<{ role: string; can_create_plans: boolean; is_mission_builder: boolean; is_active: boolean; password: string }>) =>
     req<AdminUser>("PATCH", `/api/admin/users/${id}`, b),
   deleteUser: (id: string) => req<void>("DELETE", `/api/admin/users/${id}`),
   adminGroups: () => req<AdminGroup[]>("GET", "/api/admin/groups"),
-  createGroup: (b: { name: string; can_create_plans: boolean }) => req<AdminGroup>("POST", "/api/admin/groups", b),
+  createGroup: (b: { name: string; can_create_plans: boolean; is_mission_builder?: boolean }) => req<AdminGroup>("POST", "/api/admin/groups", b),
   setGroupMembers: (id: string, userIds: string[]) => req<AdminGroup>("PUT", `/api/admin/groups/${id}/members`, userIds),
   deleteGroup: (id: string) => req<void>("DELETE", `/api/admin/groups/${id}`),
   adminAudit: (q: { limit?: number; offset?: number; action?: string; user?: string }) => {
@@ -239,8 +245,9 @@ export const api = {
   trash: () => req<PlanItem[]>("GET", "/plans/trash"),
   undeletePlan: (planId: string) => req<PlanItem>("POST", `/plans/${planId}/undelete`),
   purgePlan: (planId: string) => req<void>("DELETE", `/plans/${planId}/purge`),
-  createPhase: (planId: string, name: string) =>
-    req<Phase>("POST", `/plans/${planId}/phases`, { name }),
+  planPhases: (planId: string) => req<Phase[]>("GET", `/plans/${planId}/phases`),
+  createPhase: (planId: string, name: string, opts: { plane?: string; parent_id?: string } = {}) =>
+    req<Phase>("POST", `/plans/${planId}/phases`, { name, ...opts }),
   renamePhase: (planId: string, phaseId: string, name: string) =>
     req<Phase>("PATCH", `/plans/${planId}/phases/${phaseId}`, { name }),
   updatePhaseNotes: (planId: string, phaseId: string, notes: string) =>

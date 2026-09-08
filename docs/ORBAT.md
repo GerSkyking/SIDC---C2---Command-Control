@@ -5,6 +5,8 @@ Alle Entscheidungen unten sind final, sofern nicht als *offen* markiert.
 
 ---
 
+**Status:** Baustein A ✅ umgesetzt & deployt (2026-09-08). B/C offen.
+
 ## Baustein A — Rolle „Missionsbau" + parallele Ebenen/Phasen
 
 ### Rolle
@@ -156,13 +158,20 @@ Marker.orbat_node_id : orbat_nodes.id | NULL
 3. **Baustein C** — Marker↔Knoten (beide Wege), Status-Sync, Freigabe-Rendering für Spieler,
    Briefing-Seite.
 
-**Noch zu klären (klein, kann während der Umsetzung):**
-- A: Bekommt der „wirke als"-Umschalter ein Tastenkürzel? Merkt er sich die letzte Wahl?
-- B: `qty_current` — automatisch aus verknüpften Markern **oder** frei editierbar mit
-  Auto-Vorschlag? (Vorschlag: frei editierbar, Marker-Zerstörung schlägt Dekrement vor.)
-- B: Braucht ein ORBAT eine Phase-/Zeitbindung, oder ist es zeitlos und nur der
-  Marker-Status trägt den Verlauf? (Vorschlag: zeitlos.)
-- C: Wenn ein Spieler einen freigegebenen Enemy-Marker sieht — darf er ihn verschieben
-  (eigene Lagebeurteilung) oder ist er für Spieler read-only? (Vorschlag: read-only,
-  Spieler legen eigene „vermutete Feind"-Marker an.)
-- C: „~50 %"-Anzeige — als konkrete gerundete Zahl oder als Bereich („1–2 Kp")?
+**Geklärt (Nutzer):**
+- A: „wirke als"-Umschalter ist ein **Button** (kein Tastenkürzel). Die letzte Wahl wird
+  pro Plan/Browser gemerkt.
+- B: `qty_current` = **frei editierbare** Ist-Stärke. Wird ein verknüpfter Marker als
+  zerstört markiert, schlägt das System `qty_current − 1` vor.
+- B: ORBAT ist **zeitlos**. Der Verlauf (Verluste) steckt im Marker-/Knoten-Status.
+- C: Enemy-Marker dürfen **Spieler nicht** verschieben/platzieren. Wer Enemy-Marker
+  **platzieren** bzw. **verschieben** darf, wird **pro ORBAT** geregelt (ORBAT-ACL, Level
+  `editor` + feingranular `can_place` / `can_move` je Subjekt) — nicht über die Plan-ACL
+  und nicht darüber, „wessen Fraktion" es ist.
+- C: Freigegebene Stärke = **Regler / Zahlenfeld**, `rel_strength` **Standard 50 %**.
+
+### Datenmodell C (Ergänzung)
+```
+OrbatAcl.can_place : bool   # darf Marker aus diesem ORBAT auf die Karte setzen
+OrbatAcl.can_move  : bool   # darf verknüpfte Marker verschieben
+```

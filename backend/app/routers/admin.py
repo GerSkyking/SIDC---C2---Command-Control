@@ -41,11 +41,13 @@ class UserCreate(BaseModel):
     password: str
     role: str = Field(default="user", pattern=r"^(admin|user)$")
     can_create_plans: bool = False
+    is_mission_builder: bool = False
 
 
 class UserPatch(BaseModel):
     role: str | None = Field(default=None, pattern=r"^(admin|user)$")
     can_create_plans: bool | None = None
+    is_mission_builder: bool | None = None
     is_active: bool | None = None
     password: str | None = None
 
@@ -55,6 +57,7 @@ class UserRow(BaseModel):
     username: str
     role: str
     can_create_plans: bool
+    is_mission_builder: bool = False
     is_active: bool
     is_local: bool  # hat ein Passwort (kein reiner OIDC-User)
 
@@ -62,6 +65,7 @@ class UserRow(BaseModel):
 def _row(u: User) -> UserRow:
     return UserRow(
         id=u.id, username=u.username, role=u.role, can_create_plans=u.can_create_plans,
+        is_mission_builder=u.is_mission_builder,
         is_active=u.is_active, is_local=bool(u.password_hash),
     )
 
@@ -80,6 +84,7 @@ def create_user(body: UserCreate, request: Request, admin: AdminUser, db: DbDep)
     u = User(
         username=body.username, password_hash=hash_password(body.password),
         role=body.role, can_create_plans=body.can_create_plans,
+        is_mission_builder=body.is_mission_builder,
     )
     db.add(u)
     db.flush()
@@ -107,6 +112,8 @@ def patch_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbDep) -> Us
         u.role = body.role
     if body.can_create_plans is not None:
         u.can_create_plans = body.can_create_plans
+    if body.is_mission_builder is not None:
+        u.is_mission_builder = body.is_mission_builder
     if body.is_active is not None:
         if u.id == admin.id and not body.is_active:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Eigenes Konto nicht deaktivierbar")
@@ -168,17 +175,19 @@ def list_audit(
 class GroupIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     can_create_plans: bool = False
+    is_mission_builder: bool = False
 
 
 class GroupRow(BaseModel):
     id: str
     name: str
     can_create_plans: bool
+    is_mission_builder: bool = False
     member_ids: list[str]
 
 
 def _grow(g: Group, member_ids: list[str]) -> GroupRow:
-    return GroupRow(id=g.id, name=g.name, can_create_plans=g.can_create_plans, member_ids=member_ids)
+    return GroupRow(id=g.id, name=g.name, can_create_plans=g.can_create_plans, is_mission_builder=g.is_mission_builder, member_ids=member_ids)
 
 
 @router.get("/groups", response_model=list[GroupRow])
@@ -194,7 +203,7 @@ def list_groups(admin: AdminUser, db: DbDep) -> list[GroupRow]:
 def create_group(body: GroupIn, request: Request, admin: AdminUser, db: DbDep) -> GroupRow:
     if db.scalar(select(Group.id).where(Group.name == body.name)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Gruppenname vergeben")
-    g = Group(name=body.name, can_create_plans=body.can_create_plans)
+    g = Group(name=body.name, can_create_plans=body.can_create_plans, is_mission_builder=body.is_mission_builder)
     db.add(g)
     db.commit()
     audit.record(db, "group.create", user_id=admin.id, target_type="group", target_id=g.id,
@@ -209,6 +218,7 @@ def patch_group(group_id: str, body: GroupIn, admin: AdminUser, db: DbDep) -> Gr
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     g.name = body.name
     g.can_create_plans = body.can_create_plans
+    g.is_mission_builder = body.is_mission_builder
     db.commit()
     mids = list(db.scalars(select(GroupMember.user_id).where(GroupMember.group_id == g.id)))
     return _grow(g, mids)

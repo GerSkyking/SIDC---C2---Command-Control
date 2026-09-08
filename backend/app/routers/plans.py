@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
 from ..config import get_settings
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
@@ -26,7 +27,12 @@ from ..models import (
     User,
     now,
 )
-from ..permissions import can_create_plans, effective_level, rank
+from ..permissions import (
+    can_create_plans,
+    effective_level,
+    effective_mission_builder,
+    rank,
+)
 from ..schemas import (
     ACLCandidate,
     ACLEntryIn,
@@ -50,10 +56,23 @@ OwnerPlan = Annotated[Plan, Depends(require_plan_level("owner"))]
 ViewerPlan = Annotated[Plan, Depends(require_plan_level("viewer"))]
 
 
-def _snapshot(db: Session, plan: Plan) -> dict:
-    markers = db.scalars(select(Marker).where(Marker.plan_id == plan.id))
-    strokes = db.scalars(select(Stroke).where(Stroke.plan_id == plan.id))
-    anns = db.scalars(select(Annotation).where(Annotation.plan_id == plan.id))
+def _builder_phase_ids(db: Session, plan_id: str) -> set[str]:
+    return set(
+        db.scalars(
+            select(Phase.id).where(Phase.plan_id == plan_id, Phase.plane == "builder")
+        )
+    )
+
+
+def _snapshot(db: Session, plan: Plan, *, include_builder: bool = True) -> dict:
+    markers = list(db.scalars(select(Marker).where(Marker.plan_id == plan.id)))
+    strokes = list(db.scalars(select(Stroke).where(Stroke.plan_id == plan.id)))
+    anns = list(db.scalars(select(Annotation).where(Annotation.plan_id == plan.id)))
+    if not include_builder:
+        hide = _builder_phase_ids(db, plan.id)
+        markers = [m for m in markers if m.phase_id not in hide]
+        strokes = [s for s in strokes if s.phase_id not in hide]
+        anns = [a for a in anns if a.phase_id not in hide]
     return {
         "markers": [_marker_dict(m) for m in markers],
         "strokes": [_stroke_dict(s) for s in strokes],
@@ -151,7 +170,10 @@ def create_plan(body: PlanCreateIn, request: Request, user: CurrentUser, db: DbD
     db.flush()
     db.add(PlanACL(plan_id=plan.id, subject_type="user", subject_id=user.id, level="owner"))
     db.add(Layer(plan_id=plan.id, name="Allgemein", is_default=True))
-    db.add(Phase(plan_id=plan.id, name="Base", ordering=0))
+    base = Phase(plan_id=plan.id, name="Base", ordering=0)
+    db.add(base)
+    db.flush()
+    db.add(Phase(plan_id=plan.id, name="Base", ordering=0, plane="builder", parent_id=base.id))
     db.commit()
     audit.record(db, "plan.create", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request, name=plan.name, map_id=plan.map_id)
@@ -298,19 +320,29 @@ def get_thumbnail(plan: ViewerPlan) -> Response:
 
 
 @router.get("/{plan_id}/snapshot")
-def get_snapshot(plan: ViewerPlan, db: DbDep) -> dict:
+def get_snapshot(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> dict:
+    builder = effective_mission_builder(db, user)
     phase_rows = list(db.scalars(select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering)))
     if not phase_rows:  # Altbestand: fehlende Standard-Phase nachziehen
         base = Phase(plan_id=plan.id, name="Base", ordering=0)
         db.add(base)
+        db.flush()
+        db.add(Phase(plan_id=plan.id, name="Base", ordering=0, plane="builder", parent_id=base.id))
         db.commit()
-        phase_rows = [base]
-    phases = phase_rows
+        phase_rows = list(db.scalars(select(Phase).where(Phase.plan_id == plan.id)))
+    if builder:
+        _ensure_builder_pairs(db, plan.id)
+        phase_rows = list(
+            db.scalars(
+                select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering, Phase.sub_ordering)
+            )
+        )
+    phases = [p for p in phase_rows if builder or (p.plane or "player") == "player"]
     layers = db.scalars(select(Layer).where(Layer.plan_id == plan.id).order_by(Layer.ordering))
     from ..models import Map
 
     mp = db.get(Map, plan.map_id)
-    snap = _snapshot(db, plan)
+    snap = _snapshot(db, plan, include_builder=builder)
     # Ersteller-Namen für die Marker-Anzeige (Hover) anreichern – nur hier,
     # nicht in _snapshot (dessen Output wird für Versionen/Klonen als Marker-kwargs
     # wiederverwendet).
@@ -329,6 +361,8 @@ def get_snapshot(plan: ViewerPlan, db: DbDep) -> dict:
         "map_meta": mp.meta if mp else {},
         "phases": [
             {"id": p.id, "name": p.name, "ordering": p.ordering, "notes": p.notes or "",
+             "plane": p.plane or "player", "parent_id": p.parent_id,
+             "sub_ordering": p.sub_ordering or 0,
              "start_at": p.start_at.isoformat() if p.start_at else None}
             for p in phases
         ],
@@ -347,34 +381,83 @@ class PhaseBody(BaseModel):
     name: str | None = None
     ordering: int | None = None
     notes: str | None = None
+    plane: str | None = None       # "builder" für eine Missionsbau-(Zwischen-)Phase
+    parent_id: str | None = None   # bei plane="builder": zugehörige Spieler-Phase
 
 
 def _phase_out(p: Phase) -> dict:
-    return {"id": p.id, "name": p.name, "ordering": p.ordering, "notes": p.notes or ""}
+    return {
+        "id": p.id, "name": p.name, "ordering": p.ordering, "notes": p.notes or "",
+        "plane": p.plane or "player", "parent_id": p.parent_id, "sub_ordering": p.sub_ordering or 0,
+    }
+
+
+def _ensure_builder_pairs(db: Session, plan_id: str) -> None:
+    """Für jede Spieler-Phase ohne Builder-Gegenstück eine anlegen (Altbestand)."""
+    players = list(db.scalars(select(Phase).where(Phase.plan_id == plan_id, Phase.plane == "player")))
+    have_parents = set(
+        db.scalars(select(Phase.parent_id).where(Phase.plan_id == plan_id, Phase.plane == "builder"))
+    )
+    made = False
+    for pp in players:
+        if pp.id not in have_parents:
+            db.add(Phase(plan_id=plan_id, name=pp.name, ordering=pp.ordering,
+                         plane="builder", parent_id=pp.id))
+            made = True
+    if made:
+        db.commit()
 
 
 @router.get("/{plan_id}/phases")
-def list_phases(plan: ViewerPlan, db: DbDep) -> list[dict]:
-    rows = db.scalars(select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering))
-    return [_phase_out(p) for p in rows]
+def list_phases(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> list[dict]:
+    builder = effective_mission_builder(db, user)
+    if builder:
+        _ensure_builder_pairs(db, plan.id)
+    q = select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering, Phase.sub_ordering)
+    if not builder:
+        q = q.where(Phase.plane == "player")
+    return [_phase_out(p) for p in db.scalars(q)]
 
 
 @router.post("/{plan_id}/phases", status_code=status.HTTP_201_CREATED)
-def create_phase(body: PhaseBody, plan: EditorPlan, db: DbDep) -> dict:
+def create_phase(body: PhaseBody, plan: EditorPlan, user: CurrentUser, db: DbDep) -> dict:
+    name = (body.name or "").strip() or "Phase"
+
+    # Missionsbau-Zwischenphase (1.1, 1.2 …) unter einer Spieler-Phase
+    if body.plane == "builder" and body.parent_id:
+        if not effective_mission_builder(db, user):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Missionsbau-Rolle erforderlich")
+        parent = db.get(Phase, body.parent_id)
+        if parent is None or parent.plan_id != plan.id or parent.plane != "player":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Spieler-Phase nicht gefunden")
+        nsub = db.scalar(
+            select(func.coalesce(func.max(Phase.sub_ordering), -1)).where(Phase.parent_id == parent.id)
+        )
+        p = Phase(plan_id=plan.id, name=name, ordering=parent.ordering, plane="builder",
+                  parent_id=parent.id, sub_ordering=int(nsub) + 1)
+        db.add(p)
+        db.commit()
+        return _phase_out(p)
+
+    # normale Spieler-Phase + automatisch gepaarte Builder-Phase
     nxt = db.scalar(
         select(func.coalesce(func.max(Phase.ordering), -1)).where(Phase.plan_id == plan.id)
     )
-    p = Phase(plan_id=plan.id, name=(body.name or "").strip() or "Phase", ordering=int(nxt) + 1)
+    p = Phase(plan_id=plan.id, name=name, ordering=int(nxt) + 1)
     db.add(p)
+    db.flush()
+    db.add(Phase(plan_id=plan.id, name=name, ordering=p.ordering, plane="builder", parent_id=p.id))
     db.commit()
     return _phase_out(p)
 
 
 @router.patch("/{plan_id}/phases/{phase_id}")
-def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, db: DbDep) -> dict:
+def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: CurrentUser, db: DbDep) -> dict:
     p = db.get(Phase, phase_id)
     if p is None or p.plan_id != plan.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if p.plane == "builder" and not effective_mission_builder(db, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN)
     if body.name is not None and body.name.strip():
         p.name = body.name.strip()
     if body.ordering is not None:
@@ -386,13 +469,20 @@ def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, db: DbDep) -> 
 
 
 @router.delete("/{plan_id}/phases/{phase_id}")
-def delete_phase(phase_id: str, plan: EditorPlan, db: DbDep) -> dict:
+def delete_phase(phase_id: str, plan: EditorPlan, user: CurrentUser, db: DbDep) -> dict:
     p = db.get(Phase, phase_id)
     if p is None or p.plan_id != plan.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    db.execute(update(Marker).where(Marker.phase_id == phase_id).values(phase_id=None))
-    db.execute(update(Stroke).where(Stroke.phase_id == phase_id).values(phase_id=None))
-    db.delete(p)
+    if p.plane == "builder" and not effective_mission_builder(db, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN)
+    victims = [p.id]
+    if p.plane == "player":  # Spieler-Phase löschen → alle Builder-Kinder mit
+        victims += list(db.scalars(select(Phase.id).where(Phase.parent_id == p.id)))
+    for vid in victims:
+        db.execute(update(Marker).where(Marker.phase_id == vid).values(phase_id=None))
+        db.execute(update(Stroke).where(Stroke.phase_id == vid).values(phase_id=None))
+        db.execute(update(Annotation).where(Annotation.phase_id == vid).values(phase_id=None))
+    db.execute(sa_delete(Phase).where(Phase.id.in_(victims)))
     db.commit()
     return {"ok": True}
 
@@ -508,8 +598,14 @@ def clone_plan(
     db.flush()
 
     phase_map: dict[str, str] = {}
-    for p in db.scalars(select(Phase).where(Phase.plan_id == plan.id)):
-        np = Phase(plan_id=clone.id, name=p.name, ordering=p.ordering, start_at=p.start_at, notes=p.notes)
+    src_phases = list(db.scalars(select(Phase).where(Phase.plan_id == plan.id)))
+    # Spieler-Phasen zuerst klonen, damit die parent_id der Builder-Phasen gemappt werden kann
+    for p in sorted(src_phases, key=lambda x: 0 if (x.plane or "player") == "player" else 1):
+        np = Phase(
+            plan_id=clone.id, name=p.name, ordering=p.ordering, start_at=p.start_at, notes=p.notes,
+            plane=p.plane or "player", sub_ordering=p.sub_ordering or 0,
+            parent_id=phase_map.get(p.parent_id or ""),
+        )
         db.add(np)
         db.flush()
         phase_map[p.id] = np.id

@@ -116,20 +116,49 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let myChannel = channels?.currentChannel ?? "";
   let is3D = false;
 
-  // Phasen / Zeitstrahl
+  // Phasen / Zeitstrahl (+ Missionsbau-Parallelebene)
   interface PhaseT {
     id: string;
     name: string;
     ordering: number;
     notes: string;
+    plane?: "player" | "builder";
+    parent_id?: string | null;
+    sub_ordering?: number;
   }
-  const phases: PhaseT[] = [...(snap.phases ?? [])].sort((a: PhaseT, b: PhaseT) => a.ordering - b.ordering);
-  let currentPhaseId: string = phases[0]?.id ?? "";
+  const isMB: boolean = !!me.is_mission_builder_effective;
+  const phases: PhaseT[] = [...(snap.phases ?? [])].sort(
+    (a: PhaseT, b: PhaseT) => a.ordering - b.ordering || (a.sub_ordering ?? 0) - (b.sub_ordering ?? 0),
+  );
+  const isBuilderPhase = (id: string | null | undefined): boolean =>
+    !!id && phases.some((p) => p.id === id && p.plane === "builder");
+  const playerPhases = (): PhaseT[] => phases.filter((p) => (p.plane ?? "player") === "player");
+  const builderChildren = (playerId: string): PhaseT[] =>
+    phases
+      .filter((p) => p.plane === "builder" && p.parent_id === playerId)
+      .sort((a, b) => (a.sub_ordering ?? 0) - (b.sub_ordering ?? 0));
+
+  let currentPhaseId: string = playerPhases()[0]?.id ?? phases[0]?.id ?? "";
+  let actAs: "player" | "builder" =
+    isMB && localStorage.getItem(`sidc_actas_${planId}`) === "builder" ? "builder" : "player";
+  const activePlayerId = (): string => {
+    const cur = phases.find((p) => p.id === currentPhaseId);
+    return cur?.plane === "builder" ? cur.parent_id ?? "" : currentPhaseId;
+  };
   let outOpacity = Number(localStorage.getItem("sidc_phaseopacity") ?? "20"); // % fremde Phasen
   if (!Number.isFinite(outOpacity)) outOpacity = 20;
+  let crossOpacity = Number(localStorage.getItem("sidc_crossopacity") ?? "20"); // % andere Ebene
+  if (!Number.isFinite(crossOpacity)) crossOpacity = 20;
   const phaseListeners: (() => void)[] = []; // z. B. Notiz-Fenster bei Phasenwechsel
-  const phaseOpacity = (m: Marker): number =>
-    m.phase_id == null || m.phase_id === currentPhaseId ? 1 : Math.max(0, Math.min(100, outOpacity)) / 100;
+  const phaseOpacityOf = (phaseId: string | null | undefined): number => {
+    if (phaseId == null) return 1;
+    const mB = isBuilderPhase(phaseId);
+    const curB = isBuilderPhase(currentPhaseId);
+    if (mB !== curB) return Math.max(0, Math.min(100, crossOpacity)) / 100; // andere Ebene
+    if (phaseId === currentPhaseId) return 1;
+    return Math.max(0, Math.min(100, outOpacity)) / 100; // Fremdphase (gleiche Ebene)
+  };
+  const phaseOpacity = (m: Marker): number => phaseOpacityOf(m.phase_id);
   const phaseNameOf = (id: string | null): string =>
     id ? (phases.find((p) => p.id === id)?.name ?? "—") : t("phase.global");
 
@@ -890,28 +919,47 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // ── Zeitstrahl / Phasen ───────────────────────────────────────────────
   const timelineEl = root.querySelector<HTMLDivElement>("#timeline")!;
-  function selectPhase(id: string): void {
-    if (id === currentPhaseId || !phases.some((p) => p.id === id)) return;
-    currentPhaseId = id;
+  function applyPhase(): void {
     renderTimeline();
     void refreshMarkers();
     phaseListeners.forEach((f) => f());
     updatePresentBar();
+  }
+  function selectPhase(id: string): void {
+    if (id === currentPhaseId || !phases.some((p) => p.id === id)) return;
+    currentPhaseId = id;
+    applyPhase();
+  }
+  function selectPlayerPhase(pid: string): void {
+    currentPhaseId = actAs === "builder" ? builderChildren(pid)[0]?.id ?? pid : pid;
+    applyPhase();
+  }
+  function setActAs(mode: "player" | "builder"): void {
+    actAs = mode;
+    try {
+      localStorage.setItem(`sidc_actas_${planId}`, mode);
+    } catch {
+      /* ignore */
+    }
+    const pid = activePlayerId();
+    currentPhaseId = mode === "builder" ? builderChildren(pid)[0]?.id ?? pid : pid;
+    applyPhase();
   }
 
   // ── Präsentationsmodus (Vollbild, nur Karte + Phasen-Umschalter) ──────
   let presentBar: HTMLElement | null = null;
   function updatePresentBar(): void {
     if (!presentBar) return;
-    const cur = phases.find((p) => p.id === currentPhaseId);
-    const idx = phases.findIndex((p) => p.id === currentPhaseId);
+    const list = playerPhases();
+    const idx = list.findIndex((p) => p.id === activePlayerId());
     presentBar.querySelector(".pb-name")!.textContent =
-      `${cur?.name ?? "—"}  (${idx + 1}/${phases.length})`;
+      `${list[idx]?.name ?? "—"}  (${idx + 1}/${list.length})`;
   }
   function stepPhase(dir: number): void {
-    const idx = phases.findIndex((p) => p.id === currentPhaseId);
-    const next = phases[(idx + dir + phases.length) % phases.length];
-    if (next) selectPhase(next.id);
+    const list = playerPhases();
+    const idx = list.findIndex((p) => p.id === activePlayerId());
+    const next = list[(idx + dir + list.length) % list.length];
+    if (next) selectPlayerPhase(next.id);
   }
   function exitPresent(): void {
     root.classList.remove("presenting");
@@ -945,51 +993,116 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     setTimeout(() => map.resize(), 60);
   }
 
+  function addLocalPhase(p: PhaseT): void {
+    phases.push({ ...p, notes: p.notes ?? "", plane: p.plane ?? "player" });
+    phases.sort((a, b) => a.ordering - b.ordering || (a.sub_ordering ?? 0) - (b.sub_ordering ?? 0));
+  }
+
   function renderTimeline(): void {
-    const chips = phases
+    const pl = playerPhases();
+    const apid = activePlayerId();
+    const chips = pl
       .map(
         (p) =>
-          `<span class="ph-chip ${p.id === currentPhaseId ? "active" : ""}" data-ph="${p.id}">` +
-          `<button data-pick="${p.id}">${p.name}</button>` +
-          (canEdit && phases.length > 1
+          `<span class="ph-chip ${p.id === apid ? "active" : ""}">` +
+          `<button data-pickp="${p.id}">${p.name}</button>` +
+          (canEdit && pl.length > 1
             ? `<button class="icon-btn" data-delph="${p.id}" title="${t("common.delete")}">${icon("x", 14)}</button>`
             : "") +
           `</span>`,
       )
       .join("");
+
+    let mbRow = "";
+    if (isMB) {
+      const subs = builderChildren(apid);
+      mbRow =
+        `<div class="mb-row">` +
+        `<span class="segmented mb-actas">` +
+        `<button class="seg-btn ${actAs === "player" ? "active" : ""}" data-as="player">${t("mb.player")}</button>` +
+        `<button class="seg-btn ${actAs === "builder" ? "active" : ""}" data-as="builder">${t("mb.builder")}</button>` +
+        `</span>` +
+        (actAs === "builder"
+          ? subs
+              .map(
+                (s) =>
+                  `<span class="ph-chip ph-sub ${s.id === currentPhaseId ? "active" : ""}">` +
+                  `<button data-picks="${s.id}">${s.name}</button>` +
+                  (canEdit && (s.sub_ordering ?? 0) > 0
+                    ? `<button class="icon-btn" data-dels="${s.id}" title="${t("common.delete")}">${icon("x", 14)}</button>`
+                    : "") +
+                  `</span>`,
+              )
+              .join("") +
+            (canEdit ? `<button id="sub-add" title="${t("mb.subPhase")}">+</button>` : "")
+          : "") +
+        `<label class="ph-op" title="${t("mb.crossOpacity")}">${t("mb.crossOpacity")}` +
+        `<input type="range" id="cross-op" min="0" max="100" step="5" value="${crossOpacity}"/>` +
+        `<span id="cross-op-v">${crossOpacity}%</span></label>` +
+        `</div>`;
+    }
+
     timelineEl.innerHTML =
-      `<span class="ph-label">${t("phase.heading")}:</span>${chips}` +
+      `<div class="ph-main"><span class="ph-label">${t("phase.heading")}:</span>${chips}` +
       (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+</button>` : "") +
       `<label class="ph-op" title="${t("phase.outOpacity")}">` +
       `<input type="range" id="ph-op" min="0" max="100" step="5" value="${outOpacity}"/>` +
-      `<span id="ph-op-v">${outOpacity}%</span></label>`;
+      `<span id="ph-op-v">${outOpacity}%</span></label></div>` +
+      mbRow;
 
-    timelineEl.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((b) =>
-      b.addEventListener("click", () => selectPhase(b.dataset.pick!)),
+    timelineEl.querySelectorAll<HTMLButtonElement>("[data-pickp]").forEach((b) =>
+      b.addEventListener("click", () => selectPlayerPhase(b.dataset.pickp!)),
     );
+    timelineEl.querySelectorAll<HTMLButtonElement>("[data-picks]").forEach((b) =>
+      b.addEventListener("click", () => selectPhase(b.dataset.picks!)),
+    );
+    timelineEl.querySelectorAll<HTMLButtonElement>("[data-as]").forEach((b) =>
+      b.addEventListener("click", () => setActAs(b.dataset.as as "player" | "builder")),
+    );
+
+    const removePhaseLocal = (delId: string) => {
+      const gone = new Set([delId, ...phases.filter((p) => p.parent_id === delId).map((p) => p.id)]);
+      for (let i = phases.length - 1; i >= 0; i--) if (gone.has(phases[i].id)) phases.splice(i, 1);
+      for (const m of markers.values()) if (m.phase_id && gone.has(m.phase_id)) m.phase_id = null;
+      for (const a of annots.values()) if (a.phase_id && gone.has(a.phase_id)) a.phase_id = null;
+      if (gone.has(currentPhaseId)) currentPhaseId = playerPhases()[0]?.id ?? "";
+      applyPhase();
+      renderAnnots();
+    };
     timelineEl.querySelectorAll<HTMLButtonElement>("[data-delph]").forEach((b) =>
       b.addEventListener("click", async () => {
         if (!confirm(t("phase.confirmDelete"))) return;
         await api.deletePhase(planId, b.dataset.delph!);
-        const i = phases.findIndex((p) => p.id === b.dataset.delph);
-        if (i >= 0) phases.splice(i, 1);
-        for (const m of markers.values()) if (m.phase_id === b.dataset.delph) m.phase_id = null;
-        if (currentPhaseId === b.dataset.delph) currentPhaseId = phases[0]?.id ?? "";
-        renderTimeline();
-        void refreshMarkers();
-        phaseListeners.forEach((f) => f());
+        removePhaseLocal(b.dataset.delph!);
+      }),
+    );
+    timelineEl.querySelectorAll<HTMLButtonElement>("[data-dels]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        if (!confirm(t("phase.confirmDelete"))) return;
+        await api.deletePhase(planId, b.dataset.dels!);
+        removePhaseLocal(b.dataset.dels!);
       }),
     );
     timelineEl.querySelector("#ph-add")?.addEventListener("click", async () => {
-      const name = prompt(t("phase.namePrompt"), `Phase ${phases.length}`);
+      const name = prompt(t("phase.namePrompt"), `Phase ${playerPhases().length}`);
       if (!name) return;
       const p = await api.createPhase(planId, name);
-      phases.push({ ...p, notes: p.notes ?? "" });
-      currentPhaseId = p.id;
-      renderTimeline();
-      void refreshMarkers();
-      phaseListeners.forEach((f) => f());
+      addLocalPhase(p as PhaseT);
+      if (isMB) {
+        // die server-seitig gepaarte Builder-Phase nachladen
+        for (const ph of await api.planPhases(planId))
+          if (!phases.some((x) => x.id === ph.id)) addLocalPhase(ph as PhaseT);
+      }
+      selectPlayerPhase(p.id);
     });
+    timelineEl.querySelector("#sub-add")?.addEventListener("click", async () => {
+      const name = prompt(t("mb.subPhaseName"), `${playerPhases().findIndex((p) => p.id === apid) + 1}.${builderChildren(apid).length}`);
+      if (!name) return;
+      const p = await api.createPhase(planId, name, { plane: "builder", parent_id: apid });
+      addLocalPhase(p as PhaseT);
+      selectPhase(p.id);
+    });
+
     const op = timelineEl.querySelector<HTMLInputElement>("#ph-op")!;
     const opv = timelineEl.querySelector<HTMLSpanElement>("#ph-op-v")!;
     op.addEventListener("input", () => {
@@ -997,7 +1110,19 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       opv.textContent = `${outOpacity}%`;
       localStorage.setItem("sidc_phaseopacity", String(outOpacity));
       void refreshMarkers();
+      renderAnnots();
     });
+    const cop = timelineEl.querySelector<HTMLInputElement>("#cross-op");
+    if (cop) {
+      const copv = timelineEl.querySelector<HTMLSpanElement>("#cross-op-v")!;
+      cop.addEventListener("input", () => {
+        crossOpacity = Number(cop.value);
+        copv.textContent = `${crossOpacity}%`;
+        localStorage.setItem("sidc_crossopacity", String(crossOpacity));
+        void refreshMarkers();
+        renderAnnots();
+      });
+    }
   }
   renderTimeline();
 
@@ -1985,8 +2110,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // ── Annotationen (platzierbare Markdown-Textfelder) ───────────────────
   const annotsEl = root.querySelector<HTMLDivElement>("#annots")!;
   let annotDragId: string | null = null;
-  const annotOpacity = (a: Annot): number =>
-    a.phase_id == null || a.phase_id === currentPhaseId ? 1 : Math.max(0, Math.min(100, outOpacity)) / 100;
+  const annotOpacity = (a: Annot): number => phaseOpacityOf(a.phase_id);
 
   function positionAnnots(): void {
     for (const el of Array.from(annotsEl.children) as HTMLElement[]) {

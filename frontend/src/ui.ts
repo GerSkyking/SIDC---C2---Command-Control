@@ -41,12 +41,12 @@ export function wireThemeSwitch(root: ParentNode): void {
   );
 }
 
-export type NavSection = "plans" | "trash" | "users" | "log" | "config";
+export type NavSection = "plans" | "trash" | "users" | "log" | "config" | "orbat";
 
 /** Linke Navigationsleiste für die Nicht-Karten-Ansichten. */
 export function sidebar(
   active: NavSection,
-  opts: { isAdmin: boolean; username: string },
+  opts: { isAdmin: boolean; username: string; isMissionBuilder?: boolean },
 ): string {
   const collapsed = localStorage.getItem("sidc_sidebar") === "1";
   const item = (id: NavSection, ic: string, label: string, href: string, sub = false) =>
@@ -59,6 +59,12 @@ export function sidebar(
     <div class="sb-nav">
       ${item("plans", "plan", t("nav.plans"), "#/")}
       ${item("trash", "trash", t("nav.trash"), "#/trash")}
+      ${
+        opts.isMissionBuilder
+          ? `<div class="sb-group">${t("mb.section")}</div>` +
+            item("orbat", "groups", t("nav.orbat"), "#/orbat", true)
+          : ""
+      }
       ${
         opts.isAdmin
           ? `<div class="sb-group">${t("nav.admin")}</div>` +

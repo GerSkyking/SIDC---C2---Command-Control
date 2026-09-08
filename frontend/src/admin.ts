@@ -11,7 +11,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   const me = await api.me().catch(() => null);
   const shell = (body: string, title: string) => `
    <div class="shell">
-    ${sidebar(section as NavSection, { isAdmin: true, username: me?.username ?? "" })}
+    ${sidebar(section as NavSection, { isAdmin: true, username: me?.username ?? "", isMissionBuilder: !!me?.is_mission_builder_effective })}
     <div class="shell-main">
     <div class="topbar"><strong>${title}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
     <div class="list stack">${body}</div>
@@ -96,6 +96,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
        <input id="nu-pw" type="password" placeholder="${t("auth.password")} (min. 12)" />
        <select id="nu-role"><option value="user">user</option><option value="admin">admin</option></select>
        <label><input type="checkbox" id="nu-ccp" /> ${t("admin.canCreatePlans")}</label>
+       <label><input type="checkbox" id="nu-mb" /> ${t("admin.missionBuilder")}</label>
        <button class="primary" id="nu-add">${t("common.create")}</button>
      </div>
 
@@ -105,6 +106,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
      <div class="row">
        <input id="ng-name" placeholder="${t("admin.groupName")}" />
        <label><input type="checkbox" id="ng-ccp" /> ${t("admin.canCreatePlans")}</label>
+       <label><input type="checkbox" id="ng-mb" /> ${t("admin.missionBuilder")}</label>
        <button class="primary" id="ng-add">${t("common.create")}</button>
      </div>`,
     t("admin.usersGroups"),
@@ -118,6 +120,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
         password: (app.querySelector("#nu-pw") as HTMLInputElement).value,
         role: (app.querySelector("#nu-role") as HTMLSelectElement).value,
         can_create_plans: (app.querySelector("#nu-ccp") as HTMLInputElement).checked,
+        is_mission_builder: (app.querySelector("#nu-mb") as HTMLInputElement).checked,
       }),
     ),
   );
@@ -128,6 +131,9 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
     );
     el.querySelector("[data-toggle-ccp]")?.addEventListener("click", () =>
       guard(() => api.patchUser(id, { can_create_plans: el.dataset.ccp !== "true" })),
+    );
+    el.querySelector("[data-toggle-mb]")?.addEventListener("click", () =>
+      guard(() => api.patchUser(id, { is_mission_builder: el.dataset.mb !== "true" })),
     );
     el.querySelector("[data-reset]")?.addEventListener("click", () => {
       const pw = prompt(t("admin.newPassword"));
@@ -143,6 +149,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
       api.createGroup({
         name: (app.querySelector("#ng-name") as HTMLInputElement).value.trim(),
         can_create_plans: (app.querySelector("#ng-ccp") as HTMLInputElement).checked,
+        is_mission_builder: (app.querySelector("#ng-mb") as HTMLInputElement).checked,
       }),
     ),
   );
@@ -167,18 +174,19 @@ function postShell(app: HTMLElement): void {
 }
 
 function userRow(u: AdminUser): string {
-  return `<tr data-u="${u.id}" data-active="${u.is_active}" data-ccp="${u.can_create_plans}">
+  return `<tr data-u="${u.id}" data-active="${u.is_active}" data-ccp="${u.can_create_plans}" data-mb="${u.is_mission_builder}">
     <td>${u.username} ${u.is_local ? "" : '<span class="badge">OIDC</span>'}</td>
     <td><span class="badge">${u.role}</span></td>
     <td><button data-toggle-active>${u.is_active ? "aktiv" : "deaktiviert"}</button></td>
-    <td><button data-toggle-ccp>Pläne: ${u.can_create_plans ? "ja" : "nein"}</button></td>
+    <td><button data-toggle-ccp>Pläne: ${u.can_create_plans ? "ja" : "nein"}</button>
+        <button data-toggle-mb>Missionsbau: ${u.is_mission_builder ? "ja" : "nein"}</button></td>
     <td>${u.is_local ? "<button data-reset>PW</button>" : ""} <button class="icon-btn" data-del>${icon("x", 16)}</button></td>
   </tr>`;
 }
 
 function groupRow(g: AdminGroup, users: AdminUser[]): string {
   return `<tr data-g="${g.id}">
-    <td>${g.name} ${g.can_create_plans ? '<span class="badge">Pläne</span>' : ""}</td>
+    <td>${g.name} ${g.can_create_plans ? '<span class="badge">Pläne</span>' : ""} ${g.is_mission_builder ? '<span class="badge">Missionsbau</span>' : ""}</td>
     <td>${users
       .map(
         (u) =>

@@ -42,6 +42,7 @@ async function route(): Promise<void> {
     }
   }
   if (location.hash === "#/trash") return renderTrash();
+  if (location.hash === "#/orbat" && me.is_mission_builder_effective) return renderOrbatStub();
 
   const adminMatch = location.hash.match(/^#\/admin(?:\/(users|log|config))?$/);
   if (adminMatch && me.role === "admin") {
@@ -101,7 +102,7 @@ async function renderPlanList(): Promise<void> {
 
   app.innerHTML = `
    <div class="shell">
-    ${sidebar("plans", { isAdmin: me!.role === "admin", username: me!.username })}
+    ${sidebar("plans", { isAdmin: me!.role === "admin", username: me!.username, isMissionBuilder: me!.is_mission_builder_effective })}
     <div class="shell-main">
     <div class="topbar">
       <strong>${t("plans.heading")}</strong>
@@ -176,11 +177,28 @@ async function renderPlanList(): Promise<void> {
   app.querySelector("#pcs")?.addEventListener("click", () => doCreate(true));
 }
 
+function renderOrbatStub(): void {
+  app.innerHTML = `
+   <div class="shell">
+    ${sidebar("orbat", { isAdmin: me!.role === "admin", username: me!.username, isMissionBuilder: true })}
+    <div class="shell-main">
+    <div class="topbar"><strong>${t("nav.orbat")}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
+    <div class="list stack">
+      <div class="card"><p>ORBAT-Bibliothek — kommt mit Baustein B (siehe <code>docs/ORBAT.md</code>).</p>
+      <p class="muted">Die Missionsbau-Ebene in den Plänen (parallele Phasen, „wirke als"-Umschalter) ist bereits aktiv.</p></div>
+    </div>
+    </div>
+   </div>`;
+  wireLangSelect(app);
+  wireThemeSwitch(app);
+  wireSidebar(app);
+}
+
 async function renderTrash(): Promise<void> {
   const items = await api.trash().catch(() => []);
   app.innerHTML = `
    <div class="shell">
-    ${sidebar("trash", { isAdmin: me!.role === "admin", username: me!.username })}
+    ${sidebar("trash", { isAdmin: me!.role === "admin", username: me!.username, isMissionBuilder: me!.is_mission_builder_effective })}
     <div class="shell-main">
     <div class="topbar"><strong>${t("nav.trash")}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
     <div class="list stack">
