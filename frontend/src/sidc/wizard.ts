@@ -4,6 +4,7 @@
 
 import { t } from "../i18n";
 import { icon } from "../icons";
+import { toast } from "../notify";
 import {
   channelLabel,
   findEntry,
@@ -55,7 +56,7 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
     loadTranslations(),
   ]);
   if (!cats) {
-    alert(t("wiz.noCatalog"));
+    toast(t("wiz.noCatalog"), { kind: "error" });
     return;
   }
 
@@ -301,7 +302,7 @@ function renderQuick(
           } else {
             const e = findEntry(cats, btn.markerDescription);
             if (e) configure(e, identity, btn);
-            else alert(`Nicht im Katalog: ${btn.markerDescription}`);
+            else toast(`Nicht im Katalog: ${btn.markerDescription}`, { kind: "warn" });
           }
         });
         rEl.appendChild(b);

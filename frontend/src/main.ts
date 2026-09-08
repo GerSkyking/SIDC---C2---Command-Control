@@ -7,6 +7,7 @@ import { openAclEditor } from "./acl";
 import { renderPlanTree } from "./planTree";
 import { renderPublicView } from "./publicview";
 import { langSelect, t, wireLangSelect } from "./i18n";
+import { confirmDialog, toastError } from "./notify";
 import { initTheme } from "./theme";
 import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
@@ -145,7 +146,7 @@ async function renderPlanList(): Promise<void> {
     mapName: (id) => maps.find((m) => m.id === id)?.name ?? id,
     onChanged: () => renderPlanList(),
     onDeletePlan: async (p) => {
-      if (confirm(t("plans.confirmDelete"))) {
+      if (await confirmDialog(t("plans.confirmDelete"), { danger: true })) {
         await api.deletePlan(p.id);
         renderPlanList();
       }
@@ -175,7 +176,7 @@ async function renderPlanList(): Promise<void> {
         route();
       }
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : t("common.error"));
+      toastError(e);
     }
   };
   app.querySelector("#pc")?.addEventListener("click", () => doCreate(false));
@@ -217,16 +218,16 @@ async function renderTrash(): Promise<void> {
         await api.undeletePlan(id);
         renderTrash();
       } catch (e) {
-        alert(e instanceof ApiError ? e.message : t("common.error"));
+        toastError(e);
       }
     });
     row.querySelector("[data-purge]")!.addEventListener("click", async () => {
-      if (!confirm(t("trash.purgeConfirm"))) return;
+      if (!(await confirmDialog(t("trash.purgeConfirm"), { danger: true }))) return;
       try {
         await api.purgePlan(id);
         renderTrash();
       } catch (e) {
-        alert(e instanceof ApiError ? e.message : t("common.error"));
+        toastError(e);
       }
     });
   });

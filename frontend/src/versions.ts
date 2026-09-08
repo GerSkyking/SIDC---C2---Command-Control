@@ -2,6 +2,7 @@
 import { api, ApiError } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
+import { confirmDialog, toastError } from "./notify";
 
 export function openVersionPanel(
   planId: string,
@@ -50,12 +51,12 @@ export function openVersionPanel(
         .join("");
       listEl.querySelectorAll<HTMLButtonElement>("[data-restore]").forEach((b) =>
         b.addEventListener("click", async () => {
-          if (!confirm(t("versions.confirmRestore"))) return;
+          if (!(await confirmDialog(t("versions.confirmRestore"), { danger: true }))) return;
           try {
             await api.restoreVersion(planId, b.dataset.restore!);
             location.reload();
           } catch (e) {
-            alert(e instanceof ApiError ? e.message : t("common.error"));
+            toastError(e);
           }
         }),
       );
@@ -72,7 +73,7 @@ export function openVersionPanel(
       onSaved?.();
       void load();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : t("common.error"));
+      toastError(e);
     }
   });
 

@@ -1,8 +1,9 @@
 // Admin-Bereich, kategorisiert: Benutzer & Gruppen / Log / Config (Karten + Kataloge).
-import { api, ApiError, type AdminGroup, type AdminUser } from "./api";
+import { api, type AdminGroup, type AdminUser } from "./api";
 import { configHtml, wireConfig } from "./adminConfig";
 import { langSelect, t, wireLangSelect } from "./i18n";
 import { icon } from "./icons";
+import { confirmDialog, promptDialog, toastError } from "./notify";
 import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch, type NavSection } from "./ui";
 
 export type AdminSection = "users" | "log" | "config";
@@ -24,7 +25,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
       await fn();
       reload();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : t("common.error"));
+      toastError(e);
     }
   };
 
@@ -137,16 +138,16 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
           await api.patchUser(id, { [field[cb.dataset.ur!]]: cb.checked });
         } catch (e) {
           cb.checked = !cb.checked;
-          alert(e instanceof ApiError ? e.message : t("common.error"));
+          toastError(e);
         }
       }),
     );
-    el.querySelector("[data-reset]")?.addEventListener("click", () => {
-      const pw = prompt(t("admin.newPassword"));
+    el.querySelector("[data-reset]")?.addEventListener("click", async () => {
+      const pw = await promptDialog(t("admin.newPassword"));
       if (pw) guard(() => api.patchUser(id, { password: pw }));
     });
-    el.querySelector("[data-del]")?.addEventListener("click", () => {
-      if (confirm(t("admin.confirmDeleteUser"))) guard(() => api.deleteUser(id));
+    el.querySelector("[data-del]")?.addEventListener("click", async () => {
+      if (await confirmDialog(t("admin.confirmDeleteUser"), { danger: true })) guard(() => api.deleteUser(id));
     });
   });
 
@@ -162,8 +163,8 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   app.querySelectorAll<HTMLElement>("[data-g]").forEach((el) => {
     const id = el.dataset.g!;
     const g = groups.find((x) => x.id === id)!;
-    el.querySelector("[data-delg]")?.addEventListener("click", () => {
-      if (confirm(t("admin.confirmDeleteGroup"))) guard(() => api.deleteGroup(id));
+    el.querySelector("[data-delg]")?.addEventListener("click", async () => {
+      if (await confirmDialog(t("admin.confirmDeleteGroup"), { danger: true })) guard(() => api.deleteGroup(id));
     });
     // Rechte: Checkboxen im Dropdown → PATCH (kein Reload, Dropdown bleibt offen)
     el.querySelectorAll<HTMLInputElement>("[data-gr]").forEach((cb) =>
@@ -177,7 +178,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
           await api.patchGroup(id, body);
         } catch (e) {
           cb.checked = !cb.checked;
-          alert(e instanceof ApiError ? e.message : t("common.error"));
+          toastError(e);
         }
       }),
     );
@@ -190,7 +191,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
           if (sum) sum.textContent = `${t("admin.members")} (${upd.member_ids.length})`;
         } catch (e) {
           cb.checked = !cb.checked;
-          alert(e instanceof ApiError ? e.message : t("common.error"));
+          toastError(e);
         }
       }),
     );

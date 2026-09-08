@@ -1,8 +1,9 @@
 // Baumansicht der Pläne: Ordner + Unterordner, Drag & Drop zum Verschieben,
 // Klonen (mit Zielordner). Reines Vanilla-DOM.
-import { api, ApiError, type PlanFolder, type PlanItem } from "./api";
+import { api, type PlanFolder, type PlanItem } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
+import { confirmDialog, promptDialog, toastError } from "./notify";
 
 interface TreeOpts {
   onChanged: () => void; // neu laden
@@ -74,7 +75,7 @@ export function renderPlanTree(
       await fn();
       opts.onChanged();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : t("common.error"));
+      toastError(e);
     }
   };
 
@@ -128,8 +129,8 @@ export function renderPlanTree(
       const v = (e.target as HTMLSelectElement).value;
       void guard(() => api.movePlan(p.id, v || null));
     });
-    row.querySelector("[data-ren]")?.addEventListener("click", () => {
-      const name = prompt(t("plans.renamePrompt"), p.name);
+    row.querySelector("[data-ren]")?.addEventListener("click", async () => {
+      const name = await promptDialog(t("plans.renamePrompt"), { value: p.name });
       if (name && name.trim() && name.trim() !== p.name) void guard(() => api.renamePlan(p.id, name.trim()));
     });
     row.querySelector("[data-clone]")!.addEventListener("click", () => cloneDialog(p, folders, guard));
@@ -166,16 +167,16 @@ export function renderPlanTree(
         saveOpen(open);
         opts.onChanged();
       });
-      fRow.querySelector("[data-newsub]")?.addEventListener("click", () => {
-        const name = prompt(t("folder.namePrompt"));
-        if (name) void guard(() => api.createFolder(name, f.id));
+      fRow.querySelector("[data-newsub]")?.addEventListener("click", async () => {
+        const name = await promptDialog(t("folder.namePrompt"));
+        if (name && name.trim()) void guard(() => api.createFolder(name.trim(), f.id));
       });
-      fRow.querySelector("[data-ren]")?.addEventListener("click", () => {
-        const name = prompt(t("folder.renamePrompt"), f.name);
-        if (name && name !== f.name) void guard(() => api.renameFolder(f.id, name));
+      fRow.querySelector("[data-ren]")?.addEventListener("click", async () => {
+        const name = await promptDialog(t("folder.renamePrompt"), { value: f.name });
+        if (name && name.trim() && name !== f.name) void guard(() => api.renameFolder(f.id, name.trim()));
       });
-      fRow.querySelector("[data-delf]")?.addEventListener("click", () => {
-        if (confirm(t("folder.confirmDelete"))) void guard(() => api.deleteFolder(f.id));
+      fRow.querySelector("[data-delf]")?.addEventListener("click", async () => {
+        if (await confirmDialog(t("folder.confirmDelete"), { danger: true })) void guard(() => api.deleteFolder(f.id));
       });
       box.appendChild(fRow);
 
@@ -201,9 +202,9 @@ export function renderPlanTree(
     (canCreateFolders ? `<span class="tree-actions"><button id="tree-newfolder">${t("folder.new")}</button></span>` : "");
   wireDropzone(rootHead, null);
   host.appendChild(rootHead);
-  rootHead.querySelector("#tree-newfolder")?.addEventListener("click", () => {
-    const name = prompt(t("folder.namePrompt"));
-    if (name) void guard(() => api.createFolder(name, null));
+  rootHead.querySelector("#tree-newfolder")?.addEventListener("click", async () => {
+    const name = await promptDialog(t("folder.namePrompt"));
+    if (name && name.trim()) void guard(() => api.createFolder(name.trim(), null));
   });
 
   const body = document.createElement("div");

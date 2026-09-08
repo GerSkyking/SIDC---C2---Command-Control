@@ -1,6 +1,7 @@
 // ORBAT-Bibliothek (Missionsbau): globale Kräfteübersichten mit Baumstruktur.
-import { api, ApiError, type Me, type Orbat, type OrbatNode } from "./api";
+import { api, type Me, type Orbat, type OrbatNode } from "./api";
 import { langSelect, t, wireLangSelect } from "./i18n";
+import { confirmDialog, toastError } from "./notify";
 import { icon } from "./icons";
 import { iconSrc } from "./sidc/symbol";
 import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
@@ -68,7 +69,7 @@ export async function renderOrbatLibrary(app: HTMLElement, me: Me, selectedId?: 
       });
       location.hash = `#/orbat/${o.id}`;
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : t("common.error"));
+      toastError(e);
     }
   });
 
@@ -94,7 +95,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
     const fresh = await api.orbat(o.id).catch(() => null);
     if (fresh) renderDetail(host, fresh);
   };
-  const fail = (e: unknown) => alert(e instanceof ApiError ? e.message : t("common.error"));
+  const fail = (e: unknown) => toastError(e);
 
   const statusPill = (s: string) =>
     `<span class="st-pill st-${s}">${t("orbat.status." + s)}</span>`;
@@ -161,7 +162,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
   aff.addEventListener("change", () => void reload().then(saveHead));
   notes.addEventListener("change", saveHead);
   host.querySelector("[data-delo]")?.addEventListener("click", async () => {
-    if (!confirm(t("orbat.confirmDelete"))) return;
+    if (!(await confirmDialog(t("orbat.confirmDelete"), { danger: true }))) return;
     await api.deleteOrbat(o.id).catch(fail);
     location.hash = "#/orbat";
   });
@@ -187,7 +188,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
   );
   host.querySelectorAll<HTMLButtonElement>("[data-del]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (!confirm(t("orbat.confirmDeleteNode"))) return;
+      if (!(await confirmDialog(t("orbat.confirmDeleteNode"), { danger: true }))) return;
       await api.deleteNode(o.id, b.dataset.del!).catch(fail);
       void reload();
     }),
@@ -310,7 +311,7 @@ function editNode(
       close();
       onDone();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : t("common.error"));
+      toastError(e);
     }
   });
 }
@@ -371,7 +372,7 @@ function openOrbatAcl(orbatId: string): void {
           await api.putOrbatAcl(orbatId, rows);
           back.remove();
         } catch (e) {
-          alert(e instanceof ApiError ? e.message : t("common.error"));
+          toastError(e);
         }
       });
     };

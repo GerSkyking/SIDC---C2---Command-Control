@@ -1,10 +1,11 @@
 // Plan-Ansicht: Karte + Werkzeugleiste + HUD + Marker/Zeichnen/Präsenz live.
 // Nähert sich der ATAKmaps-UI an (D:\Mods\ATAKmaps).
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
-import { api, ApiError, type Me } from "./api";
+import { api, type Me } from "./api";
 import { channelLabel, loadAllMarkers, loadChannels, loadModifiers, loadPhaseLineStyle } from "./sidc/catalog";
 import { lngLatToWorld, withModifiers, worldToLngLat, type Calibration, type SidcModifiers } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
+import { confirmDialog, promptDialog, toast, toastError } from "./notify";
 import { ensureMapIcon, iconSrc } from "./sidc/symbol";
 import { openAclEditor } from "./acl";
 import { openHelp } from "./help";
@@ -921,7 +922,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         `${p2(d.getHours())}${p2(d.getMinutes())}`;
       doc.save(`${safe(snap.plan.name)}_Briefing_${fileStamp}.pdf`);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "PDF-Export fehlgeschlagen");
+      toast(e instanceof Error ? e.message : "PDF-Export fehlgeschlagen", { kind: "error" });
     } finally {
       currentPhaseId = origPhase;
       map.jumpTo({ center: origCenter, zoom: origZoom, bearing: origBearing });
@@ -1139,20 +1140,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     };
     timelineEl.querySelectorAll<HTMLButtonElement>("[data-delph]").forEach((b) =>
       b.addEventListener("click", async () => {
-        if (!confirm(t("phase.confirmDelete"))) return;
+        if (!(await confirmDialog(t("phase.confirmDelete"), { danger: true }))) return;
         await api.deletePhase(planId, b.dataset.delph!);
         removePhaseLocal(b.dataset.delph!);
       }),
     );
     timelineEl.querySelectorAll<HTMLButtonElement>("[data-dels]").forEach((b) =>
       b.addEventListener("click", async () => {
-        if (!confirm(t("phase.confirmDelete"))) return;
+        if (!(await confirmDialog(t("phase.confirmDelete"), { danger: true }))) return;
         await api.deletePhase(planId, b.dataset.dels!);
         removePhaseLocal(b.dataset.dels!);
       }),
     );
     timelineEl.querySelector("#ph-add")?.addEventListener("click", async () => {
-      const name = prompt(t("phase.namePrompt"), `Phase ${playerPhases().length}`);
+      const name = await promptDialog(t("phase.namePrompt"), { value: `Phase ${playerPhases().length}` });
       if (!name) return;
       const p = await api.createPhase(planId, name);
       addLocalPhase(p as PhaseT);
@@ -1164,7 +1165,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       selectPlayerPhase(p.id);
     });
     timelineEl.querySelector("#sub-add")?.addEventListener("click", async () => {
-      const name = prompt(t("mb.subPhaseName"), `${playerPhases().findIndex((p) => p.id === apid) + 1}.${builderChildren(apid).length}`);
+      const name = await promptDialog(t("mb.subPhaseName"), { value: `${playerPhases().findIndex((p) => p.id === apid) + 1}.${builderChildren(apid).length}` });
       if (!name) return;
       const p = await api.createPhase(planId, name, { plane: "builder", parent_id: apid });
       addLocalPhase(p as PhaseT);
@@ -1625,7 +1626,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     orbatPanel.querySelector("#orb-link")?.addEventListener("click", async () => {
       const id = orbatPanel.querySelector<HTMLSelectElement>("#orb-pick")!.value;
       if (id) {
-        await api.addPlanOrbat(planId, id).catch((e) => alert(e instanceof ApiError ? e.message : ""));
+        await api.addPlanOrbat(planId, id).catch(toastError);
         void buildOrbatPanel();
       }
     });
@@ -2740,7 +2741,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       close();
     });
     p.querySelector("[data-fav]")!.addEventListener("click", async () => {
-      const label = prompt(t("fav.labelPrompt"), m.unit_text || m.sidc.slice(0, 8));
+      const label = await promptDialog(t("fav.labelPrompt"), { value: m.unit_text || m.sidc.slice(0, 8) });
       if (!label) return;
       await api.addFavorite({
         label,

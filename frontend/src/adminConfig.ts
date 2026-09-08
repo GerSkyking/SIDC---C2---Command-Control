@@ -3,6 +3,7 @@
 import { api, ApiError, type MapItem, type MapSource } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
+import { confirmDialog, toastError } from "./notify";
 
 export const CATALOGS: { key: string; label: string; file: string }[] = [
   { key: "all-markers", label: "Alle Marker", file: "SIDC_AllMarkersCatalog.json" },
@@ -91,7 +92,7 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
   const mapId = () => q<HTMLInputElement>("#mid")!.value.trim();
   const mapName = () => q<HTMLInputElement>("#mname")!.value.trim();
   const prog = () => q<HTMLDivElement>("#mprogress")!;
-  const fail = (e: unknown) => alert(e instanceof ApiError ? e.message : t("common.error"));
+  const fail = (e: unknown) => toastError(e);
 
   q("#mi")?.addEventListener("click", async () => {
     const url = q<HTMLInputElement>("#murl")!.value.trim();
@@ -144,7 +145,7 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
   );
   root.querySelectorAll<HTMLButtonElement>("[data-delmap]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (!confirm(`${t("common.delete")}: ${b.dataset.delmap}?`)) return;
+      if (!(await confirmDialog(`${t("common.delete")}: ${b.dataset.delmap}?`, { danger: true }))) return;
       try {
         await api.deleteMap(b.dataset.delmap!);
         reload();
@@ -168,7 +169,7 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
   });
   root.querySelectorAll<HTMLButtonElement>("[data-src-del]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (!confirm(t("common.delete") + "?")) return;
+      if (!(await confirmDialog(t("common.delete") + "?", { danger: true }))) return;
       await api.deleteMapSource(b.dataset.srcDel!);
       reload();
     }),
@@ -240,7 +241,7 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
   );
 
   q("#restart")?.addEventListener("click", async () => {
-    if (!confirm(t("admin.restartConfirm"))) return;
+    if (!(await confirmDialog(t("admin.restartConfirm"), { danger: true }))) return;
     try {
       await api.restartBackend();
     } catch {
