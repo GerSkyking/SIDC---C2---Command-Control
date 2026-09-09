@@ -40,6 +40,7 @@ function baseKey(sidc: string): string {
 export interface BuilderOpts {
   initialSidc?: string;
   templateFields?: boolean; // Texte/Channel/Richtung/Flags zusätzlich anzeigen
+  defaultChannel?: string;  // Vorauswahl im Channel-Dropdown (Sichtbarkeit!)
   submitLabel?: string;
   onSidc?: (sidc: string) => void;
   onTemplate?: (tpl: MarkerTemplate) => void;
@@ -79,16 +80,15 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
     modSel.m2 = Number(s.slice(18, 20)) || undefined;
   }
 
-  const isLandUnit = () =>
-    !!entry && (entry.languageKey.includes("-LandUnits-") || entry.subCategory === "Land_Unit");
   const modDefs = (): Record<string, ModifierOption[]> | null =>
     (entry && mods && entry.subCategory && (mods as ModifierCatalog)[entry.subCategory]) || null;
 
   const buildSidc = (): string => {
     if (!entry) return opts.initialSidc || "";
-    let s = isLandUnit()
-      ? withAffiliationAndEchelon(entry.sidc, aff, echelon)
-      : withAffiliation(entry.sidc, aff);
+    let s =
+      echelon !== "00"
+        ? withAffiliationAndEchelon(entry.sidc, aff, echelon)
+        : withAffiliation(entry.sidc, aff);
     return withModifiers(s, modSel);
   };
 
@@ -110,7 +110,9 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
                <label>${t("wiz.unitText")}</label><input data-unit maxlength="60" />
                <label>${t("wiz.aiText")}</label><input data-ai maxlength="120" />
                <label>${t("wiz.channel")}</label>
-               <select data-channel>${(channels?.channels ?? []).map((c) => `<option value="${c.name}">${channelLabel(c)}</option>`).join("")}</select>
+               <select data-channel>${(channels?.channels ?? [])
+                 .map((c) => `<option value="${c.name}" ${c.name === opts.defaultChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
+                 .join("")}</select>
                <div class="mkb-flags">
                  <label><input type="checkbox" data-lock/> ${t("wiz.locked")}</label>
                  <label><input type="checkbox" data-ts checked/> ${t("wiz.timestamp")}</label>
@@ -138,7 +140,7 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
     const sidc = buildSidc();
     prev.src = sidc ? iconSrc(sidc, 72) : "";
     sidcOut.textContent = sidc;
-    echRow.hidden = !isLandUnit();
+    echRow.hidden = !entry; // Echelon immer wählbar, sobald ein Marker gewählt ist
     const md = modDefs();
     modRow.innerHTML = md
       ? ["modifier1", "modifier2", "modifier3", "modifier4"]

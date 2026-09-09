@@ -47,7 +47,11 @@ export interface MarkerTemplate {
 
 type Done = (t: MarkerTemplate) => void;
 
-export async function openWizard(host: HTMLElement, onPick: Done): Promise<void> {
+export async function openWizard(
+  host: HTMLElement,
+  onPick: Done,
+  defaultChannel = "",
+): Promise<void> {
   const [cats, quick, channels, mods] = await Promise.all([
     loadAllMarkers(),
     loadQuickMenu(),
@@ -92,10 +96,6 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
 
   // ── Konfig-Panel für einen gewählten Eintrag ────────────────────────────
   function configure(entry: CatalogEntry, identity: string | null, btn?: QuickMenuButton): void {
-    const isLandUnit =
-      entry.languageKey.includes("-LandUnits-") ||
-      entry.subCategory === "Land_Unit" ||
-      btn?.needsAmp === true;
     let aff = identity ? IDENTITY_TO_AFFILIATION[identity] ?? "1" : "1";
     let echelon = "00";
     let dir = -1;
@@ -105,9 +105,10 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
     const modSel: SidcModifiers = {};
 
     const buildSidc = () => {
-      let s = isLandUnit
-        ? withAffiliationAndEchelon(entry.sidc, aff, echelon)
-        : withAffiliation(entry.sidc, aff);
+      let s =
+        echelon !== "00"
+          ? withAffiliationAndEchelon(entry.sidc, aff, echelon)
+          : withAffiliation(entry.sidc, aff);
       return withModifiers(s, modSel);
     };
 
@@ -158,13 +159,9 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
         <div class="wiz-aff">${AFFILIATIONS.map(
           (a) => `<button data-aff="${a.digit}" class="${a.digit === aff ? "active" : ""}">${a.label}</button>`,
         ).join("")}</div>
-        ${
-          isLandUnit
-            ? `<label>${t("wiz.echelon")}</label><select data-echelon>${AMPLIFIERS.map(
-                (m) => `<option value="${m.digits}" ${m.digits === echelon ? "selected" : ""}>${m.label}</option>`,
-              ).join("")}</select>`
-            : ""
-        }
+        <label>${t("wiz.echelon")}</label><select data-echelon>${AMPLIFIERS.map(
+          (m) => `<option value="${m.digits}" ${m.digits === echelon ? "selected" : ""}>${m.label}</option>`,
+        ).join("")}</select>
         ${
           btn?.needsDirection !== false
             ? `<label>${t("wiz.direction")}</label><div class="wiz-dir">${DIRECTIONS.map(
@@ -175,7 +172,7 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
         <label>${t("wiz.unitText")}</label><input data-unit maxlength="60" />
         <label>${t("wiz.aiText")}</label><input data-ai maxlength="120" />
         <label>${t("wiz.channel")}</label><select data-channel>${(channels?.channels ?? [])
-          .map((c) => `<option value="${c.name}" ${c.name === entry.name ? "" : ""}>${channelLabel(c)}</option>`)
+          .map((c) => `<option value="${c.name}" ${c.name === defaultChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
           .join("")}</select>
         <div class="wiz-flags">
           <label><input type="checkbox" data-lock ${entry.defaultLocked ? "checked" : ""}/> ${t("wiz.locked")}</label>
@@ -209,8 +206,7 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
       config.querySelectorAll<HTMLSelectElement>("[data-mod]").forEach((sel) =>
         sel.addEventListener("change", () => {
           const k = sel.dataset.mod as keyof SidcModifiers;
-          const v = Number(sel.value);
-          modSel[k] = v || undefined;
+          modSel[k] = Number(sel.value) || 0; // 0 setzt die SIDC-Stelle aktiv zurück
           draw();
         }),
       );
@@ -242,6 +238,7 @@ export async function openWizard(host: HTMLElement, onPick: Done): Promise<void>
       void import("./builder").then(({ renderMarkerBuilder }) =>
         renderMarkerBuilder(body, {
           templateFields: true,
+          defaultChannel,
           submitLabel: t("wiz.place"),
           onTemplate: (tpl) => {
             onPick(tpl);

@@ -1675,20 +1675,25 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const orbatBtn = root.querySelector<HTMLButtonElement>("#orbatBtn")!;
   const orbOpen = new Set<string>();
   let planOrbatCache: import("./api").Orbat[] = [];
+  let orbatAvail: import("./api").Orbat[] = [];
   async function ensureOrbatCache(): Promise<void> {
     if (planOrbatCache.length) return;
     planOrbatCache = await api.planOrbats(planId).catch(() => []);
   }
-  async function buildOrbatPanel(): Promise<void> {
-    let linked: import("./api").Orbat[] = [];
+  // Daten laden (Netz), dann rendern.
+  async function refreshOrbatPanel(): Promise<void> {
     try {
-      linked = await api.planOrbats(planId);
+      planOrbatCache = await api.planOrbats(planId);
     } catch {
       /* keine */
     }
-    planOrbatCache = linked;
-    let avail: import("./api").Orbat[] = [];
-    if (isMB) avail = await api.orbats().catch(() => []);
+    if (isMB) orbatAvail = await api.orbats().catch(() => []);
+    renderOrbatPanel();
+  }
+  // Reines Rendern aus dem Cache — Baum auf-/zuklappen läuft ohne Netz.
+  function renderOrbatPanel(): void {
+    const linked = planOrbatCache;
+    const avail = orbatAvail;
     const st = (s: string) => `<span class="st-pill st-${s}">${t("orbat.status." + s)}</span>`;
     const nodeRows = (o: import("./api").Orbat): string => {
       const ns = o.nodes ?? [];
@@ -1754,13 +1759,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       b.addEventListener("click", () => {
         const id = b.dataset.otw!;
         orbOpen.has(id) ? orbOpen.delete(id) : orbOpen.add(id);
-        void buildOrbatPanel();
+        renderOrbatPanel(); // rein lokal — kein Netz
       }),
     );
     orbatPanel.querySelectorAll<HTMLButtonElement>("[data-orm]").forEach((b) =>
       b.addEventListener("click", async () => {
         await api.removePlanOrbat(planId, b.dataset.orm!).catch(() => {});
-        void buildOrbatPanel();
+        void refreshOrbatPanel();
       }),
     );
     orbatPanel.querySelectorAll<HTMLButtonElement>("[data-oplace]").forEach((b) =>
@@ -1788,7 +1793,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const id = orbatPanel.querySelector<HTMLSelectElement>("#orb-pick")!.value;
       if (id) {
         await api.addPlanOrbat(planId, id).catch(toastError);
-        void buildOrbatPanel();
+        void refreshOrbatPanel();
       }
     });
   }
@@ -1801,12 +1806,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         orbatPanel.style.top = `${b.bottom + 4}px`;
         orbatPanel.style.right = `${window.innerWidth - b.right}px`;
       }
-      void buildOrbatPanel();
+      if (planOrbatCache.length) renderOrbatPanel(); // sofort aus Cache
+      void refreshOrbatPanel();
     }
   });
   if (mvOrbat.isPinned()) {
     orbatPanel.hidden = false;
-    void buildOrbatPanel();
+    void refreshOrbatPanel();
   }
 
   function buildLayersPanel(): void {
@@ -2986,7 +2992,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           chainIndex = 0;
           placeMarker(pendingPos ?? pos, tpl); // sofort an der geklickten Position
           if (!tpl.is_multipoint) setMode("move");
-        });
+        }, myChannel);
         return;
       }
       if (pending) {
