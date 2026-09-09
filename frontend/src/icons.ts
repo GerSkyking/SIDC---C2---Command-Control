@@ -54,6 +54,7 @@ const ICONS: Record<string, string> = {
   folder: `${A("M3 7h6l2 2h10v10H3z")}${L("M3 7h6l2 2h10v10H3z")}`,
   folderOpen: `${A("M3 7h6l2 2h10v10H3z")}${L("M3 7h6l2 2h9M3 7v12h16l2-8H7z")}`,
   drag: L("M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01"),
+  pin: `${A("M9 4h6l-1 6 3 3H7l3-3z")}${L("M9 4h6l-1 6 3 3H7l3-3zM12 16v4")}`,
 
   // Theme
   sun: `${A("M12 16a4 4 0 100-8 4 4 0 000 8z")}${L("M12 16a4 4 0 100-8 4 4 0 000 8zM12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4")}`,

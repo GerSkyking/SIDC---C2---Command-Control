@@ -6,6 +6,7 @@ import { channelLabel, channelVisibility, describe, loadAllMarkers, loadChannels
 import { lngLatToWorld, withModifiers, worldToLngLat, type Calibration, type SidcModifiers } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { confirmDialog, promptDialog, toast, toastError } from "./notify";
+import { makeMovable } from "./movable";
 import { ensureMapIcon, iconSrc } from "./sidc/symbol";
 import { openAclEditor } from "./acl";
 import { openHelp } from "./help";
@@ -786,6 +787,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // ── HUD (Cursor X/Y/Höhe) ──────────────────────────────────────────────
   const hud = root.querySelector<HTMLDivElement>("#hud")!;
+  makeMovable(hud, { plan: planId, key: "hud" });
+  makeMovable(root.querySelector<HTMLDivElement>("#mkScale")!, { plan: planId, key: "mkscale" });
   let lastCursorSent = 0;
   map.on("mousemove", (e) => {
     const [wx, wy] = lngLatToWorld(cal, e.lngLat.lng, e.lngLat.lat);
@@ -804,6 +807,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (mode === "point" && Date.now() - lastCursorSent > 60) {
       lastCursorSent = Date.now();
       socket.send({ type: "presence.cursor", lng: e.lngLat.lng, lat: e.lngLat.lat });
+      // eigener Zeiger auch bei mir anzeigen
+      peers.set(me.id, { name: me.username, lng: e.lngLat.lng, lat: e.lngLat.lat, t: Date.now() });
+      refreshPeers();
     }
   });
 
@@ -1620,14 +1626,19 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   const layersPanel = root.querySelector<HTMLDivElement>("#layersPanel")!;
   const layersBtn = root.querySelector<HTMLButtonElement>("#layersBtn")!;
+  const mvLayers = makeMovable(layersPanel, { plan: planId, key: "layers", pinnable: true });
   layersBtn.addEventListener("click", () => {
     layersPanel.hidden = !layersPanel.hidden;
-    if (!layersPanel.hidden) {
+    if (!layersPanel.hidden && !mvLayers.hasPos()) {
       const b = layersBtn.getBoundingClientRect();
       layersPanel.style.top = `${b.bottom + 4}px`;
       layersPanel.style.right = `${window.innerWidth - b.right}px`;
     }
   });
+  if (mvLayers.isPinned()) {
+    layersPanel.hidden = false;
+    buildLayersPanel();
+  }
 
   // ── ORBAT-Panel (Kräfteübersicht im Plan) ─────────────────────────────
   const orbatPanel = root.querySelector<HTMLDivElement>("#orbatPanel")!;
@@ -1742,15 +1753,22 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
     });
   }
+  const mvOrbat = makeMovable(orbatPanel, { plan: planId, key: "orbat", pinnable: true });
   orbatBtn.addEventListener("click", () => {
     orbatPanel.hidden = !orbatPanel.hidden;
     if (!orbatPanel.hidden) {
-      const b = orbatBtn.getBoundingClientRect();
-      orbatPanel.style.top = `${b.bottom + 4}px`;
-      orbatPanel.style.right = `${window.innerWidth - b.right}px`;
+      if (!mvOrbat.hasPos()) {
+        const b = orbatBtn.getBoundingClientRect();
+        orbatPanel.style.top = `${b.bottom + 4}px`;
+        orbatPanel.style.right = `${window.innerWidth - b.right}px`;
+      }
       void buildOrbatPanel();
     }
   });
+  if (mvOrbat.isPinned()) {
+    orbatPanel.hidden = false;
+    void buildOrbatPanel();
+  }
 
   function buildLayersPanel(): void {
     const rows: string[] = [`<div class="fav-head">${t('layers.heading')}</div>`];
@@ -2060,6 +2078,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // ── Werkzeugleiste ────────────────────────────────────────────────────
   const toolbar = root.querySelector<HTMLDivElement>("#toolbar")!;
+  makeMovable(toolbar, { plan: planId, key: "toolbar" });
   const lineStylePanel = root.querySelector<HTMLDivElement>("#lineStyle")!;
   let linePts: [number, number][] = [];
   let chainGroup: number | null = null;
@@ -2167,6 +2186,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       redrawMeasure();
     }
     if (m !== "move" && m !== "markermove") setEditMeasure(null);
+    if (m !== "point" && peers.has(me.id)) {
+      peers.delete(me.id);
+      refreshPeers();
+    }
     if (m !== "place") {
       pending = null;
       chainGroup = null;
@@ -2292,6 +2315,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // ── Favoriten ─────────────────────────────────────────────────────────
   const favPanel = root.querySelector<HTMLDivElement>("#favPanel")!;
+  const mvFav = makeMovable(favPanel, { plan: planId, key: "fav", pinnable: true });
+  if (mvFav.isPinned()) favPanel.hidden = false;
   let favs = await api.favorites();
   const renderFavs = () => {
     favPanel.innerHTML =
