@@ -646,11 +646,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       paint: { "text-color": "#ff9be4", "text-halo-color": "#000", "text-halo-width": 1 },
     });
 
-    // Terrain immer aktiv (falls DEM vorhanden), damit die Cursor-Höhe auch in 2D
-    // abgefragt werden kann. Der 2D/3D-Schalter ändert nur Pitch + Überhöhung.
-    if (map.getSource("terrain-dem")) {
-      map.setTerrain({ source: "terrain-dem", exaggeration: 1 });
-    }
+    // Start in 2D: KEIN Terrain-Mesh (ressourcenschonend). Die Cursor-Höhe kommt
+    // in 2D aus den DEM-Kacheln (sampleElevation), in 3D aus dem Terrain.
   });
 
   const refreshDir = () => {
@@ -669,7 +666,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // ── Linien nachträglich bearbeiten: Stützpunkte ziehen ───────────────
   // Lineal: mehrsegmentige, bleibende Messlinien (nur lokal, je Sitzung)
-  let measureLines: { id: string; pts: [number, number][] }[] = [];
+  // builder=true → nur in der Missionsbau-Ebene sichtbar, sonst nur in der Spieler-Ebene
+  let measureLines: { id: string; pts: [number, number][]; builder: boolean }[] = [];
   let measureActive: [number, number][] = [];
   let measureCursor: [number, number] | null = null;
   let editMeasureId: string | null = null;
@@ -818,6 +816,67 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   socket.connect();
   window.addEventListener("hashchange", () => socket.close(), { once: true });
 
+  // ── Höhe aus den DEM-Kacheln lesen (terrarium-Encoding) ───────────────
+  // Funktioniert auch ohne aktives Terrain-Mesh — so bleibt 2D ressourcenschonend.
+  let demZoom = 0;
+  const demImg = new Map<string, ImageData | null>();
+  const demBusy = new Set<string>();
+  const sampleElevation = (lng: number, lat: number): number | null => {
+    if (!demZoom) {
+      const ts = (() => {
+        try {
+          return map.getStyle()?.sources?.["terrain-dem"] as
+            | { minzoom?: number; maxzoom?: number }
+            | undefined;
+        } catch {
+          return undefined;
+        }
+      })();
+      if (!ts) return null;
+      demZoom = Math.min(ts.maxzoom ?? 12, Math.max(ts.minzoom ?? 0, 12));
+    }
+    const n = 2 ** demZoom;
+    const xf = ((lng + 180) / 360) * n;
+    const latR = (lat * Math.PI) / 180;
+    const yf = ((1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2) * n;
+    const tx = Math.floor(xf);
+    const ty = Math.floor(yf);
+    if (tx < 0 || ty < 0 || tx >= n || ty >= n) return null;
+    const key = `${demZoom}/${tx}/${ty}`;
+    const img = demImg.get(key);
+    if (img === undefined) {
+      if (!demBusy.has(key)) {
+        demBusy.add(key);
+        const im = new Image();
+        im.crossOrigin = "anonymous";
+        im.onload = () => {
+          try {
+            const c = document.createElement("canvas");
+            c.width = im.naturalWidth;
+            c.height = im.naturalHeight;
+            const cx = c.getContext("2d", { willReadFrequently: true })!;
+            cx.drawImage(im, 0, 0);
+            demImg.set(key, cx.getImageData(0, 0, c.width, c.height));
+          } catch {
+            demImg.set(key, null);
+          }
+          demBusy.delete(key);
+        };
+        im.onerror = () => {
+          demImg.set(key, null);
+          demBusy.delete(key);
+        };
+        im.src = `/api/maps/${mapId}/terrain/${demZoom}/${tx}/${ty}.png`;
+      }
+      return null;
+    }
+    if (img === null) return null;
+    const px = Math.min(img.width - 1, Math.max(0, Math.floor((xf - tx) * img.width)));
+    const py = Math.min(img.height - 1, Math.max(0, Math.floor((yf - ty) * img.height)));
+    const i = (py * img.width + px) * 4;
+    return img.data[i] * 256 + img.data[i + 1] + img.data[i + 2] / 256 - 32768;
+  };
+
   // ── HUD (Cursor X/Y/Höhe) ──────────────────────────────────────────────
   const hud = root.querySelector<HTMLDivElement>("#hud")!;
   makeMovable(hud, { plan: planId, key: "hud" });
@@ -827,10 +886,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const [wx, wy] = lngLatToWorld(cal, e.lngLat.lng, e.lngLat.lat);
     let h = "–";
     try {
-      const el = map.queryTerrainElevation(e.lngLat);
-      if (el != null) h = `${(el / (is3D ? 1.5 : 1)).toFixed(0)} m`;
+      const el = is3D
+        ? (map.queryTerrainElevation(e.lngLat) ?? 0) / 1.5
+        : sampleElevation(e.lngLat.lng, e.lngLat.lat);
+      if (el != null) h = `${Math.round(el)} m`;
     } catch {
-      /* kein Terrain */
+      /* keine Höhendaten */
     }
     hud.textContent = `X: ${wx.toFixed(0)}  Y: ${wy.toFixed(0)}  H: ${h}`;
     if (mode === "measure" && measureActive.length) {
@@ -850,17 +911,19 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   root.querySelector("#t3d")!.addEventListener("click", () => {
     is3D = !is3D;
     root.querySelector("#t3d")!.classList.toggle("active", is3D);
-    // Terrain bleibt gesetzt (für die Höhenabfrage) — nur Überhöhung + Kamera ändern sich.
-    if (map.getSource("terrain-dem")) {
-      map.setTerrain({ source: "terrain-dem", exaggeration: is3D ? 1.5 : 1 });
-    }
+    const hasDem = !!map.getSource("terrain-dem");
     if (is3D) {
+      if (hasDem) map.setTerrain({ source: "terrain-dem", exaggeration: 1.5 });
       map.setMaxPitch(85);
       map.easeTo({ pitch: 60, duration: 700 });
     } else {
+      // 2D: Terrain-Mesh abschalten → deutlich ressourcenschonender.
       map.easeTo({ pitch: 0, duration: 700 });
       map.once("moveend", () => {
-        if (!is3D) map.setMaxPitch(0); // Kippen wieder sperren, Drehung bleibt
+        if (!is3D) {
+          if (hasDem) map.setTerrain(null);
+          map.setMaxPitch(0); // Kippen wieder sperren, Drehung bleibt
+        }
       });
     }
   });
@@ -1662,10 +1725,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const mvLayers = makeMovable(layersPanel, { plan: planId, key: "layers", pinnable: true });
   layersBtn.addEventListener("click", () => {
     layersPanel.hidden = !layersPanel.hidden;
-    if (!layersPanel.hidden && !mvLayers.hasPos()) {
-      const b = layersBtn.getBoundingClientRect();
-      layersPanel.style.top = `${b.bottom + 4}px`;
-      layersPanel.style.right = `${window.innerWidth - b.right}px`;
+    if (!layersPanel.hidden) {
+      if (!mvLayers.hasPos()) {
+        const b = layersBtn.getBoundingClientRect();
+        layersPanel.style.top = `${b.bottom + 4}px`;
+        layersPanel.style.right = `${window.innerWidth - b.right}px`;
+      }
+      buildLayersPanel();
+      mvLayers.bringIntoView();
     }
   });
   if (mvLayers.isPinned()) {
@@ -1810,7 +1877,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         orbatPanel.style.right = `${window.innerWidth - b.right}px`;
       }
       if (planOrbatCache.length) renderOrbatPanel(); // sofort aus Cache
+      else orbatPanel.innerHTML = `<div class="fav-head">${t("orbat.inPlan")}</div><div class="muted">…</div>`;
       void refreshOrbatPanel();
+      mvOrbat.bringIntoView();
     }
   });
   if (mvOrbat.isPinned()) {
@@ -2229,7 +2298,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           properties: { kind: "label", label: `Σ ${fmtDist(pathLen(pts))}` },
         });
     };
-    for (const ml of measureLines) addLine(ml.id, ml.pts);
+    const curBuilder = isBuilderPhase(currentPhaseId);
+    for (const ml of measureLines) if (ml.builder === curBuilder) addLine(ml.id, ml.pts);
     if (measureActive.length) {
       const live = measureCursor ? [...measureActive, measureCursor] : measureActive;
       addLine("__active", live);
@@ -2238,7 +2308,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const commitMeasure = () => {
     if (measureActive.length >= 2)
-      measureLines.push({ id: `m${Date.now()}`, pts: [...measureActive] });
+      measureLines.push({
+        id: `m${Date.now()}`,
+        pts: [...measureActive],
+        builder: isBuilderPhase(currentPhaseId),
+      });
     measureActive = [];
     measureCursor = null;
     redrawMeasure();
@@ -2519,7 +2593,18 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     );
   };
   renderFavs();
-  root.querySelector("#tool-fav")!.addEventListener("click", () => (favPanel.hidden = !favPanel.hidden));
+  root.querySelector("#tool-fav")!.addEventListener("click", () => {
+    favPanel.hidden = !favPanel.hidden;
+    if (!favPanel.hidden) {
+      if (!mvFav.hasPos()) {
+        const b = (root.querySelector("#tool-fav") as HTMLElement).getBoundingClientRect();
+        favPanel.style.top = `${b.top}px`;
+        favPanel.style.left = `${b.right + 6}px`;
+        favPanel.style.right = "auto";
+      }
+      mvFav.bringIntoView();
+    }
+  });
 
   // ── Karten-Interaktion ────────────────────────────────────────────────
   const redrawMarkersOnly = () => {
@@ -2727,8 +2812,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Referenz-Zoom für Notizen ohne eigenen ref_zoom (Altbestand): der Zoom beim
   // ersten Zeichnen der Notizen — so skalieren sie ab jetzt mit der Karte mit.
   let annotRefFallback = 0;
+  // scale_fixed === true  → Notiz skaliert MIT der Karte (zoomt mit)
+  // scale_fixed === false → konstante Bildschirmgröße (Standard)
   const annotScale = (a: Annot): number => {
-    if (a.scale_fixed) return 1; // ausdrücklich fixiert → konstante Bildschirmgröße
+    if (!a.scale_fixed) return 1;
     const ref = a.ref_zoom && a.ref_zoom > 0 ? a.ref_zoom : annotRefFallback;
     if (!ref) return 1;
     return Math.max(0.3, Math.min(3, 2 ** (map.getZoom() - ref)));
@@ -2763,7 +2850,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       </select>
       <label class="ph-op" style="margin-top:.4rem">${t("annot.width")}
         <input type="range" min="140" max="480" step="10" value="${a.width}" data-w /></label>
-      <label class="chk" style="margin-top:.3rem"><input type="checkbox" data-fix ${a.scale_fixed ? "checked" : ""}/> <span>${t("annot.fixSize")}</span></label>
+      <label class="chk" style="margin-top:.3rem"><input type="checkbox" data-fix ${a.scale_fixed ? "checked" : ""}/> <span>${t("annot.scaleWithMap")}</span></label>
       <p class="muted" style="margin:.2rem 0 0;font-size:.75rem">${t("annot.resizeHint")}</p>
       <div class="notes-view annot-prev"></div>
       <div class="row" style="margin-top:.6rem">
@@ -2797,23 +2884,23 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         back.remove();
         return;
       }
-      const wantFix = fixIn.checked;
+      const wantScale = fixIn.checked; // true = mit der Karte mitskalieren
+      const sc = annotScale(a);
       const phaseSel = back.querySelector<HTMLSelectElement>("[data-aphase]")!;
       const data: Record<string, unknown> = {
         text: ta.value,
+        // Wird das Mitskalieren abgeschaltet, aktuelle Bildschirmgröße einfrieren:
         width:
-          wantFix && !a.scale_fixed
-            ? Math.round(Number(wIn.value) * annotScale(a)) // aktuelle Größe einfrieren
+          !wantScale && a.scale_fixed
+            ? Math.round(Number(wIn.value) * sc)
             : Number(wIn.value),
         height:
-          wantFix && !a.scale_fixed && a.height
-            ? Math.round(a.height * annotScale(a))
-            : a.height ?? 0,
+          !wantScale && a.scale_fixed && a.height ? Math.round(a.height * sc) : a.height ?? 0,
         phase_id: phaseSel.value || null,
-        scale_fixed: wantFix,
+        scale_fixed: wantScale,
       };
-      if (!wantFix && (a.scale_fixed || !a.ref_zoom || a.ref_zoom <= 0))
-        data.ref_zoom = map.getZoom(); // ab jetzt mit der Karte mitskalieren
+      if (wantScale && (!a.scale_fixed || !a.ref_zoom || a.ref_zoom <= 0))
+        data.ref_zoom = map.getZoom(); // aktuelle Größe = natürliche Größe
       socket.send({ type: "annotation.modify", id, data });
       back.remove();
     });
@@ -2952,6 +3039,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
   map.on("zoomend", () => (map.getSource("chains") as GeoJSONSource)?.setData(chainFC()));
   phaseListeners.push(() => renderAnnots());
+  phaseListeners.push(() => redrawMeasure()); // Messlinien: Ebene (Missionsbau/Spieler)
   renderAnnots();
 
   map.on("click", (e) => {

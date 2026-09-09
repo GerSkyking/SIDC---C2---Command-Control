@@ -7,7 +7,13 @@ export interface Movable {
   isPinned: () => boolean;
   hasPos: () => boolean;
   resetPos: () => void;
+  /** Sicherstellen, dass das Panel (wieder) im sichtbaren Bereich liegt. */
+  bringIntoView: () => void;
 }
+
+// Mindestens so viel vom Panel muss auf dem Bildschirm bleiben:
+const KEEP_X = 140;
+const KEEP_Y = 70;
 
 export function makeMovable(
   el: HTMLElement,
@@ -19,7 +25,7 @@ export function makeMovable(
   const bar = document.createElement("div");
   bar.className = "mv-bar";
   bar.innerHTML =
-    `<span class="mv-grip">${icon("drag", 14)}</span>` +
+    `<span class="mv-grip" title="${t("ui.dragHint")}">${icon("drag", 14)}</span>` +
     (opts.pinnable
       ? `<button type="button" class="mv-pin" title="${t("ui.pin")}">${icon("pin", 14)}</button>`
       : "");
@@ -50,15 +56,29 @@ export function makeMovable(
   };
   applyPin();
 
+  const clampX = (x: number) => Math.max(4, Math.min(window.innerWidth - KEEP_X, x));
+  const clampY = (y: number) => Math.max(4, Math.min(window.innerHeight - KEEP_Y, y));
+  const savePos = (x: number, y: number) => {
+    try {
+      localStorage.setItem(posKey, JSON.stringify({ x: Math.round(x), y: Math.round(y) }));
+    } catch {
+      /* ignore */
+    }
+  };
+  const place = (x: number, y: number, persist = false) => {
+    const cx = clampX(x);
+    const cy = clampY(y);
+    el.style.left = `${cx}px`;
+    el.style.top = `${cy}px`;
+    el.style.right = "auto";
+    el.style.bottom = "auto";
+    if (persist) savePos(cx, cy);
+  };
+
   const applyPos = () => {
     try {
       const p = JSON.parse(localStorage.getItem(posKey) || "null");
-      if (p && typeof p.x === "number") {
-        el.style.left = `${Math.max(0, Math.min(window.innerWidth - 40, p.x))}px`;
-        el.style.top = `${Math.max(0, Math.min(window.innerHeight - 24, p.y))}px`;
-        el.style.right = "auto";
-        el.style.bottom = "auto";
-      }
+      if (p && typeof p.x === "number") place(p.x, p.y);
     } catch {
       /* ignore */
     }
@@ -91,18 +111,27 @@ export function makeMovable(
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
-      try {
-        localStorage.setItem(
-          posKey,
-          JSON.stringify({ x: parseInt(el.style.left), y: parseInt(el.style.top) }),
-        );
-      } catch {
-        /* ignore */
-      }
+      place(parseInt(el.style.left) || 0, parseInt(el.style.top) || 0, true);
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   });
+  // Doppelklick auf den Griff → Position zurücksetzen (falls das Panel verloren ging)
+  grip.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    reset();
+  });
+
+  const reset = () => {
+    try {
+      localStorage.removeItem(posKey);
+    } catch {
+      /* ignore */
+    }
+    el.style.left = el.style.top = "";
+    el.style.right = el.style.bottom = "";
+  };
 
   return {
     isPinned: () => pinned,
@@ -113,14 +142,17 @@ export function makeMovable(
         return false;
       }
     },
-    resetPos: () => {
-      try {
-        localStorage.removeItem(posKey);
-      } catch {
-        /* ignore */
-      }
-      el.style.left = el.style.top = "";
-      el.style.right = el.style.bottom = "";
+    resetPos: reset,
+    bringIntoView: () => {
+      const r = el.getBoundingClientRect();
+      if (!r.width) return;
+      const offscreen =
+        r.right < 60 ||
+        r.bottom < 60 ||
+        r.left > window.innerWidth - 60 ||
+        r.top > window.innerHeight - 40;
+      if (offscreen) place(24, 72, true);
+      else place(r.left, r.top, true);
     },
   };
 }

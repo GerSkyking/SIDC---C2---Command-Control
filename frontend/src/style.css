@@ -194,7 +194,7 @@ a { color: var(--accent); }
 
 .grid-canvas { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0; pointer-events: none; z-index: 4; }
 .layers-panel { position: fixed; right: 0.6rem; top: calc(var(--topbar-h, 3.2rem) + 0.4rem); width: auto;
-  min-width: 16rem; max-width: min(24rem, 90vw); z-index: 6;
+  min-width: 16rem; max-width: min(24rem, 90vw); min-height: 2.5rem; z-index: 6;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem;
   max-height: 75vh; overflow-y: auto; }
 .layers-panel label { display: block; font-size: 0.85rem; margin: 0.2rem 0; }
