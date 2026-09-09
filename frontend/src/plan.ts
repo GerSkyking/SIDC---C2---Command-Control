@@ -525,13 +525,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       type: "line",
       source: "measure",
       filter: ["==", ["get", "kind"], "line"],
-      paint: { "line-color": "#ffd166", "line-width": 2, "line-dasharray": [2, 2] },
+      paint: {
+        "line-color": "#ffd166",
+        "line-width": 2,
+        "line-dasharray": ["case", ["get", "dashed"], ["literal", [2, 2]], ["literal", [1, 0]]],
+      },
     });
     map.addLayer({
       id: "measure-pts",
       type: "circle",
       source: "measure",
-      filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "kind"], "label"]],
+      filter: ["==", ["get", "kind"], "pt"],
       paint: { "circle-radius": 4, "circle-color": "#ffd166", "circle-stroke-color": "#000", "circle-stroke-width": 1 },
     });
     map.addLayer({
@@ -635,13 +639,23 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const refreshStrokes = () => (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
 
-  // ── Linien (Strokes) nachträglich bearbeiten: Stützpunkte ziehen ──────
+  // ── Linien nachträglich bearbeiten: Stützpunkte ziehen ───────────────
+  // Lineal: mehrsegmentige, bleibende Messlinien (nur lokal, je Sitzung)
+  let measureLines: { id: string; pts: [number, number][] }[] = [];
+  let measureActive: [number, number][] = [];
+  let measureCursor: [number, number] | null = null;
+  let editMeasureId: string | null = null;
   let editStrokeId: string | null = null;
+  const editPts = (): [number, number][] | undefined =>
+    editMeasureId
+      ? measureLines.find((x) => x.id === editMeasureId)?.pts
+      : editStrokeId
+        ? strokes.get(editStrokeId)?.points
+        : undefined;
   const refreshStrokeVerts = () => {
-    const s = editStrokeId ? strokes.get(editStrokeId) : undefined;
     (map.getSource("strokeverts") as GeoJSONSource)?.setData({
       type: "FeatureCollection",
-      features: (s?.points ?? []).map((pt, i) => ({
+      features: (editPts() ?? []).map((pt, i) => ({
         type: "Feature",
         geometry: { type: "Point", coordinates: pt },
         properties: { i },
@@ -650,6 +664,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const setEditStroke = (id: string | null) => {
     editStrokeId = id;
+    if (id) editMeasureId = null;
+    refreshStrokeVerts();
+  };
+  const setEditMeasure = (id: string | null) => {
+    editMeasureId = id;
+    if (id) editStrokeId = null;
     refreshStrokeVerts();
   };
   const refreshPeers = () => (map.getSource("peers") as GeoJSONSource)?.setData(peerFC());
@@ -777,6 +797,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       /* kein Terrain */
     }
     hud.textContent = `X: ${wx.toFixed(0)}  Y: ${wy.toFixed(0)}  H: ${h}`;
+    if (mode === "measure" && measureActive.length) {
+      measureCursor = [e.lngLat.lng, e.lngLat.lat];
+      redrawMeasure();
+    }
     if (mode === "point" && Date.now() - lastCursorSent > 60) {
       lastCursorSent = Date.now();
       socket.send({ type: "presence.cursor", lng: e.lngLat.lng, lat: e.lngLat.lat });
@@ -2044,7 +2068,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // sich der Wizard. awaitingPos = warte auf den Positions-Klick.
   let awaitingPos = false;
   let pendingPos: [number, number] | null = null;
-  let measurePts: [number, number][] = [];
 
   const lineDoneBtn = root.querySelector<HTMLButtonElement>("#lineDone")!;
   const positionLineDone = () => {
@@ -2064,31 +2087,48 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
 
   const fmtDist = (mtr: number) => (mtr < 1000 ? `${Math.round(mtr)} m` : `${(mtr / 1000).toFixed(2)} km`);
+  const pathLen = (pts: [number, number][]): number => {
+    let s = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, ay] = lngLatToWorld(cal, pts[i - 1][0], pts[i - 1][1]);
+      const [bx, by] = lngLatToWorld(cal, pts[i][0], pts[i][1]);
+      s += Math.hypot(bx - ax, by - ay);
+    }
+    return s;
+  };
   const redrawMeasure = () => {
     const src = map.getSource("measure") as GeoJSONSource | undefined;
     if (!src) return;
-    const feats: GeoJSON.Feature[] = measurePts.map((p) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: p },
-      properties: {},
-    }));
-    if (measurePts.length === 2) {
-      const [a, b] = measurePts;
-      const [ax, ay] = lngLatToWorld(cal, a[0], a[1]);
-      const [bx, by] = lngLatToWorld(cal, b[0], b[1]);
-      const dist = Math.hypot(bx - ax, by - ay);
-      feats.push({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: [a, b] },
-        properties: { kind: "line" },
-      });
-      feats.push({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] },
-        properties: { kind: "label", label: fmtDist(dist) },
-      });
+    const feats: GeoJSON.Feature[] = [];
+    const addLine = (id: string, pts: [number, number][], dashed = false) => {
+      if (pts.length >= 2)
+        feats.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: pts },
+          properties: { kind: "line", mid: id, dashed },
+        });
+      for (const p of pts)
+        feats.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: { kind: "pt", mid: id } });
+      if (pts.length >= 2)
+        feats.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: pts[pts.length - 1] },
+          properties: { kind: "label", label: fmtDist(pathLen(pts)) },
+        });
+    };
+    for (const ml of measureLines) addLine(ml.id, ml.pts);
+    if (measureActive.length) {
+      const live = measureCursor ? [...measureActive, measureCursor] : measureActive;
+      addLine("__active", live, true);
     }
     src.setData({ type: "FeatureCollection", features: feats });
+  };
+  const commitMeasure = () => {
+    if (measureActive.length >= 2)
+      measureLines.push({ id: `m${Date.now()}`, pts: [...measureActive] });
+    measureActive = [];
+    measureCursor = null;
+    redrawMeasure();
   };
 
   const modeCursor = (m: Mode = mode): string =>
@@ -2122,9 +2162,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
     if (m !== "move" && m !== "markermove") setEditStroke(null);
     if (m !== "measure") {
-      measurePts = [];
+      measureActive = [];
+      measureCursor = null;
       redrawMeasure();
     }
+    if (m !== "move" && m !== "markermove") setEditMeasure(null);
     if (m !== "place") {
       pending = null;
       chainGroup = null;
@@ -2328,26 +2370,42 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     e.preventDefault();
     setEditStroke((e.features?.[0]?.properties?.id as string) ?? null);
   });
+  map.on("click", "measure-line", (e) => {
+    if (mode === "erase") {
+      e.preventDefault();
+      const mid = e.features?.[0]?.properties?.mid as string | undefined;
+      if (mid && mid !== "__active") {
+        measureLines = measureLines.filter((x) => x.id !== mid);
+        if (editMeasureId === mid) setEditMeasure(null);
+        redrawMeasure();
+      }
+      return;
+    }
+    if (mode !== "move" && mode !== "markermove") return;
+    e.preventDefault();
+    const mid = e.features?.[0]?.properties?.mid as string | undefined;
+    setEditMeasure(mid && mid !== "__active" ? mid : null);
+  });
   map.on("mouseenter", "strokeverts", () => (map.getCanvas().style.cursor = "grab"));
   map.on("mouseleave", "strokeverts", () => (map.getCanvas().style.cursor = modeCursor()));
   map.on("mousedown", "strokeverts", (e) => {
-    if (!editStrokeId) return;
     const idx = e.features?.[0]?.properties?.i as number;
-    const s = strokes.get(editStrokeId);
-    if (s == null || idx == null) return;
+    const pts = editPts();
+    if (!pts || idx == null) return;
     e.preventDefault();
     map.dragPan.disable();
     map.getCanvas().style.cursor = "grabbing";
     const onMove = (ev: maplibregl.MapMouseEvent) => {
-      s.points[idx] = [ev.lngLat.lng, ev.lngLat.lat];
-      refreshStrokes();
+      pts[idx] = [ev.lngLat.lng, ev.lngLat.lat];
+      if (editStrokeId) refreshStrokes();
+      else redrawMeasure();
       refreshStrokeVerts();
     };
     const onUp = () => {
       map.off("mousemove", onMove);
       map.dragPan.enable();
       map.getCanvas().style.cursor = modeCursor();
-      socket.send({ type: "stroke.modify", id: editStrokeId, data: { points: s.points } });
+      if (editStrokeId) socket.send({ type: "stroke.modify", id: editStrokeId, data: { points: pts } });
     };
     map.on("mousemove", onMove);
     map.once("mouseup", onUp);
@@ -2447,6 +2505,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (mode === "line" && linePts.length) {
       e.preventDefault();
       finishLine();
+    } else if (mode === "measure") {
+      e.preventDefault();
+      commitMeasure(); // Rechtsklick: Messlinie festhalten …
+      setMode("move"); // … und zurück zum Karten-Ziehen
     } else if (mode === "place" && chainGroup != null && chainIndex > 0) {
       e.preventDefault();
       setMode("move");
@@ -2690,8 +2752,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
 
     if (mode === "measure") {
-      if (measurePts.length >= 2) measurePts = []; // dritter Klick: löschen
-      else measurePts.push([e.lngLat.lng, e.lngLat.lat]);
+      measureActive.push([e.lngLat.lng, e.lngLat.lat]); // Linksklick verlängert
       redrawMeasure();
       return;
     }
