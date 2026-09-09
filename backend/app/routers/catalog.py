@@ -103,6 +103,20 @@ def store_catalog(name: str, raw: bytes) -> int:
     return len(raw)
 
 
+def read_catalog(name: str) -> dict | list | None:
+    """Katalog-Inhalt lesen (oder None). Für interne Nutzung (z. B. öffentliche Ansicht)."""
+    fn = CATALOGS.get(name)
+    if not fn:
+        return None
+    p = _dir() / fn
+    if not p.is_file():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except ValueError:
+        return None
+
+
 @router.get("/catalog")
 def catalog_status(user: CurrentUser) -> dict:
     d = _dir()

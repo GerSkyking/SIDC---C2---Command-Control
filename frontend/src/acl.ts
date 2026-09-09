@@ -6,7 +6,12 @@ import { icon } from "./icons";
 
 type Row = Omit<AclEntry, "id">;
 
-export async function openAclEditor(planId: string, planName: string, onClose?: () => void): Promise<void> {
+export async function openAclEditor(
+  planId: string,
+  planName: string,
+  onClose?: () => void,
+  isMB = false,
+): Promise<void> {
   const [entries, candidates] = await Promise.all([
     api.planAcl(planId),
     api.planAclCandidates(planId),
@@ -73,6 +78,11 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
             <input id="sh-days" type="number" min="0" placeholder="${t('acl.linkDays')}" style="width:9rem" />
             <button id="sh-add">${t("acl.createLink")}</button>
           </div>
+          ${
+            isMB
+              ? `<label class="chk" style="margin-top:.3rem"><input type="checkbox" id="sh-mb"/> <span>${t("acl.shareBuilder")}</span></label>`
+              : ""
+          }
         </div>
         <div class="wiz-config" style="max-height:none">
           <span class="error" data-err></span>
@@ -114,7 +124,8 @@ export async function openAclEditor(planId: string, planName: string, onClose?: 
     backdrop.querySelector("#sh-add")?.addEventListener("click", async () => {
       const label = (backdrop.querySelector("#sh-label") as HTMLInputElement).value.trim();
       const days = Number((backdrop.querySelector("#sh-days") as HTMLInputElement).value) || 0;
-      await api.createShare(planId, label, days || undefined);
+      const mb = !!(backdrop.querySelector("#sh-mb") as HTMLInputElement | null)?.checked;
+      await api.createShare(planId, label, days || undefined, mb);
       void renderShares();
     });
     void renderShares();

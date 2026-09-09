@@ -595,6 +595,7 @@ def list_shares(plan: OwnerPlan, db: DbDep) -> list[dict]:
     return [
         {
             "token": s.token, "label": s.label, "revoked": s.revoked,
+            "include_builder": s.include_builder,
             "created_at": s.created_at.isoformat(),
             "expires_at": s.expires_at.isoformat() if s.expires_at else None,
         }
@@ -616,8 +617,10 @@ def create_share(
     days = body.get("expires_days")
     if isinstance(days, (int, float)) and days > 0:
         expires = now() + timedelta(days=int(days))
+    incl = bool(body.get("include_builder")) and effective_mission_builder(db, user)
     db.add(PublicShare(token=token, plan_id=plan.id, created_by=user.id,
-                       label=str(body.get("label") or ""), expires_at=expires))
+                       label=str(body.get("label") or ""), expires_at=expires,
+                       include_builder=incl))
     db.commit()
     audit.record(db, "plan.share.create", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request)

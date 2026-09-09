@@ -20,7 +20,7 @@ from .tiles import build_style, read_tile
 router = APIRouter(prefix="/public/plans", tags=["public"])
 
 
-def _resolve(token: str, db) -> Plan:
+def _resolve_share(token: str, db) -> tuple[Plan, PublicShare]:
     sh = db.get(PublicShare, token)
     if sh is None or sh.revoked:
         raise HTTPException(404, "Freigabe nicht gefunden")
@@ -29,32 +29,47 @@ def _resolve(token: str, db) -> Plan:
     plan = db.get(Plan, sh.plan_id)
     if plan is None or plan.deleted_at is not None:
         raise HTTPException(404, "Plan nicht gefunden")
-    return plan
+    return plan, sh
+
+
+def _resolve(token: str, db) -> Plan:
+    return _resolve_share(token, db)[0]
 
 
 @router.get("/{token}")
 def public_snapshot(token: str, db: DbDep) -> dict:
-    plan = _resolve(token, db)
+    from .catalog import read_catalog
+
+    plan, sh = _resolve_share(token, db)
     mp = db.get(Map, plan.map_id)
-    hide = _builder_phase_ids(db, plan.id)  # Missionsbau-Ebene nie öffentlich
+    incl = bool(sh.include_builder)
+    hide: set[str] = set() if incl else _builder_phase_ids(db, plan.id)
     markers = [
         _marker_out(m)
         for m in db.scalars(select(Marker).where(Marker.plan_id == plan.id))
         if m.phase_id not in hide
-    ] + released_markers(db, plan.id)
+    ]
+    if not incl:
+        markers += released_markers(db, plan.id)
+    phase_q = select(Phase).where(Phase.plan_id == plan.id)
+    if not incl:
+        phase_q = phase_q.where(Phase.plane.is_distinct_from("builder"))
     return {
-        "plan": {"id": plan.id, "name": plan.name, "map_id": plan.map_id},
+        "plan": {
+            "id": plan.id, "name": plan.name, "map_id": plan.map_id,
+            "h_hour": plan.h_hour.isoformat() if plan.h_hour else None,
+        },
         "map_meta": (mp.meta if mp else {}),
         "readonly": True,
+        "include_builder": incl,
+        "channels": read_catalog("channels"),
         "phases": [
             {"id": p.id, "name": p.name, "ordering": p.ordering,
+             "plane": p.plane or "player", "parent_id": p.parent_id,
+             "sub_ordering": p.sub_ordering or 0,
              "start_at": p.start_at.isoformat() if p.start_at else None,
              "end_at": p.end_at.isoformat() if p.end_at else None}
-            for p in db.scalars(
-                select(Phase)
-                .where(Phase.plan_id == plan.id, Phase.plane.is_distinct_from("builder"))
-                .order_by(Phase.ordering)
-            )
+            for p in db.scalars(phase_q.order_by(Phase.ordering, Phase.sub_ordering))
         ],
         "layers": [
             {"id": ly.id, "name": ly.name, "color": ly.color, "ordering": ly.ordering,
@@ -133,6 +148,8 @@ def public_peaks(token: str, db: DbDep) -> Response:
 
 @router.websocket("/{token}/live")
 async def public_live(websocket: WebSocket, token: str) -> None:
+    import secrets
+
     with SessionLocal() as db:
         try:
             plan = _resolve(token, db)
@@ -142,10 +159,22 @@ async def public_live(websocket: WebSocket, token: str) -> None:
         plan_id = plan.id
     await websocket.accept()
     await hub.join(plan_id, websocket)
+    uid = "pub-" + secrets.token_hex(6)
     try:
         while True:
-            await websocket.receive_text()  # Empfänger ignoriert alles
+            try:
+                msg = await websocket.receive_json()
+            except (ValueError, TypeError):
+                continue
+            # Öffentliche Betrachter dürfen nur "zeigen" (Cursor), nichts ändern.
+            if isinstance(msg, dict) and msg.get("type") == "presence.cursor":
+                await hub.broadcast(plan_id, {
+                    "type": "presence.cursor", "uid": uid,
+                    "user": str(msg.get("user") or "Gast")[:24],
+                    "lng": float(msg.get("lng", 0)), "lat": float(msg.get("lat", 0)),
+                })
     except WebSocketDisconnect:
         pass
     finally:
         hub.leave(plan_id, websocket)
+        await hub.broadcast(plan_id, {"type": "presence.leave", "uid": uid})

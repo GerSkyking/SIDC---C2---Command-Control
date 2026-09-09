@@ -154,6 +154,7 @@ export interface PublicShareRow {
   token: string;
   label: string;
   revoked: boolean;
+  include_builder?: boolean;
   created_at: string;
   expires_at: string | null;
 }
@@ -332,8 +333,12 @@ export const api = {
   putPlanAcl: (planId: string, entries: Omit<AclEntry, "id">[]) =>
     req<AclEntry[]>("PUT", `/plans/${planId}/acl`, entries),
   planShares: (planId: string) => req<PublicShareRow[]>("GET", `/plans/${planId}/shares`),
-  createShare: (planId: string, label: string, expiresDays?: number) =>
-    req<{ token: string }>("POST", `/plans/${planId}/shares`, { label, expires_days: expiresDays }),
+  createShare: (planId: string, label: string, expiresDays?: number, includeBuilder = false) =>
+    req<{ token: string }>("POST", `/plans/${planId}/shares`, {
+      label,
+      expires_days: expiresDays,
+      include_builder: includeBuilder,
+    }),
   revokeShare: (planId: string, token: string) =>
     req<void>("DELETE", `/plans/${planId}/shares/${token}`),
   publicSnapshot: (token: string) => req<any>("GET", `/public/plans/${token}`),

@@ -304,6 +304,7 @@ class PublicShare(Base):
     plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     label: Mapped[str] = mapped_column(String(128), default="")
+    include_builder: Mapped[bool] = mapped_column(Boolean, default=False)  # Missionsbau-Phasen mit freigeben
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -1217,7 +1217,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   });
 
-  root.querySelector("#acl")?.addEventListener("click", () => openAclEditor(planId, snap.plan.name));
+  root.querySelector("#acl")?.addEventListener("click", () => openAclEditor(planId, snap.plan.name, undefined, isMB));
   root.querySelector("#help")!.addEventListener("click", openHelp);
   root.querySelector("#present")!.addEventListener("click", startPresent);
   root.querySelector("#undo")?.addEventListener("click", doUndo);
