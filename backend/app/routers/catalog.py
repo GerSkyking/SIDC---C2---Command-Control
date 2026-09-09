@@ -82,6 +82,27 @@ def _dir():
     return d
 
 
+def store_catalog(name: str, raw: bytes) -> int:
+    """Rohe Katalog-Bytes (JSON oder — bei 'translations' — .xlsx) validieren/konvertieren
+    und ablegen. Gibt die geschriebene Größe zurück. Wird von Upload UND Git-Import genutzt."""
+    if name not in CATALOGS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unbekannter Katalog")
+    if len(raw) > _MAX_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Datei zu groß")
+    if name == "translations" and raw[:2] == b"PK":  # .xlsx → JSON konvertieren
+        try:
+            raw = json.dumps(_xlsx_to_translations(raw), ensure_ascii=False).encode("utf-8")
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"XLSX nicht lesbar: {exc}") from exc
+    else:
+        try:
+            json.loads(raw)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Kein gültiges JSON: {exc}") from exc
+    (_dir() / CATALOGS[name]).write_bytes(raw)
+    return len(raw)
+
+
 @router.get("/catalog")
 def catalog_status(user: CurrentUser) -> dict:
     d = _dir()
@@ -104,23 +125,10 @@ async def upload_catalog(name: str, request: Request, admin: AdminUser, db: DbDe
     if name not in CATALOGS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unbekannter Katalog")
     raw = await request.body()
-    if len(raw) > _MAX_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Datei zu groß")
-    if name == "translations" and raw[:2] == b"PK":  # .xlsx → JSON konvertieren
-        try:
-            data = _xlsx_to_translations(raw)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"XLSX nicht lesbar: {exc}") from exc
-        raw = json.dumps(data, ensure_ascii=False).encode("utf-8")
-    else:
-        try:
-            json.loads(raw)  # nur validieren, unverändert speichern
-        except ValueError as exc:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Kein gültiges JSON: {exc}") from exc
-    (_dir() / CATALOGS[name]).write_bytes(raw)
+    n = store_catalog(name, raw)
     audit.record(db, "catalog.upload", user_id=admin.id, target_type="catalog", target_id=name,
-                 request=request, bytes=len(raw))
-    return {"ok": True, "name": name, "bytes": len(raw)}
+                 request=request, bytes=n)
+    return {"ok": True, "name": name, "bytes": n}
 
 
 @router.delete("/admin/catalog/{name}")

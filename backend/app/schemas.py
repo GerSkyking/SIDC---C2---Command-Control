@@ -66,6 +66,12 @@ class MapSourceFile(BaseModel):
     name: str
     size: int
     download_url: str
+    path: str = ""
+
+
+class SourceImportIn(BaseModel):
+    path: str          # Datei-Pfad im Repo (relativ), z. B. "catalog/SIDC_Translations.xlsx"
+    target: str         # Katalog-Schlüssel: all-markers|quick-menu|channels|modifiers|phaseline-style|translations
 
 
 class MapImportFromSourceIn(BaseModel):

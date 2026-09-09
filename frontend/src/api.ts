@@ -206,10 +206,19 @@ export const api = {
   createMapSource: (url: string, name = "", token = "") =>
     req<MapSource>("POST", "/api/map-sources", { url, name, token: token || null }),
   deleteMapSource: (id: string) => req<void>("DELETE", `/api/map-sources/${id}`),
-  mapSourceFiles: (id: string) =>
-    req<{ name: string; size: number; download_url: string }[]>("GET", `/api/map-sources/${id}/files`),
+  mapSourceFiles: (id: string, all = false) =>
+    req<{ name: string; size: number; download_url: string; path: string }[]>(
+      "GET",
+      `/api/map-sources/${id}/files${all ? "?all=true" : ""}`,
+    ),
   importFromSource: (id: string, name: string, source_id: string, file: string) =>
     req<MapItem>("POST", "/api/maps/import-from-source", { id, name, source_id, file }),
+  importCatalogFromSource: (sourceId: string, path: string, target: string) =>
+    req<{ ok: boolean; target: string; bytes: number }>(
+      "POST",
+      `/api/map-sources/${sourceId}/import-catalog`,
+      { path, target },
+    ),
 
   catalogStatus: () => req<Record<string, boolean>>("GET", "/api/catalog"),
   uploadCatalog: async (name: string, file: File) => {

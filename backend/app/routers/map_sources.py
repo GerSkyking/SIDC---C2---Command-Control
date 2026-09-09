@@ -13,7 +13,8 @@ from sqlalchemy import select
 from .. import audit
 from ..deps import AdminUser, DbDep
 from ..models import MapSource
-from ..schemas import MapSourceFile, MapSourceIn, MapSourceOut
+from ..schemas import MapSourceFile, MapSourceIn, MapSourceOut, SourceImportIn
+from .catalog import CATALOGS, store_catalog
 
 router = APIRouter(prefix="/api/map-sources", tags=["map-sources"])
 
@@ -41,7 +42,10 @@ def _headers(s: MapSource) -> dict:
     return {"Authorization": f"token {s.token}"} if s.token else {}
 
 
-def _list_files(s: MapSource) -> list[MapSourceFile]:
+_CATALOG_EXT = (".json", ".xlsx")
+
+
+def _list_files(s: MapSource, *, all_files: bool = False) -> list[MapSourceFile]:
     path = s.subpath.strip("/")
     api = f"{s.base_url}/api/v1/repos/{s.repo}/contents/{path}".rstrip("/")
     params = {"ref": s.ref} if s.ref else None
@@ -55,12 +59,43 @@ def _list_files(s: MapSource) -> list[MapSourceFile]:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Unerwartete Gitea-Antwort")
     out: list[MapSourceFile] = []
     for e in data:
-        if e.get("type") == "file" and str(e.get("name", "")).lower().endswith(".zip"):
-            out.append(MapSourceFile(
-                name=e["name"], size=int(e.get("size") or 0),
-                download_url=e.get("download_url") or "",
-            ))
+        if e.get("type") != "file":
+            continue
+        nm = str(e.get("name", ""))
+        low = nm.lower()
+        if not all_files and not low.endswith(".zip"):
+            continue
+        if all_files and not (low.endswith(".zip") or low.endswith(_CATALOG_EXT)):
+            continue
+        out.append(MapSourceFile(
+            name=nm, size=int(e.get("size") or 0),
+            download_url=e.get("download_url") or "",
+            path=str(e.get("path") or nm),
+        ))
     return sorted(out, key=lambda f: f.name)
+
+
+def _fetch_file(s: MapSource, repo_path: str) -> bytes:
+    api = f"{s.base_url}/api/v1/repos/{s.repo}/contents/{repo_path.lstrip('/')}"
+    params = {"ref": s.ref} if s.ref else None
+    hdrs = {**_headers(s), "Accept": "application/vnd.github.raw"}
+    try:
+        r = httpx.get(api, headers=hdrs, params=params, timeout=30, follow_redirects=True)
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Datei nicht abrufbar: {exc}")
+    body = r.content
+    # Gitea liefert je nach Version JSON mit base64-content statt roh:
+    if r.headers.get("content-type", "").startswith("application/json"):
+        import base64
+
+        try:
+            j = r.json()
+            if isinstance(j, dict) and j.get("content"):
+                body = base64.b64decode(j["content"])
+        except ValueError:
+            pass
+    return body
 
 
 @router.get("", response_model=list[MapSourceOut])
@@ -95,8 +130,24 @@ def delete_source(source_id: str, request: Request, admin: AdminUser, db: DbDep)
 
 
 @router.get("/{source_id}/files", response_model=list[MapSourceFile])
-def source_files(source_id: str, admin: AdminUser, db: DbDep) -> list[MapSourceFile]:
+def source_files(source_id: str, admin: AdminUser, db: DbDep, all: bool = False) -> list[MapSourceFile]:
     s = db.get(MapSource, source_id)
     if s is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    return _list_files(s)
+    return _list_files(s, all_files=all)
+
+
+@router.post("/{source_id}/import-catalog")
+def import_catalog_from_source(
+    source_id: str, body: SourceImportIn, request: Request, admin: AdminUser, db: DbDep
+) -> dict:
+    s = db.get(MapSource, source_id)
+    if s is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if body.target not in CATALOGS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unbekannter Katalog-Typ")
+    raw = _fetch_file(s, body.path)
+    n = store_catalog(body.target, raw)
+    audit.record(db, "catalog.import", user_id=admin.id, target_type="catalog",
+                 target_id=body.target, request=request, source=s.repo, path=body.path, bytes=n)
+    return {"ok": True, "target": body.target, "bytes": n}

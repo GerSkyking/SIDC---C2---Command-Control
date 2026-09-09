@@ -180,30 +180,62 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
       const box = q<HTMLDivElement>(`[data-src-files-for="${sid}"]`)!;
       box.innerHTML = `<span class="muted">${t("src.loading")}</span>`;
       try {
-        const files = await api.mapSourceFiles(sid);
+        const files = await api.mapSourceFiles(sid, true);
+        const catOpts = CATALOGS.map((c) => `<option value="${c.key}">${c.label}</option>`).join("");
         box.innerHTML = files.length
           ? files
-              .map((f) => {
+              .map((f, i) => {
+                const isZip = /\.zip$/i.test(f.name);
+                const sz = f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)} MB` : `${(f.size / 1024).toFixed(0)} KB`;
                 const guessId = f.name.replace(/_mappack.*$/i, "").replace(/[^a-z0-9_-]/gi, "").toLowerCase();
+                const guessCat =
+                  /translation/i.test(f.name) ? "translations" :
+                  /channel/i.test(f.name) ? "channels" :
+                  /modifier/i.test(f.name) ? "modifiers" :
+                  /quick/i.test(f.name) ? "quick-menu" :
+                  /phaseline|phase.line/i.test(f.name) ? "phaseline-style" :
+                  /allmarker|all.marker/i.test(f.name) ? "all-markers" : "";
                 return `<div class="row src-file">
-                  <span class="grow">${f.name} <span class="muted">${(f.size / 1048576).toFixed(0)} MB</span></span>
-                  <input data-sf-id="${sid}|${f.name}" value="${guessId}" style="width:8rem" />
-                  <input data-sf-name="${sid}|${f.name}" value="${guessId}" style="width:9rem" />
-                  <button class="primary" data-sf-imp="${sid}|${f.name}">${t("src.import")}</button>
+                  <span class="grow">${f.name} <span class="muted">${sz}</span></span>
+                  ${
+                    isZip
+                      ? `<input data-sf-id="${i}" value="${guessId}" placeholder="map-id" style="width:8rem" />
+                         <input data-sf-name="${i}" value="${guessId}" placeholder="Name" style="width:9rem" />
+                         <button class="primary" data-sf-map="${i}" data-path="${f.path}">${t("src.importAsMap")}</button>`
+                      : `<select data-sf-cat="${i}">${catOpts.replace(
+                          `value="${guessCat}"`,
+                          `value="${guessCat}" selected`,
+                        )}</select>
+                         <button class="primary" data-sf-catimp="${i}" data-path="${f.path}">${t("src.import")}</button>`
+                  }
                 </div>`;
               })
               .join("")
-          : `<span class="muted">${t("src.noZips")}</span>`;
-        box.querySelectorAll<HTMLButtonElement>("[data-sf-imp]").forEach((ib) =>
+          : `<span class="muted">${t("src.noFiles")}</span>`;
+
+        box.querySelectorAll<HTMLButtonElement>("[data-sf-map]").forEach((ib) =>
           ib.addEventListener("click", async () => {
-            const [s, file] = ib.dataset.sfImp!.split("|");
-            const idEl = box.querySelector<HTMLInputElement>(`[data-sf-id="${ib.dataset.sfImp}"]`)!;
-            const nameEl = box.querySelector<HTMLInputElement>(`[data-sf-name="${ib.dataset.sfImp}"]`)!;
+            const i = ib.dataset.sfMap!;
+            const idEl = box.querySelector<HTMLInputElement>(`[data-sf-id="${i}"]`)!;
+            const nameEl = box.querySelector<HTMLInputElement>(`[data-sf-name="${i}"]`)!;
             if (!idEl.value.trim() || !nameEl.value.trim()) return;
             try {
-              await api.importFromSource(idEl.value.trim(), nameEl.value.trim(), s, file);
+              await api.importFromSource(idEl.value.trim(), nameEl.value.trim(), sid, ib.dataset.path!);
               setTimeout(reload, 800);
             } catch (e) {
+              fail(e);
+            }
+          }),
+        );
+        box.querySelectorAll<HTMLButtonElement>("[data-sf-catimp]").forEach((ib) =>
+          ib.addEventListener("click", async () => {
+            const sel = box.querySelector<HTMLSelectElement>(`[data-sf-cat="${ib.dataset.sfCatimp}"]`)!;
+            ib.disabled = true;
+            try {
+              await api.importCatalogFromSource(sid, ib.dataset.path!, sel.value);
+              setTimeout(reload, 500);
+            } catch (e) {
+              ib.disabled = false;
               fail(e);
             }
           }),
