@@ -1835,15 +1835,29 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
       const descSum = (id: string): number =>
         (kids.get(id) ?? []).reduce((a, n) => a + (n.qty_current ?? 0) + descSum(n.id), 0);
+      // Alle Knoten im Teilbaum, die selbst Kinder haben (inkl. dem Knoten) — für
+      // das rekursive Auf-/Zuklappen.
+      const subExpandable = (id: string): string[] => {
+        const ch = kids.get(id) ?? [];
+        if (!ch.length) return [];
+        const out = [id];
+        for (const c of ch) out.push(...subExpandable(c.id));
+        return out;
+      };
       const rec = (pid: string, d: number): string =>
         (kids.get(pid) ?? [])
           .sort((a, b) => a.ordering - b.ordering)
           .map((n) => {
             const ch = kids.get(n.id) ?? [];
             const op = orbOpen.has(n.id);
+            const sub = subExpandable(n.id);
+            const subAllOpen = sub.length > 0 && sub.every((x) => orbOpen.has(x));
             return (
               `<div class="orb-row" style="margin-left:${d * 0.9}rem">` +
-              (ch.length ? `<button class="orb-tw" data-otw="${n.id}">${icon(op ? "chevronDown" : "chevron", 12)}</button>` : `<span class="orb-tw"></span>`) +
+              (ch.length
+                ? `<button class="orb-tw" data-otw="${n.id}" title="${t("orbat.toggleOne")}">${icon(op ? "chevronDown" : "chevron", 12)}</button>` +
+                  `<button class="orb-tw" data-otwall="${n.id}" data-sub="${sub.join(",")}" title="${t("orbat.toggleAll")}">${icon(subAllOpen ? "minus" : "plus", 12)}</button>`
+                : `<span class="orb-tw"></span>`) +
               `<span class="orb-name">${n.name}</span>` +
               `<span class="orb-qty">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}${ch.length ? ` <span class="orb-sub-sum">+${descSum(n.id)}</span>` : ""}</span>${st(n.status)}` +
               (isMB && canEdit && !o.released
@@ -1891,6 +1905,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         const id = b.dataset.otw!;
         orbOpen.has(id) ? orbOpen.delete(id) : orbOpen.add(id);
         renderOrbatPanel(); // rein lokal — kein Netz
+      }),
+    );
+    orbatPanel.querySelectorAll<HTMLButtonElement>("[data-otwall]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const ids = (b.dataset.sub || "").split(",").filter(Boolean);
+        const allOpen = ids.every((x) => orbOpen.has(x));
+        ids.forEach((x) => (allOpen ? orbOpen.delete(x) : orbOpen.add(x)));
+        renderOrbatPanel();
       }),
     );
     orbatPanel.querySelectorAll<HTMLButtonElement>("[data-orm]").forEach((b) =>

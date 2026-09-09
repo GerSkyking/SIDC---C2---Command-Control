@@ -17,7 +17,7 @@ const KEEP_Y = 70;
 
 export function makeMovable(
   el: HTMLElement,
-  opts: { plan: string; key: string; pinnable?: boolean },
+  opts: { plan: string; key: string; pinnable?: boolean; onClose?: () => void },
 ): Movable {
   const posKey = `sidc_ui_${opts.plan}_${opts.key}`;
   const pinKey = `sidc_uipin_${opts.plan}_${opts.key}`;
@@ -26,8 +26,12 @@ export function makeMovable(
   bar.className = "mv-bar";
   bar.innerHTML =
     `<span class="mv-grip" title="${t("ui.dragHint")}">${icon("drag", 14)}</span>` +
+    `<span class="mv-sp"></span>` +
     (opts.pinnable
       ? `<button type="button" class="mv-pin" title="${t("ui.pin")}">${icon("pin", 14)}</button>`
+      : "") +
+    (opts.pinnable || opts.onClose
+      ? `<button type="button" class="mv-x" title="${t("common.close")}">${icon("x", 14)}</button>`
       : "");
   el.prepend(bar);
   el.classList.add("mv");
@@ -98,6 +102,21 @@ export function makeMovable(
       /* ignore */
     }
     applyPin();
+  });
+
+  bar.querySelector(".mv-x")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (pinned) {
+      pinned = false;
+      try {
+        localStorage.setItem(pinKey, "0");
+      } catch {
+        /* ignore */
+      }
+      applyPin();
+    }
+    el.hidden = true;
+    opts.onClose?.();
   });
 
   const grip = bar.querySelector<HTMLElement>(".mv-grip")!;

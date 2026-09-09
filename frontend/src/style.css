@@ -175,12 +175,14 @@ a { color: var(--accent); }
   border: 1px solid var(--border); border-radius: 6px; padding: 0.3rem 0.5rem; font-size: 0.78rem; }
 .mk-scale input[type="range"] { width: 6.5rem; }
 /* Verschiebbare Panels */
-.mv-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.3rem;
+.mv-bar { display: flex; align-items: center; gap: 0.3rem;
   margin: -0.2rem -0.2rem 0.2rem; padding: 0.1rem 0.15rem; opacity: 0.55; }
 .mv-bar:hover { opacity: 1; }
+.mv-sp { flex: 1; }
 .mv-grip { cursor: move; display: inline-flex; }
-.mv-pin { background: transparent; border: none; padding: 0.1rem; border-radius: var(--r-sm);
+.mv-pin, .mv-x { background: transparent; border: none; padding: 0.1rem; border-radius: var(--r-sm);
   display: inline-flex; color: var(--muted); cursor: pointer; }
+.mv-pin:hover, .mv-x:hover { color: var(--fg); background: var(--elevated); }
 .mv-pin.on { color: var(--accent); background: var(--accent-weak); }
 #toolbar.mv .mv-bar { flex-direction: row; }
 .mv-pinned { outline: 1px solid var(--accent-weak); }
@@ -208,8 +210,8 @@ a { color: var(--accent); }
 .navcube .ncf-top { transform: rotateX(90deg) translateZ(27px); }
 .navcube .ncf-n { transform: translateZ(27px); }
 .navcube .ncf-s { transform: rotateY(180deg) translateZ(27px); }
-.navcube .ncf-e { transform: rotateY(90deg) translateZ(27px); }
-.navcube .ncf-w { transform: rotateY(-90deg) translateZ(27px); }
+.navcube .ncf-e { transform: rotateY(-90deg) translateZ(27px); }
+.navcube .ncf-w { transform: rotateY(90deg) translateZ(27px); }
 .presenting .navcube { display: none !important; }
 
 .grid-canvas { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0; pointer-events: none; z-index: 4; }
@@ -557,7 +559,9 @@ label.chk input { width: auto; }
 .orb-node.drop-hi { outline: 2px dashed var(--accent); outline-offset: -2px; }
 .orb-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.4rem; }
 .orb-row:hover { background: var(--elevated); }
-.orb-tw { width: 1.3rem; height: 1.3rem; border: none; background: transparent; padding: 0; display: grid; place-items: center; }
+.orb-tw { width: 1.15rem; height: 1.3rem; border: none; background: transparent; padding: 0; display: grid; place-items: center; color: var(--muted); cursor: pointer; }
+.orb-tw:hover { color: var(--fg); }
+.orb-row .orb-tw + .orb-tw { margin-left: -0.3rem; }
 .orb-ico { width: 1.6rem; height: 1.6rem; flex: none; }
 .orb-name { font-weight: 600; }
 .orb-qty { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.85rem; }
