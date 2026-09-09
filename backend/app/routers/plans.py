@@ -1,6 +1,7 @@
 """Plan-Lebenszyklus: CRUD, ACL, Klonen, Versionen, Snapshot-Laden."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -232,9 +233,11 @@ def get_plan(plan: ViewerPlan) -> Plan:
 
 @router.patch("/{plan_id}", response_model=PlanOut)
 def patch_plan(body: PlanPatchIn, plan: EditorPlan, db: DbDep) -> Plan:
-    """Umbenennen — Editor genügt (nicht nur Owner)."""
+    """Umbenennen / H-Stunde setzen — Editor genügt (nicht nur Owner)."""
     if body.name is not None and body.name.strip():
         plan.name = body.name.strip()
+    if "h_hour" in body.model_fields_set:
+        plan.h_hour = body.h_hour
     db.commit()
     return plan
 
@@ -407,11 +410,7 @@ def get_snapshot(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> dict:
         "plan": PlanOut.model_validate(plan).model_dump(mode="json"),
         "map_meta": mp.meta if mp else {},
         "phases": [
-            {"id": p.id, "name": p.name, "ordering": p.ordering, "notes": p.notes or "",
-             "plane": p.plane or "player", "parent_id": p.parent_id,
-             "sub_ordering": p.sub_ordering or 0,
-             "start_at": p.start_at.isoformat() if p.start_at else None}
-            for p in phases
+            _phase_out(p) for p in phases
         ],
         "layers": [
             {"id": ly.id, "name": ly.name, "color": ly.color, "ordering": ly.ordering,
@@ -430,12 +429,16 @@ class PhaseBody(BaseModel):
     notes: str | None = None
     plane: str | None = None       # "builder" für eine Missionsbau-(Zwischen-)Phase
     parent_id: str | None = None   # bei plane="builder": zugehörige Spieler-Phase
+    start_at: datetime | None = None
+    end_at: datetime | None = None
 
 
 def _phase_out(p: Phase) -> dict:
     return {
         "id": p.id, "name": p.name, "ordering": p.ordering, "notes": p.notes or "",
         "plane": p.plane or "player", "parent_id": p.parent_id, "sub_ordering": p.sub_ordering or 0,
+        "start_at": p.start_at.isoformat() if p.start_at else None,
+        "end_at": p.end_at.isoformat() if p.end_at else None,
     }
 
 
@@ -511,6 +514,10 @@ def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: CurrentU
         p.ordering = body.ordering
     if body.notes is not None:
         p.notes = body.notes
+    if "start_at" in body.model_fields_set:
+        p.start_at = body.start_at
+    if "end_at" in body.model_fields_set:
+        p.end_at = body.end_at
     db.commit()
     return _phase_out(p)
 
@@ -649,7 +656,8 @@ def clone_plan(
     # Spieler-Phasen zuerst klonen, damit die parent_id der Builder-Phasen gemappt werden kann
     for p in sorted(src_phases, key=lambda x: 0 if (x.plane or "player") == "player" else 1):
         np = Phase(
-            plan_id=clone.id, name=p.name, ordering=p.ordering, start_at=p.start_at, notes=p.notes,
+            plan_id=clone.id, name=p.name, ordering=p.ordering,
+            start_at=p.start_at, end_at=p.end_at, notes=p.notes,
             plane=p.plane or "player", sub_ordering=p.sub_ordering or 0,
             parent_id=phase_map.get(p.parent_id or ""),
         )

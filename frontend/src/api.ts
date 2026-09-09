@@ -82,6 +82,8 @@ export interface Phase {
   plane?: "player" | "builder";
   parent_id?: string | null;
   sub_ordering?: number;
+  start_at?: string | null;
+  end_at?: string | null;
 }
 export interface PlanVersionRow {
   id: string;
@@ -305,6 +307,13 @@ export const api = {
     req<Phase>("PATCH", `/plans/${planId}/phases/${phaseId}`, { name }),
   updatePhaseNotes: (planId: string, phaseId: string, notes: string) =>
     req<Phase>("PATCH", `/plans/${planId}/phases/${phaseId}`, { notes }),
+  patchPhase: (
+    planId: string,
+    phaseId: string,
+    body: { start_at?: string | null; end_at?: string | null; name?: string },
+  ) => req<Phase>("PATCH", `/plans/${planId}/phases/${phaseId}`, body),
+  patchPlan: (planId: string, body: { name?: string; h_hour?: string | null }) =>
+    req<PlanItem>("PATCH", `/plans/${planId}`, body),
   deletePhase: (planId: string, phaseId: string) =>
     req<void>("DELETE", `/plans/${planId}/phases/${phaseId}`),
   planAcl: (planId: string) => req<AclEntry[]>("GET", `/plans/${planId}/acl`),

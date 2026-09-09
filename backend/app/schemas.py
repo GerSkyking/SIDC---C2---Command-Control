@@ -84,6 +84,7 @@ class PlanCreateIn(BaseModel):
 
 class PlanPatchIn(BaseModel):
     name: str | None = None
+    h_hour: datetime | None = None
 
 
 class PlanOut(BaseModel):
@@ -95,6 +96,7 @@ class PlanOut(BaseModel):
     ordering: int = 0
     created_at: datetime
     updated_at: datetime
+    h_hour: datetime | None = None
 
 
 class PlanMoveIn(BaseModel):

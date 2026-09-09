@@ -140,6 +140,7 @@ class Plan(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    h_hour: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # Operationsbeginn (Zeitstrahl)
 
     acl: Mapped[list["PlanACL"]] = relationship(
         back_populates="plan", cascade="all, delete-orphan"
@@ -179,7 +180,8 @@ class Phase(Base):
     plane: Mapped[str] = mapped_column(String(8), default="player")
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("phases.id", ondelete="CASCADE"))
     sub_ordering: Mapped[int] = mapped_column(Integer, default=0)
-    start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # optionale Zeit
+    start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # optionaler Start
+    end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))     # optionales Ende
     notes: Mapped[str] = mapped_column(Text, default="")  # Markdown-Notizen zur Phase
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

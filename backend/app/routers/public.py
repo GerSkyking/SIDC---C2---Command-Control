@@ -48,7 +48,8 @@ def public_snapshot(token: str, db: DbDep) -> dict:
         "readonly": True,
         "phases": [
             {"id": p.id, "name": p.name, "ordering": p.ordering,
-             "start_at": p.start_at.isoformat() if p.start_at else None}
+             "start_at": p.start_at.isoformat() if p.start_at else None,
+             "end_at": p.end_at.isoformat() if p.end_at else None}
             for p in db.scalars(
                 select(Phase)
                 .where(Phase.plan_id == plan.id, Phase.plane.is_distinct_from("builder"))

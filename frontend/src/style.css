@@ -155,6 +155,37 @@ a { color: var(--accent); }
   flex-wrap: wrap; max-width: 14rem; }
 .ph-op input[type="range"] { width: 6rem; padding: 0; flex: none; }
 
+/* ── Zeitstrahl ─────────────────────────────────────────────────────── */
+.tl { display: flex; flex-direction: column; gap: 0.2rem; width: 100%; }
+.tl-ctl { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.tl-ctl .tl-zoom { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.tl-ctl .tl-zoom button { border: none; background: transparent; width: 1.5rem; height: 1.5rem; font-size: 1rem; line-height: 1; }
+.tl-ctl .tl-zoom button:hover { background: var(--elevated); }
+.tl-ctl #ph-add { padding: 0.15rem 0.5rem; font-size: 0.8rem; }
+.tl-scroll { overflow-x: auto; overflow-y: hidden; width: 100%; overscroll-behavior-x: contain; }
+.tl-canvas { position: relative; }
+.tl-ruler { position: relative; height: 16px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  background: var(--surface-2); }
+.tl-tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--border); }
+.tl-tick span { position: absolute; left: 2px; top: 1px; font-size: 0.62rem; color: var(--muted); white-space: nowrap; }
+.tl-hh { position: absolute; top: -1px; bottom: -1px; border-left: 2px solid var(--danger); z-index: 2;
+  font-size: 0.6rem; color: var(--danger); font-weight: 700; padding-left: 2px; }
+.tl-lane { position: relative; min-height: 30px; }
+.tl-lane.tl-player { margin-bottom: 1px; }
+.tl-bar { position: absolute; height: 22px; box-sizing: border-box; border: 1px solid var(--border);
+  border-radius: var(--r-sm); background: var(--panel); display: flex; align-items: center; overflow: hidden;
+  cursor: grab; font-size: 0.72rem; user-select: none; }
+.tl-bar.tl-auto { border-style: dashed; opacity: 0.85; }
+.tl-bar.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); opacity: 1; }
+.tl-bar-name { padding: 0 0.4rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; pointer-events: none; }
+.tl-edge { width: 6px; align-self: stretch; cursor: ew-resize; flex: none; }
+.tl-edge:hover { background: var(--accent-weak); }
+.tl-del { position: absolute; right: 1px; top: 1px; width: 15px; height: 15px; padding: 0; border: none;
+  background: transparent; color: inherit; display: none; place-items: center; border-radius: 3px; }
+.tl-bar:hover .tl-del { display: grid; }
+.tl-del:hover { background: rgba(0,0,0,0.2); color: var(--danger); }
+.tl-subadd { position: absolute; right: 2px; top: 2px; padding: 0 0.4rem; font-size: 0.85rem; }
+
 /* Kompass in der Topbar */
 .compass .ic { transform: rotate(var(--rot, 0deg)); transition: transform 0.15s linear; }
 .compass .ic .ic-a { fill: var(--danger); opacity: 0.9; }
@@ -316,6 +347,12 @@ a { color: var(--accent); }
 .notes-tab-sep { width: 100%; border-top: 1px solid var(--border); margin: 0.25rem 0 0.1rem; }
 .notes-tabs button { padding: 0.15rem 0.5rem; font-size: 0.75rem; border-radius: 5px 5px 0 0; }
 .notes-tabs button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.notes-times { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
+  padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); font-size: 0.72rem; }
+.notes-times label { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--muted); }
+.notes-times input { font-size: 0.72rem; padding: 0.1rem 0.25rem; }
+.notes-times [data-ntclear] { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0.1rem; }
+.notes-times [data-ntclear]:hover { color: var(--danger); }
 .notes-split { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.5rem; }
 .notes-edit { width: 100%; height: 8rem; resize: vertical; font-family: ui-monospace, monospace; font-size: 0.82rem;
   background: #000; color: #fff; border: 1px solid var(--border); border-radius: 5px; padding: 0.4rem; }
