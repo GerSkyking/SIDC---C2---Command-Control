@@ -2318,21 +2318,27 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const positionLineDone = () => {
     const a = doneAnchor();
+    // Zahnrad nur beim Bearbeiten einer bestehenden Phasenlinie
+    const showGear = !!editStrokeId && mode !== "line";
     if (!a) {
       lineDoneBtn.hidden = true;
       strokeGearBtn.hidden = true;
       return;
     }
     const p = map.project(a);
+    // #map ist um die Topbar-Höhe nach unten versetzt — die Buttons liegen in
+    // #app, also den Versatz addieren (fester Bildschirm-Abstand, skaliert nicht).
+    const mr = map.getContainer().getBoundingClientRect();
+    const rr = root.getBoundingClientRect();
+    const bx = mr.left - rr.left + p.x;
+    const by = mr.top - rr.top + p.y;
     lineDoneBtn.hidden = false;
-    lineDoneBtn.style.left = `${p.x - 16}px`;
-    lineDoneBtn.style.top = `${p.y - 44}px`;
-    // Zahnrad nur beim Bearbeiten einer bestehenden Phasenlinie
-    const showGear = !!editStrokeId && mode !== "line";
+    lineDoneBtn.style.left = `${Math.round(bx - 16)}px`;
+    lineDoneBtn.style.top = `${Math.round(by - 46)}px`;
     strokeGearBtn.hidden = !showGear;
     if (showGear) {
-      strokeGearBtn.style.left = `${p.x + 20}px`;
-      strokeGearBtn.style.top = `${p.y - 44}px`;
+      strokeGearBtn.style.left = `${Math.round(bx + 22)}px`;
+      strokeGearBtn.style.top = `${Math.round(by - 46)}px`;
     }
   };
   onEditSelChange = positionLineDone;
@@ -2863,7 +2869,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // Rechtsklick beendet: gezeichnete Linie ODER eine laufende Marker-Linie (Multipoint)
   map.on("contextmenu", (e) => {
-    if (mode === "line" && linePts.length) {
+    if (editStrokeId || editMeasureId) {
+      e.preventDefault();
+      setEditStroke(null);
+      setEditMeasure(null); // Bearbeiten abbrechen
+    } else if (mode === "line" && linePts.length) {
       e.preventDefault();
       finishLine();
     } else if (mode === "measure") {

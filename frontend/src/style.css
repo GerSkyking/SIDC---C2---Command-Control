@@ -192,6 +192,7 @@ a { color: var(--accent); }
 .line-done { position: absolute; z-index: 8; width: 2rem; height: 2rem; padding: 0;
   display: grid; place-items: center; border-radius: 50%;
   background: var(--ok); border-color: var(--ok); color: #06210c; box-shadow: var(--shadow); }
+.line-done[hidden] { display: none !important; }
 .line-done:hover:not(:disabled) { background: var(--ok); filter: brightness(1.1); }
 .line-gear { background: var(--panel); border-color: var(--border); color: var(--fg); }
 .line-gear:hover:not(:disabled) { background: var(--panel); filter: brightness(1.15); }
