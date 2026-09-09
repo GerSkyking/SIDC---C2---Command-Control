@@ -11,7 +11,9 @@ export type ModeKey =
   | "line"
   | "measure"
   | "erase"
-  | "place";
+  | "text"
+  | "place"
+  | "fav";
 
 export const MODE_ORDER: ModeKey[] = [
   "move",
@@ -20,17 +22,21 @@ export const MODE_ORDER: ModeKey[] = [
   "line",
   "measure",
   "erase",
+  "text",
   "place",
+  "fav",
 ];
 
 const DEFAULTS: Record<ModeKey, string> = {
   move: "v",
   markermove: "m",
-  point: "q",
+  point: "z", // Zeigen
   line: "l",
   measure: "r",
   erase: "e",
+  text: "t",
   place: "p",
+  fav: "f",
 };
 
 const KEY = "sidc_keybinds";
@@ -74,7 +80,9 @@ export function openSettings(): void {
     line: t("tool.line"),
     measure: t("tool.measure"),
     erase: t("tool.erase"),
+    text: t("tool.text"),
     place: t("tool.marker"),
+    fav: t("tool.fav"),
   };
   const rows = () =>
     MODE_ORDER.map(

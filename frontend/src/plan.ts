@@ -260,7 +260,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
                .map((c) => `<option value="${c.name}">${channelLabel(c)}</option>`)
                .join("")}</select>
              <button class="primary" id="lineFinish">${t("line.finish")}</button>
-             <button id="lineCancel">${t("common.cancel")}</button>
+             <p class="muted" style="margin:.35rem 0 0;font-size:.72rem">${t("line.rmbHint")}</p>
            </div>`
         : ""
     }
@@ -490,6 +490,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         properties: {
           color: packedToHex(anchor.line_color),
           width: anchor.line_width > 0 ? anchor.line_width : 2,
+          // gleiche Sichtbarkeit wie die Marker der Kette (schwächster gewinnt)
+          opacity: Math.min(...list.map((m) => phaseOpacity(m))),
         },
       });
     }
@@ -528,7 +530,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       id: "chains",
       type: "line",
       source: "chains",
-      paint: { "line-color": ["get", "color"], "line-width": ["get", "width"] },
+      paint: {
+        "line-color": ["get", "color"],
+        "line-width": ["get", "width"],
+        "line-opacity": ["coalesce", ["get", "opacity"], 1],
+      },
       layout: { "line-cap": "round", "line-join": "round" },
     });
 
@@ -2751,8 +2757,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (!canEdit) return;
     const m = modeForKey(ev);
     if (!m) return;
-    if (m === "place") {
-      const b = toolbar.querySelector<HTMLButtonElement>("#tool-marker");
+    if (m === "place" || m === "fav") {
+      const b = toolbar.querySelector<HTMLButtonElement>(m === "place" ? "#tool-marker" : "#tool-fav");
       if (b && !b.disabled) b.click();
       return;
     }
@@ -2848,10 +2854,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     refreshLineDraft();
   };
   root.querySelector("#lineFinish")!.addEventListener("click", finishLine);
-  root.querySelector("#lineCancel")!.addEventListener("click", () => {
+  // Laufende Linie verwerfen (Rechtsklick / Escape) — ohne sie zu setzen.
+  const cancelLine = () => {
     linePts = [];
     refreshLineDraft();
-  });
+  };
 
   // Zahnrad an einer bestehenden Phasenlinie: Phase/Ebene, Channel, Farbe, Breite
   function openStrokeSettings(strokeId: string): void {
@@ -3139,7 +3146,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   });
 
-  // Rechtsklick beendet: gezeichnete Linie ODER eine laufende Marker-Linie (Multipoint)
+  // Rechtsklick bricht ab: Linien-Bearbeiten / laufende Linie / Marker-Linie
   map.on("contextmenu", (e) => {
     if (editStrokeId || editMeasureId) {
       e.preventDefault();
@@ -3147,7 +3154,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       setEditMeasure(null); // Bearbeiten abbrechen
     } else if (mode === "line" && linePts.length) {
       e.preventDefault();
-      finishLine();
+      cancelLine(); // laufende Linie verwerfen, NICHT setzen
     } else if (mode === "measure") {
       e.preventDefault();
       commitMeasure(); // Rechtsklick: Messlinie festhalten …
@@ -3498,9 +3505,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
-      if (mode === "line" && linePts.length) finishLine();
-      else if (editStrokeId) setEditStroke(null);
-      else setMode("move");
+      if (mode === "line" && linePts.length) cancelLine();
+      else if (editStrokeId || editMeasureId) {
+        setEditStroke(null);
+        setEditMeasure(null);
+      } else setMode("move");
     }
   });
 
@@ -3559,7 +3568,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <select data-phase>
         <option value="">${t("phase.global")}</option>
         ${phases
-          .map((ph) => `<option value="${ph.id}" ${ph.id === m.phase_id ? "selected" : ""}>${ph.name}</option>`)
+          .map(
+            (ph) =>
+              `<option value="${ph.id}" ${ph.id === m.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${ph.name}</option>`,
+          )
           .join("")}
       </select>
       <label>${t("wiz.channel")}</label>
