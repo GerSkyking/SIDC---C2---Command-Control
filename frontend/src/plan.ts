@@ -3399,10 +3399,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       el.querySelector("[data-adel]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
         const tools = el.querySelector<HTMLElement>(".annot-tools")!;
-        tools.innerHTML = `<label class="annot-delok"><input type="checkbox" data-adok/> ${t("common.delete")}</label>`;
+        tools.innerHTML =
+          `<label class="annot-delok"><input type="checkbox" data-adok/> ${t("common.delete")}</label>` +
+          `<button class="icon-btn" data-adcancel title="${t("common.cancel")}">${icon("back", 12)}</button>`;
         tools.querySelector("[data-adok]")!.addEventListener("change", () =>
           socket.send({ type: "annotation.delete", id: a.id }),
         );
+        tools.querySelector("[data-adcancel]")!.addEventListener("click", (e) => {
+          e.stopPropagation();
+          renderAnnots(); // Abbrechen → Werkzeuge wiederherstellen
+        });
+        el.addEventListener("mouseleave", () => renderAnnots(), { once: true });
       });
       el.addEventListener("mousedown", (ev) => onAnnotDown(ev, a.id));
       el.addEventListener("dblclick", (ev) => {
