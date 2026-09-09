@@ -2,7 +2,7 @@
 // Nähert sich der ATAKmaps-UI an (D:\Mods\ATAKmaps).
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
-import { channelLabel, loadAllMarkers, loadChannels, loadModifiers, loadPhaseLineStyle } from "./sidc/catalog";
+import { channelLabel, describe, loadAllMarkers, loadChannels, loadModifiers, loadPhaseLineStyle, loadTranslations, translate } from "./sidc/catalog";
 import { lngLatToWorld, withModifiers, worldToLngLat, type Calibration, type SidcModifiers } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { confirmDialog, promptDialog, toast, toastError } from "./notify";
@@ -76,12 +76,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // platzierten Markers im Bearbeiten-Panel zu kennen.
   const subCatBySidc = new Map<string, string>();
   const nameBySidc = new Map<string, string>();
+  const langKeyBySidc = new Map<string, string>();
+  await loadTranslations();
   for (const c of (await loadAllMarkers()) ?? [])
     for (const e of c.entries) {
       const key = e.sidc.slice(4, 6) + e.sidc.slice(10, 16);
       if (e.subCategory) subCatBySidc.set(key, e.subCategory);
-      if (e.name && !nameBySidc.has(key)) nameBySidc.set(key, e.name);
+      if (e.name && !nameBySidc.has(key)) nameBySidc.set(key, translate(e.name));
+      if (e.languageKey && !langKeyBySidc.has(key)) langKeyBySidc.set(key, e.languageKey);
     }
+  const markerInfoText = (sidc: string): string =>
+    describe(langKeyBySidc.get(sidc.slice(4, 6) + sidc.slice(10, 16)));
 
   // Marker-Beschriftung: Name + (falls gesetzt) Modifikatoren, per Komma getrennt.
   const MOD_SLOTS: [string, (s: string) => string][] = [
@@ -2223,13 +2228,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const m = id ? markers.get(id) : undefined;
     if (!m) return;
     map.getCanvas().style.cursor = "pointer";
+    const info = markerInfoText(m.sidc);
     hoverPopup
       .setLngLat([m.world_x, m.world_y])
       .setHTML(
         `<div class="mk-tip"><b>${esc(markerLabel(m) || "—")}</b><br>` +
           `${t("map.channel")}: ${esc(m.channel || "—")}<br>` +
           `${t("marker.author")}: ${esc(m.author || "—")}<br>` +
-          `${t("phase.assign")}: ${esc(phaseNameOf(m.phase_id))}</div>`,
+          `${t("phase.assign")}: ${esc(phaseNameOf(m.phase_id))}` +
+          (info ? `<div class="mk-tip-info">${esc(info)}</div>` : "") +
+          `</div>`,
       )
       .addTo(map);
   };

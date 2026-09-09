@@ -208,12 +208,16 @@ export const api = {
 
   catalogStatus: () => req<Record<string, boolean>>("GET", "/api/catalog"),
   uploadCatalog: async (name: string, file: File) => {
-    const text = await file.text();
+    const isXlsx = /\.xlsx$/i.test(file.name);
     const r = await fetch(`/api/admin/catalog/${name}`, {
       method: "POST",
       credentials: "include",
-      headers: { "content-type": "application/json" },
-      body: text,
+      headers: {
+        "content-type": isXlsx
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : "application/json",
+      },
+      body: isXlsx ? file : await file.text(),
     });
     if (!r.ok) {
       const body = await r.text().catch(() => "");

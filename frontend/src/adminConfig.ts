@@ -79,7 +79,7 @@ export function configHtml(
         <td>${c.label} <span class="muted">${c.file}</span></td>
         <td><span class="badge">${catStatus[c.key] ? t("admin.loaded") : t("admin.missing")}</span></td>
         <td>
-          <input type="file" accept="application/json,.json" data-cat="${c.key}" style="display:none" />
+          <input type="file" accept="${c.key === "translations" ? ".xlsx,application/json,.json" : "application/json,.json"}" data-cat="${c.key}" style="display:none" />
           <button data-catbtn="${c.key}">${catStatus[c.key] ? t("admin.update") : t("admin.upload")}</button>
           ${catStatus[c.key] ? `<button class="icon-btn" data-delcat="${c.key}" title="${t("common.delete")}">${icon("trash", 16)}</button>` : ""}
         </td>

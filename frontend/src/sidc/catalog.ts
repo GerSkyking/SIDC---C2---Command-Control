@@ -147,14 +147,25 @@ export function loadPhaseLineStyle(): Promise<PhaseLineStyle | null> {
   return _phase;
 }
 
-// ── #Namen → lesbarer Name (Admin lädt SIDC_Translations.json nach) ──────────
-let _trMap: Record<string, string> = {};
-let _tr: Promise<Record<string, string>> | null = null;
+// ── Übersetzungen (Admin lädt SIDC_Translations.xlsx/.json nach) ─────────────
+// Gespeichert als { names: {Id: Name}, desc: {Id: Beschreibung} } (Ids ohne "#").
+let _trNames: Record<string, string> = {};
+let _trDesc: Record<string, string> = {};
+let _tr: Promise<void> | null = null;
 
-function flattenTranslations(d: unknown): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!d || typeof d !== "object") return out;
+function parseTranslations(d: unknown): void {
+  _trNames = {};
+  _trDesc = {};
+  if (!d || typeof d !== "object") return;
   const obj = d as Record<string, unknown>;
+  if (obj.names && typeof obj.names === "object") {
+    for (const [k, v] of Object.entries(obj.names as Record<string, unknown>))
+      if (typeof v === "string") _trNames[k] = v;
+    for (const [k, v] of Object.entries((obj.desc as Record<string, unknown>) ?? {}))
+      if (typeof v === "string") _trDesc[k] = v;
+    return;
+  }
+  // Rückwärtskompatibel: flaches Objekt oder Liste
   const arr =
     (Array.isArray(obj) && obj) ||
     (Array.isArray(obj.entries) && obj.entries) ||
@@ -164,35 +175,43 @@ function flattenTranslations(d: unknown): Record<string, string> {
     for (const e of arr as Record<string, unknown>[]) {
       const k = (e.key ?? e.languageKey ?? e.id) as string | undefined;
       const v = (e.value ?? e.name ?? e.text ?? e.translation) as string | undefined;
-      if (typeof k === "string" && typeof v === "string") out[k] = v;
+      if (typeof k === "string" && typeof v === "string") _trNames[k.replace(/^#/, "")] = v;
     }
-    return out;
+    return;
   }
-  const src = (obj.translations && typeof obj.translations === "object"
-    ? obj.translations
-    : obj) as Record<string, unknown>;
-  for (const [k, v] of Object.entries(src)) if (typeof v === "string") out[k] = v;
-  return out;
+  const src = (obj.translations && typeof obj.translations === "object" ? obj.translations : obj) as Record<
+    string,
+    unknown
+  >;
+  for (const [k, v] of Object.entries(src)) if (typeof v === "string") _trNames[k.replace(/^#/, "")] = v;
 }
 
-export function loadTranslations(): Promise<Record<string, string>> {
-  _tr ??= tryFetch<unknown>("/api/catalog/translations").then((d) => {
-    _trMap = flattenTranslations(d);
-    return _trMap;
-  });
+export function loadTranslations(): Promise<void> {
+  _tr ??= tryFetch<unknown>("/api/catalog/translations").then((d) => parseTranslations(d));
   return _tr;
+}
+
+function trLookup(map: Record<string, string>, raw: string): string | undefined {
+  return map[raw] ?? map[raw.replace(/^#/, "")];
 }
 
 /** #Name → lesbarer Name; ohne Tabelle bzw. bei Fehltreffer heuristische Bereinigung. */
 export function translate(raw: string | undefined | null): string {
   if (!raw) return raw ?? "";
-  if (_trMap[raw]) return _trMap[raw];
-  return raw
-    .replace(/^#SIDC-Channel-/, "")
-    .replace(/^#SIDC-UI-text_/, "")
-    .replace(/^#SIDC-[A-Za-z]+-/, "")
-    .replace(/^#/, "")
-    .replace(/_/g, " ");
+  return (
+    trLookup(_trNames, raw) ??
+    raw
+      .replace(/^#SIDC-Channel-/, "")
+      .replace(/^#SIDC-UI-text_/, "")
+      .replace(/^#SIDC-[A-Za-z]+-/, "")
+      .replace(/^#/, "")
+      .replace(/_/g, " ")
+  );
+}
+
+/** Zusatz-Beschreibung (aus der Übersetzungsliste) zu einem languageKey, sonst "". */
+export function describe(raw: string | undefined | null): string {
+  return raw ? trLookup(_trDesc, raw) ?? "" : "";
 }
 
 let _mods: Promise<ModifierCatalog | null> | null = null;

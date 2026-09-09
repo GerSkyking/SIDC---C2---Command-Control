@@ -182,6 +182,8 @@ a { color: var(--accent); }
 .maplibregl-popup-tip { border-top-color: #000 !important; border-bottom-color: #000 !important; }
 .mk-tip { font-size: 0.78rem; line-height: 1.35; white-space: nowrap; }
 .mk-tip b { font-size: 0.82rem; }
+.mk-tip-info { margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px solid var(--border);
+  white-space: normal; max-width: 22rem; color: var(--muted); }
 .layers-panel .layer-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.28rem 0; flex-wrap: wrap; }
 .layers-panel .layer-row label { flex: 1 1 8rem; min-width: 6rem; margin: 0; display: flex; align-items: center;
   gap: 0.4rem; white-space: normal; overflow-wrap: anywhere; }
