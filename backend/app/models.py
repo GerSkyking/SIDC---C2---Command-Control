@@ -223,6 +223,7 @@ class Marker(Base):
     world_y: Mapped[float] = mapped_column(Float)
     rotation_degrees: Mapped[int] = mapped_column(Integer, default=-1)  # 8-Richtungen-Pfeil, -1 = stationär
     icon_rotation: Mapped[float] = mapped_column(Float, default=0)       # freie Icon-Drehung (Grad)
+    scale: Mapped[float] = mapped_column(Float, default=1.0)             # 0.25–3.0, für alle sichtbar
     unit_text: Mapped[str] = mapped_column(String(255), default="")
     ai_text: Mapped[str] = mapped_column(String(255), default="")
     channel: Mapped[str] = mapped_column(String(64), default="")

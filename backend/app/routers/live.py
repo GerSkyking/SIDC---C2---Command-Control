@@ -29,7 +29,7 @@ log = logging.getLogger("sidc.live")
 
 MARKER_FIELDS = (
     "phase_id", "layer_id", "orbat_node_id", "orbat_strength", "sidc", "world_x", "world_y",
-    "rotation_degrees", "icon_rotation",
+    "rotation_degrees", "icon_rotation", "scale",
     "unit_text", "ai_text", "channel", "timestamp_visible",
     "linked_group_id", "point_index", "line_color", "line_width",
 )
@@ -77,7 +77,7 @@ def _marker_out(m: Marker, author: str | None = None) -> dict:
         "id": m.id, "phase_id": m.phase_id, "layer_id": m.layer_id,
         "orbat_node_id": m.orbat_node_id, "orbat_strength": m.orbat_strength, "sidc": m.sidc,
         "world_x": m.world_x, "world_y": m.world_y,
-        "rotation_degrees": m.rotation_degrees, "icon_rotation": m.icon_rotation,
+        "rotation_degrees": m.rotation_degrees, "icon_rotation": m.icon_rotation, "scale": m.scale,
         "unit_text": m.unit_text, "ai_text": m.ai_text, "channel": m.channel,
         "author": author,
         "locked": m.locked, "timestamp_visible": m.timestamp_visible,

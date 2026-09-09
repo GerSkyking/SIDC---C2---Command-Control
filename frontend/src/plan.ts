@@ -29,6 +29,7 @@ interface Marker {
   locked: boolean;
   rotation_degrees: number;
   icon_rotation: number;
+  scale?: number;
   phase_id: string | null;
   layer_id: string | null;
   orbat_node_id?: string | null;
@@ -162,6 +163,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   if (!Number.isFinite(outOpacity)) outOpacity = 20;
   let crossOpacity = Number(localStorage.getItem("sidc_crossopacity") ?? "20"); // % andere Ebene
   if (!Number.isFinite(crossOpacity)) crossOpacity = 20;
+  let personalScale = Number(localStorage.getItem("sidc_marker_scale") ?? "1"); // nur für mich
+  if (!Number.isFinite(personalScale) || personalScale <= 0) personalScale = 1;
   const phaseListeners: (() => void)[] = []; // z. B. Notiz-Fenster bei Phasenwechsel
   const phaseOpacityOf = (phaseId: string | null | undefined): number => {
     if (phaseId == null) return 1;
@@ -241,6 +244,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         : ""
     }
     <div class="hud" id="hud">X: –  Y: –  H: –</div>
+    <div class="mk-scale" id="mkScale" title="${t("marker.scaleLocal")}">
+      ${icon("marker", 13)}
+      <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
+      <span id="mkScaleV">${Math.round(personalScale * 100)}%</span>
+    </div>
     <div class="layers-panel" id="layersPanel" hidden></div>
     <div class="layers-panel orbat-panel" id="orbatPanel" hidden></div>
     <canvas class="grid-canvas" id="gridCanvas"></canvas>`;
@@ -323,6 +331,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         locked: m.locked,
         dot: missingIcons.has(m.sidc),
         opacity: phaseOpacity(m),
+        scale: Math.max(0.25, Math.min(3, m.scale ?? 1)) * personalScale,
       },
     })),
   });
@@ -546,7 +555,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       source: "markers",
       layout: {
         "icon-image": ["get", "sidc"],
-        "icon-size": 0.8,
+        "icon-size": ["*", 0.8, ["coalesce", ["get", "scale"], 1]],
         "icon-rotate": ["get", "rot"],
         "icon-allow-overlap": true,
         "text-field": ["get", "label"],
@@ -1277,6 +1286,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     notesWin.hidden = !notesWin.hidden;
     if (!notesWin.hidden) paintNotes();
   });
+  {
+    const si = root.querySelector<HTMLInputElement>("#mkScaleIn")!;
+    const sv = root.querySelector<HTMLSpanElement>("#mkScaleV")!;
+    si.addEventListener("input", () => {
+      personalScale = Number(si.value) / 100 || 1;
+      sv.textContent = `${si.value}%`;
+      try {
+        localStorage.setItem("sidc_marker_scale", String(personalScale));
+      } catch {
+        /* ignore */
+      }
+      void refreshMarkers();
+    });
+  }
   root.querySelector<HTMLSelectElement>("#chan")!.addEventListener("change", (e) => {
     myChannel = (e.target as HTMLSelectElement).value;
     try {
@@ -2651,6 +2674,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <label>${t("marker.unitText")}</label><input data-unit value="${m.unit_text}" />
       <label>${t("marker.aiText")}</label><input data-ai value="${m.ai_text}" />
       <label>${t("marker.iconRot")}</label><input data-rot type="number" value="${m.icon_rotation || 0}" />
+      <label class="ph-op">${t("marker.scale")}
+        <input type="range" min="25" max="300" step="5" data-mscale value="${Math.round((m.scale ?? 1) * 100)}" />
+        <span data-mscalev>${Math.round((m.scale ?? 1) * 100)}%</span></label>
       <label>${t("phase.assign")}</label>
       <select data-phase>
         <option value="">${t("phase.global")}</option>
@@ -2700,6 +2726,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }),
     );
     root.appendChild(back);
+    {
+      const ms = p.querySelector<HTMLInputElement>("[data-mscale]")!;
+      const mv = p.querySelector<HTMLSpanElement>("[data-mscalev]")!;
+      ms.addEventListener("input", () => (mv.textContent = `${ms.value}%`));
+    }
     const close = () => back.remove();
     back.addEventListener("mousedown", (e) => {
       if (e.target === back) close();
@@ -2718,6 +2749,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         icon_rotation: Number(p.querySelector<HTMLInputElement>("[data-rot]")!.value) || 0,
         phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || null,
         channel: p.querySelector<HTMLSelectElement>("[data-chan]")!.value,
+        scale: Math.max(0.25, Math.min(3, Number(p.querySelector<HTMLInputElement>("[data-mscale]")!.value) / 100 || 1)),
         ...(modDefs ? { sidc: nextSidc() } : {}),
         ...(isMB
           ? {

@@ -170,6 +170,10 @@ a { color: var(--accent); }
 
 .hud { position: absolute; right: 0.6rem; top: calc(var(--topbar-h, 3.2rem) + 0.7rem); z-index: 5; background: var(--surface); opacity: 0.96;
   border: 1px solid var(--border); border-radius: 6px; padding: 0.35rem 0.6rem; font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+.mk-scale { position: absolute; right: 0.6rem; top: calc(var(--topbar-h, 3.2rem) + 3rem); z-index: 5;
+  display: flex; align-items: center; gap: 0.4rem; background: var(--surface); opacity: 0.96;
+  border: 1px solid var(--border); border-radius: 6px; padding: 0.3rem 0.5rem; font-size: 0.78rem; }
+.mk-scale input[type="range"] { width: 6.5rem; }
 
 .grid-canvas { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0; pointer-events: none; z-index: 4; }
 .layers-panel { position: fixed; right: 0.6rem; top: calc(var(--topbar-h, 3.2rem) + 0.4rem); width: auto;
@@ -369,6 +373,7 @@ a { color: var(--accent); }
 .presenting .fav-panel,
 .presenting .line-style,
 .presenting .hud,
+.presenting .mk-scale,
 .presenting .maplibregl-ctrl { display: none !important; }
 .presenting #map { inset: 0 !important; }
 .present-bar { position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%);
