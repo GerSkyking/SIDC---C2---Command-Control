@@ -351,6 +351,8 @@ a { color: var(--accent); }
   padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); font-size: 0.72rem; }
 .notes-times label { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--muted); }
 .notes-times input { font-size: 0.72rem; padding: 0.1rem 0.25rem; }
+.notes-times .nt-name { flex: 1 1 100%; }
+.notes-times .nt-name input { flex: 1; min-width: 6rem; }
 .notes-times [data-ntclear] { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0.1rem; }
 .notes-times [data-ntclear]:hover { color: var(--danger); }
 .notes-split { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.5rem; }

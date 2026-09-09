@@ -1733,6 +1733,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const val = (raw: string | null | undefined, fb?: number) =>
       raw ? fmtInput(parseNaive(raw)) : fb != null ? fmtInput(new Date(fb)) : "";
     nTimes.innerHTML =
+      `<label class="nt-name">${t("common.name")}<input data-nname ${canEdit ? "" : "disabled"} value="${esc0(ph.name)}"/></label>` +
       `<label>${t("phase.start")}<input type="datetime-local" data-nstart ${canEdit ? "" : "disabled"} value="${val(ph.start_at, sp?.s)}"/></label>` +
       `<label>${t("phase.end")}<input type="datetime-local" data-nend ${canEdit ? "" : "disabled"} value="${val(ph.end_at, sp?.e)}"/></label>` +
       (ph.start_at || ph.end_at
@@ -1747,6 +1748,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     nTimes.querySelector("[data-nstart]")?.addEventListener("change", commit);
     nTimes.querySelector("[data-nend]")?.addEventListener("change", commit);
     nTimes.querySelector("[data-ntclear]")?.addEventListener("click", () => patchPhaseTimes(ph.id, null, null));
+    nTimes.querySelector<HTMLInputElement>("[data-nname]")?.addEventListener("change", (e) => {
+      const nm = (e.target as HTMLInputElement).value.trim();
+      if (!nm || nm === ph.name) return;
+      ph.name = nm;
+      // gepaarte Builder-/Spieler-Phase gleich mit umbenennen (Altverhalten)
+      void api.renamePhase(planId, ph.id, nm).catch((err) => toastError(err));
+      renderTimeline();
+      paintNotes();
+    });
   };
   repaintNotesTimes = () => {
     if (!notesWin.hidden) renderNotesTimes();
