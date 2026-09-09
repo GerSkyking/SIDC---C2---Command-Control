@@ -133,9 +133,9 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
   };
 
   const roots = byParent.get("") ?? [];
-  const leaves = nodes.filter((n) => !(byParent.get(n.id) ?? []).length);
-  const sumCur = leaves.reduce((a, n) => a + (n.qty_current ?? 0), 0);
-  const sumMax = leaves.reduce((a, n) => a + (n.qty_planned ?? 0), 0);
+  // Gesamtstärke = Ist/Soll ALLER Einheiten (jeder Knoten zählt).
+  const sumCur = nodes.reduce((a, n) => a + (n.qty_current ?? 0), 0);
+  const sumMax = nodes.reduce((a, n) => a + (n.qty_planned ?? 0), 0);
   host.innerHTML = `
     <div class="orb-head">
       <input class="orb-title" value="${o.name}" ${canEdit ? "" : "disabled"} />

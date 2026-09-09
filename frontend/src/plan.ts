@@ -46,6 +46,8 @@ interface Stroke {
   points: [number, number][];
   color: number;
   width: number;
+  phase_id?: string | null;
+  channel?: string;
 }
 type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text";
 
@@ -56,6 +58,7 @@ interface Annot {
   world_y: number;
   text: string;
   width: number;
+  height?: number;
   scale_fixed?: boolean;
   ref_zoom?: number;
 }
@@ -239,6 +242,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <select id="lw">${lineWidths
                .map((w) => `<option value="${w.width}" ${w.width === lineWidth ? "selected" : ""}>${w.width}</option>`)
                .join("")}</select>
+             <label>${t("phase.assign")}</label>
+             <select id="lPhase">
+               <option value="">${t("phase.global")}</option>
+               ${phases
+                 .map((ph) => `<option value="${ph.id}">${ph.plane === "builder" ? "⚑ " : ""}${ph.name}</option>`)
+                 .join("")}
+             </select>
+             <label>${t("wiz.channel")}</label>
+             <select id="lChan">${(channels?.channels ?? [])
+               .map((c) => `<option value="${c.name}">${channelLabel(c)}</option>`)
+               .join("")}</select>
              <button class="primary" id="lineFinish">${t("line.finish")}</button>
              <button id="lineCancel">${t("common.cancel")}</button>
            </div>`
@@ -251,6 +265,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <span id="mkScaleV">${Math.round(personalScale * 100)}%</span>
     </div>
     <button class="line-done" id="lineDone" title="${t("line.finish")}" hidden>${icon("check", 18)}</button>
+    <button class="line-done line-gear" id="strokeGear" title="${t("line.edit")}" hidden>${icon("settings", 16)}</button>
     <div class="layers-panel" id="layersPanel" hidden></div>
     <div class="layers-panel orbat-panel" id="orbatPanel" hidden></div>
     <canvas class="grid-canvas" id="gridCanvas"></canvas>`;
@@ -419,7 +434,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     features: [...strokes.values()].map((s) => ({
       type: "Feature",
       geometry: { type: "LineString", coordinates: s.points },
-      properties: { id: s.id, color: packedToHex(s.color), width: s.width > 0 ? s.width : 2 },
+      properties: {
+        id: s.id,
+        color: packedToHex(s.color),
+        width: s.width > 0 ? s.width : 2,
+        opacity:
+          phaseOpacityOf(s.phase_id) *
+          channelVisibility(channels?.channels, myChannel, s.channel || ""),
+      },
     })),
   });
   // Verbindungslinien für Multipoint-Marker (gleiche linked_group_id, nach point_index)
@@ -478,7 +500,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       id: "strokes",
       type: "line",
       source: "strokes",
-      paint: { "line-color": ["get", "color"], "line-width": ["get", "width"] },
+      paint: {
+        "line-color": ["get", "color"],
+        "line-width": ["get", "width"],
+        "line-opacity": ["coalesce", ["get", "opacity"], 1],
+      },
       layout: { "line-cap": "round", "line-join": "round" },
     });
 
@@ -632,13 +658,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     (map.getSource("dir-lines") as GeoJSONSource)?.setData(d.lines);
     (map.getSource("dir-heads") as GeoJSONSource)?.setData(d.heads);
   };
+  const refreshStrokes = () => (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
   const refreshMarkers = async () => {
     await Promise.all([...new Set([...markers.values()].map((m) => m.sidc))].map(ensureIcon));
     (map.getSource("markers") as GeoJSONSource)?.setData(markerFC());
     (map.getSource("chains") as GeoJSONSource)?.setData(chainFC());
     refreshDir();
+    refreshStrokes(); // Phase/Channel steuern auch die Deckkraft der Linien
   };
-  const refreshStrokes = () => (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
 
   // ── Linien nachträglich bearbeiten: Stützpunkte ziehen ───────────────
   // Lineal: mehrsegmentige, bleibende Messlinien (nur lokal, je Sitzung)
@@ -647,6 +674,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let measureCursor: [number, number] | null = null;
   let editMeasureId: string | null = null;
   let editStrokeId: string | null = null;
+  let onEditSelChange: () => void = () => {}; // wird später auf die Button-Positionierung gesetzt
   const editPts = (): [number, number][] | undefined =>
     editMeasureId
       ? measureLines.find((x) => x.id === editMeasureId)?.pts
@@ -667,11 +695,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     editStrokeId = id;
     if (id) editMeasureId = null;
     refreshStrokeVerts();
+    onEditSelChange();
   };
   const setEditMeasure = (id: string | null) => {
     editMeasureId = id;
     if (id) editStrokeId = null;
     refreshStrokeVerts();
+    onEditSelChange();
   };
   const refreshPeers = () => (map.getSource("peers") as GeoJSONSource)?.setData(peerFC());
   let dirRaf = 0;
@@ -1700,7 +1730,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             `<strong class="grow">${o.name}</strong>` +
             (o.released ? `<span class="muted">${t("plan.readonly")}</span>` : "") +
             (isMB ? `<button class="icon-btn" data-orm="${o.id}" title="${t("common.delete")}">${icon("x", 14)}</button>` : "") +
-            `</div>${nodeRows(o)}</div>`,
+            `</div>${nodeRows(o)}` +
+            (() => {
+              const ns = o.nodes ?? [];
+              const tc = ns.reduce((a, n) => a + (n.qty_current ?? 0), 0);
+              const tp = ns.reduce((a, n) => a + (n.qty_planned ?? 0), 0);
+              return ns.length
+                ? `<div class="orb-total">${t("orbat.totalStrength")}: <strong>${tc} / ${tp}</strong></div>`
+                : "";
+            })() +
+            `</div>`,
         )
         .join("") +
       (isMB && avail.length
@@ -2080,7 +2119,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const toolbar = root.querySelector<HTMLDivElement>("#toolbar")!;
   makeMovable(toolbar, { plan: planId, key: "toolbar" });
   const lineStylePanel = root.querySelector<HTMLDivElement>("#lineStyle")!;
+  const mvLine = makeMovable(lineStylePanel, { plan: planId, key: "linestyle", pinnable: true });
   let linePts: [number, number][] = [];
+  let linePhaseId: string | null = currentPhaseId || null;
+  let lineChannel = myChannel;
   let chainGroup: number | null = null;
   let chainIndex = 0;
   // Marker-Workflow wie im ATAK: erst Position auf der Karte klicken, dann öffnet
@@ -2089,17 +2131,49 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let pendingPos: [number, number] | null = null;
 
   const lineDoneBtn = root.querySelector<HTMLButtonElement>("#lineDone")!;
+  const strokeGearBtn = root.querySelector<HTMLButtonElement>("#strokeGear")!;
+  // Anker für den grünen Haken (und das Zahnrad): letzter Punkt der laufenden
+  // Linie bzw. der gerade bearbeiteten Linie/Messlinie.
+  const doneAnchor = (): [number, number] | null => {
+    if (mode === "line" && linePts.length >= 2) return linePts[linePts.length - 1];
+    if (editStrokeId) {
+      const p = strokes.get(editStrokeId)?.points;
+      if (p && p.length) return p[p.length - 1] as [number, number];
+    }
+    if (editMeasureId) {
+      const p = measureLines.find((x) => x.id === editMeasureId)?.pts;
+      if (p && p.length) return p[p.length - 1];
+    }
+    return null;
+  };
   const positionLineDone = () => {
-    if (mode !== "line" || linePts.length < 2) {
+    const a = doneAnchor();
+    if (!a) {
       lineDoneBtn.hidden = true;
+      strokeGearBtn.hidden = true;
       return;
     }
-    const p = map.project(linePts[linePts.length - 1] as [number, number]);
+    const p = map.project(a);
     lineDoneBtn.hidden = false;
-    lineDoneBtn.style.left = `${p.x + 14}px`;
-    lineDoneBtn.style.top = `${p.y - 14}px`;
+    lineDoneBtn.style.left = `${p.x - 16}px`;
+    lineDoneBtn.style.top = `${p.y - 44}px`;
+    // Zahnrad nur beim Bearbeiten einer bestehenden Phasenlinie
+    const showGear = !!editStrokeId && mode !== "line";
+    strokeGearBtn.hidden = !showGear;
+    if (showGear) {
+      strokeGearBtn.style.left = `${p.x + 20}px`;
+      strokeGearBtn.style.top = `${p.y - 44}px`;
+    }
   };
-  lineDoneBtn.addEventListener("click", () => finishLine());
+  onEditSelChange = positionLineDone;
+  lineDoneBtn.addEventListener("click", () => {
+    if (mode === "line") finishLine();
+    else if (editStrokeId) setEditStroke(null);
+    else if (editMeasureId) setEditMeasure(null);
+  });
+  strokeGearBtn.addEventListener("click", () => {
+    if (editStrokeId) openStrokeSettings(editStrokeId);
+  });
   const refreshLineDraft = () => {
     (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts));
     positionLineDone();
@@ -2119,26 +2193,37 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const src = map.getSource("measure") as GeoJSONSource | undefined;
     if (!src) return;
     const feats: GeoJSON.Feature[] = [];
-    const addLine = (id: string, pts: [number, number][], dashed = false) => {
+    // Alle Messlinien gestrichelt (wie die Vorschau). Zwischen je zwei Punkten die
+    // Teilstrecke, am Ende zusätzlich die Gesamtstrecke.
+    const addLine = (id: string, pts: [number, number][]) => {
       if (pts.length >= 2)
         feats.push({
           type: "Feature",
           geometry: { type: "LineString", coordinates: pts },
-          properties: { kind: "line", mid: id, dashed },
+          properties: { kind: "line", mid: id, dashed: true },
         });
       for (const p of pts)
         feats.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: { kind: "pt", mid: id } });
-      if (pts.length >= 2)
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1];
+        const b = pts[i];
+        feats.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] },
+          properties: { kind: "label", label: fmtDist(pathLen([a, b])) },
+        });
+      }
+      if (pts.length >= 3)
         feats.push({
           type: "Feature",
           geometry: { type: "Point", coordinates: pts[pts.length - 1] },
-          properties: { kind: "label", label: fmtDist(pathLen(pts)) },
+          properties: { kind: "label", label: `Σ ${fmtDist(pathLen(pts))}` },
         });
     };
     for (const ml of measureLines) addLine(ml.id, ml.pts);
     if (measureActive.length) {
       const live = measureCursor ? [...measureActive, measureCursor] : measureActive;
-      addLine("__active", live, true);
+      addLine("__active", live);
     }
     src.setData({ type: "FeatureCollection", features: feats });
   };
@@ -2174,7 +2259,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
     if (m === "line") map.doubleClickZoom.disable();
     else map.doubleClickZoom.enable();
-    lineStylePanel.hidden = m !== "line";
+    lineStylePanel.hidden = mvLine.isPinned() ? false : m !== "line";
+    if (m === "line") {
+      linePhaseId = currentPhaseId || null;
+      const lp = root.querySelector<HTMLSelectElement>("#lPhase");
+      if (lp) lp.value = linePhaseId ?? "";
+    }
     if (m !== "line") {
       linePts = [];
       refreshLineDraft();
@@ -2278,6 +2368,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   root.querySelector<HTMLSelectElement>("#lw")!.addEventListener("change", (e) => {
     lineWidth = Number((e.target as HTMLSelectElement).value);
   });
+  {
+    const lp = root.querySelector<HTMLSelectElement>("#lPhase")!;
+    const lc = root.querySelector<HTMLSelectElement>("#lChan")!;
+    lp.value = linePhaseId ?? "";
+    lc.value = lineChannel;
+    lp.addEventListener("change", () => (linePhaseId = lp.value || null));
+    lc.addEventListener("change", () => (lineChannel = lc.value));
+  }
   const finishLine = () => {
     if (linePts.length >= 2) {
       socket.send({
@@ -2288,7 +2386,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           points: linePts,
           color: lineColor,
           width: lineWidth,
-          phase_id: currentPhaseId || null,
+          phase_id: linePhaseId,
+          channel: lineChannel,
         },
       });
     }
@@ -2300,6 +2399,57 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     linePts = [];
     refreshLineDraft();
   });
+
+  // Zahnrad an einer bestehenden Phasenlinie: Phase/Ebene, Channel, Farbe, Breite
+  function openStrokeSettings(strokeId: string): void {
+    const s = strokes.get(strokeId);
+    if (!s) return;
+    const back = document.createElement("div");
+    back.className = "edit-modal";
+    back.innerHTML = `<div class="card" style="width:min(24rem,96vw)">
+      <div class="row"><h1 style="flex:1;margin:0">${t("line.edit")}</h1><button class="icon-btn" data-x>${icon("x")}</button></div>
+      <label class="chk-lbl">${t("phase.assign")}
+        <select data-sphase>
+          <option value="">${t("phase.global")}</option>
+          ${phases
+            .map(
+              (ph) =>
+                `<option value="${ph.id}" ${ph.id === s.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${ph.name}</option>`,
+            )
+            .join("")}
+        </select></label>
+      <label class="chk-lbl">${t("wiz.channel")}
+        <select data-schan>${(channels?.channels ?? [])
+          .map((c) => `<option value="${c.name}" ${c.name === (s.channel || "") ? "selected" : ""}>${channelLabel(c)}</option>`)
+          .join("")}</select></label>
+      <label class="chk-lbl">${t("line.color")}
+        <select data-scolor>${lineColors
+          .map((c) => `<option value="${c.packedColor}" ${c.packedColor === s.color ? "selected" : ""}>${c.name}</option>`)
+          .join("")}</select></label>
+      <label class="chk-lbl">${t("line.width")}
+        <select data-swidth>${lineWidths
+          .map((w) => `<option value="${w.width}" ${w.width === s.width ? "selected" : ""}>${w.width}</option>`)
+          .join("")}</select></label>
+      <div class="row" style="margin-top:.6rem"><button class="primary" data-save style="flex:1">${t("common.save")}</button></div>
+    </div>`;
+    document.body.appendChild(back);
+    const close = () => back.remove();
+    back.addEventListener("mousedown", (e) => e.target === back && close());
+    back.querySelector("[data-x]")!.addEventListener("click", close);
+    back.querySelector("[data-save]")!.addEventListener("click", () => {
+      socket.send({
+        type: "stroke.modify",
+        id: strokeId,
+        data: {
+          phase_id: back.querySelector<HTMLSelectElement>("[data-sphase]")!.value || null,
+          channel: back.querySelector<HTMLSelectElement>("[data-schan]")!.value,
+          color: Number(back.querySelector<HTMLSelectElement>("[data-scolor]")!.value),
+          width: Number(back.querySelector<HTMLSelectElement>("[data-swidth]")!.value),
+        },
+      });
+      close();
+    });
+  }
 
   function applyCaps(): void {
     const tb = root.querySelector("#toolbar");
@@ -2564,10 +2714,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const annotFirstLine = (s: string): string =>
     (s.split("\n").find((l) => l.trim()) ?? "").replace(/^#{1,6}\s+/, "").trim() || t("annot.placeholder");
-  const annotScale = (a: Annot): number =>
-    a.scale_fixed
-      ? 1
-      : Math.max(0.4, Math.min(2.4, 2 ** (map.getZoom() - (a.ref_zoom ?? map.getZoom()))));
+  const annotScale = (a: Annot): number => {
+    // Fixiert oder ohne gültigen Referenz-Zoom (Altbestand) → konstante Größe.
+    if (a.scale_fixed || !a.ref_zoom || a.ref_zoom <= 0) return 1;
+    return Math.max(0.4, Math.min(2.4, 2 ** (map.getZoom() - a.ref_zoom)));
+  };
 
   function positionAnnots(): void {
     for (const el of Array.from(annotsEl.children) as HTMLElement[]) {
@@ -2586,9 +2737,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     back.innerHTML = `<div class="card" style="width:min(34rem,96vw)">
       <div class="row"><h1 style="flex:1;margin:0">${t("annot.title")}</h1><button class="icon-btn" data-x>${icon("x")}</button></div>
       <textarea class="notes-edit annot-edit" rows="6" placeholder="${t("annot.hint")}"></textarea>
+      <label style="margin-top:.4rem">${t("phase.assign")}</label>
+      <select data-aphase>
+        <option value="">${t("phase.global")}</option>
+        ${phases
+          .map(
+            (ph) =>
+              `<option value="${ph.id}" ${ph.id === a.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${ph.name}</option>`,
+          )
+          .join("")}
+      </select>
       <label class="ph-op" style="margin-top:.4rem">${t("annot.width")}
         <input type="range" min="140" max="480" step="10" value="${a.width}" data-w /></label>
       <label class="chk" style="margin-top:.3rem"><input type="checkbox" data-fix ${a.scale_fixed ? "checked" : ""}/> <span>${t("annot.fixSize")}</span></label>
+      <p class="muted" style="margin:.2rem 0 0;font-size:.75rem">${t("annot.resizeHint")}</p>
       <div class="notes-view annot-prev"></div>
       <div class="row" style="margin-top:.6rem">
         <button class="primary" data-save style="flex:1">${t("common.save")}</button>
@@ -2622,13 +2784,18 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         return;
       }
       const wantFix = fixIn.checked;
+      const phaseSel = back.querySelector<HTMLSelectElement>("[data-aphase]")!;
       const data: Record<string, unknown> = {
         text: ta.value,
         width:
           wantFix && !a.scale_fixed
             ? Math.round(Number(wIn.value) * annotScale(a)) // aktuelle Größe einfrieren
             : Number(wIn.value),
-        phase_id: a.phase_id,
+        height:
+          wantFix && !a.scale_fixed && a.height
+            ? Math.round(a.height * annotScale(a))
+            : a.height ?? 0,
+        phase_id: phaseSel.value || null,
         scale_fixed: wantFix,
       };
       if (!wantFix && a.scale_fixed) data.ref_zoom = map.getZoom(); // wieder mitskalieren ab jetzt
@@ -2683,6 +2850,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       el.className = "annot" + (collapsed ? " annot-collapsed" : "");
       el.dataset.aid = a.id;
       el.style.width = `${a.width}px`;
+      if (a.height && !collapsed) el.style.height = `${a.height}px`;
+      else el.style.height = "";
       el.style.opacity = String(annotOpacity(a));
       const body = collapsed
         ? `<div class="annot-body">${esc(annotFirstLine(a.text))}</div>`
@@ -2715,6 +2884,23 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         );
       });
       el.addEventListener("mousedown", (ev) => onAnnotDown(ev, a.id));
+      // Größe per Rand/Ecke (CSS resize) — beim Loslassen synchronisieren
+      el.addEventListener("mouseup", () => {
+        if (annotDragId || !canEdit) return;
+        const w = Math.round(el.offsetWidth);
+        const h = Math.round(el.offsetHeight);
+        const cur = annots.get(a.id);
+        if (!cur) return;
+        if (Math.abs(w - cur.width) > 2 || Math.abs(h - (cur.height ?? 0)) > 2) {
+          cur.width = w;
+          cur.height = h;
+          socket.send({
+            type: "annotation.modify",
+            id: a.id,
+            data: { width: w, height: h, phase_id: cur.phase_id },
+          });
+        }
+      });
       el.addEventListener("dblclick", (ev) => {
         ev.stopPropagation();
         openAnnotEditor(a.id);
@@ -2734,6 +2920,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   map.on("click", (e) => {
     if ((e as { defaultPrevented?: boolean }).defaultPrevented) return;
+
+    // Klick ins Leere beendet das Bearbeiten einer Linie/Messlinie
+    if ((mode === "move" || mode === "markermove") && (editStrokeId || editMeasureId)) {
+      setEditStroke(null);
+      setEditMeasure(null);
+      return;
+    }
 
     if (mode === "text") {
       if (!caps.place) return;

@@ -254,6 +254,7 @@ class Annotation(Base):
     world_y: Mapped[float] = mapped_column(Float)
     text: Mapped[str] = mapped_column(Text, default="")
     width: Mapped[float] = mapped_column(Float, default=220)
+    height: Mapped[float] = mapped_column(Float, default=0)  # 0 = automatisch
     # Zoom-Skalierung: standardmäßig skaliert die Notiz mit der Karte; scale_fixed
     # friert sie auf Bildschirmgröße ein. ref_zoom = Zoom, bei dem width "natürlich" ist.
     scale_fixed: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -272,6 +273,7 @@ class Stroke(Base):
     phase_id: Mapped[str | None] = mapped_column(ForeignKey("phases.id", ondelete="SET NULL"), index=True)
     layer_id: Mapped[str | None] = mapped_column(ForeignKey("layers.id", ondelete="SET NULL"), index=True)
     kind: Mapped[str] = mapped_column(String(16), default="freehand")  # freehand | phaseline
+    channel: Mapped[str] = mapped_column(String(64), default="")
     points: Mapped[list] = mapped_column(JSON, default=list)           # [[x, y], ...]
     color: Mapped[int] = mapped_column(Integer, default=-1)
     width: Mapped[float] = mapped_column(Float, default=-1)

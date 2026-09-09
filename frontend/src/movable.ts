@@ -26,6 +26,16 @@ export function makeMovable(
   el.prepend(bar);
   el.classList.add("mv");
 
+  // Panel-Inhalte werden teils per innerHTML neu aufgebaut (Favoriten, ORBAT,
+  // Ebenen) — dabei geht die Leiste verloren. Wieder einsetzen, sobald das passiert.
+  const ensureBar = () => {
+    if (el.firstChild !== bar) {
+      el.prepend(bar);
+      applyPin();
+    }
+  };
+  new MutationObserver(ensureBar).observe(el, { childList: true });
+
   const readPin = () => {
     try {
       return localStorage.getItem(pinKey) === "1";

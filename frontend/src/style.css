@@ -189,6 +189,8 @@ a { color: var(--accent); }
   display: grid; place-items: center; border-radius: 50%;
   background: var(--ok); border-color: var(--ok); color: #06210c; box-shadow: var(--shadow); }
 .line-done:hover:not(:disabled) { background: var(--ok); filter: brightness(1.1); }
+.line-gear { background: var(--panel); border-color: var(--border); color: var(--fg); }
+.line-gear:hover:not(:disabled) { background: var(--panel); filter: brightness(1.15); }
 
 .grid-canvas { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0; pointer-events: none; z-index: 4; }
 .layers-panel { position: fixed; right: 0.6rem; top: calc(var(--topbar-h, 3.2rem) + 0.4rem); width: auto;
@@ -210,7 +212,8 @@ a { color: var(--accent); }
 #maplang { max-width: 6rem; }
 
 .line-style { position: absolute; left: 3.4rem; top: calc(var(--topbar-h, 3.2rem) + 0.7rem); width: 13rem; z-index: 6;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; }
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem;
+  max-height: 78vh; overflow-y: auto; }
 .line-style label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.4rem 0 0.2rem; }
 .line-style select { width: 100%; }
 .line-style button.primary { width: 100%; margin-top: 0.5rem; }
@@ -408,8 +411,11 @@ a { color: var(--accent); }
   background: var(--surface); color: var(--fg); border: 1px solid var(--border);
   border-radius: var(--r-sm); box-shadow: var(--shadow); padding: 0.45rem 0.6rem;
   font-size: 0.82rem; line-height: 1.4; cursor: default;
-  transform: translate(-9999px, -9999px); transform-origin: top left; }
+  transform: translate(-9999px, -9999px); transform-origin: top left;
+  resize: both; overflow: auto;
+  min-width: 120px; min-height: 36px; max-width: 640px; max-height: 70vh; }
 .annot.dragging { cursor: grabbing; opacity: 0.85 !important; }
+.annot.annot-collapsed { resize: horizontal; min-height: 0; }
 .annot-collapsed .annot-body { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Benachrichtigungen (Toasts) */
@@ -436,7 +442,8 @@ a { color: var(--accent); }
 .annot-body h1, .annot-body h2, .annot-body h3 { font-size: 0.95rem; margin: 0.3rem 0 0.2rem; }
 .annot-body p, .annot-body ul, .annot-body ol { margin: 0.25rem 0; }
 .annot-body code { background: var(--surface-2); padding: 0 0.2rem; border-radius: 3px; }
-.annot-tools { position: absolute; top: -0.7rem; right: -0.6rem; display: none; gap: 0.2rem; }
+.annot-tools { position: absolute; top: 2px; right: 2px; display: none; gap: 0.2rem;
+  background: var(--surface); border-radius: var(--r-sm); }
 .annot:hover .annot-tools { display: flex; }
 .annot-tools .icon-btn { width: 1.5rem; height: 1.5rem; }
 .annot-edit { min-height: 8rem; }

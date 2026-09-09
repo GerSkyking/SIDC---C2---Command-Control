@@ -125,7 +125,7 @@ def released_markers(db: Session, plan_id: str) -> list[dict]:
 def _annotation_dict(a: Annotation) -> dict:
     return {
         "id": a.id, "phase_id": a.phase_id, "world_x": a.world_x, "world_y": a.world_y,
-        "text": a.text, "width": a.width,
+        "text": a.text, "width": a.width, "height": a.height,
         "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom,
     }
 
@@ -146,7 +146,7 @@ def _marker_dict(m: Marker) -> dict:
 def _stroke_dict(s: Stroke) -> dict:
     return {
         "id": s.id, "phase_id": s.phase_id, "layer_id": s.layer_id, "kind": s.kind,
-        "points": s.points, "color": s.color, "width": s.width,
+        "channel": s.channel, "points": s.points, "color": s.color, "width": s.width,
     }
 
 
