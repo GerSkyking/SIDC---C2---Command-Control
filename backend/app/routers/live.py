@@ -150,6 +150,7 @@ async def _handle(
         "stroke.commit": "draw",
         "stroke.begin": "draw",
         "stroke.append": "draw",
+        "stroke.modify": "draw",
         "stroke.delete": "draw",
         "annotation.create": "place",
         "annotation.move": "move",
@@ -165,10 +166,12 @@ async def _handle(
 
     # Nicht-Missionsbauer dürfen keine Objekte auf Builder-Phasen anlegen/ändern.
     if not is_builder and t in (
-        "marker.create", "marker.modify", "stroke.commit", "annotation.create",
-        "annotation.move", "annotation.modify",
+        "marker.create", "marker.modify", "stroke.commit", "stroke.modify",
+        "annotation.create", "annotation.move", "annotation.modify",
     ):
         pid = (msg.get("data") or {}).get("phase_id")
+        if t == "stroke.modify":
+            pid = _stroke_phase(plan_id, msg.get("id"))
         if bo(pid):
             await _reject(ws, msg.get("cid"), "Keine Berechtigung: Missionsbau-Ebene")
             return
@@ -219,6 +222,14 @@ async def _handle(
             plan_id, {"type": "stroke.upsert", "cid": msg.get("cid"), "stroke": s},
             builder_only=bo(s.get("phase_id")),
         )
+
+    elif t == "stroke.modify":
+        s = await run_in_threadpool(_update_stroke, plan_id, msg["id"], msg.get("data", {}))
+        if s is not None:
+            await hub.broadcast(
+                plan_id, {"type": "stroke.upsert", "stroke": s},
+                builder_only=bo(s.get("phase_id")),
+            )
 
     elif t == "stroke.delete":
         pid = await run_in_threadpool(_delete_stroke, plan_id, msg["id"])
@@ -350,6 +361,33 @@ def _create_stroke(plan_id: str, uid: str, data: dict) -> dict:
             color=data.get("color", -1), width=data.get("width", -1),
         )
         db.add(s)
+        db.commit()
+        return {
+            "id": s.id, "phase_id": s.phase_id, "layer_id": s.layer_id, "kind": s.kind,
+            "points": s.points, "color": s.color, "width": s.width,
+        }
+
+
+def _stroke_phase(plan_id: str, stroke_id: str | None) -> str | None:
+    if not stroke_id:
+        return None
+    with SessionLocal() as db:
+        s = db.get(Stroke, stroke_id)
+        return s.phase_id if s and s.plan_id == plan_id else None
+
+
+def _update_stroke(plan_id: str, stroke_id: str, data: dict) -> dict | None:
+    with SessionLocal() as db:
+        s = db.get(Stroke, stroke_id)
+        if s is None or s.plan_id != plan_id:
+            return None
+        pts = data.get("points")
+        if isinstance(pts, list) and len(pts) >= 2:
+            s.points = [[float(p[0]), float(p[1])] for p in pts]
+        if data.get("color") is not None:
+            s.color = int(data["color"])
+        if data.get("width") is not None:
+            s.width = float(data["width"])
         db.commit()
         return {
             "id": s.id, "phase_id": s.phase_id, "layer_id": s.layer_id, "kind": s.kind,

@@ -249,6 +249,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
       <span id="mkScaleV">${Math.round(personalScale * 100)}%</span>
     </div>
+    <button class="line-done" id="lineDone" title="${t("line.finish")}" hidden>${icon("check", 18)}</button>
     <div class="layers-panel" id="layersPanel" hidden></div>
     <div class="layers-panel orbat-panel" id="orbatPanel" hidden></div>
     <canvas class="grid-canvas" id="gridCanvas"></canvas>`;
@@ -428,14 +429,26 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         (byGroup.get(m.linked_group_id) ?? byGroup.set(m.linked_group_id, []).get(m.linked_group_id)!).push(m);
       }
     }
+    // Endpunkte um ~16 px zum Nachbarn einrücken, damit das Icon frei bleibt.
+    const trim = (from: [number, number], toward: [number, number], px: number): [number, number] => {
+      const a = map.project(from);
+      const b = map.project(toward);
+      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const f = Math.min(0.45, px / d);
+      const ll = map.unproject([a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f]);
+      return [ll.lng, ll.lat];
+    };
     const feats: GeoJSON.Feature[] = [];
     for (const list of byGroup.values()) {
       if (list.length < 2) continue;
       list.sort((a, b) => a.point_index - b.point_index);
       const anchor = list[0];
+      const pts = list.map((m) => [m.world_x, m.world_y] as [number, number]);
+      pts[0] = trim(pts[0], pts[1], 16);
+      pts[pts.length - 1] = trim(pts[pts.length - 1], pts[pts.length - 2], 16);
       feats.push({
         type: "Feature",
-        geometry: { type: "LineString", coordinates: list.map((m) => [m.world_x, m.world_y]) },
+        geometry: { type: "LineString", coordinates: pts },
         properties: {
           color: packedToHex(anchor.line_color),
           width: anchor.line_width > 0 ? anchor.line_width : 2,
@@ -475,6 +488,19 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       source: "chains",
       paint: { "line-color": ["get", "color"], "line-width": ["get", "width"] },
       layout: { "line-cap": "round", "line-join": "round" },
+    });
+
+    map.addSource("strokeverts", { type: "geojson", data: emptyFC() });
+    map.addLayer({
+      id: "strokeverts",
+      type: "circle",
+      source: "strokeverts",
+      paint: {
+        "circle-radius": 6,
+        "circle-color": "#ff9900",
+        "circle-stroke-color": "#fff",
+        "circle-stroke-width": 2,
+      },
     });
 
     map.addSource("linedraft", { type: "geojson", data: emptyFC() });
@@ -608,6 +634,24 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     refreshDir();
   };
   const refreshStrokes = () => (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
+
+  // ── Linien (Strokes) nachträglich bearbeiten: Stützpunkte ziehen ──────
+  let editStrokeId: string | null = null;
+  const refreshStrokeVerts = () => {
+    const s = editStrokeId ? strokes.get(editStrokeId) : undefined;
+    (map.getSource("strokeverts") as GeoJSONSource)?.setData({
+      type: "FeatureCollection",
+      features: (s?.points ?? []).map((pt, i) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: pt },
+        properties: { i },
+      })),
+    });
+  };
+  const setEditStroke = (id: string | null) => {
+    editStrokeId = id;
+    refreshStrokeVerts();
+  };
   const refreshPeers = () => (map.getSource("peers") as GeoJSONSource)?.setData(peerFC());
   let dirRaf = 0;
   map.on("move", () => {
@@ -696,10 +740,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       case "stroke.upsert":
         strokes.set(msg.stroke.id, msg.stroke);
         refreshStrokes();
+        if (editStrokeId === msg.stroke.id) refreshStrokeVerts();
         break;
       case "stroke.delete":
         strokes.delete(msg.id);
         refreshStrokes();
+        if (editStrokeId === msg.id) setEditStroke(null);
         break;
       case "annotation.upsert":
         annots.set(msg.annotation.id, msg.annotation);
@@ -2000,8 +2046,22 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let pendingPos: [number, number] | null = null;
   let measurePts: [number, number][] = [];
 
-  const refreshLineDraft = () =>
+  const lineDoneBtn = root.querySelector<HTMLButtonElement>("#lineDone")!;
+  const positionLineDone = () => {
+    if (mode !== "line" || linePts.length < 2) {
+      lineDoneBtn.hidden = true;
+      return;
+    }
+    const p = map.project(linePts[linePts.length - 1] as [number, number]);
+    lineDoneBtn.hidden = false;
+    lineDoneBtn.style.left = `${p.x + 14}px`;
+    lineDoneBtn.style.top = `${p.y - 14}px`;
+  };
+  lineDoneBtn.addEventListener("click", () => finishLine());
+  const refreshLineDraft = () => {
     (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts));
+    positionLineDone();
+  };
 
   const fmtDist = (mtr: number) => (mtr < 1000 ? `${Math.round(mtr)} m` : `${(mtr / 1000).toFixed(2)} km`);
   const redrawMeasure = () => {
@@ -2060,6 +2120,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       linePts = [];
       refreshLineDraft();
     }
+    if (m !== "move" && m !== "markermove") setEditStroke(null);
     if (m !== "measure") {
       measurePts = [];
       redrawMeasure();
@@ -2157,7 +2218,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       socket.send({
         type: "stroke.commit",
         cid: cid(),
-        data: { kind: "phaseline", points: linePts, color: lineColor, width: lineWidth },
+        data: {
+          kind: "phaseline",
+          points: linePts,
+          color: lineColor,
+          width: lineWidth,
+          phase_id: currentPhaseId || null,
+        },
       });
     }
     linePts = [];
@@ -2254,6 +2321,37 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // Marker ziehen (siehe unten) — früh deklariert, weil der Hover-Handler prüft.
   let dragId: string | null = null;
+
+  // Linie zum Bearbeiten wählen (Verschieben-Modus), Stützpunkte ziehen
+  map.on("click", "strokes", (e) => {
+    if (!canEdit || (mode !== "move" && mode !== "markermove")) return;
+    e.preventDefault();
+    setEditStroke((e.features?.[0]?.properties?.id as string) ?? null);
+  });
+  map.on("mouseenter", "strokeverts", () => (map.getCanvas().style.cursor = "grab"));
+  map.on("mouseleave", "strokeverts", () => (map.getCanvas().style.cursor = modeCursor()));
+  map.on("mousedown", "strokeverts", (e) => {
+    if (!editStrokeId) return;
+    const idx = e.features?.[0]?.properties?.i as number;
+    const s = strokes.get(editStrokeId);
+    if (s == null || idx == null) return;
+    e.preventDefault();
+    map.dragPan.disable();
+    map.getCanvas().style.cursor = "grabbing";
+    const onMove = (ev: maplibregl.MapMouseEvent) => {
+      s.points[idx] = [ev.lngLat.lng, ev.lngLat.lat];
+      refreshStrokes();
+      refreshStrokeVerts();
+    };
+    const onUp = () => {
+      map.off("mousemove", onMove);
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = modeCursor();
+      socket.send({ type: "stroke.modify", id: editStrokeId, data: { points: s.points } });
+    };
+    map.on("mousemove", onMove);
+    map.once("mouseup", onUp);
+  });
 
   // Hover: Channel / Ersteller / Phase des Markers
   const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 });
@@ -2541,7 +2639,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   map.on("move", () => {
     if (!annotDragId) positionAnnots();
+    positionLineDone();
   });
+  map.on("zoomend", () => (map.getSource("chains") as GeoJSONSource)?.setData(chainFC()));
   phaseListeners.push(() => renderAnnots());
   renderAnnots();
 
@@ -2622,6 +2722,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
       if (mode === "line" && linePts.length) finishLine();
+      else if (editStrokeId) setEditStroke(null);
       else setMode("move");
     }
   });
