@@ -70,6 +70,7 @@ export interface Favorite {
   rotation_degrees: number;
   unit_text: string;
   ai_text: string;
+  channel?: string;
   is_multipoint: boolean;
   max_line_points: number;
 }

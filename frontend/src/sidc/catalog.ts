@@ -55,14 +55,47 @@ export interface QuickMenuCatalog {
   categoryRows: { verticalLayout: boolean; categories: QuickMenuCategory[] }[];
 }
 
+export interface ChannelVisibilityRule {
+  targetChannel: string;
+  targetCategory: string;
+  percent: number;
+}
 export interface ChannelEntry {
   name: string;
   languageKey: string;
+  scope?: string; // "ALL" | "SIDE" | "GROUP"
+  categoryKey?: string;
+  isDefault?: boolean;
+  visibilityRules?: ChannelVisibilityRule[];
 }
 export interface ChannelSettings {
   currentChannel: string;
   channels: ChannelEntry[];
   physicalChannels: { name: string; languageKey: string }[];
+}
+
+/** Deckkraft (0..1), mit der ein Betrachter auf `viewer` einen Marker auf
+ * `target` sieht — nach den visibilityRules aus SIDC_ChannelSettings.json. */
+export function channelVisibility(
+  channels: ChannelEntry[] | undefined,
+  viewer: string,
+  target: string,
+): number {
+  if (!target || target === viewer) return 1;
+  if (!channels?.length) return 1;
+  const canon = (v: string) => {
+    const e = channels.find((c) => c.name === v || c.languageKey === v);
+    return e ? e.languageKey || e.name : v;
+  };
+  const vEntry = channels.find((c) => c.name === viewer || c.languageKey === viewer);
+  if (!vEntry) return 1;
+  if ((vEntry.scope ?? "").toUpperCase() === "ALL") return 1;
+  const tCanon = canon(target);
+  if ((vEntry.languageKey || vEntry.name) === tCanon) return 1;
+  const rule = (vEntry.visibilityRules ?? []).find(
+    (r) => canon(r.targetChannel) === tCanon && !r.targetCategory,
+  );
+  return rule ? Math.max(0, Math.min(100, rule.percent)) / 100 : 0;
 }
 
 export interface PhaseLineColor {

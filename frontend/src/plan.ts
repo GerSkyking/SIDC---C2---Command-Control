@@ -2,7 +2,7 @@
 // Nähert sich der ATAKmaps-UI an (D:\Mods\ATAKmaps).
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
-import { channelLabel, describe, loadAllMarkers, loadChannels, loadModifiers, loadPhaseLineStyle, loadTranslations, translate } from "./sidc/catalog";
+import { channelLabel, channelVisibility, describe, loadAllMarkers, loadChannels, loadModifiers, loadPhaseLineStyle, loadTranslations, translate } from "./sidc/catalog";
 import { lngLatToWorld, withModifiers, worldToLngLat, type Calibration, type SidcModifiers } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { confirmDialog, promptDialog, toast, toastError } from "./notify";
@@ -124,7 +124,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const caps = { place: canEdit, move: canEdit, delete: canEdit, draw: canEdit };
   let mode: Mode = "move";
   let pending: MarkerTemplate | null = null;
-  let myChannel = channels?.currentChannel ?? "";
+  const _chCur = localStorage.getItem(`sidc_channel_${planId}`) || channels?.currentChannel || "";
+  let myChannel =
+    channels?.channels.find((c) => c.name === _chCur || c.languageKey === _chCur)?.name ?? _chCur;
   let is3D = false;
 
   // Phasen / Zeitstrahl (+ Missionsbau-Parallelebene)
@@ -170,7 +172,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     return Math.max(0, Math.min(100, outOpacity)) / 100; // Fremdphase (gleiche Ebene)
   };
   const phaseOpacity = (m: Marker): number =>
-    phaseOpacityOf(m.phase_id) * (m.released ? 0.6 : 1);
+    phaseOpacityOf(m.phase_id) *
+    (m.released ? 0.6 : 1) *
+    channelVisibility(channels?.channels, myChannel, m.channel);
   const phaseNameOf = (id: string | null): string =>
     id ? (phases.find((p) => p.id === id)?.name ?? "—") : t("phase.global");
 
@@ -1273,6 +1277,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     notesWin.hidden = !notesWin.hidden;
     if (!notesWin.hidden) paintNotes();
   });
+  root.querySelector<HTMLSelectElement>("#chan")!.addEventListener("change", (e) => {
+    myChannel = (e.target as HTMLSelectElement).value;
+    try {
+      localStorage.setItem(`sidc_channel_${planId}`, myChannel);
+    } catch {
+      /* ignore */
+    }
+    void refreshMarkers(); // Channel steuert die Sichtbarkeit fremder Marker
+  });
   // Ziehen am Kopf
   {
     const head = notesWin.querySelector<HTMLDivElement>(".notes-head")!;
@@ -2172,7 +2185,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           sidc: f.sidc,
           unit_text: f.unit_text,
           ai_text: f.ai_text,
-          channel: myChannel,
+          channel: f.channel || myChannel,
           locked: false,
           timestamp_visible: true,
           rotation_degrees: f.rotation_degrees,
@@ -2645,6 +2658,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           .map((ph) => `<option value="${ph.id}" ${ph.id === m.phase_id ? "selected" : ""}>${ph.name}</option>`)
           .join("")}
       </select>
+      <label>${t("wiz.channel")}</label>
+      <select data-chan>${(channels?.channels ?? [])
+        .map((c) => `<option value="${c.name}" ${c.name === m.channel ? "selected" : ""}>${channelLabel(c)}</option>`)
+        .join("")}</select>
       <label class="chk"><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> <span>${t("marker.locked")}</span></label>
       ${
         isMB
@@ -2700,6 +2717,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ai_text: p.querySelector<HTMLInputElement>("[data-ai]")!.value,
         icon_rotation: Number(p.querySelector<HTMLInputElement>("[data-rot]")!.value) || 0,
         phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || null,
+        channel: p.querySelector<HTMLSelectElement>("[data-chan]")!.value,
         ...(modDefs ? { sidc: nextSidc() } : {}),
         ...(isMB
           ? {
@@ -2757,6 +2775,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         rotation_degrees: m.rotation_degrees,
         unit_text: m.unit_text,
         ai_text: m.ai_text,
+        channel: m.channel,
         is_multipoint: m.linked_group_id != null && m.linked_group_id >= 0,
         max_line_points: 0,
       });

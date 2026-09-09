@@ -17,6 +17,7 @@ class FavoriteIn(BaseModel):
     rotation_degrees: int = -1
     unit_text: str = ""
     ai_text: str = ""
+    channel: str = ""
     is_multipoint: bool = False
     max_line_points: int = 0
 
@@ -28,7 +29,7 @@ class FavoriteOut(FavoriteIn):
 def _out(f: Favorite) -> FavoriteOut:
     return FavoriteOut(
         id=f.id, label=f.label, sidc=f.sidc, rotation_degrees=f.rotation_degrees,
-        unit_text=f.unit_text, ai_text=f.ai_text,
+        unit_text=f.unit_text, ai_text=f.ai_text, channel=f.channel or "",
         is_multipoint=bool(f.is_multipoint), max_line_points=f.max_line_points or 0,
     )
 

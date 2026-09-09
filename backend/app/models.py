@@ -315,6 +315,7 @@ class Favorite(Base):
     rotation_degrees: Mapped[int] = mapped_column(Integer, default=-1)
     unit_text: Mapped[str] = mapped_column(String(255), default="")
     ai_text: Mapped[str] = mapped_column(String(255), default="")
+    channel: Mapped[str] = mapped_column(String(64), default="")
     is_multipoint: Mapped[bool] = mapped_column(Boolean, default=False)
     max_line_points: Mapped[int] = mapped_column(Integer, default=0)
     ordering: Mapped[int] = mapped_column(Integer, default=0)
