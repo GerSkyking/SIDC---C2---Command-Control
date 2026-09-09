@@ -150,11 +150,28 @@ export interface Orbat {
   nodes?: OrbatNode[];
   released?: boolean;
 }
+export interface ShareOpts {
+  label?: string;
+  expires_days?: number;
+  include_builder?: boolean;
+  can_point?: boolean;
+  can_edit?: boolean;
+  can_move?: boolean;
+  phase_ids?: string[];
+  date_from?: string | null;
+  date_to?: string | null;
+}
 export interface PublicShareRow {
   token: string;
   label: string;
   revoked: boolean;
   include_builder?: boolean;
+  can_point?: boolean;
+  can_edit?: boolean;
+  can_move?: boolean;
+  phase_ids?: string[];
+  date_from?: string | null;
+  date_to?: string | null;
   created_at: string;
   expires_at: string | null;
 }
@@ -333,12 +350,10 @@ export const api = {
   putPlanAcl: (planId: string, entries: Omit<AclEntry, "id">[]) =>
     req<AclEntry[]>("PUT", `/plans/${planId}/acl`, entries),
   planShares: (planId: string) => req<PublicShareRow[]>("GET", `/plans/${planId}/shares`),
-  createShare: (planId: string, label: string, expiresDays?: number, includeBuilder = false) =>
-    req<{ token: string }>("POST", `/plans/${planId}/shares`, {
-      label,
-      expires_days: expiresDays,
-      include_builder: includeBuilder,
-    }),
+  createShare: (planId: string, opts: ShareOpts) =>
+    req<PublicShareRow>("POST", `/plans/${planId}/shares`, opts),
+  patchShare: (planId: string, token: string, opts: ShareOpts) =>
+    req<PublicShareRow>("PATCH", `/plans/${planId}/shares/${token}`, opts),
   revokeShare: (planId: string, token: string) =>
     req<void>("DELETE", `/plans/${planId}/shares/${token}`),
   publicSnapshot: (token: string) => req<any>("GET", `/public/plans/${token}`),

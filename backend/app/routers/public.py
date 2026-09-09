@@ -36,6 +36,42 @@ def _resolve(token: str, db) -> Plan:
     return _resolve_share(token, db)[0]
 
 
+def _phase_spans(db, plan_id: str, h_hour) -> dict[str, tuple]:
+    """Effektives [Start, Ende] je Phase — Spieler-Phasen ketten sich 1h ab der
+    H-Stunde, wenn keine eigene Zeit gesetzt ist (wie im Frontend-Zeitstrahl)."""
+    from datetime import timedelta
+
+    base = h_hour or datetime.now(timezone.utc).replace(hour=8, minute=0, second=0, microsecond=0)
+    rows = list(db.scalars(
+        select(Phase).where(Phase.plan_id == plan_id).order_by(Phase.ordering, Phase.sub_ordering)
+    ))
+    out: dict[str, tuple] = {}
+    cursor = base
+    for p in sorted([r for r in rows if (r.plane or "player") != "builder"], key=lambda x: x.ordering):
+        s = p.start_at or cursor
+        e = p.end_at or (s + timedelta(hours=1))
+        out[p.id] = (s, e)
+        cursor = e
+    for p in [r for r in rows if r.plane == "builder"]:
+        par = out.get(p.parent_id or "")
+        s = p.start_at or (par[0] if par else base)
+        e = p.end_at or (par[1] if par else s + timedelta(hours=1))
+        out[p.id] = (s, e)
+    return out
+
+
+def _allowed_phases(db, plan, sh) -> set[str] | None:
+    """None = alle Phasen erlaubt; sonst die erlaubte Menge an Phasen-IDs."""
+    if sh.phase_ids:
+        return {str(x) for x in sh.phase_ids}
+    if sh.date_from or sh.date_to:
+        spans = _phase_spans(db, plan.id, plan.h_hour)
+        lo = sh.date_from or datetime.min.replace(tzinfo=timezone.utc)
+        hi = sh.date_to or datetime.max.replace(tzinfo=timezone.utc)
+        return {pid for pid, (s, e) in spans.items() if s <= hi and e >= lo}
+    return None
+
+
 @router.get("/{token}")
 def public_snapshot(token: str, db: DbDep) -> dict:
     from .catalog import read_catalog
@@ -44,13 +80,22 @@ def public_snapshot(token: str, db: DbDep) -> dict:
     mp = db.get(Map, plan.map_id)
     incl = bool(sh.include_builder)
     hide: set[str] = set() if incl else _builder_phase_ids(db, plan.id)
+    allow = _allowed_phases(db, plan, sh)  # None = alle
+
+    def ok(pid) -> bool:
+        if pid in hide:
+            return False
+        if allow is None or pid is None:
+            return True
+        return pid in allow
+
     markers = [
         _marker_out(m)
         for m in db.scalars(select(Marker).where(Marker.plan_id == plan.id))
-        if m.phase_id not in hide
+        if ok(m.phase_id)
     ]
     if not incl:
-        markers += released_markers(db, plan.id)
+        markers += [rm for rm in released_markers(db, plan.id) if ok(rm.get("phase_id"))]
     phase_q = select(Phase).where(Phase.plan_id == plan.id)
     if not incl:
         phase_q = phase_q.where(Phase.plane.is_distinct_from("builder"))
@@ -60,7 +105,8 @@ def public_snapshot(token: str, db: DbDep) -> dict:
             "h_hour": plan.h_hour.isoformat() if plan.h_hour else None,
         },
         "map_meta": (mp.meta if mp else {}),
-        "readonly": True,
+        "readonly": not (sh.can_edit or sh.can_move),
+        "rights": {"point": sh.can_point, "edit": sh.can_edit, "move": sh.can_move},
         "include_builder": incl,
         "channels": read_catalog("channels"),
         "phases": [
@@ -70,6 +116,7 @@ def public_snapshot(token: str, db: DbDep) -> dict:
              "start_at": p.start_at.isoformat() if p.start_at else None,
              "end_at": p.end_at.isoformat() if p.end_at else None}
             for p in db.scalars(phase_q.order_by(Phase.ordering, Phase.sub_ordering))
+            if allow is None or p.id in allow
         ],
         "layers": [
             {"id": ly.id, "name": ly.name, "color": ly.color, "ordering": ly.ordering,
@@ -80,14 +127,14 @@ def public_snapshot(token: str, db: DbDep) -> dict:
         "strokes": [
             _stroke_dict(s)
             for s in db.scalars(select(Stroke).where(Stroke.plan_id == plan.id))
-            if s.phase_id not in hide
+            if ok(s.phase_id)
         ],
         "annotations": [
             {"id": a.id, "phase_id": a.phase_id, "world_x": a.world_x, "world_y": a.world_y,
              "text": a.text, "width": a.width, "height": a.height,
              "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom}
             for a in db.scalars(select(Annotation).where(Annotation.plan_id == plan.id))
-            if a.phase_id not in hide
+            if ok(a.phase_id)
         ],
     }
 
@@ -150,13 +197,30 @@ def public_peaks(token: str, db: DbDep) -> Response:
 async def public_live(websocket: WebSocket, token: str) -> None:
     import secrets
 
+    from starlette.concurrency import run_in_threadpool
+
+    from .live import (
+        MARKER_FIELDS, _create_annotation, _create_marker, _create_stroke,
+        _delete_annotation, _delete_marker, _delete_stroke, _update_annotation, _update_marker,
+    )
+
     with SessionLocal() as db:
         try:
-            plan = _resolve(token, db)
+            plan, sh = _resolve_share(token, db)
         except HTTPException:
             await websocket.close(code=4404)
             return
         plan_id = plan.id
+        can_point, can_edit, can_move = sh.can_point, sh.can_edit, sh.can_move
+        incl = bool(sh.include_builder)
+        hide = set() if incl else _builder_phase_ids(db, plan.id)
+        allow = _allowed_phases(db, plan, sh)
+
+    def phase_ok(pid) -> bool:
+        if pid in hide:
+            return False
+        return allow is None or pid is None or pid in allow
+
     await websocket.accept()
     await hub.join(plan_id, websocket)
     uid = "pub-" + secrets.token_hex(6)
@@ -166,13 +230,65 @@ async def public_live(websocket: WebSocket, token: str) -> None:
                 msg = await websocket.receive_json()
             except (ValueError, TypeError):
                 continue
-            # Öffentliche Betrachter dürfen nur "zeigen" (Cursor), nichts ändern.
-            if isinstance(msg, dict) and msg.get("type") == "presence.cursor":
+            if not isinstance(msg, dict):
+                continue
+            typ = msg.get("type")
+
+            if typ == "presence.cursor" and can_point:
                 await hub.broadcast(plan_id, {
                     "type": "presence.cursor", "uid": uid,
                     "user": str(msg.get("user") or "Gast")[:24],
                     "lng": float(msg.get("lng", 0)), "lat": float(msg.get("lat", 0)),
                 })
+                continue
+
+            data = msg.get("data") or {}
+            if typ == "marker.create" and can_edit:
+                if not phase_ok(data.get("phase_id")):
+                    continue
+                d = {k: data.get(k) for k in MARKER_FIELDS if k in data}
+                m = await run_in_threadpool(_create_marker, plan_id, None, d)
+                await hub.broadcast(plan_id, {"type": "marker.upsert", "cid": msg.get("cid"), "marker": m})
+            elif typ == "marker.move" and (can_move or can_edit):
+                res = await run_in_threadpool(
+                    _update_marker, plan_id, msg["id"], None, False,
+                    {"world_x": msg["world_x"], "world_y": msg["world_y"]},
+                )
+                if res and phase_ok(res.get("phase_id")):
+                    await hub.broadcast(plan_id, {"type": "marker.upsert", "marker": res})
+            elif typ == "marker.modify" and can_edit:
+                fields = {k: v for k, v in data.items() if k in MARKER_FIELDS}
+                res = await run_in_threadpool(_update_marker, plan_id, msg["id"], None, False, fields)
+                if res and phase_ok(res.get("phase_id")):
+                    await hub.broadcast(plan_id, {"type": "marker.upsert", "marker": res})
+            elif typ == "marker.delete" and can_edit:
+                pid = await run_in_threadpool(_delete_marker, plan_id, msg["id"], False)
+                if pid is not False:
+                    await hub.broadcast(plan_id, {"type": "marker.delete", "id": msg["id"]})
+            elif typ == "stroke.commit" and can_edit:
+                if not phase_ok(data.get("phase_id")):
+                    continue
+                s = await run_in_threadpool(_create_stroke, plan_id, None, data)
+                await hub.broadcast(plan_id, {"type": "stroke.upsert", "cid": msg.get("cid"), "stroke": s})
+            elif typ == "stroke.delete" and can_edit:
+                await run_in_threadpool(_delete_stroke, plan_id, msg["id"])
+                await hub.broadcast(plan_id, {"type": "stroke.delete", "id": msg["id"]})
+            elif typ == "annotation.create" and can_edit:
+                if not phase_ok(data.get("phase_id")):
+                    continue
+                a = await run_in_threadpool(_create_annotation, plan_id, None, data)
+                await hub.broadcast(plan_id, {"type": "annotation.upsert", "cid": msg.get("cid"), "annotation": a})
+            elif typ in ("annotation.move", "annotation.modify") and (can_edit or can_move):
+                fields = {
+                    k: v for k, v in data.items()
+                    if k in ("world_x", "world_y", "text", "width", "height", "phase_id", "scale_fixed", "ref_zoom")
+                }
+                res = await run_in_threadpool(_update_annotation, plan_id, msg["id"], None, fields)
+                if res:
+                    await hub.broadcast(plan_id, {"type": "annotation.upsert", "annotation": res})
+            elif typ == "annotation.delete" and can_edit:
+                await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
+                await hub.broadcast(plan_id, {"type": "annotation.delete", "id": msg["id"]})
     except WebSocketDisconnect:
         pass
     finally:

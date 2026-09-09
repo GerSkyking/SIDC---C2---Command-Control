@@ -305,6 +305,14 @@ class PublicShare(Base):
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     label: Mapped[str] = mapped_column(String(128), default="")
     include_builder: Mapped[bool] = mapped_column(Boolean, default=False)  # Missionsbau-Phasen mit freigeben
+    # Rechte je Link
+    can_point: Mapped[bool] = mapped_column(Boolean, default=True)   # zeigen (Cursor)
+    can_edit: Mapped[bool] = mapped_column(Boolean, default=False)   # anlegen/ändern/löschen
+    can_move: Mapped[bool] = mapped_column(Boolean, default=False)   # Marker verschieben
+    # Eingrenzung: entweder feste Phasen-IDs ODER Zeitfenster (Plan-Zeitstrahl)
+    phase_ids: Mapped[list] = mapped_column(JSON, default=list)
+    date_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    date_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)

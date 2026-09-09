@@ -19,7 +19,8 @@ const app = document.querySelector<HTMLDivElement>("#app")!;
 let me: Me | null = null;
 
 async function route(): Promise<void> {
-  const pub = location.hash.match(/^#\/p\/([A-Za-z0-9_-]{10,})$/);
+  // #/p/<token> — optionaler ~slug (Linkbezeichnung) dahinter dient nur der Unterscheidung
+  const pub = location.hash.match(/^#\/p\/([A-Za-z0-9_-]{10,})(?:~[a-z0-9-]*)?$/i);
   if (pub) return renderPublicView(app, pub[1]);
 
   try {

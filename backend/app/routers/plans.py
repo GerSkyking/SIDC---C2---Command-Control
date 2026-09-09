@@ -587,20 +587,50 @@ def put_acl(
 
 # ─── Öffentliche Freigaben ─────────────────────────────────────────────────
 
+def _share_out(s) -> dict:
+    return {
+        "token": s.token, "label": s.label, "revoked": s.revoked,
+        "include_builder": s.include_builder,
+        "can_point": s.can_point, "can_edit": s.can_edit, "can_move": s.can_move,
+        "phase_ids": list(s.phase_ids or []),
+        "date_from": s.date_from.isoformat() if s.date_from else None,
+        "date_to": s.date_to.isoformat() if s.date_to else None,
+        "created_at": s.created_at.isoformat(),
+        "expires_at": s.expires_at.isoformat() if s.expires_at else None,
+    }
+
+
+def _apply_share_body(s, body: dict, *, is_mb: bool) -> None:
+    from datetime import datetime as _dt
+
+    fs = body if isinstance(body, dict) else {}
+    if "label" in fs:
+        s.label = str(fs.get("label") or "")[:128]
+    if "include_builder" in fs:
+        s.include_builder = bool(fs.get("include_builder")) and is_mb
+    for k in ("can_point", "can_edit", "can_move"):
+        if k in fs:
+            setattr(s, k, bool(fs.get(k)))
+    if "phase_ids" in fs:
+        v = fs.get("phase_ids")
+        s.phase_ids = [str(x) for x in v] if isinstance(v, list) else []
+    for k in ("date_from", "date_to"):
+        if k in fs:
+            v = fs.get(k)
+            setattr(s, k, _dt.fromisoformat(v) if v else None)
+    if "expires_days" in fs:
+        from datetime import timedelta
+
+        from ..models import now
+        d = fs.get("expires_days")
+        s.expires_at = now() + timedelta(days=int(d)) if isinstance(d, (int, float)) and d > 0 else None
+
+
 @router.get("/{plan_id}/shares")
 def list_shares(plan: OwnerPlan, db: DbDep) -> list[dict]:
     from ..models import PublicShare
 
-    rows = db.scalars(select(PublicShare).where(PublicShare.plan_id == plan.id))
-    return [
-        {
-            "token": s.token, "label": s.label, "revoked": s.revoked,
-            "include_builder": s.include_builder,
-            "created_at": s.created_at.isoformat(),
-            "expires_at": s.expires_at.isoformat() if s.expires_at else None,
-        }
-        for s in rows
-    ]
+    return [_share_out(s) for s in db.scalars(select(PublicShare).where(PublicShare.plan_id == plan.id))]
 
 
 @router.post("/{plan_id}/shares", status_code=status.HTTP_201_CREATED)
@@ -608,23 +638,32 @@ def create_share(
     body: dict, request: Request, plan: OwnerPlan, user: CurrentUser, db: DbDep
 ) -> dict:
     import secrets
-    from datetime import timedelta
 
-    from ..models import PublicShare, now
+    from ..models import PublicShare
 
-    token = secrets.token_urlsafe(24)
-    expires = None
-    days = body.get("expires_days")
-    if isinstance(days, (int, float)) and days > 0:
-        expires = now() + timedelta(days=int(days))
-    incl = bool(body.get("include_builder")) and effective_mission_builder(db, user)
-    db.add(PublicShare(token=token, plan_id=plan.id, created_by=user.id,
-                       label=str(body.get("label") or ""), expires_at=expires,
-                       include_builder=incl))
+    s = PublicShare(token=secrets.token_urlsafe(24), plan_id=plan.id, created_by=user.id)
+    _apply_share_body(s, body, is_mb=effective_mission_builder(db, user))
+    db.add(s)
     db.commit()
     audit.record(db, "plan.share.create", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request)
-    return {"token": token}
+    return _share_out(s)
+
+
+@router.patch("/{plan_id}/shares/{token}")
+def patch_share(
+    token: str, body: dict, request: Request, plan: OwnerPlan, user: CurrentUser, db: DbDep
+) -> dict:
+    from ..models import PublicShare
+
+    s = db.get(PublicShare, token)
+    if s is None or s.plan_id != plan.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    _apply_share_body(s, body, is_mb=effective_mission_builder(db, user))
+    db.commit()
+    audit.record(db, "plan.share.update", user_id=user.id, target_type="plan", target_id=plan.id,
+                 request=request)
+    return _share_out(s)
 
 
 @router.delete("/{plan_id}/shares/{token}")

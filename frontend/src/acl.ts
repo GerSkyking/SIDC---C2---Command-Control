@@ -1,10 +1,21 @@
 // Freigabe-Editor für einen Plan (nur Owner): Subjekte (User/Gruppe) → Rolle +
 // feingranulare Rechte (setzen / bewegen / löschen / malen).
-import { api, ApiError, type AclEntry } from "./api";
+import { api, ApiError, type AclEntry, type Phase, type PublicShareRow, type ShareOpts } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 
 type Row = Omit<AclEntry, "id">;
+
+const slugify = (s: string): string =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+export const shareUrl = (token: string, label?: string): string => {
+  const sl = label ? slugify(label) : "";
+  return `${location.origin}/#/p/${token}${sl ? "~" + sl : ""}`;
+};
 
 export async function openAclEditor(
   planId: string,
@@ -12,9 +23,10 @@ export async function openAclEditor(
   onClose?: () => void,
   isMB = false,
 ): Promise<void> {
-  const [entries, candidates] = await Promise.all([
+  const [entries, candidates, phases] = await Promise.all([
     api.planAcl(planId),
     api.planAclCandidates(planId),
+    api.planPhases(planId).catch(() => [] as Phase[]),
   ]);
   const nameOf = (t: string, id: string) =>
     candidates.find((c) => c.subject_type === t && c.subject_id === id)?.name ?? id.slice(0, 8);
@@ -73,16 +85,8 @@ export async function openAclEditor(
           <hr style="border-color:var(--border)"/>
           <h3 style="margin:.4rem 0">${t("acl.publicLink")}</h3>
           <div id="shares"></div>
-          <div class="row">
-            <input id="sh-label" placeholder="${t('acl.linkLabel')}" />
-            <input id="sh-days" type="number" min="0" placeholder="${t('acl.linkDays')}" style="width:9rem" />
-            <button id="sh-add">${t("acl.createLink")}</button>
-          </div>
-          ${
-            isMB
-              ? `<label class="chk" style="margin-top:.3rem"><input type="checkbox" id="sh-mb"/> <span>${t("acl.shareBuilder")}</span></label>`
-              : ""
-          }
+          <button id="sh-new">+ ${t("acl.createLink")}</button>
+          <div id="sh-form"></div>
         </div>
         <div class="wiz-config" style="max-height:none">
           <span class="error" data-err></span>
@@ -121,13 +125,7 @@ export async function openAclEditor(
       });
       draw();
     });
-    backdrop.querySelector("#sh-add")?.addEventListener("click", async () => {
-      const label = (backdrop.querySelector("#sh-label") as HTMLInputElement).value.trim();
-      const days = Number((backdrop.querySelector("#sh-days") as HTMLInputElement).value) || 0;
-      const mb = !!(backdrop.querySelector("#sh-mb") as HTMLInputElement | null)?.checked;
-      await api.createShare(planId, label, days || undefined, mb);
-      void renderShares();
-    });
+    backdrop.querySelector("#sh-new")?.addEventListener("click", () => openShareForm(null));
     void renderShares();
 
     backdrop.querySelector("[data-save]")!.addEventListener("click", async () => {
@@ -141,18 +139,33 @@ export async function openAclEditor(
     });
   };
 
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
   async function renderShares(): Promise<void> {
     const box = backdrop.querySelector<HTMLDivElement>("#shares");
     if (!box) return;
     const shares = (await api.planShares(planId)).filter((s) => !s.revoked);
+    const badge = (on: boolean | undefined, txt: string) =>
+      on ? `<span class="badge" style="background:var(--accent-weak)">${txt}</span>` : "";
     box.innerHTML = shares.length
       ? shares
           .map((s) => {
-            const url = `${location.origin}/#/p/${s.token}`;
-            return `<div class="row" style="margin:.2rem 0">
-              <input readonly value="${url}" style="flex:1" onclick="this.select()" />
-              <button data-copy="${url}">${t("acl.copy")}</button>
-              <button data-revoke="${s.token}">${t("acl.revoke")}</button>
+            const url = shareUrl(s.token, s.label);
+            const scope = s.phase_ids?.length
+              ? `${s.phase_ids.length} ${t("phase.heading")}`
+              : s.date_from || s.date_to
+                ? `${(s.date_from || "").slice(0, 10)}…${(s.date_to || "").slice(0, 10)}`
+                : t("acl.allPhases");
+            return `<div class="sh-item">
+              <div class="row">
+                <strong class="grow">${esc(s.label || t("acl.linkUnnamed"))}</strong>
+                ${badge(s.can_point, t("tool.point"))}${badge(s.can_move, t("tool.markermove"))}${badge(s.can_edit, t("common.rename"))}${badge(s.include_builder, "⚑")}
+                <span class="muted">${scope}</span>
+                <button class="icon-btn" data-edit="${s.token}" title="${t("common.rename")}">${icon("edit", 14)}</button>
+                <button class="icon-btn" data-revoke="${s.token}" title="${t("acl.revoke")}">${icon("x", 14)}</button>
+              </div>
+              <div class="row"><input readonly value="${url}" style="flex:1" onclick="this.select()" />
+                <button data-copy="${url}">${t("acl.copy")}</button></div>
             </div>`;
           })
           .join("")
@@ -166,6 +179,80 @@ export async function openAclEditor(
         renderShares();
       }),
     );
+    box.querySelectorAll<HTMLButtonElement>("[data-edit]").forEach((b) =>
+      b.addEventListener("click", () =>
+        openShareForm(shares.find((x) => x.token === b.dataset.edit) ?? null),
+      ),
+    );
+  }
+
+  function openShareForm(s: PublicShareRow | null): void {
+    const host = backdrop.querySelector<HTMLDivElement>("#sh-form")!;
+    const playerP = phases.filter((p) => (p.plane ?? "player") !== "builder");
+    const g = (v: unknown, d = "") => (v == null ? d : String(v));
+    host.innerHTML = `<div class="sh-form">
+      <label class="chk-lbl">${t("acl.linkLabel")}<input data-f="label" value="${esc(g(s?.label))}"/></label>
+      <div class="row">
+        <label class="chk"><input type="checkbox" data-f="can_point" ${s ? (s.can_point ? "checked" : "") : "checked"}/> ${t("tool.point")}</label>
+        <label class="chk"><input type="checkbox" data-f="can_move" ${s?.can_move ? "checked" : ""}/> ${t("tool.markermove")}</label>
+        <label class="chk"><input type="checkbox" data-f="can_edit" ${s?.can_edit ? "checked" : ""}/> ${t("common.rename")}</label>
+        ${isMB ? `<label class="chk"><input type="checkbox" data-f="include_builder" ${s?.include_builder ? "checked" : ""}/> ${t("mb.builder")}</label>` : ""}
+      </div>
+      <label class="chk-lbl">${t("acl.linkDays")}<input type="number" min="0" data-f="expires_days" placeholder="∞"/></label>
+      <fieldset class="sh-scope">
+        <legend>${t("acl.scope")}</legend>
+        <label class="chk"><input type="radio" name="shsc" value="all" ${!s?.phase_ids?.length && !s?.date_from && !s?.date_to ? "checked" : ""}/> ${t("acl.allPhases")}</label>
+        <label class="chk"><input type="radio" name="shsc" value="phases" ${s?.phase_ids?.length ? "checked" : ""}/> ${t("acl.pickPhases")}</label>
+        <div data-scope="phases" class="sh-phases">${playerP
+          .map(
+            (p) =>
+              `<label class="chk"><input type="checkbox" data-ph="${p.id}" ${s?.phase_ids?.includes(p.id) ? "checked" : ""}/> ${esc(p.name)}</label>`,
+          )
+          .join("")}</div>
+        <label class="chk"><input type="radio" name="shsc" value="date" ${s?.date_from || s?.date_to ? "checked" : ""}/> ${t("acl.dateRange")}</label>
+        <div data-scope="date" class="row">
+          <input type="datetime-local" data-f="date_from" value="${g(s?.date_from).slice(0, 16)}"/>
+          <input type="datetime-local" data-f="date_to" value="${g(s?.date_to).slice(0, 16)}"/>
+        </div>
+      </fieldset>
+      <div class="row"><button class="primary" data-shsave>${t("common.save")}</button>
+        <button data-shcancel>${t("common.cancel")}</button></div>
+    </div>`;
+    const syncScope = () => {
+      const v = host.querySelector<HTMLInputElement>('input[name="shsc"]:checked')?.value;
+      host.querySelector<HTMLElement>('[data-scope="phases"]')!.hidden = v !== "phases";
+      host.querySelector<HTMLElement>('[data-scope="date"]')!.hidden = v !== "date";
+    };
+    host.querySelectorAll('input[name="shsc"]').forEach((r) => r.addEventListener("change", syncScope));
+    syncScope();
+    host.querySelector("[data-shcancel]")!.addEventListener("click", () => (host.innerHTML = ""));
+    host.querySelector("[data-shsave]")!.addEventListener("click", async () => {
+      const f = <T extends HTMLInputElement>(n: string) => host.querySelector<T>(`[data-f="${n}"]`);
+      const scope = host.querySelector<HTMLInputElement>('input[name="shsc"]:checked')?.value;
+      const opts: ShareOpts = {
+        label: f("label")!.value.trim(),
+        can_point: f("can_point")!.checked,
+        can_move: f("can_move")!.checked,
+        can_edit: f("can_edit")!.checked,
+        include_builder: !!f("include_builder")?.checked,
+        expires_days: Number(f("expires_days")!.value) || 0,
+        phase_ids:
+          scope === "phases"
+            ? [...host.querySelectorAll<HTMLInputElement>("[data-ph]:checked")].map((c) => c.dataset.ph!)
+            : [],
+        date_from: scope === "date" && f("date_from")!.value ? f("date_from")!.value : null,
+        date_to: scope === "date" && f("date_to")!.value ? f("date_to")!.value : null,
+      };
+      try {
+        if (s) await api.patchShare(planId, s.token, opts);
+        else await api.createShare(planId, opts);
+        host.innerHTML = "";
+        void renderShares();
+      } catch (err) {
+        backdrop.querySelector<HTMLElement>("[data-err]")!.textContent =
+          err instanceof ApiError ? err.message : t("common.error");
+      }
+    });
   }
 
   draw();

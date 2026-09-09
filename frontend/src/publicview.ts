@@ -80,7 +80,13 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   const _chCur = localStorage.getItem(`sidc_pubchan_${token}`) || snap.channels?.currentChannel || "";
   let myChannel = chanList?.find((c) => c.name === _chCur || c.languageKey === _chCur)?.name ?? _chCur;
   let is3D = false;
-  let pointMode = false;
+  const rights: { point: boolean; edit: boolean; move: boolean } = snap.rights ?? {
+    point: true,
+    edit: false,
+    move: false,
+  };
+  type PMode = "pan" | "point" | "mmove" | "line" | "erase";
+  let mode: PMode = "pan";
 
   const phaseOpacityOf = (pid: string | null | undefined): number => {
     if (pid == null || !currentPhaseId || pid === currentPhaseId) return 1;
@@ -105,7 +111,6 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
           : ""
       }
       <div id="timeline" class="timeline"></div>
-      ${iconBtn("layers", { id: "layersBtn", title: t("tool.layers") })}
       <span class="grow"></span>
       ${iconBtn("present", { id: "present", title: t("present.start") })}
       ${themeSwitch()}
@@ -114,8 +119,14 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     <div id="annots" class="annots"></div>
     <div class="toolbar" id="toolbar">
       ${iconBtn("pan", { id: "tool-pan", active: true, title: t("tool.move") })}
-      ${iconBtn("point", { id: "tool-point", title: t("tool.point") })}
+      ${rights.point ? iconBtn("point", { id: "tool-point", title: t("tool.point") }) : ""}
+      ${rights.move || rights.edit ? iconBtn("markerMove", { id: "tool-mmove", title: t("tool.markermove") }) : ""}
+      ${rights.edit ? iconBtn("line", { id: "tool-line", title: t("tool.line") }) : ""}
+      ${rights.edit ? iconBtn("eraser", { id: "tool-erase", title: t("tool.erase") }) : ""}
+      <span class="tb-sep"></span>
+      ${iconBtn("layers", { id: "layersBtn", title: t("tool.layers") })}
     </div>
+    <button class="line-done" id="lineDone" title="${t("line.finish")}" hidden>${icon("check", 18)}</button>
     <div class="mk-scale" id="mkScale" title="${t("marker.scaleLocal")}">
       ${icon("marker", 13)}
       <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
@@ -184,6 +195,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       type: "Feature",
       geometry: { type: "Point", coordinates: [m.world_x, m.world_y] },
       properties: {
+        id: m.id,
         sidc: m.sidc,
         label: m.unit_text || m.ai_text || "",
         rot: m.icon_rotation || 0,
@@ -199,6 +211,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       type: "Feature",
       geometry: { type: "LineString", coordinates: s.points },
       properties: {
+        id: s.id,
         color: hex(s.color),
         width: s.width > 0 ? s.width : 2,
         opacity: opacityOf(s),
@@ -405,6 +418,14 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       layout: { "line-cap": "round", "line-join": "round" },
     });
 
+    map.addSource("linedraft", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({
+      id: "linedraft",
+      type: "line",
+      source: "linedraft",
+      paint: { "line-color": "#4c8dff", "line-width": 2, "line-dasharray": [2, 1] },
+    });
+
     map.addSource("peers", { type: "geojson", data: peerFC() });
     map.addLayer({
       id: "peers",
@@ -602,36 +623,142 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   map.on("load", syncCompass);
   compass.addEventListener("click", () => map.easeTo({ bearing: 0, duration: 400 }));
 
-  // ── Werkzeug: zeigen ────────────────────────────────────────────────
-  const panBtn = root.querySelector<HTMLButtonElement>("#tool-pan")!;
-  const pointBtn = root.querySelector<HTMLButtonElement>("#tool-point")!;
-  const setPoint = (on: boolean) => {
-    pointMode = on;
-    panBtn.classList.toggle("active", !on);
-    pointBtn.classList.toggle("active", on);
-    map.getCanvas().style.cursor = on ? "crosshair" : "";
-    if (on) map.dragPan.disable();
-    else {
-      map.dragPan.enable();
-      peers.delete(myUid);
-      if (ws.readyState === 1) ws.send(JSON.stringify({ type: "presence.leave" }));
-    }
-    refreshPeers();
+  // ── Werkzeuge (zeigen / bewegen / Linie / radieren) ────────────────
+  const toolbar = root.querySelector<HTMLDivElement>("#toolbar")!;
+  const wsSend = (o: unknown) => ws.readyState === 1 && ws.send(JSON.stringify(o));
+  const MODE_BTN: Record<PMode, string> = {
+    pan: "tool-pan",
+    point: "tool-point",
+    mmove: "tool-mmove",
+    line: "tool-line",
+    erase: "tool-erase",
   };
-  panBtn.addEventListener("click", () => setPoint(false));
-  pointBtn.addEventListener("click", () => setPoint(true));
-  makeMovable(root.querySelector<HTMLDivElement>("#toolbar")!, { plan: token, key: "toolbar" });
+  const setMode = (m: PMode) => {
+    mode = m;
+    for (const [mm, bid] of Object.entries(MODE_BTN))
+      root.querySelector("#" + bid)?.classList.toggle("active", mm === m);
+    map.getCanvas().style.cursor = m === "point" || m === "line" ? "crosshair" : m === "erase" ? "not-allowed" : m === "mmove" ? "move" : "";
+    if (m === "pan") map.dragPan.enable();
+    else map.dragPan.disable();
+    if (m !== "line") {
+      linePts = [];
+      refreshLineDraft();
+    }
+    if (m !== "point" && ws.readyState === 1) {
+      peers.delete(myUid);
+      wsSend({ type: "presence.leave" });
+      refreshPeers();
+    }
+  };
+  root.querySelector("#tool-pan")!.addEventListener("click", () => setMode("pan"));
+  root.querySelector("#tool-point")?.addEventListener("click", () => setMode("point"));
+  root.querySelector("#tool-mmove")?.addEventListener("click", () => setMode("mmove"));
+  root.querySelector("#tool-line")?.addEventListener("click", () => setMode("line"));
+  root.querySelector("#tool-erase")?.addEventListener("click", () => setMode("erase"));
+  makeMovable(toolbar, { plan: token, key: "toolbar" });
 
   let lastSent = 0;
   const sendCursor = (lng: number, lat: number) => {
     if (Date.now() - lastSent < 60 || ws.readyState !== 1) return;
     lastSent = Date.now();
-    ws.send(JSON.stringify({ type: "presence.cursor", lng, lat, user: t("plan.public") }));
+    wsSend({ type: "presence.cursor", lng, lat, user: t("plan.public") });
     peers.set(myUid, { name: "•", lng, lat, ts: Date.now() });
     refreshPeers();
   };
+
+  // Linien zeichnen (nur mit Bearbeiten-Recht)
+  const cid = () => Math.random().toString(36).slice(2);
+  let linePts: [number, number][] = [];
+  const lineDoneBtn = root.querySelector<HTMLButtonElement>("#lineDone")!;
+  const refreshLineDraft = () => {
+    const src = map.getSource("linedraft") as GeoJSONSource | undefined;
+    if (src)
+      src.setData({
+        type: "FeatureCollection",
+        features:
+          linePts.length >= 2
+            ? [{ type: "Feature", geometry: { type: "LineString", coordinates: linePts }, properties: {} }]
+            : [],
+      });
+    if (mode === "line" && linePts.length >= 2) {
+      const p = map.project(linePts[linePts.length - 1]);
+      const mr = map.getContainer().getBoundingClientRect();
+      const rr = root.getBoundingClientRect();
+      lineDoneBtn.hidden = false;
+      lineDoneBtn.style.left = `${Math.round(mr.left - rr.left + p.x - 16)}px`;
+      lineDoneBtn.style.top = `${Math.round(mr.top - rr.top + p.y - 46)}px`;
+    } else lineDoneBtn.hidden = true;
+  };
+  const finishLine = () => {
+    if (linePts.length >= 2)
+      wsSend({
+        type: "stroke.commit",
+        cid: cid(),
+        data: { kind: "phaseline", points: linePts, color: -256, width: 2, phase_id: currentPhaseId || null },
+      });
+    linePts = [];
+    refreshLineDraft();
+  };
+  lineDoneBtn.addEventListener("click", finishLine);
+  map.on("move", refreshLineDraft);
+
   map.on("mousemove", (e) => {
-    if (pointMode) sendCursor(e.lngLat.lng, e.lngLat.lat);
+    if (mode === "point") sendCursor(e.lngLat.lng, e.lngLat.lat);
+  });
+  map.on("click", (e) => {
+    if (mode === "line") {
+      linePts.push([e.lngLat.lng, e.lngLat.lat]);
+      refreshLineDraft();
+    }
+  });
+  map.on("contextmenu", (e) => {
+    if (mode === "line" && linePts.length) {
+      e.preventDefault();
+      linePts = [];
+      refreshLineDraft();
+    }
+  });
+  map.on("dblclick", (e) => {
+    if (mode === "line") {
+      e.preventDefault();
+      finishLine();
+    }
+  });
+
+  // Marker verschieben / radieren
+  const onMarkerDown = (e: maplibregl.MapLayerMouseEvent) => {
+    if (mode !== "mmove") return;
+    const id = e.features?.[0]?.properties?.id as string | undefined;
+    const m = id ? markers.get(id) : undefined;
+    if (!m || m.locked) return;
+    e.preventDefault();
+    map.dragPan.disable();
+    const onMove = (ev: maplibregl.MapMouseEvent) => {
+      m.world_x = ev.lngLat.lng;
+      m.world_y = ev.lngLat.lat;
+      void refreshM();
+    };
+    const onUp = (ev: maplibregl.MapMouseEvent) => {
+      map.off("mousemove", onMove);
+      wsSend({ type: "marker.move", id: m.id, world_x: ev.lngLat.lng, world_y: ev.lngLat.lat });
+    };
+    map.on("mousemove", onMove);
+    map.once("mouseup", onUp);
+  };
+  const onMarkerClick = (e: maplibregl.MapLayerMouseEvent) => {
+    if (mode !== "erase") return;
+    const id = e.features?.[0]?.properties?.id as string | undefined;
+    if (id && rights.edit) wsSend({ type: "marker.delete", id });
+  };
+  for (const ly of ["m", "m-dot"]) {
+    map.on("mousedown", ly, onMarkerDown);
+    map.on("click", ly, onMarkerClick);
+  }
+  map.on("click", "s", (e) => {
+    if (mode === "erase" && rights.edit) {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      if (id) wsSend({ type: "stroke.delete", id });
+    }
   });
 
   // ── Präsentationsmodus ──────────────────────────────────────────────

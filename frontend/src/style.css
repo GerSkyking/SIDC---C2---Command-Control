@@ -197,7 +197,16 @@ a { color: var(--accent); }
   background: transparent; border: 1px solid transparent; }
 .toolbar button:hover:not(:disabled) { background: var(--elevated); }
 .tb-sep { height: 1px; align-self: stretch; background: var(--border); margin: 0.15rem 0.2rem; }
-#toolbar.mv .tb-sep { width: 1px; height: auto; align-self: auto; margin: 0.2rem 0.15rem; }
+
+/* Freigabe-Links */
+.sh-item { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 0.4rem 0.5rem; margin: 0.3rem 0; }
+.sh-item .row { gap: 0.4rem; align-items: center; }
+.sh-form { border: 1px solid var(--accent-weak); border-radius: var(--r-sm); padding: 0.6rem; margin-top: 0.4rem;
+  display: flex; flex-direction: column; gap: 0.45rem; }
+.sh-form .row { flex-wrap: wrap; gap: 0.6rem; }
+.sh-scope { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 0.4rem 0.6rem;
+  display: flex; flex-direction: column; gap: 0.3rem; }
+.sh-phases { display: flex; flex-wrap: wrap; gap: 0.5rem; padding-left: 1.2rem; }
 .toolbar button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .toolbar button.active .ic-a { fill: rgba(0,0,0,0.18); }
 
