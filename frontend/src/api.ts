@@ -31,6 +31,7 @@ export interface Me {
   role: string;
   can_create_plans_effective: boolean;
   is_mission_builder_effective: boolean;
+  ui_settings?: Record<string, unknown>;
 }
 export interface MapItem {
   id: string;
@@ -166,6 +167,7 @@ export interface AuditRow {
 
 export const api = {
   me: () => req<Me>("GET", "/auth/me"),
+  saveSettings: (patch: Record<string, unknown>) => req<Me>("PATCH", "/auth/me/settings", patch),
   login: (username: string, password: string) =>
     req<Me>("POST", "/auth/login", { username, password }),
   logout: () => req<void>("POST", "/auth/logout"),

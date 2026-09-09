@@ -14,7 +14,7 @@ import { openVersionPanel } from "./versions";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
-import { modeForKey, openSettings } from "./settings";
+import { actionForKey, openSettings } from "./settings";
 import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
 
@@ -175,6 +175,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const phaseOpacityOf = (phaseId: string | null | undefined): number => {
     if (phaseId == null) return 1;
     const mB = isBuilderPhase(phaseId);
+    // Missionsbau in Spieler-Ansicht = echte Spieler-Vorschau: Missionsbau-Inhalte weg.
+    if (mB && isMB && actAs === "player") return 0;
     const curB = isBuilderPhase(currentPhaseId);
     if (mB !== curB) return Math.max(0, Math.min(100, crossOpacity)) / 100; // andere Ebene
     if (phaseId === currentPhaseId) return 1;
@@ -476,24 +478,35 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const ll = map.unproject([a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f]);
       return [ll.lng, ll.lat];
     };
+    // Abstand zum Icon-Rand (skaliert mit der Icon-Größe des Markers).
+    const gapPx = (m: Marker) =>
+      Math.max(12, 17 * Math.max(0.25, Math.min(3, m.scale ?? 1)) * personalScale);
     const feats: GeoJSON.Feature[] = [];
     for (const list of byGroup.values()) {
       if (list.length < 2) continue;
       list.sort((a, b) => a.point_index - b.point_index);
       const anchor = list[0];
-      const pts = list.map((m) => [m.world_x, m.world_y] as [number, number]);
-      pts[0] = trim(pts[0], pts[1], 16);
-      pts[pts.length - 1] = trim(pts[pts.length - 1], pts[pts.length - 2], 16);
-      feats.push({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: pts },
-        properties: {
-          color: packedToHex(anchor.line_color),
-          width: anchor.line_width > 0 ? anchor.line_width : 2,
-          // gleiche Sichtbarkeit wie die Marker der Kette (schwächster gewinnt)
-          opacity: Math.min(...list.map((m) => phaseOpacity(m))),
-        },
-      });
+      const color = packedToHex(anchor.line_color);
+      const width = anchor.line_width > 0 ? anchor.line_width : 2;
+      // Je Segment eine eigene Linie, an BEIDEN Enden vom jeweiligen Marker eingerückt.
+      for (let i = 1; i < list.length; i++) {
+        const a = list[i - 1];
+        const b = list[i];
+        const pa = [a.world_x, a.world_y] as [number, number];
+        const pb = [b.world_x, b.world_y] as [number, number];
+        feats.push({
+          type: "Feature",
+          geometry: {
+            type: "LineString",
+            coordinates: [trim(pa, pb, gapPx(a)), trim(pb, pa, gapPx(b))],
+          },
+          properties: {
+            color,
+            width,
+            opacity: Math.min(phaseOpacity(a), phaseOpacity(b)),
+          },
+        });
+      }
     }
     return { type: "FeatureCollection", features: feats };
   };
@@ -903,7 +916,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   makeMovable(hud, { plan: planId, key: "hud" });
   makeMovable(root.querySelector<HTMLDivElement>("#mkScale")!, { plan: planId, key: "mkscale" });
   let lastCursorSent = 0;
+  let hoverLngLat: { lng: number; lat: number } | null = null;
+  let hoverMarkerId: string | null = null;
   map.on("mousemove", (e) => {
+    hoverLngLat = { lng: e.lngLat.lng, lat: e.lngLat.lat };
     const [wx, wy] = lngLatToWorld(cal, e.lngLat.lng, e.lngLat.lat);
     let h = "–";
     try {
@@ -2762,21 +2778,77 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   root.querySelector("#settingsBtn")!.addEventListener("click", openSettings);
 
-  // Tastenkürzel für die Werkzeug-Modi (im Einstellungs-Menü umbelegbar).
-  const onModeKey = (ev: KeyboardEvent) => {
-    if (!canEdit) return;
-    const m = modeForKey(ev);
-    if (!m) return;
-    if (m === "place" || m === "fav") {
-      const b = toolbar.querySelector<HTMLButtonElement>(m === "place" ? "#tool-marker" : "#tool-fav");
-      if (b && !b.disabled) b.click();
-      return;
-    }
-    const b = toolbar.querySelector<HTMLButtonElement>(`[data-mode="${m}"]`);
-    if (b && !b.disabled) setMode(m);
+  // Tastenkürzel (pro Nutzer, im Einstellungs-Menü umbelegbar).
+  let clipboardMarker: MarkerTemplate | null = null;
+  const cycleChannel = (dir: number) => {
+    const sel = root.querySelector<HTMLSelectElement>("#chan");
+    if (!sel || !sel.options.length) return;
+    const i = (sel.selectedIndex + dir + sel.options.length) % sel.options.length;
+    sel.selectedIndex = i;
+    sel.dispatchEvent(new Event("change"));
   };
-  document.addEventListener("keydown", onModeKey);
-  window.addEventListener("hashchange", () => document.removeEventListener("keydown", onModeKey), {
+  const markerToTpl = (m: Marker): MarkerTemplate => ({
+    sidc: m.sidc,
+    unit_text: m.unit_text,
+    ai_text: m.ai_text,
+    channel: m.channel,
+    locked: false,
+    timestamp_visible: true,
+    rotation_degrees: m.rotation_degrees,
+    is_multipoint: false,
+    max_line_points: 0,
+    orbat_node_id: m.orbat_node_id ?? null,
+    orbat_strength: m.orbat_strength ?? 1,
+  });
+  const onHotkey = (ev: KeyboardEvent) => {
+    if (document.querySelector(".edit-modal, .wiz-backdrop")) return; // Dialog offen
+    const a = actionForKey(ev);
+    if (!a) return;
+    const tb = (id: string) => toolbar.querySelector<HTMLButtonElement>(id);
+    const setModeBtn = (m: Mode) => {
+      const b = toolbar.querySelector<HTMLButtonElement>(`[data-mode="${m}"]`);
+      if (b && !b.disabled) setMode(m);
+    };
+    switch (a) {
+      case "undo": if (canEdit) doUndo(); break;
+      case "redo": if (canEdit) doRedo(); break;
+      case "mapMove": setMode("move"); break;
+      case "point": setModeBtn("point"); break;
+      case "line": if (canEdit) setModeBtn("line"); break;
+      case "markermove": if (canEdit) setModeBtn("markermove"); break;
+      case "measure": setModeBtn("measure"); break;
+      case "text": if (canEdit) setModeBtn("text"); break;
+      case "fav": if (canEdit && tb("#tool-fav") && !tb("#tool-fav")!.disabled) tb("#tool-fav")!.click(); break;
+      case "place":
+        ev.preventDefault();
+        if (canEdit && tb("#tool-marker") && !tb("#tool-marker")!.disabled) tb("#tool-marker")!.click();
+        break;
+      case "channelUp": ev.preventDefault(); cycleChannel(-1); break;
+      case "channelDown": ev.preventDefault(); cycleChannel(1); break;
+      case "phasePrev": ev.preventDefault(); stepPhase(-1); break;
+      case "phaseNext": ev.preventDefault(); stepPhase(1); break;
+      case "notes": toggleNotesWin(); break;
+      case "north": map.easeTo({ bearing: 0, duration: 400 }); break;
+      case "copy":
+      case "cut": {
+        if (!hoverMarkerId) return;
+        const m = markers.get(hoverMarkerId);
+        if (!m || m.released) return;
+        clipboardMarker = markerToTpl(m);
+        toast(t("hot.copy"), { kind: "success", timeout: 1200 });
+        if (a === "cut" && caps.delete && !m.locked) socket.send({ type: "marker.delete", id: m.id });
+        break;
+      }
+      case "paste": {
+        if (!clipboardMarker || !hoverLngLat || !caps.place) return;
+        chainGroup = null;
+        placeMarker([hoverLngLat.lng, hoverLngLat.lat], clipboardMarker);
+        break;
+      }
+    }
+  };
+  document.addEventListener("keydown", onHotkey);
+  window.addEventListener("hashchange", () => document.removeEventListener("keydown", onHotkey), {
     once: true,
   });
 
@@ -3075,6 +3147,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const id = e.features?.[0]?.properties?.id as string | undefined;
     const m = id ? markers.get(id) : undefined;
     if (!m) return;
+    hoverMarkerId = m.id;
     map.getCanvas().style.cursor = "pointer";
     const info = markerInfoText(m.sidc);
     hoverPopup
@@ -3090,6 +3163,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       .addTo(map);
   };
   const hideHover = () => {
+    hoverMarkerId = null;
     map.getCanvas().style.cursor = modeCursor(); // nicht hart auf Default zurück
     hoverPopup.remove();
   };

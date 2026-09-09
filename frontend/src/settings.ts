@@ -1,94 +1,175 @@
-// Einstellungs-Menü (pro Browser, localStorage). Aktuell: Theme + Tastenkürzel
-// für die Karten-Werkzeuge.
+// Einstellungs-Menü: Theme + Tastenkürzel. Keybinds werden PRO NUTZER auf dem
+// Server gespeichert (me.ui_settings.keybinds); localStorage dient nur als Cache.
+import { api, type Me } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { themeSwitch, wireThemeSwitch } from "./ui";
 
-export type ModeKey =
-  | "move"
-  | "markermove"
+export type HotAction =
+  | "undo"
+  | "redo"
+  | "mapMove"
   | "point"
   | "line"
+  | "markermove"
   | "measure"
-  | "erase"
   | "text"
+  | "fav"
   | "place"
-  | "fav";
+  | "channelUp"
+  | "channelDown"
+  | "phasePrev"
+  | "phaseNext"
+  | "notes"
+  | "cut"
+  | "copy"
+  | "paste"
+  | "north";
 
-export const MODE_ORDER: ModeKey[] = [
-  "move",
-  "markermove",
+export const HOT_ORDER: HotAction[] = [
+  "mapMove",
   "point",
   "line",
+  "markermove",
   "measure",
-  "erase",
   "text",
-  "place",
   "fav",
+  "place",
+  "undo",
+  "redo",
+  "cut",
+  "copy",
+  "paste",
+  "channelUp",
+  "channelDown",
+  "phasePrev",
+  "phaseNext",
+  "notes",
+  "north",
 ];
 
-const DEFAULTS: Record<ModeKey, string> = {
-  move: "v",
-  markermove: "m",
-  point: "z", // Zeigen
-  line: "l",
+const DEFAULTS: Record<HotAction, string> = {
+  mapMove: "w",
+  point: "a",
+  line: "d",
+  markermove: "s",
   measure: "r",
-  erase: "e",
   text: "t",
-  place: "p",
   fav: "f",
+  place: " ",
+  undo: "q",
+  redo: "e",
+  cut: "x",
+  copy: "c",
+  paste: "v",
+  channelUp: "arrowup",
+  channelDown: "arrowdown",
+  phasePrev: "arrowleft",
+  phaseNext: "arrowright",
+  notes: "y",
+  north: "n",
 };
 
-const KEY = "sidc_keybinds";
+const ALLOWED_SPECIAL = [" ", "arrowup", "arrowdown", "arrowleft", "arrowright"];
+const CACHE_KEY = "sidc_keybinds";
 
-export function getKeybinds(): Record<ModeKey, string> {
-  try {
-    const raw = JSON.parse(localStorage.getItem(KEY) || "{}");
-    return { ...DEFAULTS, ...raw };
-  } catch {
-    return { ...DEFAULTS };
+let binds: Record<HotAction, string> = { ...DEFAULTS };
+
+function normalizeStored(raw: unknown): Record<HotAction, string> {
+  const out = { ...DEFAULTS };
+  if (raw && typeof raw === "object") {
+    for (const a of HOT_ORDER) {
+      const v = (raw as Record<string, unknown>)[a];
+      if (typeof v === "string") out[a] = v;
+    }
   }
+  return out;
 }
 
-function save(binds: Record<ModeKey, string>): void {
+export function initSettings(me: Me): void {
+  const fromServer = (me.ui_settings as Record<string, unknown> | undefined)?.keybinds;
+  if (fromServer) {
+    binds = normalizeStored(fromServer);
+  } else {
+    try {
+      binds = normalizeStored(JSON.parse(localStorage.getItem(CACHE_KEY) || "null"));
+    } catch {
+      binds = { ...DEFAULTS };
+    }
+  }
   try {
-    localStorage.setItem(KEY, JSON.stringify(binds));
+    localStorage.setItem(CACHE_KEY, JSON.stringify(binds));
   } catch {
     /* ignore */
   }
 }
 
-export function modeForKey(ev: KeyboardEvent): ModeKey | null {
+export function getKeybinds(): Record<HotAction, string> {
+  return binds;
+}
+
+function persist(): void {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(binds));
+  } catch {
+    /* ignore */
+  }
+  void api.saveSettings({ keybinds: binds }).catch(() => {});
+}
+
+export function keyLabel(k: string): string {
+  if (!k) return "—";
+  return (
+    {
+      " ": "Space",
+      arrowup: "↑",
+      arrowdown: "↓",
+      arrowleft: "←",
+      arrowright: "→",
+    }[k] ?? k.toUpperCase()
+  );
+}
+
+export function actionForKey(ev: KeyboardEvent): HotAction | null {
   const el = ev.target as HTMLElement | null;
   if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return null;
+  if (el && el.isContentEditable) return null;
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return null;
-  const k = ev.key.toLowerCase();
-  const binds = getKeybinds();
-  for (const m of MODE_ORDER) if (binds[m] === k) return m;
+  const k = ev.key === " " ? " " : ev.key.toLowerCase();
+  for (const a of HOT_ORDER) if (binds[a] === k) return a;
   return null;
 }
 
 export function openSettings(): void {
   const back = document.createElement("div");
   back.className = "edit-modal";
-  const binds = getKeybinds();
 
-  const LABEL: Record<ModeKey, string> = {
-    move: t("tool.move"),
-    markermove: t("tool.markermove"),
+  const LABEL: Record<HotAction, string> = {
+    mapMove: t("tool.move"),
     point: t("tool.point"),
     line: t("tool.line"),
+    markermove: t("tool.markermove"),
     measure: t("tool.measure"),
-    erase: t("tool.erase"),
     text: t("tool.text"),
-    place: t("tool.marker"),
     fav: t("tool.fav"),
+    place: t("tool.marker"),
+    undo: t("edit.undo"),
+    redo: t("edit.redo"),
+    cut: t("hot.cut"),
+    copy: t("hot.copy"),
+    paste: t("hot.paste"),
+    channelUp: t("hot.channelUp"),
+    channelDown: t("hot.channelDown"),
+    phasePrev: t("hot.phasePrev"),
+    phaseNext: t("hot.phaseNext"),
+    notes: t("hot.notes"),
+    north: t("hot.north"),
   };
   const rows = () =>
-    MODE_ORDER.map(
-      (m) => `<div class="set-row">
-        <span>${LABEL[m]}</span>
-        <button class="kb-key" data-kb="${m}">${binds[m] ? binds[m].toUpperCase() : "—"}</button>
+    HOT_ORDER.map(
+      (a) => `<div class="set-row">
+        <span>${LABEL[a]}</span>
+        <button class="kb-key" data-kb="${a}">${keyLabel(binds[a])}</button>
       </div>`,
     ).join("");
 
@@ -109,11 +190,11 @@ export function openSettings(): void {
     back.remove();
     document.removeEventListener("keydown", onEsc, true);
   };
+  let capturing: string | null = null;
   const onEsc = (e: KeyboardEvent) => {
     if (capturing) return;
     if (e.key === "Escape") close();
   };
-  let capturing: string | null = null;
 
   back.addEventListener("mousedown", (e) => {
     if (e.target === back && !capturing) close();
@@ -131,15 +212,20 @@ export function openSettings(): void {
           e.stopPropagation();
           document.removeEventListener("keydown", grab, true);
           capturing = null;
+          const a = b.dataset.kb as HotAction;
           if (e.key === "Escape") {
-            b.textContent = (binds[b.dataset.kb as ModeKey] || "—").toUpperCase();
+            b.textContent = keyLabel(binds[a]);
             return;
           }
-          const k = e.key.toLowerCase();
-          // Kollision auflösen: gleiche Taste woanders freigeben
-          for (const m of MODE_ORDER) if (binds[m] === k) binds[m] = "";
-          binds[b.dataset.kb as ModeKey] = k.length === 1 ? k : "";
-          save(binds);
+          const k = e.key === " " ? " " : e.key.toLowerCase();
+          const ok = k.length === 1 || ALLOWED_SPECIAL.includes(k);
+          if (!ok) {
+            b.textContent = keyLabel(binds[a]);
+            return;
+          }
+          for (const x of HOT_ORDER) if (binds[x] === k) binds[x] = ""; // Kollision lösen
+          binds[a] = k;
+          persist();
           back.querySelector("#kbRows")!.innerHTML = rows();
           wireKb();
         };
@@ -150,8 +236,8 @@ export function openSettings(): void {
   wireKb();
 
   back.querySelector("[data-reset]")!.addEventListener("click", () => {
-    save({ ...DEFAULTS });
-    Object.assign(binds, DEFAULTS);
+    binds = { ...DEFAULTS };
+    persist();
     back.querySelector("#kbRows")!.innerHTML = rows();
     wireKb();
   });

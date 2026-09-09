@@ -23,6 +23,7 @@ class UserOut(BaseModel):
 class MeOut(UserOut):
     can_create_plans_effective: bool
     is_mission_builder_effective: bool = False
+    ui_settings: dict = {}
 
 
 # ─── Karten ────────────────────────────────────────────────────────────────

@@ -92,6 +92,15 @@ def me(user: CurrentUser, db: DbDep) -> MeOut:
     return _me(db, user)
 
 
+@router.patch("/me/settings", response_model=MeOut)
+def patch_my_settings(body: dict, user: CurrentUser, db: DbDep) -> MeOut:
+    cur = dict(user.ui_settings or {})
+    cur.update(body or {})
+    user.ui_settings = cur
+    db.commit()
+    return _me(db, user)
+
+
 def _me(db: DbDep, user: User) -> MeOut:
     from ..permissions import effective_mission_builder
 
@@ -103,6 +112,7 @@ def _me(db: DbDep, user: User) -> MeOut:
         is_mission_builder=user.is_mission_builder,
         can_create_plans_effective=can_create_plans(db, user),
         is_mission_builder_effective=effective_mission_builder(db, user),
+        ui_settings=user.ui_settings or {},
     )
 
 

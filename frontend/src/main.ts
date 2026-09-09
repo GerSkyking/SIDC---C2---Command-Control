@@ -8,6 +8,7 @@ import { renderPlanTree } from "./planTree";
 import { renderPublicView } from "./publicview";
 import { langSelect, t, wireLangSelect } from "./i18n";
 import { confirmDialog, toastError } from "./notify";
+import { initSettings } from "./settings";
 import { initTheme } from "./theme";
 import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
@@ -28,6 +29,7 @@ async function route(): Promise<void> {
   }
 
   if (!me) return renderLogin();
+  initSettings(me);
 
   const planMatch = location.hash.match(/^#\/plans\/([0-9a-f]{32})$/);
   if (planMatch) {

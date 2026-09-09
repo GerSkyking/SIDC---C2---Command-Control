@@ -35,6 +35,7 @@ class User(Base):
     can_create_plans: Mapped[bool] = mapped_column(Boolean, default=False)
     is_mission_builder: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    ui_settings: Mapped[dict] = mapped_column(JSON, default=dict)  # Keybinds, Theme … (pro Nutzer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
     groups: Mapped[list["Group"]] = relationship(secondary="group_members", back_populates="members")
