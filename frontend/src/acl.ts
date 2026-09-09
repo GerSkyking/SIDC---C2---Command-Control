@@ -188,8 +188,22 @@ export async function openAclEditor(
 
   function openShareForm(s: PublicShareRow | null): void {
     const host = backdrop.querySelector<HTMLDivElement>("#sh-form")!;
-    const playerP = phases.filter((p) => (p.plane ?? "player") !== "builder");
     const g = (v: unknown, d = "") => (v == null ? d : String(v));
+    const phaseChecks = (withBuilder: boolean): string => {
+      const checked = new Set(
+        [...host.querySelectorAll<HTMLInputElement>("[data-ph]:checked")].map((c) => c.dataset.ph!),
+      );
+      const src = checked.size ? checked : new Set(s?.phase_ids ?? []);
+      return phases
+        .filter((p) => withBuilder || (p.plane ?? "player") !== "builder")
+        .map(
+          (p) =>
+            `<label class="chk"><input type="checkbox" data-ph="${p.id}" ${src.has(p.id) ? "checked" : ""}/> ${
+              p.plane === "builder" ? "⚑ " : ""
+            }${esc(p.name)}</label>`,
+        )
+        .join("");
+    };
     host.innerHTML = `<div class="sh-form">
       <label class="chk-lbl">${t("acl.linkLabel")}<input data-f="label" value="${esc(g(s?.label))}"/></label>
       <div class="row">
@@ -203,12 +217,7 @@ export async function openAclEditor(
         <legend>${t("acl.scope")}</legend>
         <label class="chk"><input type="radio" name="shsc" value="all" ${!s?.phase_ids?.length && !s?.date_from && !s?.date_to ? "checked" : ""}/> ${t("acl.allPhases")}</label>
         <label class="chk"><input type="radio" name="shsc" value="phases" ${s?.phase_ids?.length ? "checked" : ""}/> ${t("acl.pickPhases")}</label>
-        <div data-scope="phases" class="sh-phases">${playerP
-          .map(
-            (p) =>
-              `<label class="chk"><input type="checkbox" data-ph="${p.id}" ${s?.phase_ids?.includes(p.id) ? "checked" : ""}/> ${esc(p.name)}</label>`,
-          )
-          .join("")}</div>
+        <div data-scope="phases" class="sh-phases">${phaseChecks(!!s?.include_builder)}</div>
         <label class="chk"><input type="radio" name="shsc" value="date" ${s?.date_from || s?.date_to ? "checked" : ""}/> ${t("acl.dateRange")}</label>
         <div data-scope="date" class="row">
           <input type="datetime-local" data-f="date_from" value="${g(s?.date_from).slice(0, 16)}"/>
@@ -225,6 +234,12 @@ export async function openAclEditor(
     };
     host.querySelectorAll('input[name="shsc"]').forEach((r) => r.addEventListener("change", syncScope));
     syncScope();
+    // Missionsbau an/aus → Phasenliste neu aufbauen (mit/ohne ⚑-Phasen)
+    host.querySelector<HTMLInputElement>('[data-f="include_builder"]')?.addEventListener("change", (e) => {
+      host.querySelector<HTMLElement>('[data-scope="phases"]')!.innerHTML = phaseChecks(
+        (e.target as HTMLInputElement).checked,
+      );
+    });
     host.querySelector("[data-shcancel]")!.addEventListener("click", () => (host.innerHTML = ""));
     host.querySelector("[data-shsave]")!.addEventListener("click", async () => {
       const f = <T extends HTMLInputElement>(n: string) => host.querySelector<T>(`[data-f="${n}"]`);
