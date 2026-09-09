@@ -142,7 +142,7 @@ a { color: var(--accent); }
 .topbar select { padding: 0.3rem 0.4rem; }
 .topbar input[type="datetime-local"] { padding: 0.3rem 0.4rem; max-width: 12rem; font-size: 0.8rem; }
 
-.timeline { display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; max-width: 34rem; }
+.timeline { display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; }
 .timeline .ph-label { font-size: 0.75rem; color: var(--muted); }
 .ph-chip { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
 .ph-chip.active { background: var(--accent); border-color: var(--accent); }
