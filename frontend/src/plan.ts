@@ -478,9 +478,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const ll = map.unproject([a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f]);
       return [ll.lng, ll.lat];
     };
-    // Abstand zum Icon-Rand (skaliert mit der Icon-Größe des Markers).
+    // Abstand zum Icon-Rand (skaliert mit der Icon-Größe des Markers) — groß
+    // genug, dass das Symbol frei lesbar bleibt.
     const gapPx = (m: Marker) =>
-      Math.max(12, 17 * Math.max(0.25, Math.min(3, m.scale ?? 1)) * personalScale);
+      Math.max(38, 52 * Math.max(0.25, Math.min(3, m.scale ?? 1)) * personalScale);
     const feats: GeoJSON.Feature[] = [];
     for (const list of byGroup.values()) {
       if (list.length < 2) continue;
