@@ -266,6 +266,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     </div>
     <button class="line-done" id="lineDone" title="${t("line.finish")}" hidden>${icon("check", 18)}</button>
     <button class="line-done line-gear" id="strokeGear" title="${t("line.edit")}" hidden>${icon("settings", 16)}</button>
+    <div class="navcube" id="navcube" title="${t("map.navcube")}" hidden>
+      <div class="ncube">
+        <button class="ncf ncf-top" data-face="top">▲</button>
+        <button class="ncf ncf-n" data-face="n">N</button>
+        <button class="ncf ncf-s" data-face="s">S</button>
+        <button class="ncf ncf-e" data-face="e">O</button>
+        <button class="ncf ncf-w" data-face="w">W</button>
+      </div>
+    </div>
     <div class="layers-panel" id="layersPanel" hidden></div>
     <div class="layers-panel orbat-panel" id="orbatPanel" hidden></div>
     <canvas class="grid-canvas" id="gridCanvas"></canvas>`;
@@ -908,9 +917,19 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   // ── 2D/3D ─────────────────────────────────────────────────────────────
+  const navcube = root.querySelector<HTMLDivElement>("#navcube")!;
+  const ncube = navcube.querySelector<HTMLDivElement>(".ncube")!;
+  const syncCube = () => {
+    ncube.style.transform = `rotateX(${map.getPitch() - 90}deg) rotateZ(${map.getBearing()}deg)`;
+  };
+  map.on("rotate", syncCube);
+  map.on("pitch", syncCube);
+  map.on("load", syncCube);
+
   root.querySelector("#t3d")!.addEventListener("click", () => {
     is3D = !is3D;
     root.querySelector("#t3d")!.classList.toggle("active", is3D);
+    navcube.hidden = !is3D;
     const hasDem = !!map.getSource("terrain-dem");
     if (is3D) {
       if (hasDem) map.setTerrain({ source: "terrain-dem", exaggeration: 1.5 });
@@ -926,6 +945,43 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         }
       });
     }
+  });
+
+  // Navigations-Würfel: Flächen anklicken = Kamera in die Richtung schwenken,
+  // Würfel mit gedrückter Maus drehen = Ansicht drehen/neigen.
+  const FACE_BEARING: Record<string, number> = { n: 0, e: 90, s: 180, w: 270 };
+  let cubeDragged = false;
+  navcube.querySelectorAll<HTMLButtonElement>("[data-face]").forEach((b) =>
+    b.addEventListener("click", () => {
+      if (cubeDragged) {
+        cubeDragged = false;
+        return;
+      }
+      const f = b.dataset.face!;
+      if (f === "top") map.easeTo({ pitch: 0, duration: 500 });
+      else map.easeTo({ bearing: FACE_BEARING[f], pitch: 45, duration: 500 });
+    }),
+  );
+  navcube.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const sb = map.getBearing();
+    const sp = map.getPitch();
+    cubeDragged = false;
+    navcube.classList.add("drag");
+    const mv = (ev: MouseEvent) => {
+      if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 3) cubeDragged = true;
+      map.setBearing(sb + (ev.clientX - sx) * 0.6);
+      map.setPitch(Math.max(0, Math.min(85, sp - (ev.clientY - sy) * 0.4)));
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", mv);
+      document.removeEventListener("mouseup", up);
+      navcube.classList.remove("drag");
+    };
+    document.addEventListener("mousemove", mv);
+    document.addEventListener("mouseup", up);
   });
 
   // ── Kompass + Nach-Norden-Button ──────────────────────────────────────
@@ -1720,6 +1776,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   }
 
+  // Panels dürfen nicht unter die (evtl. mehrzeilige) Topbar rutschen.
+  const belowTopbar = () =>
+    (parseInt(getComputedStyle(root).getPropertyValue("--topbar-h")) || 48) + 6;
+
   const layersPanel = root.querySelector<HTMLDivElement>("#layersPanel")!;
   const layersBtn = root.querySelector<HTMLButtonElement>("#layersBtn")!;
   const mvLayers = makeMovable(layersPanel, { plan: planId, key: "layers", pinnable: true });
@@ -1728,8 +1788,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (!layersPanel.hidden) {
       if (!mvLayers.hasPos()) {
         const b = layersBtn.getBoundingClientRect();
-        layersPanel.style.top = `${b.bottom + 4}px`;
-        layersPanel.style.right = `${window.innerWidth - b.right}px`;
+        layersPanel.style.top = `${belowTopbar()}px`;
+        layersPanel.style.right = `${Math.max(8, window.innerWidth - b.right)}px`;
+        layersPanel.style.left = "auto";
       }
       buildLayersPanel();
       mvLayers.bringIntoView();
@@ -1873,8 +1934,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (!orbatPanel.hidden) {
       if (!mvOrbat.hasPos()) {
         const b = orbatBtn.getBoundingClientRect();
-        orbatPanel.style.top = `${b.bottom + 4}px`;
-        orbatPanel.style.right = `${window.innerWidth - b.right}px`;
+        orbatPanel.style.top = `${belowTopbar()}px`;
+        orbatPanel.style.right = `${Math.max(8, window.innerWidth - b.right)}px`;
+        orbatPanel.style.left = "auto";
       }
       if (planOrbatCache.length) renderOrbatPanel(); // sofort aus Cache
       else orbatPanel.innerHTML = `<div class="fav-head">${t("orbat.inPlan")}</div><div class="muted">…</div>`;
@@ -2598,7 +2660,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (!favPanel.hidden) {
       if (!mvFav.hasPos()) {
         const b = (root.querySelector("#tool-fav") as HTMLElement).getBoundingClientRect();
-        favPanel.style.top = `${b.top}px`;
+        favPanel.style.top = `${Math.max(b.top, belowTopbar())}px`;
         favPanel.style.left = `${b.right + 6}px`;
         favPanel.style.right = "auto";
       }

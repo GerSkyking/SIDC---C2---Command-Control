@@ -56,8 +56,12 @@ export function makeMovable(
   };
   applyPin();
 
+  const topGuard = () => {
+    const v = parseInt(getComputedStyle(el).getPropertyValue("--topbar-h"));
+    return (Number.isFinite(v) ? v : 48) + 6; // Panels bleiben unter der Topbar
+  };
   const clampX = (x: number) => Math.max(4, Math.min(window.innerWidth - KEEP_X, x));
-  const clampY = (y: number) => Math.max(4, Math.min(window.innerHeight - KEEP_Y, y));
+  const clampY = (y: number) => Math.max(topGuard(), Math.min(window.innerHeight - KEEP_Y, y));
   const savePos = (x: number, y: number) => {
     try {
       localStorage.setItem(posKey, JSON.stringify({ x: Math.round(x), y: Math.round(y) }));
