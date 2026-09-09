@@ -2720,10 +2720,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const annotFirstLine = (s: string): string =>
     (s.split("\n").find((l) => l.trim()) ?? "").replace(/^#{1,6}\s+/, "").trim() || t("annot.placeholder");
+  // Referenz-Zoom für Notizen ohne eigenen ref_zoom (Altbestand): der Zoom beim
+  // ersten Zeichnen der Notizen — so skalieren sie ab jetzt mit der Karte mit.
+  let annotRefFallback = 0;
   const annotScale = (a: Annot): number => {
-    // Fixiert oder ohne gültigen Referenz-Zoom (Altbestand) → konstante Größe.
-    if (a.scale_fixed || !a.ref_zoom || a.ref_zoom <= 0) return 1;
-    return Math.max(0.4, Math.min(2.4, 2 ** (map.getZoom() - a.ref_zoom)));
+    if (a.scale_fixed) return 1; // ausdrücklich fixiert → konstante Bildschirmgröße
+    const ref = a.ref_zoom && a.ref_zoom > 0 ? a.ref_zoom : annotRefFallback;
+    if (!ref) return 1;
+    return Math.max(0.3, Math.min(3, 2 ** (map.getZoom() - ref)));
   };
 
   function positionAnnots(): void {
@@ -2804,7 +2808,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         phase_id: phaseSel.value || null,
         scale_fixed: wantFix,
       };
-      if (!wantFix && a.scale_fixed) data.ref_zoom = map.getZoom(); // wieder mitskalieren ab jetzt
+      if (!wantFix && (a.scale_fixed || !a.ref_zoom || a.ref_zoom <= 0))
+        data.ref_zoom = map.getZoom(); // ab jetzt mit der Karte mitskalieren
       socket.send({ type: "annotation.modify", id, data });
       back.remove();
     });
@@ -2817,6 +2822,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   function onAnnotDown(ev: MouseEvent, id: string): void {
     if (!canEdit || (mode !== "move" && mode !== "markermove")) return;
     if ((ev.target as HTMLElement).closest(".annot-tools")) return;
+    // Untere rechte Ecke = CSS-resize-Griff → Browser die Größenänderung machen lassen
+    const el0 = annotsEl.querySelector<HTMLElement>(`[data-aid="${id}"]`);
+    if (el0) {
+      const a0 = annots.get(id);
+      const sc = a0 ? annotScale(a0) || 1 : 1;
+      const r = el0.getBoundingClientRect();
+      const lx = (ev.clientX - r.left) / sc;
+      const ly = (ev.clientY - r.top) / sc;
+      if (lx > el0.clientWidth - 20 && ly > el0.clientHeight - 20) return;
+    }
     ev.stopPropagation();
     ev.preventDefault();
     annotDragId = id;
@@ -2849,6 +2864,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
 
   function renderAnnots(): void {
+    if (!annotRefFallback) annotRefFallback = map.getZoom();
     annotsEl.innerHTML = "";
     for (const a of annots.values()) {
       const collapsed = collapsedAnnots.has(a.id);
@@ -2890,23 +2906,30 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         );
       });
       el.addEventListener("mousedown", (ev) => onAnnotDown(ev, a.id));
-      // Größe per Rand/Ecke (CSS resize) — beim Loslassen synchronisieren
-      el.addEventListener("mouseup", () => {
-        if (annotDragId || !canEdit) return;
-        const w = Math.round(el.offsetWidth);
-        const h = Math.round(el.offsetHeight);
-        const cur = annots.get(a.id);
-        if (!cur) return;
-        if (Math.abs(w - cur.width) > 2 || Math.abs(h - (cur.height ?? 0)) > 2) {
-          cur.width = w;
-          cur.height = h;
-          socket.send({
-            type: "annotation.modify",
-            id: a.id,
-            data: { width: w, height: h, phase_id: cur.phase_id },
-          });
-        }
-      });
+      // Größe per Rand/Ecke (CSS resize) — Änderung entprellt synchronisieren
+      if (canEdit) {
+        let roTimer = 0;
+        const ro = new ResizeObserver(() => {
+          if (annotDragId) return;
+          window.clearTimeout(roTimer);
+          roTimer = window.setTimeout(() => {
+            const cur = annots.get(a.id);
+            if (!cur) return;
+            const w = Math.round(el.offsetWidth); // Layout-px, unabhängig vom scale()
+            const h = Math.round(el.offsetHeight);
+            if (Math.abs(w - cur.width) > 2 || Math.abs(h - (cur.height ?? 0)) > 2) {
+              cur.width = w;
+              cur.height = h;
+              socket.send({
+                type: "annotation.modify",
+                id: a.id,
+                data: { width: w, height: h, phase_id: cur.phase_id },
+              });
+            }
+          }, 350);
+        });
+        ro.observe(el);
+      }
       el.addEventListener("dblclick", (ev) => {
         ev.stopPropagation();
         openAnnotEditor(a.id);
