@@ -798,14 +798,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         refreshStrokes();
         if (editStrokeId === msg.id) setEditStroke(null);
         break;
-      case "annotation.upsert":
+      case "annotation.upsert": {
+        const wasResizing = annotResizingId === msg.annotation.id;
         annots.set(msg.annotation.id, msg.annotation);
-        renderAnnots();
+        if (!annotResizingId) renderAnnots(); // während eines Resize nicht neu aufbauen
+        else if (!wasResizing) positionAnnots();
         if (msg.cid && msg.cid === pendingAnnotCid) {
           pendingAnnotCid = null;
           openAnnotEditor(msg.annotation.id, true);
         }
         break;
+      }
       case "annotation.delete":
         annots.delete(msg.id);
         renderAnnots();
@@ -2699,6 +2702,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // ── Annotationen (platzierbare Markdown-Textfelder) ───────────────────
   const annotsEl = root.querySelector<HTMLDivElement>("#annots")!;
   let annotDragId: string | null = null;
+  let annotResizingId: string | null = null;
   let pendingAnnotCid: string | null = null;
   const annotOpacity = (a: Annot): number => phaseOpacityOf(a.phase_id);
   const ANNOT_COLL_KEY = `sidc_annot_coll_${planId}`;
@@ -2822,7 +2826,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   function onAnnotDown(ev: MouseEvent, id: string): void {
     if (!canEdit || (mode !== "move" && mode !== "markermove")) return;
     if ((ev.target as HTMLElement).closest(".annot-tools")) return;
-    // Untere rechte Ecke = CSS-resize-Griff → Browser die Größenänderung machen lassen
+    // Untere rechte Ecke = CSS-resize-Griff → Browser die Größenänderung machen
+    // lassen und erst beim Loslassen synchronisieren (kein Neuaufbau währenddessen).
     const el0 = annotsEl.querySelector<HTMLElement>(`[data-aid="${id}"]`);
     if (el0) {
       const a0 = annots.get(id);
@@ -2830,7 +2835,32 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const r = el0.getBoundingClientRect();
       const lx = (ev.clientX - r.left) / sc;
       const ly = (ev.clientY - r.top) / sc;
-      if (lx > el0.clientWidth - 20 && ly > el0.clientHeight - 20) return;
+      if (lx > el0.clientWidth - 22 && ly > el0.clientHeight - 22) {
+        if (!canEdit) return;
+        annotResizingId = id;
+        const finish = () => {
+          document.removeEventListener("mouseup", finish);
+          if (annotResizingId !== id) return;
+          annotResizingId = null;
+          const cur = annots.get(id);
+          if (cur) {
+            const w = Math.round(el0.offsetWidth);
+            const h = Math.round(el0.offsetHeight);
+            if (Math.abs(w - cur.width) > 2 || Math.abs(h - (cur.height ?? 0)) > 2) {
+              cur.width = w;
+              cur.height = h;
+              socket.send({
+                type: "annotation.modify",
+                id,
+                data: { width: w, height: h, phase_id: cur.phase_id },
+              });
+            }
+          }
+          renderAnnots();
+        };
+        document.addEventListener("mouseup", finish);
+        return; // nativen Resize laufen lassen
+      }
     }
     ev.stopPropagation();
     ev.preventDefault();
@@ -2864,6 +2894,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
 
   function renderAnnots(): void {
+    if (annotResizingId) return; // Neuaufbau würde das laufende Ziehen abbrechen
     if (!annotRefFallback) annotRefFallback = map.getZoom();
     annotsEl.innerHTML = "";
     for (const a of annots.values()) {
@@ -2906,30 +2937,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         );
       });
       el.addEventListener("mousedown", (ev) => onAnnotDown(ev, a.id));
-      // Größe per Rand/Ecke (CSS resize) — Änderung entprellt synchronisieren
-      if (canEdit) {
-        let roTimer = 0;
-        const ro = new ResizeObserver(() => {
-          if (annotDragId) return;
-          window.clearTimeout(roTimer);
-          roTimer = window.setTimeout(() => {
-            const cur = annots.get(a.id);
-            if (!cur) return;
-            const w = Math.round(el.offsetWidth); // Layout-px, unabhängig vom scale()
-            const h = Math.round(el.offsetHeight);
-            if (Math.abs(w - cur.width) > 2 || Math.abs(h - (cur.height ?? 0)) > 2) {
-              cur.width = w;
-              cur.height = h;
-              socket.send({
-                type: "annotation.modify",
-                id: a.id,
-                data: { width: w, height: h, phase_id: cur.phase_id },
-              });
-            }
-          }, 350);
-        });
-        ro.observe(el);
-      }
       el.addEventListener("dblclick", (ev) => {
         ev.stopPropagation();
         openAnnotEditor(a.id);
@@ -2940,7 +2947,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
 
   map.on("move", () => {
-    if (!annotDragId) positionAnnots();
+    if (!annotDragId && !annotResizingId) positionAnnots();
     positionLineDone();
   });
   map.on("zoomend", () => (map.getSource("chains") as GeoJSONSource)?.setData(chainFC()));
