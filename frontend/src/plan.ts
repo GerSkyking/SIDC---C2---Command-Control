@@ -205,10 +205,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         .map((c) => `<option value="${c.name}" ${c.name === myChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
         .join("")}</select>
       <div id="timeline" class="timeline"></div>
-      ${iconBtn("notes", { id: "notesBtn", title: t("notes.open") })}
       <select id="maplang" title="${t("map.lang")}"></select>
-      ${iconBtn("layers", { id: "layersBtn", title: t("tool.layers") })}
-      ${iconBtn("groups", { id: "orbatBtn", title: t("orbat.inPlan") })}
       <span class="grow"></span>
       <span class="presence" id="presence"></span>
       ${iconBtn("present", { id: "present", title: t("present.start") })}
@@ -220,20 +217,27 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     </div>
     <div id="map"></div>
     <div id="annots" class="annots"></div>
+    <div class="toolbar" id="toolbar">
+      ${
+        canEdit
+          ? iconBtn("pan", { data: { mode: "move" }, active: true, title: t("tool.move") }) +
+            iconBtn("markerMove", { data: { mode: "markermove" }, title: t("tool.markermove") }) +
+            iconBtn("point", { data: { mode: "point" }, title: t("tool.point") }) +
+            iconBtn("line", { data: { mode: "line" }, title: t("tool.line") }) +
+            iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") }) +
+            iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") }) +
+            iconBtn("textbox", { data: { mode: "text" }, title: t("tool.text") }) +
+            iconBtn("marker", { id: "tool-marker", title: t("tool.marker") }) +
+            iconBtn("star", { id: "tool-fav", title: t("tool.fav") }) +
+            `<span class="tb-sep"></span>`
+          : ""
+      }
+      ${iconBtn("layers", { id: "layersBtn", title: t("tool.layers") })}
+      ${iconBtn("groups", { id: "orbatBtn", title: t("orbat.inPlan") })}
+    </div>
     ${
       canEdit
-        ? `<div class="toolbar" id="toolbar">
-             ${iconBtn("pan", { data: { mode: "move" }, active: true, title: t("tool.move") })}
-             ${iconBtn("markerMove", { data: { mode: "markermove" }, title: t("tool.markermove") })}
-             ${iconBtn("point", { data: { mode: "point" }, title: t("tool.point") })}
-             ${iconBtn("line", { data: { mode: "line" }, title: t("tool.line") })}
-             ${iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") })}
-             ${iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") })}
-             ${iconBtn("textbox", { data: { mode: "text" }, title: t("tool.text") })}
-             ${iconBtn("marker", { id: "tool-marker", title: t("tool.marker") })}
-             ${iconBtn("star", { id: "tool-fav", title: t("tool.fav") })}
-           </div>
-           <div class="fav-panel" id="favPanel" hidden></div>
+        ? `<div class="fav-panel" id="favPanel" hidden></div>
            <div class="line-style" id="lineStyle" hidden>
              <div class="fav-head">${t("line.heading")}</div>
              <label>${t("line.color")}</label>
@@ -1234,6 +1238,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // ── Zeitstrahl / Phasen ───────────────────────────────────────────────
   const timelineEl = root.querySelector<HTMLDivElement>("#timeline")!;
+  let toggleNotesWin: () => void = () => {}; // wird bei der Notiz-Fenster-Einrichtung gesetzt
   function applyPhase(): void {
     renderTimeline();
     void refreshMarkers();
@@ -1358,12 +1363,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
 
     timelineEl.innerHTML =
-      `<div class="ph-main"><span class="ph-label">${t("phase.heading")}:</span>${chips}` +
-      (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+</button>` : "") +
+      `<div class="ph-main">` +
+      `<button class="icon-btn" id="ph-notes" title="${t("notes.open")}">${icon("notes", 16)}</button>` +
       `<label class="ph-op" title="${t("phase.outOpacityHint")}">${t("phase.outOpacity")}` +
       `<input type="range" id="ph-op" min="0" max="100" step="5" value="${outOpacity}"/>` +
-      `<span id="ph-op-v">${outOpacity}%</span></label></div>` +
+      `<span id="ph-op-v">${outOpacity}%</span></label>` +
+      `<span class="ph-label">${t("phase.heading")}:</span>${chips}` +
+      (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+</button>` : "") +
+      `</div>` +
       mbRow;
+
+    timelineEl.querySelector("#ph-notes")?.addEventListener("click", () => toggleNotesWin());
 
     timelineEl.querySelectorAll<HTMLButtonElement>("[data-pickp]").forEach((b) =>
       b.addEventListener("click", () => selectPlayerPhase(b.dataset.pickp!)),
@@ -1510,10 +1520,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     paintNotes();
   });
   notesWin.querySelector(".notes-x")!.addEventListener("click", () => (notesWin.hidden = true));
-  root.querySelector("#notesBtn")!.addEventListener("click", () => {
+  toggleNotesWin = () => {
     notesWin.hidden = !notesWin.hidden;
     if (!notesWin.hidden) paintNotes();
-  });
+  };
   {
     const si = root.querySelector<HTMLInputElement>("#mkScaleIn")!;
     const sv = root.querySelector<HTMLSpanElement>("#mkScaleV")!;
@@ -1779,6 +1789,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Panels dürfen nicht unter die (evtl. mehrzeilige) Topbar rutschen.
   const belowTopbar = () =>
     (parseInt(getComputedStyle(root).getPropertyValue("--topbar-h")) || 48) + 6;
+  // Panel rechts neben seinem (linken) Werkzeug-Knopf platzieren.
+  const placeNextToTool = (panel: HTMLElement, btn: HTMLElement) => {
+    const b = btn.getBoundingClientRect();
+    panel.style.top = `${Math.max(belowTopbar(), b.top)}px`;
+    panel.style.left = `${b.right + 8}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+  };
 
   const layersPanel = root.querySelector<HTMLDivElement>("#layersPanel")!;
   const layersBtn = root.querySelector<HTMLButtonElement>("#layersBtn")!;
@@ -1786,12 +1804,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   layersBtn.addEventListener("click", () => {
     layersPanel.hidden = !layersPanel.hidden;
     if (!layersPanel.hidden) {
-      if (!mvLayers.hasPos()) {
-        const b = layersBtn.getBoundingClientRect();
-        layersPanel.style.top = `${belowTopbar()}px`;
-        layersPanel.style.right = `${Math.max(8, window.innerWidth - b.right)}px`;
-        layersPanel.style.left = "auto";
-      }
+      if (!mvLayers.hasPos()) placeNextToTool(layersPanel, layersBtn);
       buildLayersPanel();
       mvLayers.bringIntoView();
     }
@@ -1954,12 +1967,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   orbatBtn.addEventListener("click", () => {
     orbatPanel.hidden = !orbatPanel.hidden;
     if (!orbatPanel.hidden) {
-      if (!mvOrbat.hasPos()) {
-        const b = orbatBtn.getBoundingClientRect();
-        orbatPanel.style.top = `${belowTopbar()}px`;
-        orbatPanel.style.right = `${Math.max(8, window.innerWidth - b.right)}px`;
-        orbatPanel.style.left = "auto";
-      }
+      if (!mvOrbat.hasPos()) placeNextToTool(orbatPanel, orbatBtn);
       if (planOrbatCache.length) renderOrbatPanel(); // sofort aus Cache
       else orbatPanel.innerHTML = `<div class="fav-head">${t("orbat.inPlan")}</div><div class="muted">…</div>`;
       void refreshOrbatPanel();

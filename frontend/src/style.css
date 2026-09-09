@@ -165,6 +165,8 @@ a { color: var(--accent); }
 .toolbar button { width: 2.4rem; height: 2.4rem; padding: 0; display: grid; place-items: center;
   background: transparent; border: 1px solid transparent; }
 .toolbar button:hover:not(:disabled) { background: var(--elevated); }
+.tb-sep { height: 1px; align-self: stretch; background: var(--border); margin: 0.15rem 0.2rem; }
+#toolbar.mv .tb-sep { width: 1px; height: auto; align-self: auto; margin: 0.2rem 0.15rem; }
 .toolbar button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .toolbar button.active .ic-a { fill: rgba(0,0,0,0.18); }
 
