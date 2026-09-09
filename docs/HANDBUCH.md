@@ -1,7 +1,34 @@
 # SIDC – C2 – Handbuch
 
-Stand **2026-09-07**. Deckt den aktuellen Funktionsumfang von Backend + Web-Frontend ab.
+Stand **2026-09-09**. Deckt den aktuellen Funktionsumfang von Backend + Web-Frontend ab.
 Für Architektur/Stufenplan siehe [`../PLAN.md`](../PLAN.md), für Betrieb [`../README.md`](../README.md).
+
+---
+
+## 0. Neuerungen (Batch „fehler v2")
+
+- **Marker-Baukasten** (`Marker-Baukasten`-Reiter im QuickMenü und im ORBAT-Knoten-Editor):
+  Kategorie/Marker/Identität/Echelon/Modifikatoren als durchsuchbare Dropdowns mit
+  Live-Vorschau + SIDC-Anzeige.
+- **Marker-Text** steht unter dem Symbol; **Icon-Größe** je Marker (25–300 %) im Editor,
+  zusätzlich ein persönlicher Größen-Regler oben rechts (nur für den Betrachter).
+- **Channels**: Channel-Auswahl im Marker-Editor; der oben gewählte Channel steuert die
+  Deckkraft fremder Marker nach `SIDC_ChannelSettings.json` (`visibilityRules[].percent`).
+  Favoriten merken sich den Channel.
+- **Textfelder (Notizen)**: Editor öffnet beim Erstellen, leere Felder werden verworfen,
+  Einklappen (nur erste Zeile), „auf Größe fixieren"-Checkbox (skaliert sonst mit dem Zoom),
+  Löschen per Bestätigungs-Checkbox.
+- **Phase-Linien**: grüner Haken am letzten Punkt zum Beenden; im Verschieben-Modus
+  anklicken → Stützpunkte ziehen; bekommen die aktuelle Phase (Missionsbau-tauglich).
+- **Lineal**: mehrsegmentig, Trace-Linie + Gesamtlänge, Rechtsklick beendet, Messlinien
+  bleiben stehen und sind klick-/radier-/editierbar (lokal je Sitzung).
+- **ORBAT**: Zugehörigkeit = 4 Standard-Identitäten (Freund/Feind/Neutral/Unbekannt);
+  Stärke = Maximalstärke + frei editierbare Ist-Stärke; Untergliederung als „+N", Wurzel = Gesamt.
+- **Übersetzungen**: Admin lädt `SIDC_Translations.xlsx` (oder .json) unter Config →
+  Kataloge; ersetzt `#Namen` und liefert die Marker-Hover-Zusatzinfo.
+- **UI**: Panels frei verschiebbar (Griff oben links) + Pin (bleibt offen, Position wird
+  je Browser gemerkt). Eigene Benachrichtigungen/Dialoge statt Browser-Popups.
+  Eigener Zeige-Punkt wird auch bei einem selbst angezeigt.
 
 ---
 
