@@ -14,6 +14,8 @@ import { renderMarkdown } from "./md";
 import { esc } from "./esc";
 import { initNavCube } from "./navcube";
 import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
+import { openLightbox } from "./lightbox";
+import type { PlanImage as PubImage } from "./api";
 
 interface M {
   id: string;
@@ -121,6 +123,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     </div>
     <div id="map"></div>
     <div id="annots" class="annots"></div>
+    <div id="plan-images" class="plan-images"></div>
     <div class="toolbar" id="toolbar">
       ${iconBtn("pan", { id: "tool-pan", active: true, title: t("tool.move") })}
       ${rights.point ? iconBtn("point", { id: "tool-point", title: t("tool.point") }) : ""}
@@ -379,6 +382,35 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   };
   map.on("move", positionAnnots);
 
+  // ── Bilder (nur Lesen) ───────────────────────────────────────────────
+  const images: PubImage[] = snap.images ?? [];
+  const imagesEl = root.querySelector<HTMLDivElement>("#plan-images")!;
+  const renderMapImages = () => {
+    imagesEl.innerHTML = images
+      .filter((i) => i.on_map && phaseOpacityOf(i.phase_id) > 0.001)
+      .map(
+        (i) =>
+          `<div class="pimg" data-iid="${i.id}" style="width:${i.map_width}px;opacity:${phaseOpacityOf(i.phase_id)}">` +
+          `<img src="${api.publicImageUrl(token, i.id)}" alt="" draggable="false" /></div>`,
+      )
+      .join("");
+    positionImages();
+  };
+  const positionImages = () => {
+    for (const el of Array.from(imagesEl.children) as HTMLElement[]) {
+      const i = images.find((x) => x.id === el.dataset.iid);
+      if (!i) continue;
+      const p = map.project([i.world_x, i.world_y]);
+      el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    }
+  };
+  imagesEl.addEventListener("dblclick", (e) => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>(".pimg");
+    const i = el && images.find((x) => x.id === el.dataset.iid);
+    if (i) openLightbox([{ url: api.publicImageUrl(token, i.id), caption: i.caption || i.filename }]);
+  });
+  map.on("move", positionImages);
+
   // ── Peers / eigener Zeiger ────────────────────────────────────────────
   const peers = new Map<string, { name: string; lng: number; lat: number; ts: number }>();
   const myUid = "me-" + Math.random().toString(36).slice(2, 8);
@@ -475,6 +507,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       },
     });
     renderAnnots();
+    renderMapImages();
   });
 
   const refreshM = async () => {
@@ -486,6 +519,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     void refreshM();
     refreshS();
     renderAnnots();
+    renderMapImages();
   };
 
   // ── Channel / Icon-Skalierung ────────────────────────────────────────
@@ -821,6 +855,19 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         const i = annots.findIndex((a) => a.id === msg.id);
         if (i >= 0) annots.splice(i, 1);
         renderAnnots();
+        break;
+      }
+      case "image.upsert": {
+        const i = images.findIndex((x) => x.id === msg.image.id);
+        if (i >= 0) images[i] = msg.image;
+        else images.push(msg.image);
+        renderMapImages();
+        break;
+      }
+      case "image.delete": {
+        const i = images.findIndex((x) => x.id === msg.id);
+        if (i >= 0) images.splice(i, 1);
+        renderMapImages();
         break;
       }
       case "presence.cursor":

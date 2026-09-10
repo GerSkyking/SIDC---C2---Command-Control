@@ -105,6 +105,35 @@ export interface AdminUser {
   is_active: boolean;
   is_local: boolean;
 }
+export interface PlanImage {
+  id: string;
+  plan_id?: string;
+  phase_id: string | null;
+  filename: string;
+  content_type: string;
+  byte_size: number;
+  natural_w: number;
+  natural_h: number;
+  caption: string;
+  on_map: boolean;
+  world_x: number;
+  world_y: number;
+  map_width: number;
+  scale_fixed: boolean;
+  ref_zoom: number;
+}
+export interface AdminImageRow {
+  id: string;
+  filename: string;
+  byte_size: number;
+  content_type: string;
+  plan_id: string;
+  plan_name: string;
+  phase_id: string | null;
+  phase_name: string;
+  uploader: string;
+  created_at: string;
+}
 export interface AdminGroup {
   id: string;
   name: string;
@@ -329,6 +358,30 @@ export const api = {
       headers: { "content-type": "image/png" },
       body: png,
     }),
+  uploadPlanImage: async (
+    planId: string,
+    file: File,
+    o: { phase_id?: string | null; caption?: string; w?: number; h?: number } = {},
+  ): Promise<PlanImage> => {
+    const q = new URLSearchParams();
+    if (o.phase_id) q.set("phase_id", o.phase_id);
+    if (o.caption) q.set("caption", o.caption);
+    if (o.w) q.set("w", String(o.w));
+    if (o.h) q.set("h", String(o.h));
+    const r = await fetch(`/plans/${planId}/images?${q}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": file.type, "x-filename": encodeURIComponent(file.name) },
+      body: file,
+    });
+    if (!r.ok) throw new ApiError(r.status, (await r.json().catch(() => ({}))).detail || r.statusText);
+    return r.json();
+  },
+  planImages: (planId: string) => req<PlanImage[]>("GET", `/plans/${planId}/images`),
+  planImageUrl: (planId: string, id: string) => `/plans/${planId}/images/${id}/raw`,
+  publicImageUrl: (token: string, id: string) => `/public/plans/${token}/images/${id}/raw`,
+  adminImages: () => req<AdminImageRow[]>("GET", "/api/admin/images"),
+  adminDeleteImage: (id: string) => req<void>("DELETE", `/api/admin/images/${id}`),
   trash: () => req<PlanItem[]>("GET", "/plans/trash"),
   undeletePlan: (planId: string) => req<PlanItem>("POST", `/plans/${planId}/undelete`),
   purgePlan: (planId: string) => req<void>("DELETE", `/plans/${planId}/purge`),

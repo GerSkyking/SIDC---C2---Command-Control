@@ -651,6 +651,52 @@ label.chk input { width: auto; }
 .orb-rel-edit { display: flex; flex-direction: column; gap: 0.3rem; }
 @media (max-width: 720px) { .orbat-wrap { flex-direction: column; } .orbat-list { flex: none; width: 100%; } }
 
+/* ── Bilder auf der Karte + rechte Bild-Sidebar ────────────────────── */
+.plan-images { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0;
+  pointer-events: none; z-index: 4; overflow: hidden; }
+.presenting .plan-images { inset: 0; }
+.pimg { position: absolute; top: 0; left: 0; pointer-events: auto;
+  transform: translate(-9999px, -9999px); transform-origin: top left;
+  box-shadow: var(--shadow); }
+.pimg img { display: block; width: 100%; height: auto; border: 1px solid var(--border); }
+.pimg.dragging { opacity: 0.7 !important; cursor: grabbing; }
+.pimg-rz { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+  cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, var(--accent) 50%); }
+
+.img-rail { position: absolute; top: var(--topbar-h, 3.2rem); right: 0; bottom: 0;
+  width: var(--rail-w, 300px); background: var(--surface); border-left: 1px solid var(--border);
+  z-index: 15; display: flex; flex-direction: column; transform: translateX(100%);
+  transition: transform 0.15s ease; }
+.img-rail.open { transform: none; }
+.presenting .img-rail { display: none; }
+.img-rail .ir-head { display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); }
+.img-rail .ir-head .grow { flex: 1; }
+.img-rail .ir-list { flex: 1; overflow-y: auto; padding: 0.4rem; }
+.ir-item { display: flex; gap: 0.5rem; padding: 0.4rem; border-bottom: 1px solid var(--border); }
+.ir-thumb { width: 64px; height: 64px; object-fit: cover; border: 1px solid var(--border);
+  border-radius: var(--r-sm); flex: none; cursor: zoom-in; background: var(--surface-2); }
+.ir-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.ir-cap, .ir-phase { width: 100%; font-size: 0.8rem; color: var(--fg); }
+.ir-cap-ro { font-size: 0.82rem; font-weight: 600; }
+.ir-row { display: flex; align-items: center; gap: 0.4rem; }
+.ir-chk { font-size: 0.76rem; display: flex; align-items: center; gap: 0.25rem; }
+.ir-del { width: 1.6rem; height: 1.6rem; align-self: flex-start; }
+.img-rail-tab { position: absolute; top: calc(var(--topbar-h, 3.2rem) + 6rem); right: 0;
+  z-index: 14; border-radius: var(--r-sm) 0 0 var(--r-sm); border-right: 0;
+  background: var(--surface); padding: 0.5rem 0.3rem; }
+.img-rail-tab.hidden { display: none; }
+body.rail-open .hud, body.rail-open .mk-scale { right: calc(var(--rail-w, 300px) + 0.6rem); }
+body.rail-open .navcube { right: calc(var(--rail-w, 300px) + 14px); }
+body.rail-open .layers-panel:not(.mv-pinned) { right: calc(var(--rail-w, 300px) + 0.6rem); }
+
+/* ── Notiz-Bild-Verweise (Chips) ──────────────────────────────────── */
+.note-img-ref { display: inline-flex; align-items: center; gap: 0.2rem;
+  padding: 0 0.35rem; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--elevated); cursor: pointer; text-decoration: none; color: var(--fg);
+  font-size: 0.85em; }
+.note-img-ref:hover { border-color: var(--accent); }
+
 /* ── Screenshot-Optionen ───────────────────────────────────────────── */
 .shot-wrap { position: relative; display: inline-flex; align-items: center; }
 .shot-caret { padding: 0.2rem 0.25rem; font-size: 0.7rem; line-height: 1; margin-left: -2px; }

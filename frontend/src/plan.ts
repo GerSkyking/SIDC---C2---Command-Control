@@ -21,6 +21,9 @@ import { renderMarkdown } from "./md";
 import { esc } from "./esc";
 import { initNavCube } from "./navcube";
 import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
+import { openLightbox } from "./lightbox";
+import { mountImageRail } from "./imagerail";
+import type { PlanImage } from "./api";
 
 interface Marker {
   id: string;
@@ -75,6 +78,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const strokes = new Map<string, Stroke>(snap.strokes.map((s: Stroke) => [s.id, s]));
   const annots = new Map<string, Annot>(
     (snap.annotations ?? []).map((a: Annot) => [a.id, a]),
+  );
+  const images = new Map<string, PlanImage>(
+    (snap.images ?? []).map((i: PlanImage) => [i.id, i]),
   );
   const myPlan = (await api.plans()).find((p) => p.id === planId);
   const canEdit = myPlan?.level === "editor" || myPlan?.level === "owner";
@@ -225,6 +231,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     </div>
     <div id="map"></div>
     <div id="annots" class="annots"></div>
+    <div id="plan-images" class="plan-images"></div>
     <div class="toolbar" id="toolbar">
       ${
         canEdit
@@ -842,6 +849,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         annots.delete(msg.id);
         renderAnnots();
         break;
+      case "image.upsert":
+        images.set(msg.image.id, msg.image);
+        if (!imgResizingId) renderMapImages();
+        else positionImages();
+        imageRail?.refresh();
+        break;
+      case "image.delete":
+        images.delete(msg.id);
+        renderMapImages();
+        imageRail?.refresh();
+        break;
     }
   });
   socket.connect();
@@ -1425,9 +1443,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     for (let i = phases.length - 1; i >= 0; i--) if (gone.has(phases[i].id)) phases.splice(i, 1);
     for (const m of markers.values()) if (m.phase_id && gone.has(m.phase_id)) m.phase_id = null;
     for (const a of annots.values()) if (a.phase_id && gone.has(a.phase_id)) a.phase_id = null;
+    for (const i of images.values()) if (i.phase_id && gone.has(i.phase_id)) i.phase_id = null;
     if (gone.has(currentPhaseId)) currentPhaseId = playerPhases()[0]?.id ?? "";
     applyPhase();
     renderAnnots();
+    renderMapImages();
+    imageRail?.refresh();
   }
   function renderTimeline(): void {
     const apid = activePlayerId();
@@ -3469,6 +3490,122 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   phaseListeners.push(() => renderAnnots());
   phaseListeners.push(() => redrawMeasure()); // Messlinien: Ebene (Missionsbau/Spieler)
   renderAnnots();
+
+  // ── Bilder auf der Karte (platzierbar, wie Annotationen) ─────────────
+  const imagesEl = root.querySelector<HTMLDivElement>("#plan-images")!;
+  let imgDragId: string | null = null;
+  let imgResizingId: string | null = null;
+  let imgRefFallback = 0;
+  const imageScale = (i: PlanImage): number => {
+    if (!i.scale_fixed) return 1;
+    const ref = i.ref_zoom && i.ref_zoom > 0 ? i.ref_zoom : imgRefFallback;
+    if (!ref) return 1;
+    return Math.max(0.3, Math.min(3, 2 ** (map.getZoom() - ref)));
+  };
+  function positionImages(): void {
+    for (const el of Array.from(imagesEl.children) as HTMLElement[]) {
+      const i = images.get(el.dataset.iid ?? "");
+      if (!i) continue;
+      const p = map.project([i.world_x, i.world_y]);
+      el.style.transform = `translate(${p.x}px, ${p.y}px) scale(${imageScale(i)})`;
+    }
+  }
+  function renderMapImages(): void {
+    if (imgResizingId) return;
+    if (!imgRefFallback) imgRefFallback = map.getZoom();
+    imagesEl.innerHTML = "";
+    for (const i of images.values()) {
+      if (!i.on_map) continue;
+      const op = phaseOpacityOf(i.phase_id);
+      if (op <= 0.001) continue; // fremde/versteckte Phase
+      const el = document.createElement("div");
+      el.className = "pimg";
+      el.dataset.iid = i.id;
+      el.style.width = `${i.map_width}px`;
+      el.style.opacity = String(op);
+      el.innerHTML =
+        `<img src="${esc(api.planImageUrl(planId, i.id))}" alt="${esc(i.caption || i.filename)}" draggable="false" />` +
+        (canEdit ? `<div class="pimg-rz"></div>` : "");
+      el.addEventListener("mousedown", (ev) => onImageDown(ev, i.id));
+      el.addEventListener("dblclick", () =>
+        openLightbox([{ url: api.planImageUrl(planId, i.id), caption: i.caption || i.filename }]),
+      );
+      imagesEl.appendChild(el);
+    }
+    positionImages();
+  }
+  function onImageDown(ev: MouseEvent, id: string): void {
+    if (!canEdit || (mode !== "move" && mode !== "markermove")) return;
+    const el0 = imagesEl.querySelector<HTMLElement>(`[data-iid="${id}"]`);
+    const cur = images.get(id);
+    if (!el0 || !cur) return;
+    const sc = imageScale(cur) || 1;
+    const r = el0.getBoundingClientRect();
+    if ((ev.clientX - r.left) / sc > el0.clientWidth - 20 && (ev.clientY - r.top) / sc > el0.clientHeight - 20) {
+      ev.preventDefault();
+      imgResizingId = id;
+      const startW = cur.map_width;
+      const startX = ev.clientX;
+      const mv = (e: MouseEvent) => {
+        cur.map_width = Math.max(60, Math.min(2000, startW + (e.clientX - startX) / sc));
+        el0.style.width = `${cur.map_width}px`;
+      };
+      const up = () => {
+        document.removeEventListener("mousemove", mv);
+        document.removeEventListener("mouseup", up);
+        imgResizingId = null;
+        socket.send({ type: "image.modify", id, data: { map_width: Math.round(cur.map_width), phase_id: cur.phase_id } });
+        renderMapImages();
+      };
+      document.addEventListener("mousemove", mv);
+      document.addEventListener("mouseup", up);
+      return;
+    }
+    ev.stopPropagation();
+    ev.preventDefault();
+    imgDragId = id;
+    el0.classList.add("dragging");
+    if (mode === "move") map.dragPan.disable();
+    const canvasRect = () => map.getCanvas().getBoundingClientRect();
+    const onMove = (e: MouseEvent) => {
+      const cr = canvasRect();
+      const ll = map.unproject([e.clientX - cr.left, e.clientY - cr.top]);
+      cur.world_x = ll.lng;
+      cur.world_y = ll.lat;
+      positionImages();
+    };
+    const onUp = (e: MouseEvent) => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      el0.classList.remove("dragging");
+      if (mode === "move") map.dragPan.enable();
+      imgDragId = null;
+      const cr = canvasRect();
+      const ll = map.unproject([e.clientX - cr.left, e.clientY - cr.top]);
+      socket.send({ type: "image.move", id, data: { world_x: ll.lng, world_y: ll.lat } });
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+  map.on("move", () => {
+    if (!imgDragId && !imgResizingId) positionImages();
+  });
+  phaseListeners.push(() => renderMapImages());
+  renderMapImages();
+
+  const imageRail = mountImageRail(root, {
+    planId,
+    images,
+    phases,
+    isMB,
+    canEdit,
+    imageMaxMb: 10,
+    getCurrentPhaseId: () => currentPhaseId,
+    send: (m) => socket.send(m),
+    map,
+    onOpenLightbox: openLightbox,
+  });
+  phaseListeners.push(() => imageRail.refresh());
 
   map.on("click", (e) => {
     if ((e as { defaultPrevented?: boolean }).defaultPrevented) return;
