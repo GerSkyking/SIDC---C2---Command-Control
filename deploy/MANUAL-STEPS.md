@@ -44,39 +44,13 @@ proxy_hide_header X-Powered-By;
 
 ---
 
-## 3. maplibre-gl v6 — Code-Upgrade erledigt, nur noch Browser-Test + Deploy
+## 3. maplibre-gl v6 — ✅ ERLEDIGT (2026-09-10)
 
-**Status:** Commit `7670040` — `maplibre-gl` ist auf `^6.9.0` (behebt die kritische
-XSS-Lücke GHSA-jrc7-96c5-q579). Import auf ESM-Namespace umgestellt, Hover-Popup
-auf `setDOMContent` (kein Sanitizer-Pfad mehr). `tsc` + `vite build` grün.
-**Noch NICHT deployed** — erst nach deinem lokalen Durchklick-Test.
+Commit `7670040`, deployt auf `192.168.1.115` und live durchgetestet
+(Karte, Marker, Linien, 2D/3D + Würfel, Hover-Popup, Live-Sync, öffentliche
+Ansicht — alles ok, keine CSP-Verstöße). Behebt GHSA-jrc7-96c5-q579.
 
-Lokal testen:
-
-```bash
-cd frontend
-npm install          # holt maplibre-gl 6.9.0
-npm run dev          # http://localhost:5173 — im Browser durchklicken:
-```
-
-Wenn alles passt: Claude Bescheid geben → Deploy auf 192.168.1.115.
-Falls etwas kaputt ist: sagen was → Fix oder `git revert 7670040`.
-
-Test-Checkliste:
-- [ ] Karte lädt (Sat/Grid/Terrain-Layer)
-- [ ] Marker setzen / verschieben / bearbeiten
-- [ ] Linien zeichnen + Phase-Lines
-- [ ] 2D/3D-Umschalter + Navigations-Würfel
-- [ ] Hover-Popup am Marker
-- [ ] Öffentliche Ansicht (`#/p/<token>`)
-- [ ] Screenshot-Funktion
-- [ ] Browser-Konsole ohne CSP-Verstöße (siehe Punkt 4)
-
-Worauf besonders achten (v6-Änderungen): `GeoJSONSource.setData` gibt jetzt ein
-Promise zurück statt `this` — wir verketten nirgends, sollte passen. Terrain/3D
-und der Würfel nutzen `setTerrain`/`easeTo` — dort genau hinsehen.
-
-> `jspdf`/`dompurify`-Advisory (jetzt als critical eingestuft, ReDoS/DoS):
+> Verbleibendes `jspdf`/`dompurify`-Advisory (als critical eingestuft, ReDoS/DoS):
 > betrifft `jspdf.html()` / AcroForm / Bild-Decoder — nichts davon wird genutzt
 > (Briefing-Export macht nur `doc.text()`/`doc.save()`). Kein Fremd-Impact, nur
 > theoretischer lokaler DoS beim Exportierenden. Upgrade auf jspdf 4 (breaking)

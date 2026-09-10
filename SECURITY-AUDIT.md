@@ -22,10 +22,10 @@ Besucher).
   kein `unsafe-inline` → inline-Event-Handler & `javascript:` werden blockiert,
   `img/connect/form-action` auf `'self'` begrenzt). Inline-`onerror`/`onclick`
   durch delegierte Listener ersetzt (`data-hide-on-error`, `data-select-on-click`).
-- ✅ **maplibre-gl** von v5 auf v6.9.0 angehoben (Commit `7670040`) — behebt die
-  eigene kritische XSS-Sanitizer-Lücke GHSA-jrc7-96c5-q579. Hover-Popup zusätzlich
-  auf `setDOMContent` (versionsunabhängig kein Sanitizer-Pfad).
-  ⏸️ Browser-Durchklick-Test + Deploy noch offen (MANUAL-STEPS #3).
+- ✅ **maplibre-gl** von v5 auf v6.9.0 angehoben (Commit `7670040`), deployt +
+  live durchgetestet (2026-09-10) — behebt die eigene kritische XSS-Sanitizer-
+  Lücke GHSA-jrc7-96c5-q579. Hover-Popup zusätzlich auf `setDOMContent`
+  (versionsunabhängig kein Sanitizer-Pfad).
 
 ### H2 — Path Traversal im SPA-Fallback — ✅
 `backend/app/main.py`: `(_DIST_ROOT / full_path).resolve()` + `is_relative_to()`.
@@ -92,4 +92,7 @@ In-Process bleibt gültig, solange 1 uvicorn-Worker (aktuell so).
 
 - `backend`: `pytest` 15/15 grün · `python -c "from app.main import app"` ok
 - `frontend`: `tsc --noEmit` grün · `vite build` grün
-- Offen bis Browser-Test: CSP-Verstöße (MANUAL-STEPS #4), maplibre-v6-Upgrade
+- Live deployt + durchgeklickt (2026-09-10): Karte/Marker/Linien/2D-3D/Würfel/
+  Popup/Live-Sync/öffentliche Ansicht ok, keine CSP-Verstöße in der Konsole
+- Rest offen: nur noch `.env`-Härtung (MANUAL-STEPS #1), Proxy-Header (#2),
+  Credential-Rotation (SECRET_KEY + Bootstrap-PW versehentlich im Chat exponiert)
