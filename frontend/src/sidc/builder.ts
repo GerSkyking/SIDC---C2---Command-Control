@@ -121,7 +121,7 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
         }
       </div>
       <div class="mkb-preview">
-        <img data-prev width="72" height="72" onerror="this.style.visibility='hidden'"/>
+        <img data-prev width="72" height="72" data-hide-on-error/>
         <code data-sidc></code>
         <button class="primary" data-submit>${opts.submitLabel ?? t("common.apply")}</button>
       </div>

@@ -35,6 +35,8 @@ class User(Base):
     can_create_plans: Mapped[bool] = mapped_column(Boolean, default=False)
     is_mission_builder: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Bei Passwortwechsel / "überall abmelden" hochgezählt -> alte Session-Cookies ungültig.
+    session_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     ui_settings: Mapped[dict] = mapped_column(JSON, default=dict)  # Keybinds, Theme … (pro Nutzer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

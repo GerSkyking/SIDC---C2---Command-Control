@@ -199,6 +199,12 @@ async def public_live(websocket: WebSocket, token: str) -> None:
 
     from starlette.concurrency import run_in_threadpool
 
+    from ..security import origin_allowed
+
+    if not origin_allowed(websocket.headers.get("origin"), websocket.headers.get("host")):
+        await websocket.close(code=4403)
+        return
+
     from .live import (
         MARKER_FIELDS, _create_annotation, _create_marker, _create_stroke,
         _delete_annotation, _delete_marker, _delete_stroke, _update_annotation, _update_marker,

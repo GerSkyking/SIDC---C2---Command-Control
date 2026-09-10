@@ -17,6 +17,7 @@ import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
 import { actionForKey, openSettings } from "./settings";
 import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
+import { esc } from "./esc";
 
 interface Marker {
   id: string;
@@ -192,8 +193,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   root.innerHTML = `
     <div class="topbar">
       <a href="#/" title="${t("nav.back")}">${icon("back")}</a>
-      <strong>${snap.plan.name}</strong>
-      <span class="badge" title="${t("plan.yourRole")}">${myPlan?.level ?? "?"}</span>
+      <strong>${esc(snap.plan.name)}</strong>
+      <span class="badge" title="${t("plan.yourRole")}">${esc(myPlan?.level ?? "?")}</span>
       <button id="t3d" title="${t("map.threeD")}">3D</button>
       ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") })}
       ${
@@ -206,7 +207,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}
       ${iconBtn("pdf", { id: "briefing", title: t("briefing.export") })}
       <select id="chan" title="${t('map.channel')}">${(channels?.channels ?? [])
-        .map((c) => `<option value="${c.name}" ${c.name === myChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
+        .map((c) => `<option value="${esc(c.name)}" ${c.name === myChannel ? "selected" : ""}>${esc(channelLabel(c))}</option>`)
         .join("")}</select>
       <div id="timeline" class="timeline"></div>
       <select id="maplang" title="${t("map.lang")}"></select>
@@ -254,12 +255,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <select id="lPhase">
                <option value="">${t("phase.global")}</option>
                ${phases
-                 .map((ph) => `<option value="${ph.id}">${ph.plane === "builder" ? "⚑ " : ""}${ph.name}</option>`)
+                 .map((ph) => `<option value="${esc(ph.id)}">${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`)
                  .join("")}
              </select>
              <label>${t("wiz.channel")}</label>
              <select id="lChan">${(channels?.channels ?? [])
-               .map((c) => `<option value="${c.name}">${channelLabel(c)}</option>`)
+               .map((c) => `<option value="${esc(c.name)}">${esc(channelLabel(c))}</option>`)
                .join("")}</select>
              <button class="primary" id="lineFinish">${t("line.finish")}</button>
              <p class="muted" style="margin:.35rem 0 0;font-size:.72rem">${t("line.rmbHint")}</p>
@@ -2176,10 +2177,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
                 ? `<button class="orb-tw" data-otw="${n.id}" title="${t("orbat.toggleOne")}">${icon(op ? "chevronDown" : "chevron", 12)}</button>` +
                   `<button class="orb-tw" data-otwall="${n.id}" data-sub="${sub.join(",")}" title="${t("orbat.toggleAll")}">${icon(subAllOpen ? "minus" : "plus", 12)}</button>`
                 : `<span class="orb-tw"></span>`) +
-              `<span class="orb-name">${n.name}</span>` +
+              `<span class="orb-name">${esc(n.name)}</span>` +
               `<span class="orb-qty">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}${ch.length ? ` <span class="orb-sub-sum">+${descSum(n.id)}</span>` : ""}</span>${st(n.status)}` +
               (isMB && canEdit && !o.released
-                ? `<button class="icon-btn" data-oplace="${n.id}" data-osidc="${n.sidc ?? ""}" data-oname="${(n.name ?? "").replace(/"/g, "&quot;")}" title="${t("orbat.placeOnMap")}">${icon("marker", 12)}</button>`
+                ? `<button class="icon-btn" data-oplace="${esc(n.id)}" data-osidc="${esc(n.sidc ?? "")}" data-oname="${esc(n.name ?? "")}" title="${t("orbat.placeOnMap")}">${icon("marker", 12)}</button>`
                 : "") +
               `</div>` +
               (op ? rec(n.id, d + 1) : "")
@@ -2195,7 +2196,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           (o) =>
             `<div class="orb-plan-item"><div class="row">` +
             `<span class="badge aff-${o.affiliation}">${t("orbat.aff." + o.affiliation)}</span>` +
-            `<strong class="grow">${o.name}</strong>` +
+            `<strong class="grow">${esc(o.name)}</strong>` +
             (o.released ? `<span class="muted">${t("plan.readonly")}</span>` : "") +
             (isMB ? `<button class="icon-btn" data-orm="${o.id}" title="${t("common.delete")}">${icon("x", 14)}</button>` : "") +
             `</div>${nodeRows(o)}` +
@@ -2213,7 +2214,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       (isMB && avail.length
         ? `<div class="row" style="margin-top:.5rem"><select id="orb-pick">${avail
             .filter((a) => !linked.some((l) => l.id === a.id))
-            .map((a) => `<option value="${a.id}">${a.name}</option>`)
+            .map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`)
             .join("")}</select><button id="orb-link">${t("orbat.addToPlan")}</button></div>`
         : "") +
       (isMB ? `<a href="#/orbat" class="muted">${t("nav.orbat")} →</a>` : "");
@@ -2957,13 +2958,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           ${phases
             .map(
               (ph) =>
-                `<option value="${ph.id}" ${ph.id === s.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${ph.name}</option>`,
+                `<option value="${esc(ph.id)}" ${ph.id === s.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`,
             )
             .join("")}
         </select></label>
       <label class="chk-lbl">${t("wiz.channel")}
         <select data-schan>${(channels?.channels ?? [])
-          .map((c) => `<option value="${c.name}" ${c.name === (s.channel || "") ? "selected" : ""}>${channelLabel(c)}</option>`)
+          .map((c) => `<option value="${esc(c.name)}" ${c.name === (s.channel || "") ? "selected" : ""}>${esc(channelLabel(c))}</option>`)
           .join("")}</select></label>
       <label class="chk-lbl">${t("line.color")}
         <select data-scolor>${lineColors
@@ -3017,9 +3018,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       (favs.length
         ? favs
             .map(
-              (f) => `<div class="fav" data-fav="${f.id}">
-                <img src="${iconSrc(f.sidc)}" width="24" height="24" onerror="this.style.visibility='hidden'"/>
-                <span>${f.label}</span><button class="icon-btn" data-delfav="${f.id}">${icon("x", 14)}</button></div>`,
+              (f) => `<div class="fav" data-fav="${esc(f.id)}">
+                <img src="${esc(iconSrc(f.sidc))}" width="24" height="24" data-hide-on-error/>
+                <span>${esc(f.label)}</span><button class="icon-btn" data-delfav="${esc(f.id)}">${icon("x", 14)}</button></div>`,
             )
             .join("")
         : `<div class="muted">${t("fav.hint")}</div>`);
@@ -3142,7 +3143,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // Hover: Channel / Ersteller / Phase des Markers
   const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 });
-  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
   const showHover = (e: maplibregl.MapLayerMouseEvent) => {
     if (dragId) return;
     const id = e.features?.[0]?.properties?.id as string | undefined;
@@ -3310,7 +3310,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ${phases
           .map(
             (ph) =>
-              `<option value="${ph.id}" ${ph.id === a.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${ph.name}</option>`,
+              `<option value="${esc(ph.id)}" ${ph.id === a.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`,
           )
           .join("")}
       </select>
@@ -3649,9 +3649,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         : "";
 
     p.innerHTML = `
-      <div class="fav-head"><img class="edit-ico" src="${iconSrc(m.sidc)}" width="26" height="26" onerror="this.style.visibility='hidden'"/> ${t("marker.heading")}</div>
-      <label>${t("marker.unitText")}</label><input data-unit value="${m.unit_text}" />
-      <label>${t("marker.aiText")}</label><input data-ai value="${m.ai_text}" />
+      <div class="fav-head"><img class="edit-ico" src="${esc(iconSrc(m.sidc))}" width="26" height="26" data-hide-on-error/> ${t("marker.heading")}</div>
+      <label>${t("marker.unitText")}</label><input data-unit value="${esc(m.unit_text)}" />
+      <label>${t("marker.aiText")}</label><input data-ai value="${esc(m.ai_text)}" />
       <label>${t("marker.iconRot")}</label><input data-rot type="number" value="${m.icon_rotation || 0}" />
       <label class="ph-op">${t("marker.scale")}
         <input type="range" min="25" max="300" step="5" data-mscale value="${Math.round((m.scale ?? 1) * 100)}" />
@@ -3662,13 +3662,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ${phases
           .map(
             (ph) =>
-              `<option value="${ph.id}" ${ph.id === m.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${ph.name}</option>`,
+              `<option value="${esc(ph.id)}" ${ph.id === m.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`,
           )
           .join("")}
       </select>
       <label>${t("wiz.channel")}</label>
       <select data-chan>${(channels?.channels ?? [])
-        .map((c) => `<option value="${c.name}" ${c.name === m.channel ? "selected" : ""}>${channelLabel(c)}</option>`)
+        .map((c) => `<option value="${esc(c.name)}" ${c.name === m.channel ? "selected" : ""}>${esc(channelLabel(c))}</option>`)
         .join("")}</select>
       <label class="chk"><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> <span>${t("marker.locked")}</span></label>
       ${
@@ -3677,7 +3677,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <select data-onode>
                <option value="">${t("orbat.nodeNone")}</option>
                ${orbatNodeOpts
-                 .map((o) => `<option value="${o.id}" ${o.id === m.orbat_node_id ? "selected" : ""}>${o.label}</option>`)
+                 .map((o) => `<option value="${esc(o.id)}" ${o.id === m.orbat_node_id ? "selected" : ""}>${esc(o.label)}</option>`)
                  .join("")}
              </select>
              <label>${t("orbat.markerStrength")}</label>

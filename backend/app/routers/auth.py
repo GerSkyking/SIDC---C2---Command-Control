@@ -30,6 +30,9 @@ log = logging.getLogger("sidc.auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
 _settings = get_settings()
 
+# Fester Hash für den Timing-Ausgleich bei unbekanntem Benutzer (siehe login()).
+_DUMMY_HASH = hash_password("sidc-timing-equalizer-not-a-real-password")
+
 _oauth = OAuth()
 _OIDC_READY = bool(_settings.oidc_enabled and _settings.oidc_issuer)
 if _OIDC_READY:
@@ -46,10 +49,10 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _set_session_cookie(request: Request, response: Response, user_id: str) -> None:
+def _set_session_cookie(request: Request, response: Response, user: User) -> None:
     response.set_cookie(
         SESSION_COOKIE,
-        issue_session(user_id),
+        issue_session(user.id, user.session_epoch or 0),
         max_age=_settings.session_ttl_days * 86400,
         httponly=True,
         samesite="lax",
@@ -60,17 +63,25 @@ def _set_session_cookie(request: Request, response: Response, user_id: str) -> N
 
 @router.post("/login", response_model=MeOut)
 def login(body: LoginIn, request: Request, response: Response, db: DbDep) -> MeOut:
-    key = f"{_client_ip(request)}:{body.username.lower()}"
-    if not check_and_hit(key):
+    ip = _client_ip(request)
+    key = f"{ip}:{body.username.lower()}"
+    if not check_and_hit(key, ip):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Zu viele Fehlversuche, kurz warten")
 
     user = db.scalar(select(User).where(User.username == body.username))
-    if user is None or not user.is_active or not verify_password(body.password, user.password_hash):
+    # Immer ein Argon2-Verify rechnen (auch bei unbekanntem oder OIDC-only-User),
+    # damit die Antwortzeit keine Benutzer-Existenz verrät.
+    if user and user.password_hash:
+        ok = verify_password(body.password, user.password_hash)
+    else:
+        verify_password(body.password, _DUMMY_HASH)
+        ok = False
+    if user is None or not user.is_active or not ok:
         audit.record(db, "login.fail", request=request, username=body.username)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login fehlgeschlagen")
 
     reset(key)
-    _set_session_cookie(request, response, user.id)
+    _set_session_cookie(request, response, user)
     audit.record(db, "login.ok", user_id=user.id, request=request)
     return _me(db, user)
 
@@ -80,10 +91,10 @@ def logout(request: Request, response: Response, db: DbDep) -> dict:
     token = request.cookies.get(SESSION_COOKIE)
     from ..security import read_session
 
-    uid = read_session(token) if token else None
+    sess = read_session(token) if token else None
     response.delete_cookie(SESSION_COOKIE, path="/")
-    if uid:
-        audit.record(db, "logout", user_id=uid, request=request)
+    if sess:
+        audit.record(db, "logout", user_id=sess[0], request=request)
     return {"ok": True}
 
 
@@ -92,10 +103,19 @@ def me(user: CurrentUser, db: DbDep) -> MeOut:
     return _me(db, user)
 
 
+_UI_SETTINGS_KEYS = {"keybinds", "theme", "lang"}
+_UI_SETTINGS_MAX_BYTES = 8192
+
+
 @router.patch("/me/settings", response_model=MeOut)
 def patch_my_settings(body: dict, user: CurrentUser, db: DbDep) -> MeOut:
+    import json
+
+    incoming = {k: v for k, v in (body or {}).items() if k in _UI_SETTINGS_KEYS}
     cur = dict(user.ui_settings or {})
-    cur.update(body or {})
+    cur.update(incoming)
+    if len(json.dumps(cur)) > _UI_SETTINGS_MAX_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Einstellungen zu groß")
     user.ui_settings = cur
     db.commit()
     return _me(db, user)
@@ -164,7 +184,7 @@ async def oidc_callback(request: Request, response: Response, db: DbDep):
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Konto deaktiviert")
 
-    _set_session_cookie(request, response, user.id)
+    _set_session_cookie(request, response, user)
     # Nach dem Login zurück auf die App
     response.status_code = status.HTTP_303_SEE_OTHER
     response.headers["location"] = "/"

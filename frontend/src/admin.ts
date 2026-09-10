@@ -5,6 +5,7 @@ import { langSelect, t, wireLangSelect } from "./i18n";
 import { icon } from "./icons";
 import { confirmDialog, promptDialog, toastError } from "./notify";
 import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch, type NavSection } from "./ui";
+import { esc } from "./esc";
 
 export type AdminSection = "users" | "log" | "config";
 
@@ -71,9 +72,9 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
           .map(
             (x) => `<tr>
               <td style="text-align:left">${new Date(x.ts).toLocaleString()}</td>
-              <td>${x.user}</td><td><code>${x.action}</code></td><td>${x.target}</td>
+              <td>${esc(x.user)}</td><td><code>${esc(x.action)}</code></td><td>${esc(x.target)}</td>
               <td style="text-align:left;color:var(--muted)">${Object.entries(x.detail)
-                .map(([k, v]) => `${k}=${v}`)
+                .map(([k, v]) => `${esc(k)}=${esc(String(v))}`)
                 .join(" ")}</td>
             </tr>`,
           )
@@ -206,8 +207,8 @@ function postShell(app: HTMLElement): void {
 
 function userRow(u: AdminUser): string {
   return `<tr data-u="${u.id}">
-    <td><strong>${u.username}</strong> ${u.is_local ? "" : '<span class="badge">OIDC</span>'}
-        <span class="badge">${u.role}</span> ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}</td>
+    <td><strong>${esc(u.username)}</strong> ${u.is_local ? "" : '<span class="badge">OIDC</span>'}
+        <span class="badge">${esc(u.role)}</span> ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}</td>
     <td>
       <details class="admin-drop">
         <summary>${t("admin.rights")}</summary>
@@ -225,7 +226,7 @@ function userRow(u: AdminUser): string {
 
 function groupRow(g: AdminGroup, users: AdminUser[]): string {
   return `<tr data-g="${g.id}">
-    <td><strong>${g.name}</strong></td>
+    <td><strong>${esc(g.name)}</strong></td>
     <td>
       <details class="admin-drop">
         <summary>${t("admin.rights")}</summary>
@@ -244,7 +245,7 @@ function groupRow(g: AdminGroup, users: AdminUser[]): string {
               (u) =>
                 `<label class="chk"><input type="checkbox" data-member="${u.id}" ${
                   g.member_ids.includes(u.id) ? "checked" : ""
-                }/> ${u.username}</label>`,
+                }/> ${esc(u.username)}</label>`,
             )
             .join("")}
         </div>

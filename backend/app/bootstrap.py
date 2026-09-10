@@ -39,8 +39,9 @@ def init_db() -> None:
             command.stamp(cfg, "0001_baseline")
             log.info("Alembic: Bestandsschema auf Baseline gestampt")
         command.upgrade(cfg, "head")
-    except Exception:  # noqa: BLE001 — Fallback auf create_all, nie den Start blockieren
-        log.exception("Alembic-Migration fehlgeschlagen — Fallback create_all")
+    except Exception as exc:  # noqa: BLE001 — Fallback auf create_all, nie den Start blockieren
+        # Kein log.exception: der Traceback kann die DATABASE_URL inkl. Passwort enthalten.
+        log.error("Alembic-Migration fehlgeschlagen (%s) — Fallback create_all", type(exc).__name__)
     # Sicherheitsnetz während der Umstellung: fehlende Tabellen/Spalten ergänzen
     # (create_all fasst bestehende Tabellen nicht an).
     Base.metadata.create_all(bind=engine)

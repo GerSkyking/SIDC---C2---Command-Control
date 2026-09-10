@@ -26,17 +26,34 @@ def verify_password(plain: str, hashed: str | None) -> bool:
     return _pwd.verify(plain, hashed)
 
 
-def issue_session(user_id: str) -> str:
-    return _serializer.dumps({"uid": user_id})
+def issue_session(user_id: str, epoch: int = 0) -> str:
+    return _serializer.dumps({"uid": user_id, "e": epoch})
 
 
-def read_session(token: str) -> str | None:
+def read_session(token: str) -> tuple[str, int] | None:
+    """(user_id, session_epoch) oder None. Epoch fehlt bei Alt-Cookies -> 0."""
     max_age = _settings.session_ttl_days * 86400
     try:
         data = _serializer.loads(token, max_age=max_age)
     except (BadSignature, SignatureExpired):
         return None
-    return data.get("uid")
+    uid = data.get("uid")
+    if not uid:
+        return None
+    return uid, int(data.get("e", 0))
+
+
+def origin_allowed(origin: str | None, host: str | None) -> bool:
+    """CSWSH-Schutz für WebSockets: kein Origin (nicht-Browser-Client) ist ok,
+    sonst muss der Origin-Host dem Ziel-Host entsprechen (same-origin-Deploy)."""
+    if not origin:
+        return True
+    try:
+        from urllib.parse import urlparse
+
+        return urlparse(origin).netloc.lower() == (host or "").lower()
+    except ValueError:
+        return False
 
 
 def cookie_is_secure(request_scheme: str, forwarded_proto: str | None) -> bool:

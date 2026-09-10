@@ -106,6 +106,7 @@ def patch_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbDep) -> Us
         if len(body.password) < MIN_PASSWORD_LEN:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Passwort min. {MIN_PASSWORD_LEN} Zeichen")
         u.password_hash = hash_password(body.password)
+        u.session_epoch = (u.session_epoch or 0) + 1  # bestehende Sessions ungültig machen
     if body.role is not None:
         if u.id == admin.id and body.role != "admin":
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Eigene Adminrolle nicht entziehbar")
@@ -144,7 +145,8 @@ def list_audit(
 ) -> dict:
     q = select(AuditLog).order_by(desc(AuditLog.ts))
     if action:
-        q = q.where(AuditLog.action.like(f"{action}%"))
+        esc = action.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        q = q.where(AuditLog.action.like(f"{esc}%", escape="\\"))
     if user:
         uid = db.scalar(select(User.id).where(User.username == user))
         q = q.where(AuditLog.user_id == uid)

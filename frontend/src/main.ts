@@ -9,10 +9,31 @@ import { renderPublicView } from "./publicview";
 import { langSelect, t, wireLangSelect } from "./i18n";
 import { confirmDialog, toastError } from "./notify";
 import { initSettings } from "./settings";
+import { esc } from "./esc";
 import { initTheme } from "./theme";
 import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
 initTheme();
+
+// Ersatz für inline-Handler (von der Content-Security-Policy verboten):
+//   <img data-hide-on-error>     -> bei Ladefehler ausblenden
+//   <img data-hide-on-error="none"> -> display:none statt visibility:hidden
+//   <input data-select-on-click> -> Inhalt bei Klick markieren
+document.addEventListener(
+  "error",
+  (e) => {
+    const el = e.target as HTMLElement | null;
+    if (el instanceof HTMLImageElement && el.dataset.hideOnError !== undefined) {
+      if (el.dataset.hideOnError === "none") el.style.display = "none";
+      else el.style.visibility = "hidden";
+    }
+  },
+  true,
+);
+document.addEventListener("click", (e) => {
+  const el = e.target as HTMLElement | null;
+  if (el instanceof HTMLInputElement && el.dataset.selectOnClick !== undefined) el.select();
+});
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -106,7 +127,7 @@ async function renderPlanList(): Promise<void> {
   const canCreate = me!.can_create_plans_effective && maps.some((m) => m.status === "ready");
   const folderOpts =
     `<option value="">${t("folder.root")}</option>` +
-    [...folders].sort((a, b) => a.name.localeCompare(b.name)).map((f) => `<option value="${f.id}">${f.name}</option>`).join("");
+    [...folders].sort((a, b) => a.name.localeCompare(b.name)).map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join("");
 
   app.innerHTML = `
    <div class="shell">
@@ -117,7 +138,7 @@ async function renderPlanList(): Promise<void> {
       <span class="grow"></span>
       ${themeSwitch()}
       ${langSelect()}
-      <span class="muted">${me!.username} (${me!.role})</span>
+      <span class="muted">${esc(me!.username)} (${esc(me!.role)})</span>
       <button id="logout">${t("auth.logout")}</button>
     </div>
     <div class="list stack">
@@ -127,7 +148,7 @@ async function renderPlanList(): Promise<void> {
                <input id="pn" placeholder="${t("plans.planName")}" />
                <select id="pm">${maps
                  .filter((m) => m.status === "ready")
-                 .map((m) => `<option value="${m.id}">${m.name}</option>`)
+                 .map((m) => `<option value="${m.id}">${esc(m.name)}</option>`)
                  .join("")}</select>
                <select id="pf" title="${t("plans.moveTo")}">${folderOpts}</select>
                <button class="primary" id="pc">${t("plans.new")}</button>
@@ -200,7 +221,7 @@ async function renderTrash(): Promise<void> {
           ? `<table><tbody>${items
               .map(
                 (p) => `<tr data-p="${p.id}">
-                  <td>${p.name}</td>
+                  <td>${esc(p.name)}</td>
                   <td><button data-restore>${t("trash.restore")}</button>
                       <button class="danger" data-purge>${t("trash.purge")}</button></td>
                 </tr>`,

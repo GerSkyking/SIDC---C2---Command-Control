@@ -2,6 +2,7 @@
 import { icon } from "./icons";
 import { getTheme, setTheme, type ThemeChoice } from "./theme";
 import { t } from "./i18n";
+import { esc } from "./esc";
 
 export function iconBtn(
   name: string,
@@ -75,7 +76,7 @@ export function sidebar(
       }
     </div>
     <div class="sb-foot">
-      <div class="sb-user">${icon("users", 16)}<span>${opts.username}</span></div>
+      <div class="sb-user">${icon("users", 16)}<span>${esc(opts.username)}</span></div>
     </div>
   </nav>`;
 }

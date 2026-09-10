@@ -22,7 +22,7 @@ from ..permissions import (
     effective_mission_builder,
     rank,
 )
-from ..security import SESSION_COOKIE, read_session
+from ..security import SESSION_COOKIE, origin_allowed, read_session
 from ..services.realtime import hub
 
 log = logging.getLogger("sidc.live")
@@ -37,13 +37,16 @@ MARKER_FIELDS = (
 
 def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str, dict, bool] | None:
     token = cookies.get(SESSION_COOKIE)
-    uid = read_session(token) if token else None
-    if not uid:
+    sess = read_session(token) if token else None
+    if not sess:
         return None
+    uid, epoch = sess
     with SessionLocal() as db:
         user = db.get(User, uid)
         plan = db.get(Plan, plan_id)
-        if user is None or not user.is_active or plan is None or plan.deleted_at is not None:
+        if user is None or not user.is_active or epoch != (user.session_epoch or 0):
+            return None
+        if plan is None or plan.deleted_at is not None:
             return None
         level = effective_level(db, user, plan)
         if level is None:
@@ -95,6 +98,9 @@ def _author_of(db, m: Marker) -> str | None:
 
 async def live_ws(websocket: WebSocket) -> None:
     plan_id = websocket.path_params["plan_id"]
+    if not origin_allowed(websocket.headers.get("origin"), websocket.headers.get("host")):
+        await websocket.close(code=4403)
+        return
     auth = await run_in_threadpool(_auth, websocket.cookies, plan_id)
     if auth is None:
         await websocket.close(code=4403)

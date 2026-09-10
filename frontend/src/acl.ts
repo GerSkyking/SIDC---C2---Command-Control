@@ -77,7 +77,7 @@ export async function openAclEditor(
               <option value="">${t("acl.addSubject")}</option>
               ${candidates
                 .filter((c) => !rows.some((r) => r.subject_type === c.subject_type && r.subject_id === c.subject_id))
-                .map((c) => `<option value="${c.subject_type}:${c.subject_id}">${c.name}</option>`)
+                .map((c) => `<option value="${c.subject_type}:${c.subject_id}">${esc(c.name)}</option>`)
                 .join("")}
             </select>
           </div>
@@ -164,7 +164,7 @@ export async function openAclEditor(
                 <button class="icon-btn" data-edit="${s.token}" title="${t("common.rename")}">${icon("edit", 14)}</button>
                 <button class="icon-btn" data-revoke="${s.token}" title="${t("acl.revoke")}">${icon("x", 14)}</button>
               </div>
-              <div class="row"><input readonly value="${url}" style="flex:1" onclick="this.select()" />
+              <div class="row"><input readonly value="${esc(url)}" style="flex:1" data-select-on-click />
                 <button data-copy="${url}">${t("acl.copy")}</button></div>
             </div>`;
           })

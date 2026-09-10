@@ -113,7 +113,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
       <div class="orb-node" data-n="${n.id}" draggable="${canEdit}" style="margin-left:${depth * 1.2}rem">
         <div class="orb-row">
           ${kids.length ? `<button class="orb-tw" data-tw="${n.id}">${icon(isOpen ? "chevronDown" : "chevron", 14)}</button>` : `<span class="orb-tw"></span>`}
-          <img class="orb-ico" src="${n.sidc ? iconSrc(n.sidc) : ""}" alt="" onerror="this.style.visibility='hidden'" />
+          <img class="orb-ico" src="${n.sidc ? iconSrc(n.sidc) : ""}" alt="" data-hide-on-error />
           <span class="orb-name">${n.name}</span>
           <span class="orb-qty" title="${t("orbat.qtyCurrent")} / ${t("orbat.maxStrength")}${kids.length ? " (+ Untergliederungen)" : ""}">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}${kids.length ? ` <span class="orb-sub-sum">+${descSum(n.id)}</span>` : ""}</span>
           ${statusPill(n.status)}
@@ -249,7 +249,7 @@ function editNode(
     <label class="chk-lbl">${t("common.name")}<input data-f="name" value="${n.name ?? ""}" /></label>
     <label class="chk-lbl">${t("marker.heading")}
       <span class="orb-sym-pick">
-        <img data-sym-prev width="30" height="30" src="${n.sidc ? iconSrc(n.sidc) : ""}" onerror="this.style.visibility='hidden'"/>
+        <img data-sym-prev width="30" height="30" src="${n.sidc ? iconSrc(n.sidc) : ""}" data-hide-on-error/>
         <button type="button" data-sym-btn>${t("orbat.pickSymbol")}</button>
         <code data-sym-code>${n.sidc ?? ""}</code>
       </span>

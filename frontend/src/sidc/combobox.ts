@@ -1,6 +1,7 @@
 // Durchsuchbares Dropdown: Trigger-Button + Popup mit Suchfeld ganz oben.
 // Für die Marker-Auswahl (Kategorie/Marker/Modifier) im Marker-Baukasten.
 import { t } from "../i18n";
+import { esc } from "../esc";
 
 export interface ComboItem {
   value: string;
@@ -40,8 +41,8 @@ export function combobox(
   const paintTrigger = () => {
     const it = list.find((i) => i.value === value);
     trigger.innerHTML = it
-      ? `${it.icon ? `<img src="${it.icon}" alt="" onerror="this.style.visibility='hidden'"/>` : ""}<span>${it.label}</span>`
-      : `<span class="muted">${opts.placeholder ?? "…"}</span>`;
+      ? `${it.icon ? `<img src="${esc(it.icon)}" alt="" data-hide-on-error/>` : ""}<span>${esc(it.label)}</span>`
+      : `<span class="muted">${esc(opts.placeholder ?? "…")}</span>`;
   };
   const paintList = () => {
     const q = search.value.trim().toLowerCase();
@@ -50,8 +51,8 @@ export function combobox(
       .slice(0, 300)
       .map(
         (i) => `<li data-v="${encodeURIComponent(i.value)}" class="${i.value === value ? "sel" : ""}">
-          ${i.icon ? `<img src="${i.icon}" alt="" onerror="this.style.visibility='hidden'"/>` : ""}
-          <span class="cbx-lbl">${i.label}</span>${i.sub ? `<span class="cbx-sub">${i.sub}</span>` : ""}
+          ${i.icon ? `<img src="${esc(i.icon)}" alt="" data-hide-on-error/>` : ""}
+          <span class="cbx-lbl">${esc(i.label)}</span>${i.sub ? `<span class="cbx-sub">${esc(i.sub)}</span>` : ""}
         </li>`,
       )
       .join("");

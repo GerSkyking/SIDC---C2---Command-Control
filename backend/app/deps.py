@@ -16,9 +16,9 @@ DbDep = Annotated[Session, Depends(get_db)]
 
 def get_current_user(request: Request, db: DbDep) -> User:
     token = request.cookies.get(SESSION_COOKIE)
-    uid = read_session(token) if token else None
-    user = db.get(User, uid) if uid else None
-    if user is None or not user.is_active:
+    sess = read_session(token) if token else None
+    user = db.get(User, sess[0]) if sess else None
+    if user is None or not user.is_active or sess[1] != (user.session_epoch or 0):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Nicht angemeldet")
     return user
 

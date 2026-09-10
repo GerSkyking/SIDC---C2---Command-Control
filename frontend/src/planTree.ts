@@ -4,6 +4,7 @@ import { api, type PlanFolder, type PlanItem } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { confirmDialog, promptDialog, toastError } from "./notify";
+import { esc } from "./esc";
 
 interface TreeOpts {
   onChanged: () => void; // neu laden
@@ -66,7 +67,7 @@ export function renderPlanTree(
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(
         (f) =>
-          `<option value="${f.id}" ${f.id === selected ? "selected" : ""}>${"  ".repeat(depthOf(f.id))}${f.name}</option>`,
+          `<option value="${f.id}" ${f.id === selected ? "selected" : ""}>${"  ".repeat(depthOf(f.id))}${esc(f.name)}</option>`,
       )
       .join("");
 
@@ -107,8 +108,8 @@ export function renderPlanTree(
     row.draggable = true;
     const canManage = p.level === "owner" || p.level === "editor";
     row.innerHTML =
-      `<img class="tree-thumb" src="/plans/${p.id}/thumbnail" alt="" onerror="this.style.display='none'" />` +
-      `<a href="#/plans/${p.id}" class="tree-name">${p.name}</a>` +
+      `<img class="tree-thumb" src="/plans/${p.id}/thumbnail" alt="" data-hide-on-error="none" />` +
+      `<a href="#/plans/${p.id}" class="tree-name">${esc(p.name)}</a>` +
       `<span class="badge">${p.level}</span>` +
       (opts.mapName ? `<span class="tree-map" title="${t("plans.map")}">${icon("map", 12)} ${opts.mapName(p.map_id)}</span>` : "") +
       `<span class="tree-actions">` +
@@ -148,7 +149,7 @@ export function renderPlanTree(
       fRow.draggable = true;
       fRow.innerHTML =
         `<button class="tree-tw icon-btn">${icon(isOpen ? "chevronDown" : "chevron", 16)}</button>` +
-        `<span class="tree-ico">${icon(isOpen ? "folderOpen" : "folder", 16)}</span><span class="tree-name">${f.name}</span>` +
+        `<span class="tree-ico">${icon(isOpen ? "folderOpen" : "folder", 16)}</span><span class="tree-name">${esc(f.name)}</span>` +
         `<span class="tree-count">${(folderPlans.get(f.id) ?? []).length}</span>` +
         (canCreateFolders
           ? `<span class="tree-actions">` +
@@ -240,7 +241,7 @@ function cloneDialog(
     <div class="card stack" style="width:min(24rem,92vw)">
       <h1 style="margin:0">${t("plans.cloneTitle")}</h1>
       <label class="muted">${t("plans.cloneName")}</label>
-      <input id="cl-name" value="${p.name} (Kopie)" />
+      <input id="cl-name" value="${esc(p.name)} (Kopie)" />
       <label class="muted">${t("plans.cloneFolder")}</label>
       <select id="cl-folder">
         <option value="">${t("folder.root")}</option>

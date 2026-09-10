@@ -10,6 +10,7 @@ import { icon } from "./icons";
 import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
 import { makeMovable } from "./movable";
 import { renderMarkdown } from "./md";
+import { esc } from "./esc";
 
 interface M {
   id: string;
@@ -98,7 +99,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   root.innerHTML = `
     <div class="topbar">
       <a href="#/" title="${t("nav.back")}">${icon("back")}</a>
-      <strong>${snap.plan.name}</strong>
+      <strong>${esc(snap.plan.name)}</strong>
       <span class="badge">${t("plan.public")}</span>
       <button id="t3d" title="${t("map.threeD")}">3D</button>
       ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") })}
@@ -106,7 +107,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       ${
         chanList?.length
           ? `<select id="chan" title="${t("map.channel")}">${chanList
-              .map((c) => `<option value="${c.name}" ${c.name === myChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
+              .map((c) => `<option value="${esc(c.name)}" ${c.name === myChannel ? "selected" : ""}>${esc(channelLabel(c))}</option>`)
               .join("")}</select>`
           : ""
       }
@@ -532,7 +533,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       phases
         .map((p) => {
           const time = p.start_at ? ` <span class="muted">${fmtT(p.start_at)}${p.end_at ? "–" + fmtT(p.end_at) : ""}</span>` : "";
-          return `<span class="ph-chip ${p.id === currentPhaseId ? "active" : ""}${p.plane === "builder" ? " ph-sub" : ""}"><button data-ph="${p.id}">${p.plane === "builder" ? "⚑ " : ""}${p.name}${time}</button></span>`;
+          return `<span class="ph-chip ${p.id === currentPhaseId ? "active" : ""}${p.plane === "builder" ? " ph-sub" : ""}"><button data-ph="${esc(p.id)}">${p.plane === "builder" ? "⚑ " : ""}${esc(p.name)}${time}</button></span>`;
         })
         .join("") +
       `<label class="ph-op">${t("phase.outOpacity")}<input type="range" id="ph-op" min="0" max="100" step="5" value="${outOpacity}"/><span id="ph-op-v">${outOpacity}%</span></label>`;

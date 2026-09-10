@@ -152,7 +152,7 @@ export async function openWizard(
       config.innerHTML = `
        <div class="wiz-cfg-main">
         <div class="wiz-cfg-title">
-          <img src="${iconSrc(buildSidc())}" width="34" height="34" onerror="this.style.visibility='hidden'"/>
+          <img src="${iconSrc(buildSidc())}" width="34" height="34" data-hide-on-error/>
           <strong>${entry.name}</strong>
         </div>
         <label>${t("wiz.affiliation")}</label>
