@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "jspdf": "^2.5.2",
+    "jspdf": "^4.2.1",
     "maplibre-gl": "^6.9.0",
     "milsymbol": "^3.0.4"
   },
