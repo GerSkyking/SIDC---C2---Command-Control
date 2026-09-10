@@ -4,6 +4,8 @@ import { api, type Me } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { themeSwitch, wireThemeSwitch } from "./ui";
+import { toast, toastError } from "./notify";
+import { esc } from "./esc";
 
 export type HotAction =
   | "undo"
@@ -74,6 +76,7 @@ const ALLOWED_SPECIAL = [" ", "arrowup", "arrowdown", "arrowleft", "arrowright"]
 const CACHE_KEY = "sidc_keybinds";
 
 let binds: Record<HotAction, string> = { ...DEFAULTS };
+let currentMe: Me | null = null;
 
 function normalizeStored(raw: unknown): Record<HotAction, string> {
   const out = { ...DEFAULTS };
@@ -87,6 +90,7 @@ function normalizeStored(raw: unknown): Record<HotAction, string> {
 }
 
 export function initSettings(me: Me): void {
+  currentMe = me;
   const fromServer = (me.ui_settings as Record<string, unknown> | undefined)?.keybinds;
   if (fromServer) {
     binds = normalizeStored(fromServer);
@@ -176,6 +180,10 @@ export function openSettings(): void {
   back.innerHTML = `<div class="card set-card">
     <div class="row"><h1 style="flex:1">${icon("settings")} ${t("settings.title")}</h1>
       <button class="icon-btn" data-x>${icon("x")}</button></div>
+    <h4>${t("settings.displayName")}</h4>
+    <input id="set-dname" maxlength="64" value="${esc(currentMe?.display_name ?? "")}"
+      placeholder="${esc(currentMe?.username ?? "")}" style="width:100%" />
+    <p class="muted" style="font-size:.78rem;margin:.2rem 0 0">${t("settings.displayNameHint")}</p>
     <h4>${t("theme.label")}</h4>
     ${themeSwitch()}
     <h4>${t("settings.keybinds")}</h4>
@@ -201,6 +209,19 @@ export function openSettings(): void {
   });
   back.querySelector("[data-x]")!.addEventListener("click", close);
   wireThemeSwitch(back);
+
+  const dn = back.querySelector<HTMLInputElement>("#set-dname")!;
+  dn.addEventListener("change", async () => {
+    const v = dn.value.trim();
+    if (v === (currentMe?.display_name ?? "")) return;
+    try {
+      const me = await api.saveDisplayName(v);
+      if (currentMe) currentMe.display_name = me.display_name;
+      toast(t("settings.displayName") + " ✓", { kind: "success" });
+    } catch (e) {
+      toastError(e);
+    }
+  });
 
   const wireKb = () => {
     back.querySelectorAll<HTMLButtonElement>("[data-kb]").forEach((b) =>

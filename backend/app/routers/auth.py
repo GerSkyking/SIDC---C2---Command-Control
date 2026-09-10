@@ -9,6 +9,7 @@ import logging
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, HTTPException, Request, Response, status
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from .. import audit
@@ -103,6 +104,18 @@ def me(user: CurrentUser, db: DbDep) -> MeOut:
     return _me(db, user)
 
 
+class ProfileIn(BaseModel):
+    display_name: str = ""
+
+
+@router.patch("/me", response_model=MeOut)
+def patch_my_profile(body: ProfileIn, user: CurrentUser, db: DbDep) -> MeOut:
+    name = "".join(c for c in (body.display_name or "").strip() if c.isprintable())[:64]
+    user.display_name = name
+    db.commit()
+    return _me(db, user)
+
+
 _UI_SETTINGS_KEYS = {"keybinds", "theme", "lang"}
 _UI_SETTINGS_MAX_BYTES = 8192
 
@@ -127,6 +140,7 @@ def _me(db: DbDep, user: User) -> MeOut:
     return MeOut(
         id=user.id,
         username=user.username,
+        display_name=user.display_name,
         role=user.role,
         can_create_plans=user.can_create_plans,
         is_mission_builder=user.is_mission_builder,

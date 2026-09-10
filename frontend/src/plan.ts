@@ -935,7 +935,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       lastCursorSent = Date.now();
       socket.send({ type: "presence.cursor", lng: e.lngLat.lng, lat: e.lngLat.lat });
       // eigener Zeiger auch bei mir anzeigen
-      peers.set(me.id, { name: me.username, lng: e.lngLat.lng, lat: e.lngLat.lat, t: Date.now() });
+      peers.set(me.id, { name: me.display_name || me.username, lng: e.lngLat.lng, lat: e.lngLat.lat, t: Date.now() });
       refreshPeers();
     }
   });

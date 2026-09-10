@@ -13,7 +13,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   const me = await api.me().catch(() => null);
   const shell = (body: string, title: string) => `
    <div class="shell">
-    ${sidebar(section as NavSection, { isAdmin: true, username: me?.username ?? "", isMissionBuilder: !!me?.is_mission_builder_effective })}
+    ${sidebar(section as NavSection, { isAdmin: true, username: me?.display_name || me?.username || "", isMissionBuilder: !!me?.is_mission_builder_effective })}
     <div class="shell-main">
     <div class="topbar"><strong>${title}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
     <div class="list stack">${body}</div>
@@ -143,6 +143,9 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
         }
       }),
     );
+    el.querySelector<HTMLInputElement>("[data-uname]")?.addEventListener("change", (e) => {
+      guard(() => api.patchUser(id, { display_name: (e.target as HTMLInputElement).value.trim() }));
+    });
     el.querySelector("[data-reset]")?.addEventListener("click", async () => {
       const pw = await promptDialog(t("admin.newPassword"));
       if (pw) guard(() => api.patchUser(id, { password: pw }));
@@ -208,7 +211,8 @@ function postShell(app: HTMLElement): void {
 function userRow(u: AdminUser): string {
   return `<tr data-u="${u.id}">
     <td><strong>${esc(u.username)}</strong> ${u.is_local ? "" : '<span class="badge">OIDC</span>'}
-        <span class="badge">${esc(u.role)}</span> ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}</td>
+        <span class="badge">${esc(u.role)}</span> ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}
+        ${u.display_name ? `<div class="muted" style="font-size:.8rem">${esc(u.display_name)}</div>` : ""}</td>
     <td>
       <details class="admin-drop">
         <summary>${t("admin.rights")}</summary>
@@ -216,6 +220,8 @@ function userRow(u: AdminUser): string {
           <label class="chk"><input type="checkbox" data-ur="active" ${u.is_active ? "checked" : ""}/> ${t("admin.active")}</label>
           <label class="chk"><input type="checkbox" data-ur="ccp" ${u.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
           <label class="chk"><input type="checkbox" data-ur="mb" ${u.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
+          <label class="chk-lbl">${t("settings.displayName")}
+            <input data-uname maxlength="64" value="${esc(u.display_name ?? "")}" /></label>
         </div>
       </details>
     </td>

@@ -131,7 +131,7 @@ async function renderPlanList(): Promise<void> {
 
   app.innerHTML = `
    <div class="shell">
-    ${sidebar("plans", { isAdmin: me!.role === "admin", username: me!.username, isMissionBuilder: me!.is_mission_builder_effective })}
+    ${sidebar("plans", { isAdmin: me!.role === "admin", username: me!.display_name || me!.username, isMissionBuilder: me!.is_mission_builder_effective })}
     <div class="shell-main">
     <div class="topbar">
       <strong>${t("plans.heading")}</strong>
@@ -211,7 +211,7 @@ async function renderTrash(): Promise<void> {
   const items = await api.trash().catch(() => []);
   app.innerHTML = `
    <div class="shell">
-    ${sidebar("trash", { isAdmin: me!.role === "admin", username: me!.username, isMissionBuilder: me!.is_mission_builder_effective })}
+    ${sidebar("trash", { isAdmin: me!.role === "admin", username: me!.display_name || me!.username, isMissionBuilder: me!.is_mission_builder_effective })}
     <div class="shell-main">
     <div class="topbar"><strong>${t("nav.trash")}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
     <div class="list stack">

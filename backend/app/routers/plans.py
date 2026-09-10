@@ -397,7 +397,7 @@ def get_snapshot(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> dict:
     mk_rows = list(db.scalars(select(Marker).where(Marker.plan_id == plan.id)))
     uids = {m.created_by for m in mk_rows if m.created_by}
     names = (
-        {u.id: u.username for u in db.scalars(select(User).where(User.id.in_(uids)))}
+        {u.id: u.label for u in db.scalars(select(User).where(User.id.in_(uids)))}
         if uids else {}
     )
     by_id = {m.id: m for m in mk_rows}
@@ -554,7 +554,11 @@ def acl_candidates(plan: OwnerPlan, db: DbDep) -> list[ACLCandidate]:
     from ..models import Group, User
 
     out = [
-        ACLCandidate(subject_type="user", subject_id=u.id, name=u.username)
+        ACLCandidate(
+            subject_type="user",
+            subject_id=u.id,
+            name=f"{u.display_name} ({u.username})" if u.display_name else u.username,
+        )
         for u in db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.username))
     ]
     out += [
@@ -755,7 +759,7 @@ def list_versions(plan: ViewerPlan, db: DbDep) -> list[dict]:
         )
     )
     names = {
-        u.id: u.username
+        u.id: u.label
         for u in db.scalars(select(User).where(User.id.in_({v.created_by for v in rows if v.created_by})))
     }
     out = []

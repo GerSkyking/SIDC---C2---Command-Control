@@ -30,6 +30,8 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Frei änderbarer Anzeigename; wird anderen Nutzern statt username gezeigt.
+    display_name: Mapped[str] = mapped_column(String(64), default="", server_default="")
     password_hash: Mapped[str | None] = mapped_column(String(255))  # None = nur OIDC
     role: Mapped[str] = mapped_column(String(16), default="user")   # 'admin' | 'user'
     can_create_plans: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -45,6 +47,11 @@ class User(Base):
     @property
     def is_admin(self) -> bool:
         return self.role == "admin"
+
+    @property
+    def label(self) -> str:
+        """Für andere Nutzer sichtbarer Name (Anzeigename, sonst Login-Name)."""
+        return self.display_name or self.username
 
 
 class OidcIdentity(Base):

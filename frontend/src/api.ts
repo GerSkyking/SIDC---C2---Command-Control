@@ -28,6 +28,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 export interface Me {
   id: string;
   username: string;
+  display_name?: string;
   role: string;
   can_create_plans_effective: boolean;
   is_mission_builder_effective: boolean;
@@ -97,6 +98,7 @@ export interface PlanVersionRow {
 export interface AdminUser {
   id: string;
   username: string;
+  display_name?: string;
   role: string;
   can_create_plans: boolean;
   is_mission_builder: boolean;
@@ -186,6 +188,7 @@ export interface AuditRow {
 export const api = {
   me: () => req<Me>("GET", "/auth/me"),
   saveSettings: (patch: Record<string, unknown>) => req<Me>("PATCH", "/auth/me/settings", patch),
+  saveDisplayName: (display_name: string) => req<Me>("PATCH", "/auth/me", { display_name }),
   login: (username: string, password: string) =>
     req<Me>("POST", "/auth/login", { username, password }),
   logout: () => req<void>("POST", "/auth/logout"),
@@ -275,9 +278,9 @@ export const api = {
   deleteFavorite: (id: string) => req<void>("DELETE", `/api/favorites/${id}`),
 
   adminUsers: () => req<AdminUser[]>("GET", "/api/admin/users"),
-  createUser: (b: { username: string; password: string; role: string; can_create_plans: boolean; is_mission_builder?: boolean }) =>
+  createUser: (b: { username: string; password: string; role: string; can_create_plans: boolean; is_mission_builder?: boolean; display_name?: string }) =>
     req<AdminUser>("POST", "/api/admin/users", b),
-  patchUser: (id: string, b: Partial<{ role: string; can_create_plans: boolean; is_mission_builder: boolean; is_active: boolean; password: string }>) =>
+  patchUser: (id: string, b: Partial<{ role: string; can_create_plans: boolean; is_mission_builder: boolean; is_active: boolean; password: string; display_name: string }>) =>
     req<AdminUser>("PATCH", `/api/admin/users/${id}`, b),
   deleteUser: (id: string) => req<void>("DELETE", `/api/admin/users/${id}`),
   adminGroups: () => req<AdminGroup[]>("GET", "/api/admin/groups"),

@@ -15,6 +15,7 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     username: str
+    display_name: str = ""
     role: str
     can_create_plans: bool
     is_mission_builder: bool = False

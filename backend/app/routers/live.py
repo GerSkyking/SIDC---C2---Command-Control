@@ -93,7 +93,7 @@ def _author_of(db, m: Marker) -> str | None:
     if not m.created_by:
         return None
     u = db.get(User, m.created_by)
-    return u.username if u else None
+    return u.label if u else None
 
 
 async def live_ws(websocket: WebSocket) -> None:
@@ -113,7 +113,7 @@ async def live_ws(websocket: WebSocket) -> None:
     await websocket.send_json(
         {"type": "hello", "level": level, "caps": caps, "mission_builder": is_builder}
     )
-    await hub.broadcast(plan_id, {"type": "presence.join", "user": user.username, "uid": user.id})
+    await hub.broadcast(plan_id, {"type": "presence.join", "user": user.label, "uid": user.id})
 
     try:
         while True:
@@ -144,7 +144,7 @@ async def _handle(
 
     # presence.cursor immer erlaubt (auch für Nur-Leser sinnvoll: "Zeigen")
     if t == "presence.cursor":
-        await hub.broadcast(plan_id, {**msg, "uid": user.id})
+        await hub.broadcast(plan_id, {**msg, "uid": user.id, "user": user.label})
         return
 
     need = {

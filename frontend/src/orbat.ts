@@ -31,7 +31,7 @@ export async function renderOrbatLibrary(app: HTMLElement, me: Me, selectedId?: 
 
   app.innerHTML = `
    <div class="shell">
-    ${sidebar("orbat", { isAdmin: me.role === "admin", username: me.username, isMissionBuilder: true })}
+    ${sidebar("orbat", { isAdmin: me.role === "admin", username: me.display_name || me.username, isMissionBuilder: true })}
     <div class="shell-main">
     <div class="topbar"><strong>${t("nav.orbat")}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
     <div class="orbat-wrap">

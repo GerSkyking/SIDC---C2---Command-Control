@@ -39,6 +39,7 @@ async def restart_backend(request: Request, admin: AdminUser, db: DbDep) -> dict
 class UserCreate(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str
+    display_name: str = Field(default="", max_length=64)
     role: str = Field(default="user", pattern=r"^(admin|user)$")
     can_create_plans: bool = False
     is_mission_builder: bool = False
@@ -50,11 +51,13 @@ class UserPatch(BaseModel):
     is_mission_builder: bool | None = None
     is_active: bool | None = None
     password: str | None = None
+    display_name: str | None = None
 
 
 class UserRow(BaseModel):
     id: str
     username: str
+    display_name: str = ""
     role: str
     can_create_plans: bool
     is_mission_builder: bool = False
@@ -64,8 +67,8 @@ class UserRow(BaseModel):
 
 def _row(u: User) -> UserRow:
     return UserRow(
-        id=u.id, username=u.username, role=u.role, can_create_plans=u.can_create_plans,
-        is_mission_builder=u.is_mission_builder,
+        id=u.id, username=u.username, display_name=u.display_name, role=u.role,
+        can_create_plans=u.can_create_plans, is_mission_builder=u.is_mission_builder,
         is_active=u.is_active, is_local=bool(u.password_hash),
     )
 
@@ -83,6 +86,7 @@ def create_user(body: UserCreate, request: Request, admin: AdminUser, db: DbDep)
         raise HTTPException(status.HTTP_409_CONFLICT, "Benutzername vergeben")
     u = User(
         username=body.username, password_hash=hash_password(body.password),
+        display_name=body.display_name.strip()[:64],
         role=body.role, can_create_plans=body.can_create_plans,
         is_mission_builder=body.is_mission_builder,
     )
@@ -115,6 +119,8 @@ def patch_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbDep) -> Us
         u.can_create_plans = body.can_create_plans
     if body.is_mission_builder is not None:
         u.is_mission_builder = body.is_mission_builder
+    if body.display_name is not None:
+        u.display_name = "".join(c for c in body.display_name.strip() if c.isprintable())[:64]
     if body.is_active is not None:
         if u.id == admin.id and not body.is_active:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Eigenes Konto nicht deaktivierbar")
