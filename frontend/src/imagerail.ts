@@ -161,6 +161,11 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
                 ? `<div class="ir-row">
                      <label class="ir-chk"><input type="checkbox" data-ir-onmap ${i.on_map ? "checked" : ""}/> ${t("img.showOnMap")}</label>
                    </div>
+                   ${
+                     i.on_map
+                       ? `<label class="ir-chk"><input type="checkbox" data-ir-scale ${i.scale_fixed ? "checked" : ""}/> ${t("img.scaleWithMap")}</label>`
+                       : ""
+                   }
                    <select class="ir-phase" data-ir-phase>${phaseOpts(i.phase_id)}</select>
                    <button class="icon-btn ir-del" data-ir-del title="${t("img.delete")}">${icon("trash", 14)}</button>`
                 : ""
@@ -199,6 +204,19 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
           cur.ref_zoom = ctx.map.getZoom();
           data.world_x = c.lng;
           data.world_y = c.lat;
+          data.ref_zoom = cur.ref_zoom;
+        }
+        ctx.send({ type: "image.modify", id, data });
+        render();
+      });
+      row.querySelector<HTMLInputElement>("[data-ir-scale]")?.addEventListener("change", (e) => {
+        const on = (e.target as HTMLInputElement).checked;
+        const cur = get();
+        if (!cur) return;
+        cur.scale_fixed = on;
+        const data: Record<string, unknown> = { scale_fixed: on, phase_id: cur.phase_id };
+        if (on && (!cur.ref_zoom || cur.ref_zoom <= 0)) {
+          cur.ref_zoom = ctx.map.getZoom();
           data.ref_zoom = cur.ref_zoom;
         }
         ctx.send({ type: "image.modify", id, data });

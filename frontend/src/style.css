@@ -272,7 +272,7 @@ a { color: var(--accent); }
 .navcube .ncube-ring b { position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
   font: 700 9px/1 system-ui, sans-serif; color: var(--danger); background: var(--surface); padding: 0 2px; }
 /* Home-Button */
-.navcube .navcube-home { position: absolute; left: -6px; bottom: -6px; z-index: 4;
+.navcube .navcube-home { position: absolute; left: -6px; bottom: -24px; z-index: 4;
   width: 18px; height: 18px; padding: 0; display: grid; place-items: center; line-height: 1;
   font-size: 12px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); }
 .navcube .navcube-home:hover { background: var(--elevated); }
@@ -662,6 +662,11 @@ label.chk input { width: auto; }
 .pimg.dragging { opacity: 0.7 !important; cursor: grabbing; }
 .pimg-rz { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
   cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, var(--accent) 50%); }
+.pimg-x { position: absolute; top: 2px; right: 2px; display: none; width: 1.4rem; height: 1.4rem;
+  padding: 0; place-items: center; background: rgba(0, 0, 0, 0.6); color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3); border-radius: var(--r-sm); cursor: pointer; }
+.pimg:hover .pimg-x { display: grid; }
+.pimg-x:hover { background: rgba(0, 0, 0, 0.85); }
 
 .img-rail { position: absolute; top: var(--topbar-h, 3.2rem); right: 0; bottom: 0;
   width: var(--rail-w, 300px); background: var(--surface); border-left: 1px solid var(--border);

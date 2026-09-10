@@ -1120,6 +1120,28 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   // ── Briefing-PDF: je Phase eine Seite (Karte auf Phasen-Marker gerahmt) ──
+  const briefingPlaneChoice = (): Promise<"player" | "builder" | null> =>
+    new Promise((resolve) => {
+      const back = document.createElement("div");
+      back.className = "edit-modal";
+      back.innerHTML = `<div class="card stack" style="width:min(22rem,94vw)">
+        <h1 style="margin:0;font-size:1.05rem">${t("briefing.planeTitle")}</h1>
+        <div class="row" style="gap:.5rem">
+          <button class="primary" data-pl="player" style="flex:1">${t("mb.player")}</button>
+          <button data-pl="builder" style="flex:1">${t("mb.builder")}</button>
+        </div>
+        <button data-pl="" class="muted">${t("common.cancel")}</button>
+      </div>`;
+      const done = (v: "player" | "builder" | null) => {
+        back.remove();
+        resolve(v);
+      };
+      back.addEventListener("mousedown", (e) => e.target === back && done(null));
+      back.querySelectorAll<HTMLButtonElement>("[data-pl]").forEach((b) =>
+        b.addEventListener("click", () => done((b.dataset.pl as "player" | "builder") || null)),
+      );
+      document.body.appendChild(back);
+    });
   const briefingBtn = root.querySelector<HTMLButtonElement>("#briefing")!;
   briefingBtn.addEventListener("click", async () => {
     briefingBtn.disabled = true;
@@ -1139,6 +1161,18 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         if (map.loaded() && !map.isMoving()) return res();
         map.once("idle", () => res());
       });
+    // Missionsbauer wählt, für welche Ebene das Briefing gilt.
+    let plane: "player" | "builder" = "player";
+    if (isMB) {
+      const choice = await briefingPlaneChoice();
+      if (choice === null) {
+        briefingBtn.disabled = false;
+        return;
+      }
+      plane = choice;
+    }
+    const briefPhases = phases.filter((p) => (p.plane ?? "player") === plane);
+
     try {
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
@@ -1146,8 +1180,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const ph = doc.internal.pageSize.getHeight();
       const d = shotDate();
 
-      for (let pi = 0; pi < phases.length; pi++) {
-        const phase = phases[pi];
+      for (let pi = 0; pi < briefPhases.length; pi++) {
+        const phase = briefPhases[pi];
         if (pi > 0) doc.addPage();
         currentPhaseId = phase.id;
         // Marker dieser Phase (+ globale) für den Bildausschnitt
@@ -1185,7 +1219,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
         // Layout: Titel oben, Karte links, Notizen rechts
         doc.setFontSize(16);
-        doc.text(`${snap.plan.name} — ${phase.name}  (${pi + 1}/${phases.length})`, 12, 14);
+        doc.text(`${snap.plan.name} — ${phase.name}  (${pi + 1}/${briefPhases.length})`, 12, 14);
         doc.setFontSize(9);
         doc.text(militaryDtg(d), pw - 12, 14, { align: "right" });
         const imgW = pw * 0.62 - 12;
@@ -1974,7 +2008,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let locData: { langs: string[]; groups: LocGroup[] } | null = null;
   let mapLang = "en_us";
   const groupVisible = new Map<string, boolean>();
-  const baseLayerVisible: Record<string, boolean> = { sat: true, grid: true, contours: false, peaks: false };
+  const baseLayerVisible: Record<string, boolean> = { sat: true, grid: true, contours: true, peaks: true };
   // Logische Overlay-Layer -> tatsaechliche MapLibre-Layer-IDs
   const overlayLayers: Record<string, string[]> = {
     contours: ["contours-line", "contours-label"],
@@ -2102,7 +2136,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             id: "contours-line",
             type: "line",
             source: "contours",
-            layout: { visibility: "none", "line-join": "round" },
+            layout: { visibility: "visible", "line-join": "round" },
             paint: {
               "line-color": "#8a6d3b",
               "line-opacity": ["case", ["get", "bold"], 0.75, 0.45],
@@ -2119,7 +2153,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             filter: ["==", ["get", "bold"], true],
             minzoom: 13,
             layout: {
-              visibility: "none",
+              visibility: "visible",
               "symbol-placement": "line",
               "text-field": ["concat", ["to-string", ["get", "elev"]], " m"],
               "text-size": 10,
@@ -2145,7 +2179,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             type: "symbol",
             source: "peaks",
             layout: {
-              visibility: "none",
+              visibility: "visible",
               "text-field": ["concat", "▲ ", ["to-string", ["get", "elev"]], " m"],
               "text-size": ["match", ["get", "type"], "dominant_peak", 13, 11],
               "text-anchor": "top",
@@ -3635,11 +3669,22 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       el.style.opacity = String(op);
       el.innerHTML =
         `<img src="${esc(api.planImageUrl(planId, i.id))}" alt="${esc(i.caption || i.filename)}" draggable="false" />` +
-        (canEdit ? `<div class="pimg-rz"></div>` : "");
+        (canEdit
+          ? `<button class="pimg-x" data-imgx title="${t("img.removeFromMap")}">${icon("x", 12)}</button>` +
+            `<div class="pimg-rz"></div>`
+          : "");
       el.addEventListener("mousedown", (ev) => onImageDown(ev, i.id));
       el.addEventListener("dblclick", () =>
         openLightbox([{ url: api.planImageUrl(planId, i.id), caption: i.caption || i.filename }]),
       );
+      el.querySelector("[data-imgx]")?.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const cur = images.get(i.id);
+        if (cur) cur.on_map = false;
+        socket.send({ type: "image.modify", id: i.id, data: { on_map: false, phase_id: i.phase_id } });
+        renderMapImages();
+        imageRail?.refresh();
+      });
       imagesEl.appendChild(el);
     }
     positionImages();

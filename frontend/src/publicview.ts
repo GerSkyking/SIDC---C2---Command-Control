@@ -219,7 +219,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   });
 
   // ── Ebenen-Panel ──────────────────────────────────────────────────────
-  const baseVisible: Record<string, boolean> = { sat: true, grid: true, contours: false, peaks: false };
+  const baseVisible: Record<string, boolean> = { sat: true, grid: true, contours: true, peaks: true };
   const overlay: Record<string, string[]> = { contours: ["contours-line", "contours-label"], peaks: ["peaks-sym"] };
   let hasContours = false;
   let hasPeaks = false;
@@ -316,7 +316,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
             id: "contours-line",
             type: "line",
             source: "contours",
-            layout: { visibility: "none", "line-join": "round" },
+            layout: { visibility: "visible", "line-join": "round" },
             paint: { "line-color": "#8a6d3b", "line-opacity": ["case", ["get", "bold"], 0.75, 0.45], "line-width": ["case", ["get", "bold"], 1.4, 0.6] },
           });
           map.addLayer({
@@ -325,7 +325,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
             source: "contours",
             filter: ["==", ["get", "bold"], true],
             minzoom: 13,
-            layout: { visibility: "none", "symbol-placement": "line", "text-field": ["concat", ["to-string", ["get", "elev"]], " m"], "text-size": 10 },
+            layout: { visibility: "visible", "symbol-placement": "line", "text-field": ["concat", ["to-string", ["get", "elev"]], " m"], "text-size": 10 },
             paint: { "text-color": "#fff", "text-halo-color": "#000", "text-halo-width": 2 },
           });
           hasContours = true;
@@ -335,7 +335,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
             type: "symbol",
             source: "peaks",
             layout: {
-              visibility: "none",
+              visibility: "visible",
               "text-field": ["concat", "▲ ", ["to-string", ["get", "elev"]], " m"],
               "text-size": 12,
               "text-anchor": "top",
