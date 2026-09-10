@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "jspdf": "^4.2.1",
-    "maplibre-gl": "^6.9.0",
+    "maplibre-gl": "^5.6.1",
     "milsymbol": "^3.0.4"
   },
   "devDependencies": {

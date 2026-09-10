@@ -704,6 +704,7 @@ body.rail-open .layers-panel:not(.mv-pinned) { right: calc(var(--rail-w, 300px) 
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
   box-shadow: var(--shadow); padding: 0.5rem 0.6rem; display: flex; flex-direction: column;
   gap: 0.4rem; min-width: 12rem; }
+.shot-opts[hidden] { display: none !important; }
 .shot-opts label { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.78rem; color: var(--muted); }
 .shot-opts select { color: var(--fg); }
 
