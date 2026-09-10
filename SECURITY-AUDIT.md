@@ -49,8 +49,9 @@ und WS-`_auth` vergleichen. `PATCH /admin/users` erhöht die Epoch bei Passwortw
 ### M6 — `SessionMiddleware` nicht `https_only` — ✅
 `https_only` an `COOKIE_SECURE` gekoppelt, `max_age=600`.
 
-### M7 — `COOKIE_SECURE=auto` in Prod — ⏸️
-`.env.example` kommentiert; in Prod `COOKIE_SECURE=true` setzen (MANUAL-STEPS #1).
+### M7 — `COOKIE_SECURE=auto` in Prod — ✅
+Auf dem Server `COOKIE_SECURE=true` gesetzt (Zugang nur über HTTPS-Proxy).
+`SessionMiddleware.https_only` daran gekoppelt.
 
 ### M8 — Rate-Limit schwach — ✅
 `ratelimit.py`: zusätzliche Pro-IP-Schranke (30/60 s) neben (IP, Username) (8/60 s).
@@ -91,8 +92,11 @@ In-Process bleibt gültig, solange 1 uvicorn-Worker (aktuell so).
 ## Verifikation
 
 - `backend`: `pytest` 15/15 grün · `python -c "from app.main import app"` ok
-- `frontend`: `tsc --noEmit` grün · `vite build` grün
+- `frontend`: `tsc --noEmit` grün · `vite build` grün · `npm audit` **0 vulnerabilities**
 - Live deployt + durchgeklickt (2026-09-10): Karte/Marker/Linien/2D-3D/Würfel/
   Popup/Live-Sync/öffentliche Ansicht ok, keine CSP-Verstöße in der Konsole
-- Rest offen: nur noch `.env`-Härtung (MANUAL-STEPS #1), Proxy-Header (#2),
-  Credential-Rotation (SECRET_KEY + Bootstrap-PW versehentlich im Chat exponiert)
+- `COOKIE_SECURE=true`, Proxy-Header, Credential-Rotation erledigt
+
+**Alle HIGH/MEDIUM-Punkte geschlossen.** Rest siehe `deploy/MANUAL-STEPS.md`
+(nur noch optionale Betriebs-Themen: Audit-Log-Retention, Backup-Verschlüsselung,
+Redis-Rate-Limit falls Multi-Worker).
