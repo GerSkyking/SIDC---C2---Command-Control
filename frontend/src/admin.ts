@@ -7,7 +7,7 @@ import { confirmDialog, promptDialog, toastError } from "./notify";
 import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch, type NavSection } from "./ui";
 import { esc } from "./esc";
 
-export type AdminSection = "users" | "log" | "config";
+export type AdminSection = "users" | "log" | "config" | "images";
 
 export async function renderAdmin(app: HTMLElement, section: AdminSection = "users"): Promise<void> {
   const me = await api.me().catch(() => null);
@@ -85,6 +85,51 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
     app.querySelector("#lg-load")!.addEventListener("click", () => void loadLog(true).catch(() => {}));
     app.querySelector("#lg-more")!.addEventListener("click", () => void loadLog(false).catch(() => {}));
     void loadLog(true, 20);
+    return;
+  }
+
+  if (section === "images") {
+    const rows = await api.adminImages().catch(() => []);
+    const rel = (iso: string) => {
+      const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+      if (s < 3600) return `${Math.round(s / 60)} min`;
+      if (s < 86400) return `${Math.round(s / 3600)} h`;
+      return `${Math.round(s / 86400)} d`;
+    };
+    const fb = (n: number) =>
+      n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+    app.innerHTML = shell(
+      `<h2>${t("admin.images")}</h2>
+       ${
+         rows.length
+           ? `<table class="acl-tbl"><thead><tr>
+                <th></th><th>${t("common.name")}</th><th>${t("admin.img.size")}</th>
+                <th>${t("admin.img.plan")}</th><th>${t("admin.img.phase")}</th>
+                <th>${t("admin.img.uploader")}</th><th>${t("admin.img.age")}</th><th></th>
+              </tr></thead><tbody>${rows
+                .map(
+                  (r) => `<tr data-img="${esc(r.id)}">
+                    <td><a href="/plans/${esc(r.plan_id)}/images/${esc(r.id)}/raw" target="_blank" rel="noopener">
+                      <img src="/plans/${esc(r.plan_id)}/images/${esc(r.id)}/raw" alt="" style="width:44px;height:44px;object-fit:cover;border:1px solid var(--border);border-radius:4px" data-hide-on-error /></a></td>
+                    <td>${esc(r.filename)}</td><td>${fb(r.byte_size)}</td>
+                    <td>${esc(r.plan_name)}</td><td>${esc(r.phase_name)}</td>
+                    <td>${esc(r.uploader)}</td><td>${rel(r.created_at)}</td>
+                    <td><button class="icon-btn" data-img-del>${icon("trash", 14)}</button></td>
+                  </tr>`,
+                )
+                .join("")}</tbody></table>`
+           : `<p class="muted">${t("admin.img.empty")}</p>`
+       }`,
+      t("admin.images"),
+    );
+    postShell(app);
+    app.querySelectorAll<HTMLElement>("[data-img]").forEach((row) => {
+      row.querySelector("[data-img-del]")?.addEventListener("click", async () => {
+        if (await confirmDialog(t("admin.img.deleteConfirm"), { danger: true })) {
+          guard(() => api.adminDeleteImage(row.dataset.img!));
+        }
+      });
+    });
     return;
   }
 

@@ -73,9 +73,9 @@ async function route(): Promise<void> {
     return renderOrbatLibrary(app, me, orbatMatch[1]);
   }
 
-  const adminMatch = location.hash.match(/^#\/admin(?:\/(users|log|config))?$/);
+  const adminMatch = location.hash.match(/^#\/admin(?:\/(users|log|config|images))?$/);
   if (adminMatch && me.role === "admin") {
-    return renderAdmin(app, (adminMatch[1] as "users" | "log" | "config") || "users");
+    return renderAdmin(app, (adminMatch[1] as "users" | "log" | "config" | "images") || "users");
   }
   return renderPlanList();
 }
