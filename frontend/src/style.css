@@ -237,10 +237,11 @@ a { color: var(--accent); }
 .line-gear { background: var(--panel); border-color: var(--border); color: var(--fg); }
 .line-gear:hover:not(:disabled) { background: var(--panel); filter: brightness(1.15); }
 
-/* Navigations-Würfel (nur 3D) */
+/* Navigations-Würfel / ViewCube (nur 3D) */
 .navcube { position: absolute; right: 14px; bottom: 108px; width: 54px; height: 54px;
-  z-index: 8; perspective: 260px; cursor: grab; }
-.navcube.drag { cursor: grabbing; }
+  z-index: 8; perspective: 260px; cursor: grab; opacity: 0.62; transition: opacity 0.15s; }
+.navcube:hover { opacity: 1; }
+.navcube.drag { cursor: grabbing; opacity: 1; }
 .navcube .ncube { position: absolute; inset: 0; transform-style: preserve-3d;
   transition: transform 0.3s ease; }
 .navcube.drag .ncube { transition: none; }
@@ -255,6 +256,26 @@ a { color: var(--accent); }
 .navcube .ncf-s { transform: rotateY(180deg) translateZ(27px); }
 .navcube .ncf-e { transform: rotateY(-90deg) translateZ(27px); }
 .navcube .ncf-w { transform: rotateY(90deg) translateZ(27px); }
+/* Eck-Hotzones (isometrischer Schrägblick) — 2D-Overlay, dreht nicht mit */
+.navcube .ncc { position: absolute; width: 16px; height: 16px; padding: 0; z-index: 3;
+  background: transparent; border: 0; cursor: pointer; }
+.navcube .ncc::after { content: ""; position: absolute; inset: 3px; border-radius: 2px;
+  border: 1px solid transparent; }
+.navcube .ncc:hover::after { border-color: var(--accent); background: var(--accent-weak); }
+.navcube .ncc-nw { left: -4px; top: -4px; }
+.navcube .ncc-ne { right: -4px; top: -4px; }
+.navcube .ncc-sw { left: -4px; bottom: -4px; }
+.navcube .ncc-se { right: -4px; bottom: -4px; }
+/* Kompassring */
+.navcube .ncube-ring { position: absolute; inset: -7px; border: 1px solid var(--border);
+  border-radius: 50%; pointer-events: none; opacity: 0.7; }
+.navcube .ncube-ring b { position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
+  font: 700 9px/1 system-ui, sans-serif; color: var(--danger); background: var(--surface); padding: 0 2px; }
+/* Home-Button */
+.navcube .navcube-home { position: absolute; left: -6px; bottom: -6px; z-index: 4;
+  width: 18px; height: 18px; padding: 0; display: grid; place-items: center; line-height: 1;
+  font-size: 12px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); }
+.navcube .navcube-home:hover { background: var(--elevated); }
 .presenting .navcube { display: none !important; }
 
 .grid-canvas { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0; pointer-events: none; z-index: 4; }
@@ -629,3 +650,19 @@ label.chk input { width: auto; }
 .chk-lbl input, .chk-lbl select, .chk-lbl textarea { color: var(--fg); }
 .orb-rel-edit { display: flex; flex-direction: column; gap: 0.3rem; }
 @media (max-width: 720px) { .orbat-wrap { flex-direction: column; } .orbat-list { flex: none; width: 100%; } }
+
+/* ── Lightbox (Vollbild-Bildbetrachter) ─────────────────────────────── */
+.lightbox { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center;
+  justify-content: center; background: rgba(0, 0, 0, 0.85); }
+.lightbox .lb-fig { margin: 0; display: flex; flex-direction: column; align-items: center;
+  gap: 0.5rem; max-width: 94vw; max-height: 92vh; }
+.lightbox .lb-img { max-width: 92vw; max-height: 84vh; object-fit: contain;
+  border: 1px solid var(--border); background: var(--surface-2); }
+.lightbox .lb-cap { color: #fff; font-size: 0.85rem; text-align: center; max-width: 80vw; }
+.lightbox .lb-x { position: absolute; top: 0.8rem; right: 0.8rem; }
+.lightbox .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); }
+.lightbox .lb-prev { left: 0.8rem; }
+.lightbox .lb-next { right: 0.8rem; }
+.lightbox .lb-x, .lightbox .lb-nav { background: rgba(0, 0, 0, 0.5); color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3); border-radius: var(--r-sm); padding: 0.35rem; }
+.lightbox .lb-x:hover, .lightbox .lb-nav:hover { background: rgba(0, 0, 0, 0.8); }
