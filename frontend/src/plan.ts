@@ -1828,12 +1828,22 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <div class="notes-view"></div>
     </div>`;
   root.appendChild(notesWin);
-  {
-    const posRaw = localStorage.getItem("sidc_noteswin");
-    const pos = posRaw ? JSON.parse(posRaw) : { x: window.innerWidth - 380, y: 90 };
-    notesWin.style.left = `${Math.max(0, pos.x)}px`;
-    notesWin.style.top = `${Math.max(0, pos.y)}px`;
-  }
+  const placeNotesWin = () => {
+    let pos = { x: window.innerWidth - 380, y: 96 };
+    try {
+      const raw = localStorage.getItem("sidc_noteswin");
+      if (raw) pos = JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+    // Immer sichtbar halten, auch wenn die gespeicherte Position von einem
+    // größeren Fenster stammt.
+    const x = Math.max(0, Math.min(pos.x, window.innerWidth - 120));
+    const y = Math.max(0, Math.min(pos.y, window.innerHeight - 80));
+    notesWin.style.left = `${x}px`;
+    notesWin.style.top = `${y}px`;
+  };
+  placeNotesWin();
   const nTabs = notesWin.querySelector<HTMLDivElement>(".notes-tabs")!;
   const nTimes = notesWin.querySelector<HTMLDivElement>(".notes-times")!;
   const nEdit = notesWin.querySelector<HTMLTextAreaElement>(".notes-edit")!;
@@ -1938,7 +1948,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   notesWin.querySelector(".notes-x")!.addEventListener("click", () => (notesWin.hidden = true));
   toggleNotesWin = () => {
     notesWin.hidden = !notesWin.hidden;
-    if (!notesWin.hidden) paintNotes();
+    if (!notesWin.hidden) {
+      placeNotesWin(); // gegen off-screen gespeicherte Position
+      paintNotes();
+    }
   };
   {
     const si = root.querySelector<HTMLInputElement>("#mkScaleIn")!;

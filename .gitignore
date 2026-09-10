@@ -32,3 +32,8 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+
+backend/_localup/
+backend/_localmaps/
+backend/local_test.db
+backend/mig_test.db
