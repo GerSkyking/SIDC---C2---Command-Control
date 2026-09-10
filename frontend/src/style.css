@@ -695,6 +695,16 @@ body.rail-open .hud, body.rail-open .mk-scale { right: calc(var(--rail-w, 300px)
 body.rail-open .navcube { right: calc(var(--rail-w, 300px) + 14px); }
 body.rail-open .layers-panel:not(.mv-pinned) { right: calc(var(--rail-w, 300px) + 0.6rem); }
 
+/* ── Bild-Wähler (für "Bild in Notiz einfügen") ───────────────────── */
+.ir-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.5rem; max-height: 60vh; overflow-y: auto; }
+.ir-pick-item { display: flex; flex-direction: column; align-items: stretch; gap: 0.25rem;
+  padding: 0.35rem; text-align: left; cursor: pointer; }
+.ir-pick-item img { width: 100%; height: 5rem; object-fit: cover;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); }
+.ir-pick-item span { font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ir-pick-item:hover { border-color: var(--accent); }
+
 /* ── Notiz-Bild-Verweise (Chips) ──────────────────────────────────── */
 .note-img-ref { display: inline-flex; align-items: center; gap: 0.2rem;
   padding: 0 0.35rem; border: 1px solid var(--border); border-radius: var(--r-sm);

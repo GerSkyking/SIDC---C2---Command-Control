@@ -104,7 +104,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const list = [...images.values()];
       const back = document.createElement("div");
       back.className = "edit-modal";
-      back.innerHTML = `<div class="card stack" style="max-width:26rem">
+      back.innerHTML = `<div class="card stack" style="width:min(34rem,92vw)">
         <div class="row"><strong style="flex:1">${t("img.pickTitle")}</strong>
           <button class="icon-btn" data-x>${icon("x", 16)}</button></div>
         <div class="ir-pick">${
