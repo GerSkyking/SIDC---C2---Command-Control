@@ -22,10 +22,16 @@ Besucher).
   kein `unsafe-inline` → inline-Event-Handler & `javascript:` werden blockiert,
   `img/connect/form-action` auf `'self'` begrenzt). Inline-`onerror`/`onclick`
   durch delegierte Listener ersetzt (`data-hide-on-error`, `data-select-on-click`).
-- ✅ **maplibre-gl** von v5 auf v6.9.0 angehoben (Commit `7670040`), deployt +
-  live durchgetestet (2026-09-10) — behebt die eigene kritische XSS-Sanitizer-
-  Lücke GHSA-jrc7-96c5-q579. Hover-Popup zusätzlich auf `setDOMContent`
-  (versionsunabhängig kein Sanitizer-Pfad).
+- ⚠️ **maplibre-gl**: v6-Upgrade (Commit `7670040`) am 2026-09-10 wieder auf
+  v5.6.1 zurückgenommen (`98759c7`) — v6 lädt seinen Worker als separate
+  `./maplibre-gl-worker.mjs`, die Vite nicht mitbündelt → 404 → kein
+  GeoJSON-Rendering (Marker/Linien/Layer weg). v5 bündelt den Worker inline.
+  **GHSA-jrc7-96c5-q579 ist in dieser App nicht ausnutzbar**: der einzige
+  `Popup.setHTML`-Aufruf wurde auf `setDOMContent` (reiner `textContent`)
+  umgestellt, Popup-/Notiz-Inhalte laufen durch `esc()`, und die strikte CSP
+  (`script-src 'self'`, kein `unsafe-inline`) blockiert inline-Handler.
+  Für ein späteres v6: Worker per `maplibregl.setWorkerUrl()` auf eine
+  mitkopierte Datei zeigen.
 
 ### H2 — Path Traversal im SPA-Fallback — ✅
 `backend/app/main.py`: `(_DIST_ROOT / full_path).resolve()` + `is_relative_to()`.
