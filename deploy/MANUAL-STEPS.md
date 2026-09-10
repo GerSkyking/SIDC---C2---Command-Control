@@ -44,23 +44,25 @@ proxy_hide_header X-Powered-By;
 
 ---
 
-## 3. maplibre-gl auf v6 aktualisieren — ⚠️ kritische XSS-Lücke in ≤ 6.4.0
+## 3. maplibre-gl v6 — Code-Upgrade erledigt, nur noch Browser-Test + Deploy
 
-`npm audit` meldet **critical**: *MapLibre GL JS — XSS Sanitizer Bypass in
-`DOM.sanitize()`* (GHSA-jrc7-96c5-q579). Aktuell im Projekt: `maplibre-gl ^5.6.0`.
-Der Fix ist `maplibre-gl@^6.9.0` — **Breaking Change (v5 → v6)**, deshalb nicht
-automatisch mit eingespielt.
+**Status:** Commit `7670040` — `maplibre-gl` ist auf `^6.9.0` (behebt die kritische
+XSS-Lücke GHSA-jrc7-96c5-q579). Import auf ESM-Namespace umgestellt, Hover-Popup
+auf `setDOMContent` (kein Sanitizer-Pfad mehr). `tsc` + `vite build` grün.
+**Noch NICHT deployed** — erst nach deinem lokalen Durchklick-Test.
 
-Vorgehen (lokal, mit Browser-Test):
+Lokal testen:
 
 ```bash
 cd frontend
-npm install maplibre-gl@^6
-npm run build
-npm run dev   # und im Browser durchklicken:
+npm install          # holt maplibre-gl 6.9.0
+npm run dev          # http://localhost:5173 — im Browser durchklicken:
 ```
 
-Test-Checkliste nach dem Upgrade:
+Wenn alles passt: Claude Bescheid geben → Deploy auf 192.168.1.115.
+Falls etwas kaputt ist: sagen was → Fix oder `git revert 7670040`.
+
+Test-Checkliste:
 - [ ] Karte lädt (Sat/Grid/Terrain-Layer)
 - [ ] Marker setzen / verschieben / bearbeiten
 - [ ] Linien zeichnen + Phase-Lines
@@ -70,15 +72,15 @@ Test-Checkliste nach dem Upgrade:
 - [ ] Screenshot-Funktion
 - [ ] Browser-Konsole ohne CSP-Verstöße (siehe Punkt 4)
 
-Migrations-Hinweise MapLibre v5 → v6:
-<https://maplibre.org/maplibre-gl-js/docs/> → „Migration". Häufig betroffen:
-`map.on("styleimagemissing")`, `setTerrain`, `getCanvas`-Timing, entfernte
-Events. Bei Problemen die Änderung isoliert committen, damit man sie zurückrollen
-kann.
+Worauf besonders achten (v6-Änderungen): `GeoJSONSource.setData` gibt jetzt ein
+Promise zurück statt `this` — wir verketten nirgends, sollte passen. Terrain/3D
+und der Würfel nutzen `setTerrain`/`easeTo` — dort genau hinsehen.
 
-> `jspdf`/`dompurify`-Advisory (moderate): betrifft nur `jspdf.html()`. Die
-> Briefing-Export-Funktion nutzt nur `doc.text()` → **nicht ausnutzbar**, Upgrade
-> auf jspdf 4 (ebenfalls breaking) optional / niedrige Priorität.
+> `jspdf`/`dompurify`-Advisory (jetzt als critical eingestuft, ReDoS/DoS):
+> betrifft `jspdf.html()` / AcroForm / Bild-Decoder — nichts davon wird genutzt
+> (Briefing-Export macht nur `doc.text()`/`doc.save()`). Kein Fremd-Impact, nur
+> theoretischer lokaler DoS beim Exportierenden. Upgrade auf jspdf 4 (breaking)
+> als eigener Schritt bei Gelegenheit — nicht dringend.
 
 ---
 

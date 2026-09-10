@@ -22,8 +22,10 @@ Besucher).
   kein `unsafe-inline` → inline-Event-Handler & `javascript:` werden blockiert,
   `img/connect/form-action` auf `'self'` begrenzt). Inline-`onerror`/`onclick`
   durch delegierte Listener ersetzt (`data-hide-on-error`, `data-select-on-click`).
-- ⏸️ **maplibre-gl ≤ 6.4.0** hat eine eigene kritische XSS-Sanitizer-Lücke →
-  Upgrade auf v6 (breaking, Browser-Test nötig), siehe MANUAL-STEPS #3.
+- ✅ **maplibre-gl** von v5 auf v6.9.0 angehoben (Commit `7670040`) — behebt die
+  eigene kritische XSS-Sanitizer-Lücke GHSA-jrc7-96c5-q579. Hover-Popup zusätzlich
+  auf `setDOMContent` (versionsunabhängig kein Sanitizer-Pfad).
+  ⏸️ Browser-Durchklick-Test + Deploy noch offen (MANUAL-STEPS #3).
 
 ### H2 — Path Traversal im SPA-Fallback — ✅
 `backend/app/main.py`: `(_DIST_ROOT / full_path).resolve()` + `is_relative_to()`.
