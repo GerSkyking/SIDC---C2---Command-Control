@@ -44,6 +44,7 @@ const ICONS: Record<string, string> = {
   compass: `${A("M12 12l5-5-2 7-7 2z")}${L("M12 21a9 9 0 100-18 9 9 0 000 18zM12 12l5-5-2 7-7 2z")}`,
   north: `${L("M12 21V6")}${A("M12 3l4 5H8z")}${L("M12 3l4 5H8z")}`,
   camera: `${A("M4 8h4l2-3h4l2 3h4v11H4z")}${L("M4 8h4l2-3h4l2 3h4v11H4zM12 16a3.5 3.5 0 100-7 3.5 3.5 0 000 7z")}`,
+  image: `${A("M4 5h16v14H4z")}${L("M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5M9 9.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z")}`,
   calendar: `${L("M4 6h16v14H4zM4 10h16M8 3v4M16 3v4")}`,
   notes: `${A("M6 3h9l4 4v14H6z")}${L("M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h4")}`,
   versions: `${L("M12 8v5l3 2")}${L("M3.5 12a8.5 8.5 0 108.5-8.5A8.5 8.5 0 004 8M4 4v4h4")}`,

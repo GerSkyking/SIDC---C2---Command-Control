@@ -16,7 +16,13 @@ function inline(s: string): string {
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    // Bild-Verweis auf die Bild-Sidebar: {{img:<32-hex>}} -> klickbarer Chip.
+    // Der Text wird nach dem Rendern per wireNoteImageRefs() ergänzt.
+    .replace(
+      /\{\{img:([0-9a-f]{32})\}\}/g,
+      '<a class="note-img-ref" data-img="$1" href="#" role="button">\u{1F5BC}︎</a>',
+    );
 }
 
 export function renderMarkdown(src: string): string {

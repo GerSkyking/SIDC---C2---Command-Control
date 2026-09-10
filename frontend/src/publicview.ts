@@ -361,6 +361,17 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     if (!ref) return 1;
     return Math.max(0.3, Math.min(3, 2 ** (map.getZoom() - ref)));
   };
+  const wireNoteRefs = (container: HTMLElement) => {
+    container.querySelectorAll<HTMLElement>(".note-img-ref").forEach((el) => {
+      const id = el.dataset.img ?? "";
+      const img = images.find((x) => x.id === id);
+      if (img) el.textContent = "🖼︎ " + (img.caption || img.filename);
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        openLightbox([{ url: api.publicImageUrl(token, id), caption: img?.caption || img?.filename || "" }]);
+      });
+    });
+  };
   const renderAnnots = () => {
     if (!annotRef) annotRef = map.getZoom();
     annotsEl.innerHTML = annots
@@ -370,6 +381,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
           `<div class="annot-body">${renderMarkdown(a.text || "")}</div></div>`,
       )
       .join("");
+    wireNoteRefs(annotsEl);
     positionAnnots();
   };
   const positionAnnots = () => {

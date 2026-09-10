@@ -25,6 +25,20 @@ import { openLightbox } from "./lightbox";
 import { mountImageRail } from "./imagerail";
 import type { PlanImage } from "./api";
 
+// Bild-URL -> JPEG-DataURL (normalisiert WebP/GIF/PNG für jsPDF).
+async function imgToJpeg(url: string): Promise<string> {
+  const blob = await (await fetch(url, { credentials: "include" })).blob();
+  const bmp = await createImageBitmap(blob);
+  const c = document.createElement("canvas");
+  c.width = bmp.width;
+  c.height = bmp.height;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(bmp, 0, 0);
+  return c.toDataURL("image/jpeg", 0.9);
+}
+
 interface Marker {
   id: string;
   world_x: number;
@@ -82,6 +96,55 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const images = new Map<string, PlanImage>(
     (snap.images ?? []).map((i: PlanImage) => [i.id, i]),
   );
+  // Kleiner Bild-Wähler für "Bild in Notiz einfügen".
+  const pickPlanImage = (): Promise<string | null> =>
+    new Promise((resolve) => {
+      const list = [...images.values()];
+      const back = document.createElement("div");
+      back.className = "edit-modal";
+      back.innerHTML = `<div class="card stack" style="max-width:26rem">
+        <div class="row"><strong style="flex:1">${t("img.pickTitle")}</strong>
+          <button class="icon-btn" data-x>${icon("x", 16)}</button></div>
+        <div class="ir-pick">${
+          list.length
+            ? list
+                .map(
+                  (i) =>
+                    `<button class="ir-pick-item" data-pick="${esc(i.id)}">
+                       <img src="${esc(api.planImageUrl(planId, i.id))}" alt="" loading="lazy" />
+                       <span>${esc(i.caption || i.filename)}</span></button>`,
+                )
+                .join("")
+            : `<p class="muted">${t("imgrail.empty")}</p>`
+        }</div></div>`;
+      const done = (v: string | null) => {
+        back.remove();
+        resolve(v);
+      };
+      back.addEventListener("mousedown", (e) => {
+        if (e.target === back) done(null);
+      });
+      back.querySelector("[data-x]")!.addEventListener("click", () => done(null));
+      back.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((b) =>
+        b.addEventListener("click", () => done(b.dataset.pick!)),
+      );
+      document.body.appendChild(back);
+    });
+
+  // Notiz-Bild-Chips ({{img:id}}) mit Text füllen + Klick -> Lightbox.
+  const wireNoteImageRefs = (container: HTMLElement): void => {
+    container.querySelectorAll<HTMLElement>(".note-img-ref").forEach((el) => {
+      const id = el.dataset.img ?? "";
+      const img = images.get(id);
+      if (img) el.textContent = "🖼︎ " + (img.caption || img.filename);
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        openLightbox([
+          { url: api.planImageUrl(planId, id), caption: img?.caption || img?.filename || "" },
+        ]);
+      });
+    });
+  };
   const myPlan = (await api.plans()).find((p) => p.id === planId);
   const canEdit = myPlan?.level === "editor" || myPlan?.level === "owner";
   const channels = await loadChannels();
@@ -1126,11 +1189,44 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         const imgW = pw * 0.62 - 12;
         const imgH = (imgW * cvs.height) / cvs.width;
         doc.addImage(img, "JPEG", 12, 20, imgW, Math.min(imgH, ph - 28));
-        const notes = stripMd(phase.notes || "");
+        const nx = 12 + imgW + 8;
+        const colW = pw - nx - 10;
+        const notes = stripMd((phase.notes || "").replace(/\{\{img:[0-9a-f]{32}\}\}/g, "").trim());
+        let ny = 26;
         if (notes) {
           doc.setFontSize(10);
-          const nx = 12 + imgW + 8;
-          doc.text(doc.splitTextToSize(notes, pw - nx - 10), nx, 26);
+          const lines = doc.splitTextToSize(notes, colW) as string[];
+          doc.text(lines, nx, ny);
+          ny += lines.length * 4.6 + 4;
+        }
+        // Bild-Verweise der Phase als echte Bilder unter den Notiztext
+        const refs = [...(phase.notes || "").matchAll(/\{\{img:([0-9a-f]{32})\}\}/g)].map((m) => m[1]);
+        for (const rid of refs) {
+          const meta = images.get(rid);
+          if (!meta) continue;
+          try {
+            const dataUrl = await imgToJpeg(api.planImageUrl(planId, rid));
+            const ratio = meta.natural_w > 0 ? meta.natural_h / meta.natural_w : 0.6;
+            let iw = colW;
+            let ih = iw * ratio;
+            if (ny + ih > ph - 12) {
+              doc.addPage();
+              ny = 20;
+              if (ih > ph - 30) {
+                ih = ph - 30;
+                iw = ih / ratio;
+              }
+            }
+            doc.addImage(dataUrl, "JPEG", nx, ny, iw, ih);
+            ny += ih + 2;
+            if (meta.caption) {
+              doc.setFontSize(8);
+              doc.text(doc.splitTextToSize(meta.caption, colW) as string[], nx, ny + 3);
+              ny += 6;
+            }
+          } catch {
+            /* Bild nicht ladbar -> überspringen */
+          }
         }
       }
       // ── Kräfteübersicht: ORBAT-Knoten, die auf der Karte stehen ──
@@ -1686,7 +1782,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   notesWin.className = "notes-win";
   notesWin.hidden = true;
   notesWin.innerHTML = `
-    <div class="notes-head"><span>${t("notes.title")}</span><button class="notes-x icon-btn">${icon("x", 16)}</button></div>
+    <div class="notes-head"><span>${t("notes.title")}</span><span class="grow"></span>
+      ${canEdit ? `<button class="notes-img icon-btn" title="${t("notes.insertImage")}">${icon("image", 16)}</button>` : ""}
+      <button class="notes-x icon-btn">${icon("x", 16)}</button></div>
     <div class="notes-tabs"></div>
     <div class="notes-times"></div>
     <div class="notes-split">
@@ -1778,11 +1876,21 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     );
     nEdit.value = ph.notes ?? "";
     nView.innerHTML = renderMarkdown(ph.notes ?? "");
+    wireNoteImageRefs(nView);
     renderNotesTimes();
   };
   nEdit.addEventListener("input", () => {
     flushNotes();
     nView.innerHTML = renderMarkdown(nEdit.value);
+    wireNoteImageRefs(nView);
+  });
+  notesWin.querySelector(".notes-img")?.addEventListener("click", async () => {
+    const pick = await pickPlanImage();
+    if (!pick) return;
+    const s = nEdit.selectionStart ?? nEdit.value.length;
+    nEdit.value = nEdit.value.slice(0, s) + `{{img:${pick}}}` + nEdit.value.slice(s);
+    nEdit.dispatchEvent(new Event("input"));
+    nEdit.focus();
   });
   nEdit.addEventListener("blur", flushNotes);
   // Phasenwechsel → Reiter dieser Phase aktiv machen
@@ -3479,6 +3587,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       });
       annotsEl.appendChild(el);
     }
+    wireNoteImageRefs(annotsEl);
     positionAnnots();
   }
 
