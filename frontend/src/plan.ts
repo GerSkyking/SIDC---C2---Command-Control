@@ -1,6 +1,7 @@
 // Plan-Ansicht: Karte + Werkzeugleiste + HUD + Marker/Zeichnen/Präsenz live.
 // Nähert sich der ATAKmaps-UI an (D:\Mods\ATAKmaps).
-import maplibregl, { type GeoJSONSource } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import type { GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
 import { channelLabel, channelVisibility, describe, loadAllMarkers, loadChannels, loadModifiers, loadPhaseLineStyle, loadTranslations, translate } from "./sidc/catalog";
 import { lngLatToWorld, withModifiers, worldToLngLat, type Calibration, type SidcModifiers } from "./sidc/sidc";
@@ -3151,17 +3152,27 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     hoverMarkerId = m.id;
     map.getCanvas().style.cursor = "pointer";
     const info = markerInfoText(m.sidc);
-    hoverPopup
-      .setLngLat([m.world_x, m.world_y])
-      .setHTML(
-        `<div class="mk-tip"><b>${esc(markerLabel(m) || "—")}</b><br>` +
-          `${t("map.channel")}: ${esc(m.channel || "—")}<br>` +
-          `${t("marker.author")}: ${esc(m.author || "—")}<br>` +
-          `${t("phase.assign")}: ${esc(phaseNameOf(m.phase_id))}` +
-          (info ? `<div class="mk-tip-info">${esc(info)}</div>` : "") +
-          `</div>`,
-      )
-      .addTo(map);
+    // setDOMContent statt setHTML: keine HTML-Zeichenkette -> kein Sanitizer-Pfad,
+    // Werte landen ausschließlich als textContent.
+    const tip = document.createElement("div");
+    tip.className = "mk-tip";
+    const b = document.createElement("b");
+    b.textContent = markerLabel(m) || "—";
+    tip.append(b, document.createElement("br"));
+    for (const [k, v] of [
+      [t("map.channel"), m.channel || "—"],
+      [t("marker.author"), m.author || "—"],
+      [t("phase.assign"), phaseNameOf(m.phase_id)],
+    ] as [string, string][]) {
+      tip.append(`${k}: ${v}`, document.createElement("br"));
+    }
+    if (info) {
+      const d = document.createElement("div");
+      d.className = "mk-tip-info";
+      d.textContent = info;
+      tip.append(d);
+    }
+    hoverPopup.setLngLat([m.world_x, m.world_y]).setDOMContent(tip).addTo(map);
   };
   const hideHover = () => {
     hoverMarkerId = null;

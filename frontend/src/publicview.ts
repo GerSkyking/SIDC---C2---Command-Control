@@ -1,7 +1,8 @@
 // Öffentliche Nur-Lese-Ansicht: fast der volle Plan (Karte, Phasen/Zeitstrahl,
 // Ebenen, Channel, 2D/3D + Würfel, Screenshot, Präsentation, Dark/Hell, eigener
 // Zeiger, lokale Icon-Skalierung) — nur ohne Bearbeiten.
-import maplibregl, { type GeoJSONSource } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import type { GeoJSONSource } from "maplibre-gl";
 import { api } from "./api";
 import { channelLabel, channelVisibility, type ChannelEntry } from "./sidc/catalog";
 import { ensureMapIcon } from "./sidc/symbol";
