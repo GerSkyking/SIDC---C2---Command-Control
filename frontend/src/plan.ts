@@ -96,6 +96,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const images = new Map<string, PlanImage>(
     (snap.images ?? []).map((i: PlanImage) => [i.id, i]),
   );
+  let imageRail: { refresh: () => void } | null = null;
+  let imgResizingId: string | null = null;
   // Kleiner Bild-Wähler für "Bild in Notiz einfügen".
   const pickPlanImage = (): Promise<string | null> =>
     new Promise((resolve) => {
@@ -3603,7 +3605,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // ── Bilder auf der Karte (platzierbar, wie Annotationen) ─────────────
   const imagesEl = root.querySelector<HTMLDivElement>("#plan-images")!;
   let imgDragId: string | null = null;
-  let imgResizingId: string | null = null;
   let imgRefFallback = 0;
   const imageScale = (i: PlanImage): number => {
     if (!i.scale_fixed) return 1;
@@ -3702,7 +3703,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   phaseListeners.push(() => renderMapImages());
   renderMapImages();
 
-  const imageRail = mountImageRail(root, {
+  imageRail = mountImageRail(root, {
     planId,
     images,
     phases,
@@ -3714,7 +3715,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     map,
     onOpenLightbox: openLightbox,
   });
-  phaseListeners.push(() => imageRail.refresh());
+  phaseListeners.push(() => imageRail?.refresh());
 
   map.on("click", (e) => {
     if ((e as { defaultPrevented?: boolean }).defaultPrevented) return;
