@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     maps_dir: Path = Path("/data/maps")
     uploads_dir: Path = Path("/data/uploads")
     map_import_max_mb: int = 2048
+    image_max_mb: int = 10  # Plan-Bilder (in der DB gespeichert)
 
     oidc_enabled: bool = False
     oidc_issuer: str = ""

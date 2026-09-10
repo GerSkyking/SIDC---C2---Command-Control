@@ -24,6 +24,7 @@ from ..models import (
     Plan,
     PlanACL,
     PlanFolder,
+    PlanImage,
     PlanVersion,
     Stroke,
     User,
@@ -71,15 +72,18 @@ def _snapshot(db: Session, plan: Plan, *, include_builder: bool = True) -> dict:
     markers = list(db.scalars(select(Marker).where(Marker.plan_id == plan.id)))
     strokes = list(db.scalars(select(Stroke).where(Stroke.plan_id == plan.id)))
     anns = list(db.scalars(select(Annotation).where(Annotation.plan_id == plan.id)))
+    imgs = list(db.scalars(select(PlanImage).where(PlanImage.plan_id == plan.id)))
     if not include_builder:
         hide = _builder_phase_ids(db, plan.id)
         markers = [m for m in markers if m.phase_id not in hide]
         strokes = [s for s in strokes if s.phase_id not in hide]
         anns = [a for a in anns if a.phase_id not in hide]
+        imgs = [i for i in imgs if i.phase_id not in hide]
     return {
         "markers": [_marker_dict(m) for m in markers],
         "strokes": [_stroke_dict(s) for s in strokes],
         "annotations": [_annotation_dict(a) for a in anns],
+        "images": [_image_dict(i) for i in imgs],
     }
 
 
@@ -128,6 +132,16 @@ def _annotation_dict(a: Annotation) -> dict:
         "id": a.id, "phase_id": a.phase_id, "world_x": a.world_x, "world_y": a.world_y,
         "text": a.text, "width": a.width, "height": a.height,
         "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom,
+    }
+
+
+def _image_dict(i: PlanImage) -> dict:
+    return {
+        "id": i.id, "phase_id": i.phase_id, "filename": i.filename,
+        "content_type": i.content_type, "byte_size": i.byte_size,
+        "natural_w": i.natural_w, "natural_h": i.natural_h, "caption": i.caption,
+        "on_map": i.on_map, "world_x": i.world_x, "world_y": i.world_y,
+        "map_width": i.map_width, "scale_fixed": i.scale_fixed, "ref_zoom": i.ref_zoom,
     }
 
 
@@ -734,6 +748,16 @@ def clone_plan(
         d["phase_id"] = phase_map.get(s.phase_id or "")
         d["layer_id"] = layer_map.get(s.layer_id or "")
         db.add(Stroke(plan_id=clone.id, created_by=user.id, **d))
+
+    for img in db.scalars(select(PlanImage).where(PlanImage.plan_id == plan.id)):
+        db.add(PlanImage(
+            plan_id=clone.id, created_by=user.id, updated_by=user.id,
+            phase_id=phase_map.get(img.phase_id or ""),
+            filename=img.filename, content_type=img.content_type, byte_size=img.byte_size,
+            natural_w=img.natural_w, natural_h=img.natural_h, caption=img.caption, data=img.data,
+            on_map=img.on_map, world_x=img.world_x, world_y=img.world_y,
+            map_width=img.map_width, scale_fixed=img.scale_fixed, ref_zoom=img.ref_zoom,
+        ))
 
     db.add(PlanACL(plan_id=clone.id, subject_type="user", subject_id=user.id, level="owner"))
     if body.copy_acl:

@@ -9,6 +9,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -269,6 +270,36 @@ class Annotation(Base):
     height: Mapped[float] = mapped_column(Float, default=0)  # 0 = automatisch
     # Zoom-Skalierung: standardmäßig skaliert die Notiz mit der Karte; scale_fixed
     # friert sie auf Bildschirmgröße ein. ref_zoom = Zoom, bei dem width "natürlich" ist.
+    scale_fixed: Mapped[bool] = mapped_column(Boolean, default=False)
+    ref_zoom: Mapped[float] = mapped_column(Float, default=0)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class PlanImage(Base):
+    """Bild zu einem Plan (BLOB in der DB). An eine Phase gebunden; die Ebene
+    (Spieler/Missionsbau) ergibt sich aus Phase.plane — wie bei Annotation.
+    Optional zusätzlich auf der Karte platziert (dann zieh-/skalierbar wie eine Notiz)."""
+
+    __tablename__ = "plan_images"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
+    phase_id: Mapped[str | None] = mapped_column(ForeignKey("phases.id", ondelete="SET NULL"), index=True)
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    content_type: Mapped[str] = mapped_column(String(32), default="image/png")
+    byte_size: Mapped[int] = mapped_column(Integer, default=0)
+    natural_w: Mapped[int] = mapped_column(Integer, default=0)
+    natural_h: Mapped[int] = mapped_column(Integer, default=0)
+    caption: Mapped[str] = mapped_column(Text, default="")
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    # Karten-Platzierung (optional)
+    on_map: Mapped[bool] = mapped_column(Boolean, default=False)
+    world_x: Mapped[float] = mapped_column(Float, default=0)
+    world_y: Mapped[float] = mapped_column(Float, default=0)
+    map_width: Mapped[float] = mapped_column(Float, default=240)
     scale_fixed: Mapped[bool] = mapped_column(Boolean, default=False)
     ref_zoom: Mapped[float] = mapped_column(Float, default=0)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

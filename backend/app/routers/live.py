@@ -14,7 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..db import SessionLocal
-from ..models import Annotation, Marker, OrbatNode, Phase, Plan, Stroke, User, now
+from ..models import Annotation, Marker, OrbatNode, Phase, Plan, PlanImage, Stroke, User, now
 from ..sidc_status import status_from_sidc
 from ..permissions import (
     effective_caps,
@@ -162,6 +162,9 @@ async def _handle(
         "annotation.move": "move",
         "annotation.modify": "move",
         "annotation.delete": "delete",
+        "image.move": "move",
+        "image.modify": "move",
+        "image.delete": "delete",
     }.get(t or "")
     if need is None:
         await _reject(ws, msg.get("cid"), f"Unbekannter Typ: {t}")
@@ -174,6 +177,7 @@ async def _handle(
     if not is_builder and t in (
         "marker.create", "marker.modify", "stroke.commit", "stroke.modify",
         "annotation.create", "annotation.move", "annotation.modify",
+        "image.move", "image.modify",
     ):
         pid = (msg.get("data") or {}).get("phase_id")
         if t == "stroke.modify":
@@ -268,6 +272,21 @@ async def _handle(
         pid = await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
         await hub.broadcast(
             plan_id, {"type": "annotation.delete", "id": msg["id"]}, builder_only=bo(pid)
+        )
+
+    elif t in ("image.move", "image.modify"):
+        fields = {k: v for k, v in msg.get("data", {}).items() if k in IMAGE_UPDATE_FIELDS}
+        res = await run_in_threadpool(_update_image, plan_id, msg["id"], user.id, fields)
+        if res is not None:
+            await hub.broadcast(
+                plan_id, {"type": "image.upsert", "image": res},
+                builder_only=bo(res.get("phase_id")),
+            )
+
+    elif t == "image.delete":
+        pid = await run_in_threadpool(_delete_image, plan_id, msg["id"])
+        await hub.broadcast(
+            plan_id, {"type": "image.delete", "id": msg["id"]}, builder_only=bo(pid)
         )
 
 
@@ -467,5 +486,65 @@ def _delete_annotation(plan_id: str, ann_id: str) -> str | None:
             return None
         pid = a.phase_id
         db.delete(a)
+        db.commit()
+        return pid
+
+
+# ── Plan-Bilder ────────────────────────────────────────────────────────────
+
+IMAGE_UPDATE_FIELDS = (
+    "world_x", "world_y", "map_width", "caption", "phase_id",
+    "scale_fixed", "ref_zoom", "on_map",
+)
+
+
+def _image_out(i: PlanImage) -> dict:
+    return {
+        "id": i.id, "plan_id": i.plan_id, "phase_id": i.phase_id,
+        "filename": i.filename, "content_type": i.content_type, "byte_size": i.byte_size,
+        "natural_w": i.natural_w, "natural_h": i.natural_h, "caption": i.caption,
+        "on_map": i.on_map, "world_x": i.world_x, "world_y": i.world_y,
+        "map_width": i.map_width, "scale_fixed": i.scale_fixed, "ref_zoom": i.ref_zoom,
+    }
+
+
+def _create_image(plan_id: str, uid: str | None, meta: dict, raw: bytes, sniff: tuple[str, int, int]) -> dict:
+    ct, w, h = sniff
+    with SessionLocal() as db:
+        i = PlanImage(
+            plan_id=plan_id, created_by=uid, updated_by=uid,
+            phase_id=meta.get("phase_id") or None,
+            filename=str(meta.get("filename", ""))[:255],
+            caption=str(meta.get("caption", ""))[:2000],
+            content_type=ct, byte_size=len(raw), natural_w=w, natural_h=h,
+            data=raw,
+        )
+        db.add(i)
+        db.commit()
+        return _image_out(i)
+
+
+def _update_image(plan_id: str, image_id: str, uid: str | None, fields: dict) -> dict | None:
+    with SessionLocal() as db:
+        i = db.get(PlanImage, image_id)
+        if i is None or i.plan_id != plan_id:
+            return None
+        if "caption" in fields:
+            fields["caption"] = str(fields["caption"])[:2000]
+        for k, v in fields.items():
+            setattr(i, k, v)
+        i.updated_by = uid
+        i.updated_at = now()
+        db.commit()
+        return _image_out(i)
+
+
+def _delete_image(plan_id: str, image_id: str) -> str | None:
+    with SessionLocal() as db:
+        i = db.get(PlanImage, image_id)
+        if i is None or i.plan_id != plan_id:
+            return None
+        pid = i.phase_id
+        db.delete(i)
         db.commit()
         return pid

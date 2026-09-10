@@ -10,11 +10,11 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..db import SessionLocal
 from ..deps import DbDep
-from ..models import Annotation, Layer, Map, Marker, Phase, Plan, PublicShare, Stroke
+from ..models import Annotation, Layer, Map, Marker, Phase, Plan, PlanImage, PublicShare, Stroke
 from ..services.maps_import import map_dir
 from ..services.realtime import hub
 from .live import _marker_out
-from .plans import _builder_phase_ids, _stroke_dict, released_markers
+from .plans import _builder_phase_ids, _image_dict, _stroke_dict, released_markers
 from .tiles import build_style, read_tile
 
 router = APIRouter(prefix="/public/plans", tags=["public"])
@@ -136,7 +136,26 @@ def public_snapshot(token: str, db: DbDep) -> dict:
             for a in db.scalars(select(Annotation).where(Annotation.plan_id == plan.id))
             if ok(a.phase_id)
         ],
+        "images": [
+            _image_dict(i)
+            for i in db.scalars(select(PlanImage).where(PlanImage.plan_id == plan.id))
+            if ok(i.phase_id)
+        ],
     }
+
+
+@router.get("/{token}/images/{image_id}/raw")
+def public_image_raw(token: str, image_id: str, db: DbDep) -> Response:
+    plan, sh = _resolve_share(token, db)
+    i = db.get(PlanImage, image_id)
+    if i is None or i.plan_id != plan.id:
+        raise HTTPException(404)
+    incl = bool(sh.include_builder)
+    hide: set[str] = set() if incl else _builder_phase_ids(db, plan.id)
+    allow = _allowed_phases(db, plan, sh)
+    if i.phase_id in hide or not (allow is None or i.phase_id is None or i.phase_id in allow):
+        raise HTTPException(404)
+    return Response(i.data, media_type=i.content_type, headers={"Cache-Control": "public, max-age=300"})
 
 
 @router.get("/{token}/style.json")
@@ -206,8 +225,9 @@ async def public_live(websocket: WebSocket, token: str) -> None:
         return
 
     from .live import (
-        MARKER_FIELDS, _create_annotation, _create_marker, _create_stroke,
-        _delete_annotation, _delete_marker, _delete_stroke, _update_annotation, _update_marker,
+        IMAGE_UPDATE_FIELDS, MARKER_FIELDS, _create_annotation, _create_marker, _create_stroke,
+        _delete_annotation, _delete_image, _delete_marker, _delete_stroke,
+        _update_annotation, _update_image, _update_marker,
     )
 
     with SessionLocal() as db:
@@ -295,6 +315,14 @@ async def public_live(websocket: WebSocket, token: str) -> None:
             elif typ == "annotation.delete" and can_edit:
                 await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
                 await hub.broadcast(plan_id, {"type": "annotation.delete", "id": msg["id"]})
+            elif typ in ("image.move", "image.modify") and (can_edit or can_move):
+                fields = {k: v for k, v in data.items() if k in IMAGE_UPDATE_FIELDS}
+                res = await run_in_threadpool(_update_image, plan_id, msg["id"], None, fields)
+                if res and phase_ok(res.get("phase_id")):
+                    await hub.broadcast(plan_id, {"type": "image.upsert", "image": res})
+            elif typ == "image.delete" and can_edit:
+                await run_in_threadpool(_delete_image, plan_id, msg["id"])
+                await hub.broadcast(plan_id, {"type": "image.delete", "id": msg["id"]})
     except WebSocketDisconnect:
         pass
     finally:

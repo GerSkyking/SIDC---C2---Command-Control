@@ -12,8 +12,9 @@ from sqlalchemy import desc, select
 
 from .. import audit
 from ..deps import AdminUser, DbDep
-from ..models import AuditLog, Group, GroupMember, User
+from ..models import AuditLog, Group, GroupMember, Phase, Plan, PlanImage, User
 from ..security import MIN_PASSWORD_LEN, hash_password
+from ..services.realtime import hub
 
 log = logging.getLogger("sidc.admin")
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -176,6 +177,47 @@ def list_audit(
         "offset": offset,
         "limit": limit,
     }
+
+
+# ─── Plan-Bilder (globale Übersicht) ───────────────────────────────────────
+
+@router.get("/images")
+def list_images(admin: AdminUser, db: DbDep) -> list[dict]:
+    rows = list(db.scalars(select(PlanImage).order_by(desc(PlanImage.created_at)).limit(1000)))
+    plan_names = {
+        p.id: p.name for p in db.scalars(select(Plan).where(Plan.id.in_({r.plan_id for r in rows})))
+    }
+    phase_names = {
+        p.id: p.name for p in db.scalars(select(Phase).where(Phase.id.in_({r.phase_id for r in rows if r.phase_id})))
+    }
+    users = {
+        u.id: u.label
+        for u in db.scalars(select(User).where(User.id.in_({r.created_by for r in rows if r.created_by})))
+    }
+    return [
+        {
+            "id": r.id, "filename": r.filename, "byte_size": r.byte_size,
+            "content_type": r.content_type,
+            "plan_id": r.plan_id, "plan_name": plan_names.get(r.plan_id, "—"),
+            "phase_id": r.phase_id, "phase_name": phase_names.get(r.phase_id or "", "—"),
+            "uploader": users.get(r.created_by or "", "—"),
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@router.delete("/images/{image_id}")
+async def delete_image(image_id: str, request: Request, admin: AdminUser, db: DbDep) -> dict:
+    img = db.get(PlanImage, image_id)
+    if img is not None:
+        plan_id = img.plan_id
+        db.delete(img)
+        db.commit()
+        audit.record(db, "image.delete", user_id=admin.id, target_type="image",
+                     target_id=image_id, request=request)
+        await hub.broadcast(plan_id, {"type": "image.delete", "id": image_id})
+    return {"ok": True}
 
 
 # ─── Gruppen ───────────────────────────────────────────────────────────────
