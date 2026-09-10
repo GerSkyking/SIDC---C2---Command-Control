@@ -651,6 +651,16 @@ label.chk input { width: auto; }
 .orb-rel-edit { display: flex; flex-direction: column; gap: 0.3rem; }
 @media (max-width: 720px) { .orbat-wrap { flex-direction: column; } .orbat-list { flex: none; width: 100%; } }
 
+/* ── Screenshot-Optionen ───────────────────────────────────────────── */
+.shot-wrap { position: relative; display: inline-flex; align-items: center; }
+.shot-caret { padding: 0.2rem 0.25rem; font-size: 0.7rem; line-height: 1; margin-left: -2px; }
+.shot-opts { position: absolute; top: calc(100% + 4px); right: 0; z-index: 12;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
+  box-shadow: var(--shadow); padding: 0.5rem 0.6rem; display: flex; flex-direction: column;
+  gap: 0.4rem; min-width: 12rem; }
+.shot-opts label { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.78rem; color: var(--muted); }
+.shot-opts select { color: var(--fg); }
+
 /* ── Lightbox (Vollbild-Bildbetrachter) ─────────────────────────────── */
 .lightbox { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center;
   justify-content: center; background: rgba(0, 0, 0, 0.85); }

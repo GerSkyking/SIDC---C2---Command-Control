@@ -13,6 +13,7 @@ import { makeMovable } from "./movable";
 import { renderMarkdown } from "./md";
 import { esc } from "./esc";
 import { initNavCube } from "./navcube";
+import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
 
 interface M {
   id: string;
@@ -105,7 +106,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       <span class="badge">${t("plan.public")}</span>
       <button id="t3d" title="${t("map.threeD")}">3D</button>
       ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") })}
-      ${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}
+      <span class="shot-wrap">${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}${shotOptsMarkup()}</span>
       ${
         chanList?.length
           ? `<select id="chan" title="${t("map.channel")}">${chanList
@@ -770,20 +771,17 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
 
   // ── Screenshot ──────────────────────────────────────────────────────
   const shotBtn = root.querySelector<HTMLButtonElement>("#shot")!;
+  const getShotOpts = wireShotOpts(root);
   shotBtn.addEventListener("click", async () => {
     shotBtn.disabled = true;
     try {
-      await new Promise<void>((res) => {
-        if (map.loaded() && !map.isMoving()) return res();
-        map.once("idle", () => res());
-        map.triggerRepaint();
-      });
-      map.redraw();
-      const mc = map.getCanvas();
+      const { res, fmt } = getShotOpts();
+      const out = await renderMapCanvas(map, res);
+      const { mime, ext, quality } = mimeExt(fmt);
       const a = document.createElement("a");
-      a.href = mc.toDataURL("image/png");
+      a.href = out.toDataURL(mime, quality);
       const safe = (s: string) => s.replace(/[^\w.-]+/g, "_") || "map";
-      a.download = `${safe(snap.plan.name)}_${Date.now()}.png`;
+      a.download = `${safe(snap.plan.name)}_${Date.now()}.${ext}`;
       a.click();
     } finally {
       shotBtn.disabled = false;

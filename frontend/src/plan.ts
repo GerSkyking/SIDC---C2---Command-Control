@@ -20,6 +20,7 @@ import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
 import { esc } from "./esc";
 import { initNavCube } from "./navcube";
+import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
 
 interface Marker {
   id: string;
@@ -206,7 +207,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           : ""
       }
       <input type="datetime-local" id="dtg" title="${t("map.dtg")}" />
-      ${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}
+      <span class="shot-wrap">${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}${shotOptsMarkup()}</span>
       ${iconBtn("pdf", { id: "briefing", title: t("briefing.export") })}
       <select id="chan" title="${t('map.channel')}">${(channels?.channels ?? [])
         .map((c) => `<option value="${esc(c.name)}" ${c.name === myChannel ? "selected" : ""}>${esc(channelLabel(c))}</option>`)
@@ -998,44 +999,37 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // ── Screenshot: nur Karteninhalt (Sat/Grid + Orte + Marker + Zeichnungen
   //    + Richtungspfeile), keine Bedienelemente. Unten links der DTG.
   const shotBtn = root.querySelector<HTMLButtonElement>("#shot")!;
+  const getShotOpts = wireShotOpts(root);
   shotBtn.addEventListener("click", async () => {
     shotBtn.disabled = true;
     try {
-      await new Promise<void>((res) => {
-        if (map.loaded() && !map.isMoving()) return res();
-        map.once("idle", () => res());
-        map.triggerRepaint();
-      });
-      map.redraw(); // synchroner Vollframe → Puffer enthält alle GL-Layer
-      const mc = map.getCanvas();
-      const out = document.createElement("canvas");
-      out.width = mc.width;
-      out.height = mc.height;
+      const { res, fmt } = getShotOpts();
+      const out = await renderMapCanvas(map, res);
       const ctx = out.getContext("2d")!;
-      ctx.drawImage(mc, 0, 0);
       if (baseLayerVisible.grid !== false) ctx.drawImage(gridCanvas, 0, 0, out.width, out.height);
 
       const d = shotDate();
-      const dpr = window.devicePixelRatio || 1;
-      ctx.font = `bold ${Math.round(15 * dpr)}px monospace`;
+      const s = out.height / 1080; // Label-Skalierung, auflösungsunabhängig
+      ctx.font = `bold ${Math.round(15 * s)}px monospace`;
       ctx.textBaseline = "bottom";
-      ctx.lineWidth = 3 * dpr;
+      ctx.lineWidth = 3 * s;
       ctx.strokeStyle = "rgba(0,0,0,0.85)";
       ctx.fillStyle = "#fff";
       const label = militaryDtg(d);
-      const x = 12 * dpr;
-      const y = out.height - 12 * dpr;
+      const x = 12 * s;
+      const y = out.height - 12 * s;
       ctx.strokeText(label, x, y);
       ctx.fillText(label, x, y);
 
       const phaseName = phases.find((p) => p.id === currentPhaseId)?.name ?? "global";
-      const safe = (s: string) => s.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "map";
+      const safe = (str: string) => str.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "map";
       const fileStamp =
         `${p2(d.getDate())}${p2(d.getMonth() + 1)}${d.getFullYear()}-` +
         `${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
+      const { mime, ext, quality } = mimeExt(fmt);
       const a = document.createElement("a");
-      a.href = out.toDataURL("image/png");
-      a.download = `${safe(snap.plan.name)}_${safe(phaseName)}_${fileStamp}.png`;
+      a.href = out.toDataURL(mime, quality);
+      a.download = `${safe(snap.plan.name)}_${safe(phaseName)}_${fileStamp}.${ext}`;
       a.click();
     } finally {
       shotBtn.disabled = false;
