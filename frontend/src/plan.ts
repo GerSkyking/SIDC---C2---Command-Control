@@ -780,12 +780,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       source: "markers",
       layout: {
         "text-field": ["get", "label"],
-        "text-optional": true,
         "text-size": 11,
         "text-anchor": UNIT_TEXT_ANCHOR,
         "text-offset": UNIT_TEXT_OFFSET,
         "text-justify": UNIT_TEXT_JUSTIFY,
-        "text-allow-overlap": false,
+        // Im Original-HUD werden Einheitstext/Zusatztext nie wegen Platzmangel
+        // ausgeblendet — anders als Kartenbeschriftungen. Sonst verwirft MapLibre
+        // sonst eins der beiden dicht beieinanderliegenden Textfelder.
+        "text-allow-overlap": true,
         "icon-allow-overlap": true,
       },
       paint: {
@@ -801,12 +803,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       source: "markers",
       layout: {
         "text-field": ["get", "ai"],
-        "text-optional": true,
         "text-size": 11,
         "text-anchor": AI_TEXT_ANCHOR,
         "text-offset": AI_TEXT_OFFSET,
         "text-justify": AI_TEXT_JUSTIFY,
-        "text-allow-overlap": false,
+        "text-allow-overlap": true,
         "icon-allow-overlap": true,
       },
       paint: {

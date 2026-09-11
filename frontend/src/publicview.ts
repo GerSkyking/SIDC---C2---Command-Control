@@ -549,11 +549,11 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       source: "m",
       layout: {
         "text-field": ["get", "label"],
-        "text-optional": true,
         "text-size": 11,
         "text-anchor": UNIT_TEXT_ANCHOR,
         "text-offset": UNIT_TEXT_OFFSET,
         "text-justify": UNIT_TEXT_JUSTIFY,
+        "text-allow-overlap": true,
       },
       paint: {
         "text-color": "#e6e9ee",
@@ -568,11 +568,11 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       source: "m",
       layout: {
         "text-field": ["get", "ai"],
-        "text-optional": true,
         "text-size": 11,
         "text-anchor": AI_TEXT_ANCHOR,
         "text-offset": AI_TEXT_OFFSET,
         "text-justify": AI_TEXT_JUSTIFY,
+        "text-allow-overlap": true,
       },
       paint: {
         "text-color": "#e6e9ee",
