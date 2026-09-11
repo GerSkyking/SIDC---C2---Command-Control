@@ -23,6 +23,7 @@ import { initNavCube } from "./navcube";
 import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
 import { openLightbox } from "./lightbox";
 import { mountImageRail, IMAGE_DND_TYPE } from "./imagerail";
+import { renderImageSettings } from "./imagePanel";
 import type { PlanImage } from "./api";
 
 // Bild-URL -> JPEG-DataURL (normalisiert WebP/GIF/PNG für jsPDF).
@@ -3667,6 +3668,77 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const p = map.project([i.world_x, i.world_y]);
       el.style.transform = `translate(${p.x}px, ${p.y}px) scale(${imageScale(i)})`;
     }
+    positionImgPopover();
+  }
+
+  // ── Zahnrad-Popover direkt am Kartenbild (Name/Notiz/Phase/Skalieren/…) ──
+  let imgPopoverId: string | null = null;
+  let imgPopoverEl: HTMLElement | null = null;
+  function closeImgPopover(): void {
+    imgPopoverEl?.remove();
+    imgPopoverEl = null;
+    imgPopoverId = null;
+  }
+  function positionImgPopover(): void {
+    if (!imgPopoverEl || !imgPopoverId) return;
+    const img = images.get(imgPopoverId);
+    if (!img || !img.on_map) {
+      closeImgPopover();
+      return;
+    }
+    const p = map.project([img.world_x, img.world_y]);
+    const w = img.map_width * imageScale(img);
+    const mr = map.getContainer().getBoundingClientRect();
+    const rr = root.getBoundingClientRect();
+    const ox = mr.left - rr.left;
+    const oy = mr.top - rr.top;
+    const popW = imgPopoverEl.offsetWidth || 304;
+    let left = ox + p.x + w / 2 + 10;
+    left = Math.max(8, Math.min(left, rr.width - popW - 8));
+    const top = Math.max(8, oy + p.y - 10);
+    imgPopoverEl.style.left = `${left}px`;
+    imgPopoverEl.style.top = `${top}px`;
+  }
+  function toggleImgPopover(id: string): void {
+    if (imgPopoverId === id) {
+      closeImgPopover();
+      return;
+    }
+    const img = images.get(id);
+    if (!img) return;
+    closeImgPopover();
+    imgPopoverId = id;
+    const el = document.createElement("div");
+    el.className = "img-popover";
+    el.innerHTML = `
+      <div class="img-popover-head">
+        <input data-ip-cap value="${esc(img.caption)}" placeholder="${t("img.caption")}" title="${t("img.captionHint")}" />
+        <button class="icon-btn" data-ip-close title="${t("lightbox.close")}">${icon("x", 14)}</button>
+      </div>
+      <div data-ip-body></div>`;
+    root.appendChild(el);
+    imgPopoverEl = el;
+    el.querySelector<HTMLInputElement>("[data-ip-cap]")!.addEventListener("change", (e) => {
+      const v = (e.target as HTMLInputElement).value;
+      const cur = images.get(id);
+      if (cur) cur.caption = v;
+      socket.send({ type: "image.modify", id, data: { caption: v, phase_id: cur?.phase_id ?? null } });
+      renderMapImages();
+    });
+    el.querySelector("[data-ip-close]")!.addEventListener("click", () => closeImgPopover());
+    renderImageSettings(el.querySelector<HTMLElement>("[data-ip-body]")!, img, {
+      isMB,
+      phases,
+      send: (m) => socket.send(m),
+      getMapCenter: () => map.getCenter(),
+      getMapZoom: () => map.getZoom(),
+      onChanged: () => {
+        renderMapImages();
+        imageRail?.refresh();
+      },
+      onDeleted: () => closeImgPopover(),
+    });
+    positionImgPopover();
   }
   function renderMapImages(): void {
     if (imgResizingId) return;
@@ -3686,7 +3758,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       el.innerHTML =
         `<img src="${esc(api.planImageUrl(planId, i.id))}" alt="${esc(tip)}" title="${esc(tip)}" draggable="false" />` +
         (canEdit
-          ? `<button class="pimg-x" data-imgx title="${t("img.removeFromMap")}">${icon("x", 12)}</button>` +
+          ? `<button class="pimg-gear" data-imggear title="${t("settings.title")}">${icon("settings", 12)}</button>` +
+            `<button class="pimg-x" data-imgx title="${t("img.removeFromMap")}">${icon("x", 12)}</button>` +
             `<div class="pimg-rz"></div>`
           : "");
       el.addEventListener("mousedown", (ev) => onImageDown(ev, i.id));
@@ -3697,7 +3770,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           imgClickSuppressed = false;
           return;
         }
-        openLightbox([{ url: api.planImageUrl(planId, i.id), caption: i.caption || i.filename }]);
+        openLightbox([{ url: api.planImageUrl(planId, i.id), caption: i.caption || i.filename, note: i.note }]);
+      });
+      el.querySelector("[data-imggear]")?.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        toggleImgPopover(i.id);
       });
       el.querySelector("[data-imgx]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -3774,7 +3851,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("move", () => {
     if (!imgDragId && !imgResizingId) positionImages();
   });
-  phaseListeners.push(() => renderMapImages());
+  phaseListeners.push(() => {
+    closeImgPopover();
+    renderMapImages();
+  });
+  document.addEventListener("mousedown", (e) => {
+    const t2 = e.target as HTMLElement;
+    if (imgPopoverEl && !imgPopoverEl.contains(t2) && !t2.closest("[data-imggear]")) closeImgPopover();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && imgPopoverEl) closeImgPopover();
+  });
   renderMapImages();
 
   // Drag&Drop aus der Bild-Sidebar auf die Karte -> platzieren.

@@ -2,10 +2,13 @@
 // und der öffentlichen Ansicht genutzt. Keine Abhängigkeiten.
 import { icon } from "./icons";
 import { t } from "./i18n";
+import { renderMarkdown } from "./md";
 
 export interface LightboxItem {
   url: string;
   caption?: string;
+  /** Längere Notiz (Markdown), erscheint in einer eigenen Scrollbox unter dem Bild. */
+  note?: string;
 }
 
 let open: HTMLElement | null = null;
@@ -23,16 +26,20 @@ export function openLightbox(items: LightboxItem[], start = 0): void {
     <figure class="lb-fig">
       <img class="lb-img" alt="" />
       <figcaption class="lb-cap"></figcaption>
+      <div class="lb-note"></div>
     </figure>
     ${items.length > 1 ? `<button class="lb-nav lb-next">${icon("chevron", 24)}</button>` : ""}`;
 
   const img = back.querySelector<HTMLImageElement>(".lb-img")!;
   const cap = back.querySelector<HTMLElement>(".lb-cap")!;
+  const noteEl = back.querySelector<HTMLElement>(".lb-note")!;
   const show = () => {
     const it = items[idx];
     img.src = it.url;
     cap.textContent = it.caption || "";
     cap.hidden = !it.caption;
+    noteEl.innerHTML = it.note ? renderMarkdown(it.note) : "";
+    noteEl.hidden = !it.note;
   };
   const step = (d: number) => {
     idx = (idx + d + items.length) % items.length;

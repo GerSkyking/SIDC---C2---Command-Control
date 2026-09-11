@@ -115,6 +115,7 @@ export interface PlanImage {
   natural_w: number;
   natural_h: number;
   caption: string;
+  note: string;
   on_map: boolean;
   world_x: number;
   world_y: number;

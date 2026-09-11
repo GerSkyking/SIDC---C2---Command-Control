@@ -493,7 +493,7 @@ def _delete_annotation(plan_id: str, ann_id: str) -> str | None:
 # ── Plan-Bilder ────────────────────────────────────────────────────────────
 
 IMAGE_UPDATE_FIELDS = (
-    "world_x", "world_y", "map_width", "caption", "phase_id",
+    "world_x", "world_y", "map_width", "caption", "note", "phase_id",
     "scale_fixed", "ref_zoom", "on_map",
 )
 
@@ -502,7 +502,7 @@ def _image_out(i: PlanImage) -> dict:
     return {
         "id": i.id, "plan_id": i.plan_id, "phase_id": i.phase_id,
         "filename": i.filename, "content_type": i.content_type, "byte_size": i.byte_size,
-        "natural_w": i.natural_w, "natural_h": i.natural_h, "caption": i.caption,
+        "natural_w": i.natural_w, "natural_h": i.natural_h, "caption": i.caption, "note": i.note,
         "on_map": i.on_map, "world_x": i.world_x, "world_y": i.world_y,
         "map_width": i.map_width, "scale_fixed": i.scale_fixed, "ref_zoom": i.ref_zoom,
     }
@@ -531,6 +531,8 @@ def _update_image(plan_id: str, image_id: str, uid: str | None, fields: dict) ->
             return None
         if "caption" in fields:
             fields["caption"] = str(fields["caption"])[:2000]
+        if "note" in fields:
+            fields["note"] = str(fields["note"])[:20000]
         for k, v in fields.items():
             setattr(i, k, v)
         i.updated_by = uid

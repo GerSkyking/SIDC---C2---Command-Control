@@ -293,7 +293,8 @@ class PlanImage(Base):
     byte_size: Mapped[int] = mapped_column(Integer, default=0)
     natural_w: Mapped[int] = mapped_column(Integer, default=0)
     natural_h: Mapped[int] = mapped_column(Integer, default=0)
-    caption: Mapped[str] = mapped_column(Text, default="")
+    caption: Mapped[str] = mapped_column(Text, default="")  # kurzer Name
+    note: Mapped[str] = mapped_column(Text, default="", server_default="")  # längere Notiz (Markdown)
     data: Mapped[bytes] = mapped_column(LargeBinary)
     # Karten-Platzierung (optional)
     on_map: Mapped[bool] = mapped_column(Boolean, default=False)

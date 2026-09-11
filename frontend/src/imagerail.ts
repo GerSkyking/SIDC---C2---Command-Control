@@ -7,20 +7,15 @@ import { icon } from "./icons";
 import { esc } from "./esc";
 import { toast, toastError } from "./notify";
 import type { LightboxItem } from "./lightbox";
+import { renderImageSettings, isEditingImageNote, type ImgPanelPhase } from "./imagePanel";
 
 /** MIME-Type für die Drag&Drop-Nutzlast (Sidebar -> Karte). */
 export const IMAGE_DND_TYPE = "application/x-sidc-image";
 
-interface RailPhase {
-  id: string;
-  name: string;
-  plane?: "player" | "builder";
-}
-
 export interface ImageRailCtx {
   planId: string;
   images: Map<string, PlanImage>;
-  phases: RailPhase[];
+  phases: ImgPanelPhase[];
   isMB: boolean;
   canEdit: boolean;
   imageMaxMb: number;
@@ -35,12 +30,6 @@ export interface ImageRail {
 }
 
 const OPEN_KEY = "sidc_imgrail_open";
-
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
 
 export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail {
   const rail = document.createElement("aside");
@@ -119,19 +108,6 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
     }
   });
 
-  const phaseOpts = (sel: string | null): string => {
-    const list = ctx.isMB ? ctx.phases : ctx.phases.filter((p) => p.plane !== "builder");
-    return (
-      `<option value="">${t("phase.global")}</option>` +
-      list
-        .map(
-          (p) =>
-            `<option value="${esc(p.id)}" ${p.id === sel ? "selected" : ""}>${p.plane === "builder" ? "⚑ " : ""}${esc(p.name)}</option>`,
-        )
-        .join("")
-    );
-  };
-
   function currentList(): PlanImage[] {
     const pid = ctx.getCurrentPhaseId();
     const builderIds = new Set(ctx.phases.filter((p) => p.plane === "builder").map((p) => p.id));
@@ -141,8 +117,13 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
     });
   }
 
+  // Welche Zeile ihr Zahnrad-Panel gerade offen hat — bleibt über einen Neuaufbau
+  // hinweg erhalten (z. B. nach Phasenwechsel), außer die Zeile fällt aus der Liste.
+  const openGear = new Set<string>();
+
   function render(): void {
     if (!open) return;
+    if (isEditingImageNote()) return; // Notiz wird gerade getippt — kein destruktiver Rebuild
     const list = currentList();
     if (!list.length) {
       listEl.innerHTML = `<p class="muted" style="padding:.6rem">${t("imgrail.empty")}</p>`;
@@ -155,28 +136,15 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
             loading="lazy" data-ir-open ${ctx.canEdit ? 'draggable="true" data-ir-drag' : ""}
             title="${ctx.canEdit ? esc(t("imgrail.dragHint")) : ""}" />
           <div class="ir-meta">
-            ${
-              ctx.canEdit
-                ? `<input class="ir-cap" data-ir-cap value="${esc(i.caption)}" placeholder="${t("img.caption")}" title="${t("img.captionHint")}" />`
-                : `<div class="ir-cap-ro">${esc(i.caption || i.filename)}</div>`
-            }
-            <div class="muted" style="font-size:.72rem">${esc(i.filename)} · ${fmtBytes(i.byte_size)}</div>
-            ${
-              ctx.canEdit
-                ? `<div class="ir-row">
-                     <label class="ir-chk"><input type="checkbox" data-ir-onmap ${i.on_map ? "checked" : ""}/> ${t("img.showOnMap")}</label>
-                   </div>
-                   <select class="ir-phase" data-ir-phase>${phaseOpts(i.phase_id)}</select>
-                   <div class="ir-actions" data-ir-actions>
-                     <button class="icon-btn" data-ir-gear title="${t("settings.title")}">${icon("settings", 14)}</button>
-                     <button class="icon-btn ir-del" data-ir-del title="${t("img.delete")}">${icon("trash", 14)}</button>
-                   </div>
-                   <div class="ir-gear-panel" data-ir-gearpanel hidden>
-                     <label class="ir-chk"><input type="checkbox" data-ir-scale ${i.scale_fixed ? "checked" : ""}/> ${t("img.scaleWithMap")}</label>
-                     <p class="muted ir-gear-hint">${t("img.captionHint")}</p>
-                   </div>`
-                : ""
-            }
+            <div class="ir-name-row">
+              ${
+                ctx.canEdit
+                  ? `<input class="ir-cap" data-ir-cap value="${esc(i.caption)}" placeholder="${t("img.caption")}" title="${t("img.captionHint")}" />`
+                  : `<div class="ir-cap-ro">${esc(i.caption || i.filename)}</div>`
+              }
+              ${ctx.canEdit ? `<button class="icon-btn" data-ir-gear title="${t("settings.title")}">${icon("settings", 14)}</button>` : ""}
+            </div>
+            ${ctx.canEdit ? `<div class="ir-gear-panel" data-ir-gearpanel ${openGear.has(i.id) ? "" : "hidden"}></div>` : ""}
           </div>
         </div>`,
       )
@@ -184,11 +152,11 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
 
     listEl.querySelectorAll<HTMLElement>(".ir-item").forEach((row) => {
       const id = row.dataset.iid!;
-      const get = () => ctx.images.get(id);
       row.querySelector("[data-ir-open]")?.addEventListener("click", () => {
         const items = currentList().map((x) => ({
           url: api.planImageUrl(ctx.planId, x.id),
           caption: x.caption || x.filename,
+          note: x.note,
         }));
         ctx.onOpenLightbox(items, currentList().findIndex((x) => x.id === id));
       });
@@ -198,62 +166,37 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
       });
       row.querySelector<HTMLInputElement>("[data-ir-cap]")?.addEventListener("change", (e) => {
         const v = (e.target as HTMLInputElement).value;
-        const cur = get();
+        const cur = ctx.images.get(id);
         if (cur) cur.caption = v;
         ctx.send({ type: "image.modify", id, data: { caption: v, phase_id: cur?.phase_id ?? null } });
       });
-      row.querySelector<HTMLInputElement>("[data-ir-onmap]")?.addEventListener("change", (e) => {
-        const on = (e.target as HTMLInputElement).checked;
-        const cur = get();
-        if (!cur) return;
-        cur.on_map = on;
-        const data: Record<string, unknown> = { on_map: on, phase_id: cur.phase_id };
-        if (on && cur.world_x === 0 && cur.world_y === 0) {
-          const c = ctx.map.getCenter();
-          cur.world_x = c.lng;
-          cur.world_y = c.lat;
-          cur.ref_zoom = ctx.map.getZoom();
-          data.world_x = c.lng;
-          data.world_y = c.lat;
-          data.ref_zoom = cur.ref_zoom;
-        }
-        ctx.send({ type: "image.modify", id, data });
-        render();
-      });
-      row.querySelector<HTMLInputElement>("[data-ir-scale]")?.addEventListener("change", (e) => {
-        const on = (e.target as HTMLInputElement).checked;
-        const cur = get();
-        if (!cur) return;
-        cur.scale_fixed = on;
-        const data: Record<string, unknown> = { scale_fixed: on, phase_id: cur.phase_id };
-        if (on && (!cur.ref_zoom || cur.ref_zoom <= 0)) {
-          cur.ref_zoom = ctx.map.getZoom();
-          data.ref_zoom = cur.ref_zoom;
-        }
-        ctx.send({ type: "image.modify", id, data });
-      });
-      row.querySelector<HTMLSelectElement>("[data-ir-phase]")?.addEventListener("change", (e) => {
-        const v = (e.target as HTMLSelectElement).value || null;
-        const cur = get();
-        if (cur) cur.phase_id = v;
-        ctx.send({ type: "image.modify", id, data: { phase_id: v } });
-        render();
-      });
+      const panel = row.querySelector<HTMLElement>("[data-ir-gearpanel]");
+      const openPanel = () => {
+        const img = ctx.images.get(id);
+        if (!panel || !img) return;
+        renderImageSettings(panel, img, {
+          isMB: ctx.isMB,
+          phases: ctx.phases,
+          send: ctx.send,
+          getMapCenter: ctx.map.getCenter.bind(ctx.map),
+          getMapZoom: ctx.map.getZoom.bind(ctx.map),
+          onChanged: () => render(),
+          onDeleted: () => {
+            openGear.delete(id);
+            render();
+          },
+        });
+      };
       row.querySelector("[data-ir-gear]")?.addEventListener("click", () => {
-        const panel = row.querySelector<HTMLElement>("[data-ir-gearpanel]")!;
+        if (!panel) return;
         panel.hidden = !panel.hidden;
+        if (panel.hidden) openGear.delete(id);
+        else {
+          openGear.add(id);
+          openPanel();
+        }
       });
-      row.querySelector("[data-ir-del]")?.addEventListener("click", () => {
-        const actions = row.querySelector<HTMLElement>("[data-ir-actions]")!;
-        actions.innerHTML =
-          `<label class="ir-delok"><input type="checkbox" data-ir-delok/> ${t("common.delete")}</label>` +
-          `<button class="icon-btn" data-ir-delcancel title="${t("common.cancel")}">${icon("back", 12)}</button>`;
-        actions.querySelector("[data-ir-delok]")!.addEventListener("change", () =>
-          ctx.send({ type: "image.delete", id }),
-        );
-        actions.querySelector("[data-ir-delcancel]")!.addEventListener("click", () => render());
-        row.addEventListener("mouseleave", () => render(), { once: true });
-      });
+      if (panel && !panel.hidden) openPanel();
     });
   }
 

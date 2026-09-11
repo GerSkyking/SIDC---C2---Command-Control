@@ -368,7 +368,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       if (img) el.textContent = "🖼︎ " + (img.caption || img.filename);
       el.addEventListener("click", (e) => {
         e.preventDefault();
-        openLightbox([{ url: api.publicImageUrl(token, id), caption: img?.caption || img?.filename || "" }]);
+        openLightbox([{ url: api.publicImageUrl(token, id), caption: img?.caption || img?.filename || "", note: img?.note }]);
       });
     });
   };
@@ -419,7 +419,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   imagesEl.addEventListener("dblclick", (e) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>(".pimg");
     const i = el && images.find((x) => x.id === el.dataset.iid);
-    if (i) openLightbox([{ url: api.publicImageUrl(token, i.id), caption: i.caption || i.filename }]);
+    if (i) openLightbox([{ url: api.publicImageUrl(token, i.id), caption: i.caption || i.filename, note: i.note }]);
   });
   map.on("move", positionImages);
 

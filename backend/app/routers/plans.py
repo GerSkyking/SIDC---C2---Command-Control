@@ -139,7 +139,7 @@ def _image_dict(i: PlanImage) -> dict:
     return {
         "id": i.id, "phase_id": i.phase_id, "filename": i.filename,
         "content_type": i.content_type, "byte_size": i.byte_size,
-        "natural_w": i.natural_w, "natural_h": i.natural_h, "caption": i.caption,
+        "natural_w": i.natural_w, "natural_h": i.natural_h, "caption": i.caption, "note": i.note,
         "on_map": i.on_map, "world_x": i.world_x, "world_y": i.world_y,
         "map_width": i.map_width, "scale_fixed": i.scale_fixed, "ref_zoom": i.ref_zoom,
     }
@@ -754,7 +754,7 @@ def clone_plan(
             plan_id=clone.id, created_by=user.id, updated_by=user.id,
             phase_id=phase_map.get(img.phase_id or ""),
             filename=img.filename, content_type=img.content_type, byte_size=img.byte_size,
-            natural_w=img.natural_w, natural_h=img.natural_h, caption=img.caption, data=img.data,
+            natural_w=img.natural_w, natural_h=img.natural_h, caption=img.caption, note=img.note, data=img.data,
             on_map=img.on_map, world_x=img.world_x, world_y=img.world_y,
             map_width=img.map_width, scale_fixed=img.scale_fixed, ref_zoom=img.ref_zoom,
         ))
