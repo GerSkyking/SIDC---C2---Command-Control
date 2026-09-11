@@ -523,8 +523,8 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     const UNIT_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
       "match", ["get", "labelcat"],
       "line", ["literal", [0, -1.6]],
-      "cm", ["literal", [0.6, -0.4]],
-      ["literal", [-0.5, 0.6]],
+      "cm", ["literal", [1.7, -0.4]],
+      ["literal", [-1.7, 0.6]],
     ];
     const AI_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
       "match", ["get", "labelcat"],
@@ -536,7 +536,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       "match", ["get", "labelcat"],
       "line", ["literal", [0, 1.6]],
       "cm", ["literal", [0, -2.7]],
-      ["literal", [0.5, 0]],
+      ["literal", [1.7, 0]],
     ];
     const UNIT_TEXT_JUSTIFY: maplibregl.ExpressionSpecification = [
       "match", ["get", "labelcat"],
