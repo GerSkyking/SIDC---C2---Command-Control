@@ -532,6 +532,16 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       "25", ["literal", [0, -2.7]],
       ["literal", [0.5, 0]],
     ];
+    const UNIT_TEXT_JUSTIFY: maplibregl.ExpressionSpecification = [
+      "match", ["get", "symset"],
+      "25", "left",
+      "right",
+    ];
+    const AI_TEXT_JUSTIFY: maplibregl.ExpressionSpecification = [
+      "match", ["get", "symset"],
+      "25", "center",
+      "left",
+    ];
     map.addLayer({
       id: "m-unittext",
       type: "symbol",
@@ -542,6 +552,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         "text-size": 11,
         "text-anchor": UNIT_TEXT_ANCHOR,
         "text-offset": UNIT_TEXT_OFFSET,
+        "text-justify": UNIT_TEXT_JUSTIFY,
       },
       paint: {
         "text-color": "#e6e9ee",
@@ -560,6 +571,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         "text-size": 11,
         "text-anchor": AI_TEXT_ANCHOR,
         "text-offset": AI_TEXT_OFFSET,
+        "text-justify": AI_TEXT_JUSTIFY,
       },
       paint: {
         "text-color": "#9fd3ff",
