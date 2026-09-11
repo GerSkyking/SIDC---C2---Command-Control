@@ -22,7 +22,7 @@ import { esc } from "./esc";
 import { initNavCube } from "./navcube";
 import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
 import { openLightbox } from "./lightbox";
-import { mountImageRail } from "./imagerail";
+import { mountImageRail, IMAGE_DND_TYPE } from "./imagerail";
 import type { PlanImage } from "./api";
 
 // Bild-URL -> JPEG-DataURL (normalisiert WebP/GIF/PNG für jsPDF).
@@ -98,6 +98,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   );
   let imageRail: { refresh: () => void } | null = null;
   let imgResizingId: string | null = null;
+  let imgClickSuppressed = false;
   // Kleiner Bild-Wähler für "Bild in Notiz einfügen".
   const pickPlanImage = (): Promise<string | null> =>
     new Promise((resolve) => {
@@ -3680,16 +3681,24 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       el.dataset.iid = i.id;
       el.style.width = `${i.map_width}px`;
       el.style.opacity = String(op);
+      const tip = i.caption || i.filename;
+      el.title = tip;
       el.innerHTML =
-        `<img src="${esc(api.planImageUrl(planId, i.id))}" alt="${esc(i.caption || i.filename)}" draggable="false" />` +
+        `<img src="${esc(api.planImageUrl(planId, i.id))}" alt="${esc(tip)}" title="${esc(tip)}" draggable="false" />` +
         (canEdit
           ? `<button class="pimg-x" data-imgx title="${t("img.removeFromMap")}">${icon("x", 12)}</button>` +
             `<div class="pimg-rz"></div>`
           : "");
       el.addEventListener("mousedown", (ev) => onImageDown(ev, i.id));
-      el.addEventListener("dblclick", () =>
-        openLightbox([{ url: api.planImageUrl(planId, i.id), caption: i.caption || i.filename }]),
-      );
+      // Klick ohne vorherigen Drag/Resize -> groß anzeigen (Beschriftung als Notiz darunter).
+      // Wird bei einer echten Verschiebung/Größenänderung von onImageDown unterdrückt.
+      el.addEventListener("click", () => {
+        if (imgClickSuppressed) {
+          imgClickSuppressed = false;
+          return;
+        }
+        openLightbox([{ url: api.planImageUrl(planId, i.id), caption: i.caption || i.filename }]);
+      });
       el.querySelector("[data-imgx]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
         const cur = images.get(i.id);
@@ -3722,6 +3731,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         document.removeEventListener("mousemove", mv);
         document.removeEventListener("mouseup", up);
         imgResizingId = null;
+        imgClickSuppressed = true; // Ecke ziehen endet auf demselben Element -> sonst öffnet Klick die Lightbox
         socket.send({ type: "image.modify", id, data: { map_width: Math.round(cur.map_width), phase_id: cur.phase_id } });
         renderMapImages();
       };
@@ -3735,7 +3745,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     el0.classList.add("dragging");
     if (mode === "move") map.dragPan.disable();
     const canvasRect = () => map.getCanvas().getBoundingClientRect();
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    let moved = false;
     const onMove = (e: MouseEvent) => {
+      if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) > 4) moved = true;
       const cr = canvasRect();
       const ll = map.unproject([e.clientX - cr.left, e.clientY - cr.top]);
       cur.world_x = ll.lng;
@@ -3748,6 +3762,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       el0.classList.remove("dragging");
       if (mode === "move") map.dragPan.enable();
       imgDragId = null;
+      if (!moved) return; // reiner Klick -> Lightbox öffnet über den click-Listener
+      imgClickSuppressed = true;
       const cr = canvasRect();
       const ll = map.unproject([e.clientX - cr.left, e.clientY - cr.top]);
       socket.send({ type: "image.move", id, data: { world_x: ll.lng, world_y: ll.lat } });
@@ -3760,6 +3776,41 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
   phaseListeners.push(() => renderMapImages());
   renderMapImages();
+
+  // Drag&Drop aus der Bild-Sidebar auf die Karte -> platzieren.
+  if (canEdit) {
+    const mapContainer = map.getContainer();
+    mapContainer.addEventListener("dragenter", (ev) => {
+      if (ev.dataTransfer?.types.includes(IMAGE_DND_TYPE)) ev.preventDefault();
+    });
+    mapContainer.addEventListener("dragover", (ev) => {
+      if (!ev.dataTransfer?.types.includes(IMAGE_DND_TYPE)) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = "copy";
+    });
+    mapContainer.addEventListener("drop", (ev) => {
+      const id = ev.dataTransfer?.getData(IMAGE_DND_TYPE);
+      const cur = id ? images.get(id) : undefined;
+      if (!cur) return;
+      ev.preventDefault();
+      const cr = map.getCanvas().getBoundingClientRect();
+      const ll = map.unproject([ev.clientX - cr.left, ev.clientY - cr.top]);
+      cur.on_map = true;
+      cur.world_x = ll.lng;
+      cur.world_y = ll.lat;
+      if (!cur.ref_zoom || cur.ref_zoom <= 0) cur.ref_zoom = map.getZoom();
+      socket.send({
+        type: "image.modify",
+        id: cur.id,
+        data: {
+          on_map: true, world_x: ll.lng, world_y: ll.lat,
+          ref_zoom: cur.ref_zoom, phase_id: cur.phase_id,
+        },
+      });
+      renderMapImages();
+      imageRail?.refresh();
+    });
+  }
 
   imageRail = mountImageRail(root, {
     planId,

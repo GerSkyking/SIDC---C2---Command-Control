@@ -5,8 +5,11 @@ import { api, type PlanImage } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { esc } from "./esc";
-import { toast, toastError, confirmDialog } from "./notify";
+import { toast, toastError } from "./notify";
 import type { LightboxItem } from "./lightbox";
+
+/** MIME-Type für die Drag&Drop-Nutzlast (Sidebar -> Karte). */
+export const IMAGE_DND_TYPE = "application/x-sidc-image";
 
 interface RailPhase {
   id: string;
@@ -148,11 +151,13 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
     listEl.innerHTML = list
       .map(
         (i) => `<div class="ir-item" data-iid="${esc(i.id)}">
-          <img class="ir-thumb" src="${esc(api.planImageUrl(ctx.planId, i.id))}" alt="" loading="lazy" data-ir-open />
+          <img class="ir-thumb" src="${esc(api.planImageUrl(ctx.planId, i.id))}" alt=""
+            loading="lazy" data-ir-open ${ctx.canEdit ? 'draggable="true" data-ir-drag' : ""}
+            title="${ctx.canEdit ? esc(t("imgrail.dragHint")) : ""}" />
           <div class="ir-meta">
             ${
               ctx.canEdit
-                ? `<input class="ir-cap" data-ir-cap value="${esc(i.caption)}" placeholder="${t("img.caption")}" />`
+                ? `<input class="ir-cap" data-ir-cap value="${esc(i.caption)}" placeholder="${t("img.caption")}" title="${t("img.captionHint")}" />`
                 : `<div class="ir-cap-ro">${esc(i.caption || i.filename)}</div>`
             }
             <div class="muted" style="font-size:.72rem">${esc(i.filename)} · ${fmtBytes(i.byte_size)}</div>
@@ -161,13 +166,15 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
                 ? `<div class="ir-row">
                      <label class="ir-chk"><input type="checkbox" data-ir-onmap ${i.on_map ? "checked" : ""}/> ${t("img.showOnMap")}</label>
                    </div>
-                   ${
-                     i.on_map
-                       ? `<label class="ir-chk"><input type="checkbox" data-ir-scale ${i.scale_fixed ? "checked" : ""}/> ${t("img.scaleWithMap")}</label>`
-                       : ""
-                   }
                    <select class="ir-phase" data-ir-phase>${phaseOpts(i.phase_id)}</select>
-                   <button class="icon-btn ir-del" data-ir-del title="${t("img.delete")}">${icon("trash", 14)}</button>`
+                   <div class="ir-actions" data-ir-actions>
+                     <button class="icon-btn" data-ir-gear title="${t("settings.title")}">${icon("settings", 14)}</button>
+                     <button class="icon-btn ir-del" data-ir-del title="${t("img.delete")}">${icon("trash", 14)}</button>
+                   </div>
+                   <div class="ir-gear-panel" data-ir-gearpanel hidden>
+                     <label class="ir-chk"><input type="checkbox" data-ir-scale ${i.scale_fixed ? "checked" : ""}/> ${t("img.scaleWithMap")}</label>
+                     <p class="muted ir-gear-hint">${t("img.captionHint")}</p>
+                   </div>`
                 : ""
             }
           </div>
@@ -184,6 +191,10 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
           caption: x.caption || x.filename,
         }));
         ctx.onOpenLightbox(items, currentList().findIndex((x) => x.id === id));
+      });
+      row.querySelector<HTMLImageElement>("[data-ir-drag]")?.addEventListener("dragstart", (e) => {
+        e.dataTransfer?.setData(IMAGE_DND_TYPE, id);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
       });
       row.querySelector<HTMLInputElement>("[data-ir-cap]")?.addEventListener("change", (e) => {
         const v = (e.target as HTMLInputElement).value;
@@ -228,10 +239,20 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
         ctx.send({ type: "image.modify", id, data: { phase_id: v } });
         render();
       });
-      row.querySelector("[data-ir-del]")?.addEventListener("click", async () => {
-        if (await confirmDialog(t("img.deleteConfirm"), { danger: true })) {
-          ctx.send({ type: "image.delete", id });
-        }
+      row.querySelector("[data-ir-gear]")?.addEventListener("click", () => {
+        const panel = row.querySelector<HTMLElement>("[data-ir-gearpanel]")!;
+        panel.hidden = !panel.hidden;
+      });
+      row.querySelector("[data-ir-del]")?.addEventListener("click", () => {
+        const actions = row.querySelector<HTMLElement>("[data-ir-actions]")!;
+        actions.innerHTML =
+          `<label class="ir-delok"><input type="checkbox" data-ir-delok/> ${t("common.delete")}</label>` +
+          `<button class="icon-btn" data-ir-delcancel title="${t("common.cancel")}">${icon("back", 12)}</button>`;
+        actions.querySelector("[data-ir-delok]")!.addEventListener("change", () =>
+          ctx.send({ type: "image.delete", id }),
+        );
+        actions.querySelector("[data-ir-delcancel]")!.addEventListener("click", () => render());
+        row.addEventListener("mouseleave", () => render(), { once: true });
       });
     });
   }

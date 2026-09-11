@@ -686,7 +686,14 @@ label.chk input { width: auto; }
 .ir-cap-ro { font-size: 0.82rem; font-weight: 600; }
 .ir-row { display: flex; align-items: center; gap: 0.4rem; }
 .ir-chk { font-size: 0.76rem; display: flex; align-items: center; gap: 0.25rem; }
-.ir-del { width: 1.6rem; height: 1.6rem; align-self: flex-start; }
+.ir-actions { display: flex; align-items: center; gap: 0.3rem; }
+.ir-actions .icon-btn, .ir-del { width: 1.6rem; height: 1.6rem; }
+.ir-gear-panel { background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 0.35rem 0.5rem; margin-top: 0.15rem; }
+.ir-gear-hint { font-size: 0.68rem; margin: 0.25rem 0 0; }
+.ir-delok { display: flex; align-items: center; gap: 0.25rem; font-size: 0.76rem; }
+.ir-thumb[draggable="true"] { cursor: grab; }
+.ir-thumb[draggable="true"]:active { cursor: grabbing; }
 .img-rail-tab { position: absolute; top: calc(var(--topbar-h, 3.2rem) + 6rem); right: 0;
   z-index: 14; border-radius: var(--r-sm) 0 0 var(--r-sm); border-right: 0;
   background: var(--surface); padding: 0.5rem 0.3rem; }
