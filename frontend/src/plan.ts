@@ -724,6 +724,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "icon-size": ["*", 0.8, ["coalesce", ["get", "scale"], 1]],
         "icon-rotate": ["get", "rot"],
         "icon-allow-overlap": true,
+        // "allow-overlap" verhindert nur, dass das Icon SELBST versteckt wird —
+        // ohne "ignore-placement" blockiert es weiterhin die eng danebensitzenden
+        // Einheitstext-/Zusatztext-Layer (die kollidieren sonst mit der Icon-Box
+        // und werden von MapLibre verworfen, statt einfach übereinandergezeichnet).
+        "icon-ignore-placement": true,
       },
       paint: {
         "icon-opacity": ["*", ["case", ["get", "locked"], 0.6, 1], ["get", "opacity"]],
@@ -805,7 +810,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "icon-allow-overlap": true,
       },
       paint: {
-        "text-color": "#9fd3ff",
+        "text-color": "#e6e9ee",
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
         "text-opacity": ["get", "opacity"],

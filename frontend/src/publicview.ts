@@ -506,6 +506,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         "icon-size": ["*", 0.8, ["coalesce", ["get", "scale"], 1]],
         "icon-rotate": ["get", "rot"],
         "icon-allow-overlap": true,
+        "icon-ignore-placement": true, // Icon soll die danebensitzenden Text-Layer nie blockieren
       },
       paint: {
         "icon-opacity": ["get", "opacity"],
@@ -574,7 +575,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         "text-justify": AI_TEXT_JUSTIFY,
       },
       paint: {
-        "text-color": "#9fd3ff",
+        "text-color": "#e6e9ee",
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
         "text-opacity": ["get", "opacity"],
