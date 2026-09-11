@@ -279,9 +279,11 @@ class Annotation(Base):
 
 
 class PlanImage(Base):
-    """Bild zu einem Plan (BLOB in der DB). An eine Phase gebunden; die Ebene
-    (Spieler/Missionsbau) ergibt sich aus Phase.plane — wie bei Annotation.
-    Optional zusätzlich auf der Karte platziert (dann zieh-/skalierbar wie eine Notiz)."""
+    """Bild zu einem Plan (BLOB in der DB). An eine Phase gebunden (bestimmt, wo
+    es in der Bild-Sidebar einsortiert wird); die Ebene (Spieler/Missionsbau)
+    ergibt sich aus Phase.plane — wie bei Annotation. Kann unabhängig davon
+    beliebig oft über ImagePlacement auf der Karte platziert werden (auch
+    mehrfach / in unterschiedlichen Phasen)."""
 
     __tablename__ = "plan_images"
 
@@ -296,8 +298,23 @@ class PlanImage(Base):
     caption: Mapped[str] = mapped_column(Text, default="")  # kurzer Name
     note: Mapped[str] = mapped_column(Text, default="", server_default="")  # längere Notiz (Markdown)
     data: Mapped[bytes] = mapped_column(LargeBinary)
-    # Karten-Platzierung (optional)
-    on_map: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ImagePlacement(Base):
+    """Eine Platzierung eines PlanImage auf der Karte. Ein Bild kann beliebig oft
+    (auch in mehreren Phasen gleichzeitig) platziert werden — jede Platzierung
+    hat ihre eigene Position/Größe/Phase, zieh-/skalierbar wie eine Notiz."""
+
+    __tablename__ = "image_placements"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    image_id: Mapped[str] = mapped_column(ForeignKey("plan_images.id", ondelete="CASCADE"), index=True)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
+    phase_id: Mapped[str | None] = mapped_column(ForeignKey("phases.id", ondelete="SET NULL"), index=True)
     world_x: Mapped[float] = mapped_column(Float, default=0)
     world_y: Mapped[float] = mapped_column(Float, default=0)
     map_width: Mapped[float] = mapped_column(Float, default=240)

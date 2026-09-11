@@ -14,7 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..db import SessionLocal
-from ..models import Annotation, Marker, OrbatNode, Phase, Plan, PlanImage, Stroke, User, now
+from ..models import Annotation, ImagePlacement, Marker, OrbatNode, Phase, Plan, PlanImage, Stroke, User, now
 from ..sidc_status import status_from_sidc
 from ..permissions import (
     effective_caps,
@@ -162,9 +162,12 @@ async def _handle(
         "annotation.move": "move",
         "annotation.modify": "move",
         "annotation.delete": "delete",
-        "image.move": "move",
         "image.modify": "move",
         "image.delete": "delete",
+        "placement.create": "place",
+        "placement.move": "move",
+        "placement.modify": "move",
+        "placement.delete": "delete",
     }.get(t or "")
     if need is None:
         await _reject(ws, msg.get("cid"), f"Unbekannter Typ: {t}")
@@ -177,7 +180,7 @@ async def _handle(
     if not is_builder and t in (
         "marker.create", "marker.modify", "stroke.commit", "stroke.modify",
         "annotation.create", "annotation.move", "annotation.modify",
-        "image.move", "image.modify",
+        "image.modify", "placement.create", "placement.move", "placement.modify",
     ):
         pid = (msg.get("data") or {}).get("phase_id")
         if t == "stroke.modify":
@@ -274,7 +277,7 @@ async def _handle(
             plan_id, {"type": "annotation.delete", "id": msg["id"]}, builder_only=bo(pid)
         )
 
-    elif t in ("image.move", "image.modify"):
+    elif t == "image.modify":
         fields = {k: v for k, v in msg.get("data", {}).items() if k in IMAGE_UPDATE_FIELDS}
         res = await run_in_threadpool(_update_image, plan_id, msg["id"], user.id, fields)
         if res is not None:
@@ -287,6 +290,32 @@ async def _handle(
         pid = await run_in_threadpool(_delete_image, plan_id, msg["id"])
         await hub.broadcast(
             plan_id, {"type": "image.delete", "id": msg["id"]}, builder_only=bo(pid)
+        )
+
+    elif t == "placement.create":
+        data = {k: msg["data"].get(k) for k in (*PLACEMENT_UPDATE_FIELDS, "image_id") if k in msg.get("data", {})}
+        p = await run_in_threadpool(_create_placement, plan_id, user.id, data)
+        if p is not None:
+            await hub.broadcast(
+                plan_id, {"type": "placement.upsert", "cid": msg.get("cid"), "placement": p},
+                builder_only=bo(p.get("phase_id")),
+            )
+        else:
+            await _reject(ws, msg.get("cid"), "Bild nicht gefunden")
+
+    elif t in ("placement.move", "placement.modify"):
+        fields = {k: v for k, v in msg.get("data", {}).items() if k in PLACEMENT_UPDATE_FIELDS}
+        res = await run_in_threadpool(_update_placement, plan_id, msg["id"], user.id, fields)
+        if res is not None:
+            await hub.broadcast(
+                plan_id, {"type": "placement.upsert", "placement": res},
+                builder_only=bo(res.get("phase_id")),
+            )
+
+    elif t == "placement.delete":
+        pid = await run_in_threadpool(_delete_placement, plan_id, msg["id"])
+        await hub.broadcast(
+            plan_id, {"type": "placement.delete", "id": msg["id"]}, builder_only=bo(pid)
         )
 
 
@@ -492,10 +521,8 @@ def _delete_annotation(plan_id: str, ann_id: str) -> str | None:
 
 # ── Plan-Bilder ────────────────────────────────────────────────────────────
 
-IMAGE_UPDATE_FIELDS = (
-    "world_x", "world_y", "map_width", "caption", "note", "phase_id",
-    "scale_fixed", "ref_zoom", "on_map",
-)
+# Nur noch Metadaten - Karten-Platzierung läuft über ImagePlacement/image_placements.
+IMAGE_UPDATE_FIELDS = ("caption", "note", "phase_id")
 
 
 def _image_out(i: PlanImage, author: str | None = None) -> dict:
@@ -503,8 +530,6 @@ def _image_out(i: PlanImage, author: str | None = None) -> dict:
         "id": i.id, "plan_id": i.plan_id, "phase_id": i.phase_id,
         "filename": i.filename, "content_type": i.content_type, "byte_size": i.byte_size,
         "natural_w": i.natural_w, "natural_h": i.natural_h, "caption": i.caption, "note": i.note,
-        "on_map": i.on_map, "world_x": i.world_x, "world_y": i.world_y,
-        "map_width": i.map_width, "scale_fixed": i.scale_fixed, "ref_zoom": i.ref_zoom,
         "author": author,
     }
 
@@ -548,6 +573,75 @@ def _delete_image(plan_id: str, image_id: str) -> str | None:
         if i is None or i.plan_id != plan_id:
             return None
         pid = i.phase_id
+        # Explizit statt nur per DB-CASCADE: SQLite (Tests) erzwingt Fremdschlüssel
+        # ohne "PRAGMA foreign_keys=ON" standardmäßig nicht.
+        for p in db.scalars(select(ImagePlacement).where(ImagePlacement.image_id == image_id)):
+            db.delete(p)
         db.delete(i)
+        db.commit()
+        return pid
+
+
+# ── Bild-Platzierungen (ein Bild kann mehrfach/in mehreren Phasen liegen) ──
+
+PLACEMENT_UPDATE_FIELDS = ("world_x", "world_y", "map_width", "scale_fixed", "ref_zoom", "phase_id")
+
+
+def _image_owner_phase(plan_id: str, image_id: str) -> tuple[bool, str | None]:
+    """(gefunden?, phase_id des Bilds) — für die Sichtbarkeitsprüfung vor
+    ``placement.create`` im öffentlichen Link."""
+    with SessionLocal() as db:
+        i = db.get(PlanImage, image_id)
+        if i is None or i.plan_id != plan_id:
+            return False, None
+        return True, i.phase_id
+
+
+def _placement_out(p: ImagePlacement) -> dict:
+    return {
+        "id": p.id, "image_id": p.image_id, "plan_id": p.plan_id, "phase_id": p.phase_id,
+        "world_x": p.world_x, "world_y": p.world_y, "map_width": p.map_width,
+        "scale_fixed": p.scale_fixed, "ref_zoom": p.ref_zoom,
+    }
+
+
+def _create_placement(plan_id: str, uid: str | None, data: dict) -> dict | None:
+    with SessionLocal() as db:
+        img = db.get(PlanImage, data.get("image_id"))
+        if img is None or img.plan_id != plan_id:
+            return None
+        p = ImagePlacement(
+            plan_id=plan_id, image_id=img.id, created_by=uid, updated_by=uid,
+            phase_id=data.get("phase_id"),
+            world_x=float(data.get("world_x", 0)), world_y=float(data.get("world_y", 0)),
+            map_width=float(data.get("map_width", 240)),
+            scale_fixed=bool(data.get("scale_fixed", False)),
+            ref_zoom=float(data.get("ref_zoom", 0)),
+        )
+        db.add(p)
+        db.commit()
+        return _placement_out(p)
+
+
+def _update_placement(plan_id: str, placement_id: str, uid: str | None, fields: dict) -> dict | None:
+    with SessionLocal() as db:
+        p = db.get(ImagePlacement, placement_id)
+        if p is None or p.plan_id != plan_id:
+            return None
+        for k, v in fields.items():
+            setattr(p, k, v)
+        p.updated_by = uid
+        p.updated_at = now()
+        db.commit()
+        return _placement_out(p)
+
+
+def _delete_placement(plan_id: str, placement_id: str) -> str | None:
+    with SessionLocal() as db:
+        p = db.get(ImagePlacement, placement_id)
+        if p is None or p.plan_id != plan_id:
+            return None
+        pid = p.phase_id
+        db.delete(p)
         db.commit()
         return pid

@@ -30,8 +30,8 @@ import { initNavCube } from "./navcube";
 import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
 import { openLightbox } from "./lightbox";
 import { mountImageRail, IMAGE_DND_TYPE } from "./imagerail";
-import { renderImageSettings } from "./imagePanel";
-import type { PlanImage } from "./api";
+import { renderPlacementSettings } from "./imagePanel";
+import type { ImagePlacement, PlanImage } from "./api";
 
 // Bild-URL -> JPEG-DataURL (normalisiert WebP/GIF/PNG für jsPDF).
 async function imgToJpeg(url: string): Promise<string> {
@@ -103,6 +103,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   );
   const images = new Map<string, PlanImage>(
     (snap.images ?? []).map((i: PlanImage) => [i.id, i]),
+  );
+  // Ein Bild kann beliebig oft (auch in mehreren Phasen) auf der Karte platziert
+  // sein — jede Platzierung ist ein eigener Eintrag mit eigener Position/Größe.
+  const placements = new Map<string, ImagePlacement>(
+    (snap.image_placements ?? []).map((p: ImagePlacement) => [p.id, p]),
   );
   let imageRail: { refresh: () => void } | null = null;
   let imgResizingId: string | null = null;
@@ -1017,12 +1022,25 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         break;
       case "image.upsert":
         images.set(msg.image.id, msg.image);
-        if (!imgResizingId) renderMapImages();
-        else positionImages();
+        if (!imgResizingId) renderMapImages(); // Beschriftung/Notiz können in Hover/Popover sichtbar sein
         imageRail?.refresh();
         break;
       case "image.delete":
         images.delete(msg.id);
+        // Alle Platzierungen dieses Bilds lokal mit entfernen (Server-CASCADE
+        // sendet dafür keine einzelnen placement.delete-Nachrichten).
+        for (const p of [...placements.values()]) if (p.image_id === msg.id) placements.delete(p.id);
+        renderMapImages();
+        imageRail?.refresh();
+        break;
+      case "placement.upsert":
+        placements.set(msg.placement.id, msg.placement);
+        if (!imgResizingId) renderMapImages();
+        else positionImages();
+        imageRail?.refresh();
+        break;
+      case "placement.delete":
+        placements.delete(msg.id);
         renderMapImages();
         imageRail?.refresh();
         break;
@@ -3760,23 +3778,26 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const imagesEl = root.querySelector<HTMLDivElement>("#plan-images")!;
   let imgDragId: string | null = null;
   let imgRefFallback = 0;
-  const imageScale = (i: PlanImage): number => {
-    if (!i.scale_fixed) return 1;
-    const ref = i.ref_zoom && i.ref_zoom > 0 ? i.ref_zoom : imgRefFallback;
+  const imageScale = (p: ImagePlacement): number => {
+    if (!p.scale_fixed) return 1;
+    const ref = p.ref_zoom && p.ref_zoom > 0 ? p.ref_zoom : imgRefFallback;
     if (!ref) return 1;
     return Math.max(0.3, Math.min(3, 2 ** (map.getZoom() - ref)));
   };
   function positionImages(): void {
     for (const el of Array.from(imagesEl.children) as HTMLElement[]) {
-      const i = images.get(el.dataset.iid ?? "");
-      if (!i) continue;
-      const p = map.project([i.world_x, i.world_y]);
-      el.style.transform = `translate(${p.x}px, ${p.y}px) scale(${imageScale(i)})`;
+      const p = placements.get(el.dataset.pid ?? "");
+      if (!p) continue;
+      const pp = map.project([p.world_x, p.world_y]);
+      el.style.transform = `translate(${pp.x}px, ${pp.y}px) scale(${imageScale(p)})`;
     }
     positionImgPopover();
   }
 
   // ── Zahnrad-Popover direkt am Kartenbild (Name/Notiz/Phase/Skalieren/…) ──
+  // Zielt auf eine PLATZIERUNG (nicht das Bild selbst) — dasselbe Bild kann
+  // mehrfach/in mehreren Phasen platziert sein, jede Platzierung hat ihr eigenes
+  // Popover mit eigener Phase/Skalierung.
   let imgPopoverId: string | null = null;
   let imgPopoverEl: HTMLElement | null = null;
   function closeImgPopover(): void {
@@ -3786,33 +3807,34 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
   function positionImgPopover(): void {
     if (!imgPopoverEl || !imgPopoverId) return;
-    const img = images.get(imgPopoverId);
-    if (!img || !img.on_map) {
+    const p = placements.get(imgPopoverId);
+    if (!p) {
       closeImgPopover();
       return;
     }
-    const p = map.project([img.world_x, img.world_y]);
-    const w = img.map_width * imageScale(img);
+    const pp = map.project([p.world_x, p.world_y]);
+    const w = p.map_width * imageScale(p);
     const mr = map.getContainer().getBoundingClientRect();
     const rr = root.getBoundingClientRect();
     const ox = mr.left - rr.left;
     const oy = mr.top - rr.top;
     const popW = imgPopoverEl.offsetWidth || 304;
-    let left = ox + p.x + w / 2 + 10;
+    let left = ox + pp.x + w / 2 + 10;
     left = Math.max(8, Math.min(left, rr.width - popW - 8));
-    const top = Math.max(8, oy + p.y - 10);
+    const top = Math.max(8, oy + pp.y - 10);
     imgPopoverEl.style.left = `${left}px`;
     imgPopoverEl.style.top = `${top}px`;
   }
-  function toggleImgPopover(id: string): void {
-    if (imgPopoverId === id) {
+  function toggleImgPopover(placementId: string): void {
+    if (imgPopoverId === placementId) {
       closeImgPopover();
       return;
     }
-    const img = images.get(id);
-    if (!img) return;
+    const p = placements.get(placementId);
+    const img = p ? images.get(p.image_id) : undefined;
+    if (!p || !img) return;
     closeImgPopover();
-    imgPopoverId = id;
+    imgPopoverId = placementId;
     const el = document.createElement("div");
     el.className = "img-popover";
     el.innerHTML = `
@@ -3825,17 +3847,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     imgPopoverEl = el;
     el.querySelector<HTMLInputElement>("[data-ip-cap]")!.addEventListener("change", (e) => {
       const v = (e.target as HTMLInputElement).value;
-      const cur = images.get(id);
-      if (cur) cur.caption = v;
-      socket.send({ type: "image.modify", id, data: { caption: v, phase_id: cur?.phase_id ?? null } });
+      const curImg = images.get(img.id);
+      if (curImg) curImg.caption = v;
+      socket.send({ type: "image.modify", id: img.id, data: { caption: v, phase_id: curImg?.phase_id ?? null } });
       renderMapImages();
     });
     el.querySelector("[data-ip-close]")!.addEventListener("click", () => closeImgPopover());
-    renderImageSettings(el.querySelector<HTMLElement>("[data-ip-body]")!, img, {
+    renderPlacementSettings(el.querySelector<HTMLElement>("[data-ip-body]")!, p, {
       isMB,
       phases,
       send: (m) => socket.send(m),
-      getMapCenter: () => map.getCenter(),
       getMapZoom: () => map.getZoom(),
       onChanged: () => {
         renderMapImages();
@@ -3847,7 +3868,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
   // Hover: Name / Notiz / Ersteller / Phase des Kartenbilds (analog Marker-Hover).
   const imgHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 });
-  const showImgHover = (i: PlanImage) => {
+  const showImgHover = (p: ImagePlacement, i: PlanImage) => {
     const tip = document.createElement("div");
     tip.className = "mk-tip";
     const b = document.createElement("b");
@@ -3855,7 +3876,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     tip.append(b, document.createElement("br"));
     for (const [k, v] of [
       [t("marker.author"), i.author || "—"],
-      [t("phase.assign"), phaseNameOf(i.phase_id)],
+      [t("phase.assign"), phaseNameOf(p.phase_id)],
     ] as [string, string][]) {
       tip.append(`${k}: ${v}`, document.createElement("br"));
     }
@@ -3865,7 +3886,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       d.textContent = i.note;
       tip.append(d);
     }
-    imgHoverPopup.setLngLat([i.world_x, i.world_y]).setDOMContent(tip).addTo(map);
+    imgHoverPopup.setLngLat([p.world_x, p.world_y]).setDOMContent(tip).addTo(map);
   };
   const hideImgHover = () => imgHoverPopup.remove();
 
@@ -3873,14 +3894,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (imgResizingId) return;
     if (!imgRefFallback) imgRefFallback = map.getZoom();
     imagesEl.innerHTML = "";
-    for (const i of images.values()) {
-      if (!i.on_map) continue;
-      const op = phaseOpacityOf(i.phase_id);
+    for (const p of placements.values()) {
+      const i = images.get(p.image_id);
+      if (!i) continue; // Bild noch nicht geladen/bereits gelöscht
+      const op = phaseOpacityOf(p.phase_id);
       if (op <= 0.001) continue; // fremde/versteckte Phase
       const el = document.createElement("div");
       el.className = "pimg";
-      el.dataset.iid = i.id;
-      el.style.width = `${i.map_width}px`;
+      el.dataset.pid = p.id;
+      el.style.width = `${p.map_width}px`;
       el.style.opacity = String(op);
       const tip = i.caption || i.filename;
       el.innerHTML =
@@ -3890,10 +3912,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             `<button class="pimg-x" data-imgx title="${t("img.removeFromMap")}">${icon("x", 12)}</button>` +
             `<div class="pimg-rz"></div>`
           : "");
-      el.addEventListener("mousedown", (ev) => onImageDown(ev, i.id));
+      el.addEventListener("mousedown", (ev) => onImageDown(ev, p.id));
       el.addEventListener("mouseenter", () => {
-        const cur = images.get(i.id);
-        if (cur) showImgHover(cur);
+        const curP = placements.get(p.id);
+        const curI = curP ? images.get(curP.image_id) : undefined;
+        if (curP && curI) showImgHover(curP, curI);
       });
       el.addEventListener("mouseleave", hideImgHover);
       // Klick ohne vorherigen Drag/Resize -> groß anzeigen (Beschriftung als Notiz darunter).
@@ -3920,13 +3943,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       });
       el.querySelector("[data-imggear]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        toggleImgPopover(i.id);
+        toggleImgPopover(p.id);
       });
       el.querySelector("[data-imgx]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        const cur = images.get(i.id);
-        if (cur) cur.on_map = false;
-        socket.send({ type: "image.modify", id: i.id, data: { on_map: false, phase_id: i.phase_id } });
+        placements.delete(p.id);
+        socket.send({ type: "placement.delete", id: p.id });
         renderMapImages();
         imageRail?.refresh();
       });
@@ -3934,16 +3956,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
     positionImages();
   }
-  function onImageDown(ev: MouseEvent, id: string): void {
+  function onImageDown(ev: MouseEvent, placementId: string): void {
     if (!canEdit || (mode !== "move" && mode !== "markermove")) return;
-    const el0 = imagesEl.querySelector<HTMLElement>(`[data-iid="${id}"]`);
-    const cur = images.get(id);
+    const el0 = imagesEl.querySelector<HTMLElement>(`[data-pid="${placementId}"]`);
+    const cur = placements.get(placementId);
     if (!el0 || !cur) return;
     const sc = imageScale(cur) || 1;
     const r = el0.getBoundingClientRect();
     if ((ev.clientX - r.left) / sc > el0.clientWidth - 20 && (ev.clientY - r.top) / sc > el0.clientHeight - 20) {
       ev.preventDefault();
-      imgResizingId = id;
+      imgResizingId = placementId;
       const startW = cur.map_width;
       const startX = ev.clientX;
       const mv = (e: MouseEvent) => {
@@ -3955,7 +3977,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         document.removeEventListener("mouseup", up);
         imgResizingId = null;
         imgClickSuppressed = true; // Ecke ziehen endet auf demselben Element -> sonst öffnet Klick die Lightbox
-        socket.send({ type: "image.modify", id, data: { map_width: Math.round(cur.map_width), phase_id: cur.phase_id } });
+        socket.send({
+          type: "placement.modify", id: placementId,
+          data: { map_width: Math.round(cur.map_width), phase_id: cur.phase_id },
+        });
         renderMapImages();
       };
       document.addEventListener("mousemove", mv);
@@ -3964,7 +3989,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
     ev.stopPropagation();
     ev.preventDefault();
-    imgDragId = id;
+    imgDragId = placementId;
     el0.classList.add("dragging");
     if (mode === "move") map.dragPan.disable();
     const canvasRect = () => map.getCanvas().getBoundingClientRect();
@@ -3996,7 +4021,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       imgClickSuppressed = true;
       const cr = canvasRect();
       const ll = map.unproject([e.clientX - cr.left - grabDx, e.clientY - cr.top - grabDy]);
-      socket.send({ type: "image.move", id, data: { world_x: ll.lng, world_y: ll.lat } });
+      socket.send({ type: "placement.move", id: placementId, data: { world_x: ll.lng, world_y: ll.lat } });
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
@@ -4017,7 +4042,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
   renderMapImages();
 
-  // Drag&Drop aus der Bild-Sidebar auf die Karte -> platzieren.
+  // Drag&Drop aus der Bild-Sidebar auf die Karte -> neue Platzierung anlegen
+  // (das Bild bleibt dabei unverändert, dasselbe Bild lässt sich so beliebig
+  // oft/in mehreren Phasen platzieren).
   if (canEdit) {
     const mapContainer = map.getContainer();
     mapContainer.addEventListener("dragenter", (ev) => {
@@ -4029,32 +4056,26 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ev.dataTransfer.dropEffect = "copy";
     });
     mapContainer.addEventListener("drop", (ev) => {
-      const id = ev.dataTransfer?.getData(IMAGE_DND_TYPE);
-      const cur = id ? images.get(id) : undefined;
+      const imageId = ev.dataTransfer?.getData(IMAGE_DND_TYPE);
+      const cur = imageId ? images.get(imageId) : undefined;
       if (!cur) return;
       ev.preventDefault();
       const cr = map.getCanvas().getBoundingClientRect();
       const ll = map.unproject([ev.clientX - cr.left, ev.clientY - cr.top]);
-      cur.on_map = true;
-      cur.world_x = ll.lng;
-      cur.world_y = ll.lat;
-      if (!cur.ref_zoom || cur.ref_zoom <= 0) cur.ref_zoom = map.getZoom();
       socket.send({
-        type: "image.modify",
-        id: cur.id,
+        type: "placement.create",
         data: {
-          on_map: true, world_x: ll.lng, world_y: ll.lat,
-          ref_zoom: cur.ref_zoom, phase_id: cur.phase_id,
+          image_id: cur.id, phase_id: currentPhaseId || null,
+          world_x: ll.lng, world_y: ll.lat, ref_zoom: map.getZoom(),
         },
       });
-      renderMapImages();
-      imageRail?.refresh();
     });
   }
 
   imageRail = mountImageRail(root, {
     planId,
     images,
+    placements,
     phases,
     isMB,
     canEdit,

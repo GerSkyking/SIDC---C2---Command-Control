@@ -116,13 +116,20 @@ export interface PlanImage {
   natural_h: number;
   caption: string;
   note: string;
-  on_map: boolean;
+  author?: string | null;
+}
+/** Eine Platzierung eines PlanImage auf der Karte — ein Bild kann beliebig oft
+ * (auch in mehreren Phasen) platziert werden. */
+export interface ImagePlacement {
+  id: string;
+  image_id: string;
+  plan_id?: string;
+  phase_id: string | null;
   world_x: number;
   world_y: number;
   map_width: number;
   scale_fixed: boolean;
   ref_zoom: number;
-  author?: string | null;
 }
 export interface AdminImageRow {
   id: string;

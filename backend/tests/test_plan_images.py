@@ -92,6 +92,63 @@ def test_admin_list_and_delete(admin):
     assert admin.get(f"/plans/{pid}/images/{img['id']}/raw").status_code == 404
 
 
+def test_placement_multi_phase_reuse(admin):
+    """Ein Bild lässt sich mehrfach (auch in mehreren Phasen) auf der Karte platzieren."""
+    pid = _plan(admin)
+    phases = admin.get(f"/plans/{pid}/phases").json()
+    p1 = next(p for p in phases if p["plane"] == "player")
+    p2 = admin.post(f"/plans/{pid}/phases", json={"name": "Phase 2"}).json()
+    img = _upload(admin, pid, PNG).json()
+
+    with admin.websocket_connect(f"/plans/{pid}/live") as ws:
+        assert ws.receive_json()["type"] == "hello"
+        assert ws.receive_json()["type"] == "presence.join"
+
+        ws.send_json({
+            "type": "placement.create", "cid": "pl1",
+            "data": {"image_id": img["id"], "phase_id": p1["id"], "world_x": 1.0, "world_y": 2.0},
+        })
+        m1 = ws.receive_json()
+        assert m1["type"] == "placement.upsert" and m1["cid"] == "pl1"
+        pl1_id = m1["placement"]["id"]
+
+        ws.send_json({
+            "type": "placement.create", "cid": "pl2",
+            "data": {"image_id": img["id"], "phase_id": p2["id"], "world_x": 3.0, "world_y": 4.0},
+        })
+        m2 = ws.receive_json()
+        pl2_id = m2["placement"]["id"]
+        assert pl2_id != pl1_id
+
+        snap = admin.get(f"/plans/{pid}/snapshot").json()
+        placements = {p["id"]: p for p in snap["image_placements"]}
+        assert placements[pl1_id]["phase_id"] == p1["id"]
+        assert placements[pl2_id]["phase_id"] == p2["id"]
+        assert placements[pl1_id]["image_id"] == img["id"] == placements[pl2_id]["image_id"]
+        # Metadaten (caption/note) bleiben ein einziges gemeinsames Bild, keine Duplikate.
+        assert len(snap["images"]) == 1
+
+        ws.send_json({"type": "placement.move", "id": pl1_id, "data": {"world_x": 9.0, "world_y": 9.0}})
+        moved = ws.receive_json()["placement"]
+        assert moved["world_x"] == 9.0
+
+        ws.send_json({"type": "placement.delete", "id": pl1_id})
+        assert ws.receive_json() == {"type": "placement.delete", "id": pl1_id}
+
+    snap = admin.get(f"/plans/{pid}/snapshot").json()
+    ids = {p["id"] for p in snap["image_placements"]}
+    assert pl1_id not in ids and pl2_id in ids
+
+    # Bild löschen räumt alle verbliebenen Platzierungen mit ab (CASCADE).
+    with admin.websocket_connect(f"/plans/{pid}/live") as ws:
+        assert ws.receive_json()["type"] == "hello"
+        assert ws.receive_json()["type"] == "presence.join"
+        ws.send_json({"type": "image.delete", "id": img["id"]})
+        assert ws.receive_json() == {"type": "image.delete", "id": img["id"]}
+    snap = admin.get(f"/plans/{pid}/snapshot").json()
+    assert snap["images"] == [] and snap["image_placements"] == []
+
+
 def test_public_share_phase_visibility(admin):
     pid = _plan(admin)
     p_player = next(p for p in admin.get(f"/plans/{pid}/phases").json() if p["plane"] == "player")

@@ -1,7 +1,7 @@
 // Rechte, ausklappbare Bild-Sidebar für die Planansicht. Listet die Bilder der
 // aktuellen Phase/Ebene, erlaubt Upload, Beschriftung, Phasen-Zuordnung,
 // "auf Karte zeigen" und Löschen. Klick aufs Thumbnail öffnet die Lightbox.
-import { api, type PlanImage } from "./api";
+import { api, type ImagePlacement, type PlanImage } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { esc } from "./esc";
@@ -15,6 +15,7 @@ export const IMAGE_DND_TYPE = "application/x-sidc-image";
 export interface ImageRailCtx {
   planId: string;
   images: Map<string, PlanImage>;
+  placements: Map<string, ImagePlacement>;
   phases: ImgPanelPhase[];
   isMB: boolean;
   canEdit: boolean;
@@ -203,6 +204,8 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
         send: ctx.send,
         getMapCenter: ctx.map.getCenter.bind(ctx.map),
         getMapZoom: ctx.map.getZoom.bind(ctx.map),
+        getCurrentPhaseId: ctx.getCurrentPhaseId,
+        placementsOf: (imageId) => [...ctx.placements.values()].filter((p) => p.image_id === imageId),
         onChanged: () => render(),
         onDeleted: () => {
           openGear.delete(id);

@@ -12,7 +12,7 @@ from sqlalchemy import desc, select
 
 from .. import audit
 from ..deps import AdminUser, DbDep
-from ..models import AuditLog, Group, GroupMember, Phase, Plan, PlanImage, User
+from ..models import AuditLog, Group, GroupMember, ImagePlacement, Phase, Plan, PlanImage, User
 from ..security import MIN_PASSWORD_LEN, hash_password
 from ..services.realtime import hub
 
@@ -212,6 +212,8 @@ async def delete_image(image_id: str, request: Request, admin: AdminUser, db: Db
     img = db.get(PlanImage, image_id)
     if img is not None:
         plan_id = img.plan_id
+        for p in db.scalars(select(ImagePlacement).where(ImagePlacement.image_id == image_id)):
+            db.delete(p)
         db.delete(img)
         db.commit()
         audit.record(db, "image.delete", user_id=admin.id, target_type="image",

@@ -16,7 +16,7 @@ import { esc } from "./esc";
 import { initNavCube } from "./navcube";
 import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
 import { openLightbox } from "./lightbox";
-import type { PlanImage as PubImage } from "./api";
+import type { ImagePlacement, PlanImage as PubImage } from "./api";
 
 interface M {
   id: string;
@@ -405,29 +405,33 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
 
   // ── Bilder (nur Lesen) ───────────────────────────────────────────────
   const images: PubImage[] = snap.images ?? [];
+  const placements: ImagePlacement[] = snap.image_placements ?? [];
   const imagesEl = root.querySelector<HTMLDivElement>("#plan-images")!;
   const renderMapImages = () => {
-    imagesEl.innerHTML = images
-      .filter((i) => i.on_map && phaseOpacityOf(i.phase_id) > 0.001)
-      .map(
-        (i) =>
-          `<div class="pimg" data-iid="${i.id}" style="width:${i.map_width}px;opacity:${phaseOpacityOf(i.phase_id)}">` +
-          `<img src="${api.publicImageUrl(token, i.id)}" alt="" draggable="false" /></div>`,
-      )
+    imagesEl.innerHTML = placements
+      .filter((p) => phaseOpacityOf(p.phase_id) > 0.001 && images.some((i) => i.id === p.image_id))
+      .map((p) => {
+        const i = images.find((x) => x.id === p.image_id)!;
+        return (
+          `<div class="pimg" data-pid="${p.id}" style="width:${p.map_width}px;opacity:${phaseOpacityOf(p.phase_id)}">` +
+          `<img src="${api.publicImageUrl(token, i.id)}" alt="" draggable="false" /></div>`
+        );
+      })
       .join("");
     positionImages();
   };
   const positionImages = () => {
     for (const el of Array.from(imagesEl.children) as HTMLElement[]) {
-      const i = images.find((x) => x.id === el.dataset.iid);
-      if (!i) continue;
-      const p = map.project([i.world_x, i.world_y]);
-      el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+      const p = placements.find((x) => x.id === el.dataset.pid);
+      if (!p) continue;
+      const pp = map.project([p.world_x, p.world_y]);
+      el.style.transform = `translate(${pp.x}px, ${pp.y}px)`;
     }
   };
   imagesEl.addEventListener("dblclick", (e) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>(".pimg");
-    const i = el && images.find((x) => x.id === el.dataset.iid);
+    const p = el && placements.find((x) => x.id === el.dataset.pid);
+    const i = p && images.find((x) => x.id === p.image_id);
     if (i) openLightbox([{ url: api.publicImageUrl(token, i.id), caption: i.caption || i.filename, note: i.note }]);
   });
   map.on("move", positionImages);
@@ -947,6 +951,20 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       case "image.delete": {
         const i = images.findIndex((x) => x.id === msg.id);
         if (i >= 0) images.splice(i, 1);
+        for (let j = placements.length - 1; j >= 0; j--) if (placements[j].image_id === msg.id) placements.splice(j, 1);
+        renderMapImages();
+        break;
+      }
+      case "placement.upsert": {
+        const i = placements.findIndex((x) => x.id === msg.placement.id);
+        if (i >= 0) placements[i] = msg.placement;
+        else placements.push(msg.placement);
+        renderMapImages();
+        break;
+      }
+      case "placement.delete": {
+        const i = placements.findIndex((x) => x.id === msg.id);
+        if (i >= 0) placements.splice(i, 1);
         renderMapImages();
         break;
       }

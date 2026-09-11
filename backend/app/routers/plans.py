@@ -17,6 +17,7 @@ from .. import audit
 from ..deps import CurrentUser, DbDep, load_plan, require_plan_level
 from ..models import (
     Annotation,
+    ImagePlacement,
     Layer,
     Marker,
     OrbatNode,
@@ -73,17 +74,20 @@ def _snapshot(db: Session, plan: Plan, *, include_builder: bool = True) -> dict:
     strokes = list(db.scalars(select(Stroke).where(Stroke.plan_id == plan.id)))
     anns = list(db.scalars(select(Annotation).where(Annotation.plan_id == plan.id)))
     imgs = list(db.scalars(select(PlanImage).where(PlanImage.plan_id == plan.id)))
+    placements = list(db.scalars(select(ImagePlacement).where(ImagePlacement.plan_id == plan.id)))
     if not include_builder:
         hide = _builder_phase_ids(db, plan.id)
         markers = [m for m in markers if m.phase_id not in hide]
         strokes = [s for s in strokes if s.phase_id not in hide]
         anns = [a for a in anns if a.phase_id not in hide]
         imgs = [i for i in imgs if i.phase_id not in hide]
+        placements = [p for p in placements if p.phase_id not in hide]
     return {
         "markers": [_marker_dict(m) for m in markers],
         "strokes": [_stroke_dict(s) for s in strokes],
         "annotations": [_annotation_dict(a) for a in anns],
         "images": [_image_dict(i) for i in imgs],
+        "image_placements": [_placement_dict(p) for p in placements],
     }
 
 
@@ -140,8 +144,14 @@ def _image_dict(i: PlanImage) -> dict:
         "id": i.id, "phase_id": i.phase_id, "filename": i.filename,
         "content_type": i.content_type, "byte_size": i.byte_size,
         "natural_w": i.natural_w, "natural_h": i.natural_h, "caption": i.caption, "note": i.note,
-        "on_map": i.on_map, "world_x": i.world_x, "world_y": i.world_y,
-        "map_width": i.map_width, "scale_fixed": i.scale_fixed, "ref_zoom": i.ref_zoom,
+    }
+
+
+def _placement_dict(p: ImagePlacement) -> dict:
+    return {
+        "id": p.id, "image_id": p.image_id, "phase_id": p.phase_id,
+        "world_x": p.world_x, "world_y": p.world_y, "map_width": p.map_width,
+        "scale_fixed": p.scale_fixed, "ref_zoom": p.ref_zoom,
     }
 
 
@@ -760,14 +770,27 @@ def clone_plan(
         d["layer_id"] = layer_map.get(s.layer_id or "")
         db.add(Stroke(plan_id=clone.id, created_by=user.id, **d))
 
+    img_map: dict[str, str] = {}
     for img in db.scalars(select(PlanImage).where(PlanImage.plan_id == plan.id)):
-        db.add(PlanImage(
+        nimg = PlanImage(
             plan_id=clone.id, created_by=user.id, updated_by=user.id,
             phase_id=phase_map.get(img.phase_id or ""),
             filename=img.filename, content_type=img.content_type, byte_size=img.byte_size,
             natural_w=img.natural_w, natural_h=img.natural_h, caption=img.caption, note=img.note, data=img.data,
-            on_map=img.on_map, world_x=img.world_x, world_y=img.world_y,
-            map_width=img.map_width, scale_fixed=img.scale_fixed, ref_zoom=img.ref_zoom,
+        )
+        db.add(nimg)
+        db.flush()
+        img_map[img.id] = nimg.id
+
+    for pl in db.scalars(select(ImagePlacement).where(ImagePlacement.plan_id == plan.id)):
+        new_image_id = img_map.get(pl.image_id)
+        if new_image_id is None:
+            continue
+        db.add(ImagePlacement(
+            plan_id=clone.id, image_id=new_image_id, created_by=user.id, updated_by=user.id,
+            phase_id=phase_map.get(pl.phase_id or ""),
+            world_x=pl.world_x, world_y=pl.world_y, map_width=pl.map_width,
+            scale_fixed=pl.scale_fixed, ref_zoom=pl.ref_zoom,
         ))
 
     db.add(PlanACL(plan_id=clone.id, subject_type="user", subject_id=user.id, level="owner"))
