@@ -515,12 +515,12 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     const UNIT_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
       "match", ["get", "symset"],
       "25", "bottom-left",
-      "top-right",
+      "right",
     ];
     const UNIT_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
       "match", ["get", "symset"],
-      "25", ["literal", [0.9, -0.6]],
-      ["literal", [-0.9, 0.6]],
+      "25", ["literal", [0.6, -2.3]],
+      ["literal", [-0.5, 0.3]],
     ];
     const AI_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
       "match", ["get", "symset"],
@@ -529,8 +529,8 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     ];
     const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
       "match", ["get", "symset"],
-      "25", ["literal", [0, -1.1]],
-      ["literal", [1.1, 0]],
+      "25", ["literal", [0, -2.7]],
+      ["literal", [0.5, 0]],
     ];
     map.addLayer({
       id: "m-unittext",

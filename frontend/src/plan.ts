@@ -731,27 +731,29 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     });
     // Einheitstext (unit_text + SIDC-Modifikatoren) und Zusatztext (ai_text) als
     // eigene Text-Layer, je Symbol-Set unterschiedlich positioniert (APP-6D-Layout
-    // variiert z. B. zwischen Land Unit und Control Measure). Weitere Symbol-Sets
-    // fallen auf das Land-Unit-Layout zurück, bis sie explizit ergänzt werden.
+    // variiert z. B. zwischen Land Unit und Control Measure). Werte aus den
+    // Original-Layouts übernommen: UI/Layouts/Map/MapMarkerBaseSIDC(.CM).layout
+    // im SIDC-Framework-Repo (textLayout_Unit_AI, Text_Unit/Text_AI). Weitere
+    // Symbol-Sets fallen auf das Land-Unit-Layout zurück, bis sie ergänzt werden.
     const UNIT_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
       "match", ["get", "symset"],
       "25", "bottom-left", // Control Measure: oben rechts vom Marker
-      "top-right", // Default (Land Unit u. a.): mittig links unten
+      "right", // Default (Land Unit u. a.): dicht am Symbol, mittig links unten
     ];
     const UNIT_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
       "match", ["get", "symset"],
-      "25", ["literal", [0.9, -0.6]],
-      ["literal", [-0.9, 0.6]],
+      "25", ["literal", [0.6, -2.3]],
+      ["literal", [-0.5, 0.3]],
     ];
     const AI_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
       "match", ["get", "symset"],
-      "25", "bottom", // Control Measure: über dem Marker
+      "25", "bottom", // Control Measure: deutlich über dem Marker
       "left", // Default (Land Unit u. a.): rechts, mittig
     ];
     const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
       "match", ["get", "symset"],
-      "25", ["literal", [0, -1.1]],
-      ["literal", [1.1, 0]],
+      "25", ["literal", [0, -2.7]],
+      ["literal", [0.5, 0]],
     ];
     map.addLayer({
       id: "marker-unittext",
