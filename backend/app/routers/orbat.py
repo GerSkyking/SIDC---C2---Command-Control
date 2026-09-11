@@ -6,6 +6,7 @@ Sicht auf ein ORBAT (Baustein C) wird separat gefiltert.
 """
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
@@ -250,6 +251,53 @@ def create_node(orbat_id: str, body: NodeIn, user: CurrentUser, db: DbDep) -> di
     db.add(n)
     db.commit()
     return _node_out(n)
+
+
+def _clone_name(name: str) -> str:
+    """Endet der Name mit einer Zahl, wird sie um 1 erhöht, sonst wird eine " 2" angehängt."""
+    m = re.search(r"(\d+)\s*$", name)
+    if m:
+        return name[: m.start(1)] + str(int(m.group(1)) + 1)
+    return f"{name} 2"
+
+
+@router.post("/{orbat_id}/nodes/{node_id}/clone", status_code=status.HTTP_201_CREATED)
+def clone_node(orbat_id: str, node_id: str, user: CurrentUser, db: DbDep) -> dict:
+    """Klont einen Knoten samt aller Untereinheiten (rekursiv, neue IDs)."""
+    _load(orbat_id, db, user, "editor")
+    src = db.get(OrbatNode, node_id)
+    if src is None or src.orbat_id != orbat_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    siblings = db.scalars(
+        select(OrbatNode.ordering).where(
+            OrbatNode.orbat_id == orbat_id,
+            OrbatNode.parent_id.is_(src.parent_id) if src.parent_id is None
+            else OrbatNode.parent_id == src.parent_id,
+        )
+    )
+    nxt_ordering = max(list(siblings), default=-1) + 1
+
+    def _copy(n: OrbatNode, new_parent_id: str | None, rename: bool) -> OrbatNode:
+        c = OrbatNode(
+            orbat_id=n.orbat_id, parent_id=new_parent_id,
+            name=_clone_name(n.name) if rename else n.name,
+            sidc=n.sidc, qty_planned=n.qty_planned, qty_current=n.qty_current,
+            status=n.status, ordering=nxt_ordering if rename else n.ordering,
+            notes=n.notes, rel_visible=n.rel_visible, rel_show_type=n.rel_show_type,
+            rel_strength=n.rel_strength,
+        )
+        db.add(c)
+        db.flush()
+        children = db.scalars(
+            select(OrbatNode).where(OrbatNode.parent_id == n.id).order_by(OrbatNode.ordering)
+        )
+        for child in children:
+            _copy(child, c.id, False)
+        return c
+
+    root_copy = _copy(src, src.parent_id, True)
+    db.commit()
+    return _node_out(root_copy)
 
 
 @router.patch("/{orbat_id}/nodes/{node_id}")

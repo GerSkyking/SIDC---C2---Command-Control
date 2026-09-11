@@ -122,6 +122,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
             canEdit
               ? `<span class="orb-actions">
                    <button class="icon-btn" data-add="${n.id}" title="${t("orbat.addChild")}">${icon("plus", 14)}</button>
+                   <button class="icon-btn" data-clone="${n.id}" title="${t("orbat.clone")}">${icon("clone", 14)}</button>
                    <button class="icon-btn" data-edit="${n.id}" title="${t("common.rename")}">${icon("edit", 14)}</button>
                    <button class="icon-btn" data-del="${n.id}" title="${t("common.delete")}">${icon("x", 14)}</button>
                  </span>`
@@ -185,6 +186,12 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
   );
   host.querySelectorAll<HTMLButtonElement>("[data-edit]").forEach((b) =>
     b.addEventListener("click", () => editNode(o.id, nodes.find((n) => n.id === b.dataset.edit)!, undefined, reload)),
+  );
+  host.querySelectorAll<HTMLButtonElement>("[data-clone]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await api.cloneNode(o.id, b.dataset.clone!).catch(fail);
+      void reload();
+    }),
   );
   host.querySelectorAll<HTMLButtonElement>("[data-del]").forEach((b) =>
     b.addEventListener("click", async () => {

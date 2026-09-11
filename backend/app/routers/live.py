@@ -89,10 +89,10 @@ def _marker_out(m: Marker, author: str | None = None) -> dict:
     }
 
 
-def _author_of(db, m: Marker) -> str | None:
-    if not m.created_by:
+def _author_of(db, obj: Marker | PlanImage) -> str | None:
+    if not obj.created_by:
         return None
-    u = db.get(User, m.created_by)
+    u = db.get(User, obj.created_by)
     return u.label if u else None
 
 
@@ -498,13 +498,14 @@ IMAGE_UPDATE_FIELDS = (
 )
 
 
-def _image_out(i: PlanImage) -> dict:
+def _image_out(i: PlanImage, author: str | None = None) -> dict:
     return {
         "id": i.id, "plan_id": i.plan_id, "phase_id": i.phase_id,
         "filename": i.filename, "content_type": i.content_type, "byte_size": i.byte_size,
         "natural_w": i.natural_w, "natural_h": i.natural_h, "caption": i.caption, "note": i.note,
         "on_map": i.on_map, "world_x": i.world_x, "world_y": i.world_y,
         "map_width": i.map_width, "scale_fixed": i.scale_fixed, "ref_zoom": i.ref_zoom,
+        "author": author,
     }
 
 
@@ -521,7 +522,7 @@ def _create_image(plan_id: str, uid: str | None, meta: dict, raw: bytes, sniff: 
         )
         db.add(i)
         db.commit()
-        return _image_out(i)
+        return _image_out(i, _author_of(db, i))
 
 
 def _update_image(plan_id: str, image_id: str, uid: str | None, fields: dict) -> dict | None:
@@ -538,7 +539,7 @@ def _update_image(plan_id: str, image_id: str, uid: str | None, fields: dict) ->
         i.updated_by = uid
         i.updated_at = now()
         db.commit()
-        return _image_out(i)
+        return _image_out(i, _author_of(db, i))
 
 
 def _delete_image(plan_id: str, image_id: str) -> str | None:

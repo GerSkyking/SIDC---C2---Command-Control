@@ -418,6 +418,17 @@ def get_snapshot(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> dict:
     for md in snap["markers"]:
         src = by_id.get(md["id"])
         md["author"] = names.get(src.created_by or "") if src else None
+    # Ersteller-Namen auch für Bilder (Hover-Info im Popover/Lightbox).
+    img_rows = list(db.scalars(select(PlanImage).where(PlanImage.plan_id == plan.id)))
+    img_uids = {i.created_by for i in img_rows if i.created_by}
+    img_names = (
+        {u.id: u.label for u in db.scalars(select(User).where(User.id.in_(img_uids)))}
+        if img_uids else {}
+    )
+    img_by_id = {i.id: i for i in img_rows}
+    for idct in snap["images"]:
+        src = img_by_id.get(idct["id"])
+        idct["author"] = img_names.get(src.created_by or "") if src else None
     if not builder:
         snap["markers"].extend(released_markers(db, plan.id))
     return {

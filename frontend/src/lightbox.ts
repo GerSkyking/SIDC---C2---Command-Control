@@ -3,12 +3,15 @@
 import { icon } from "./icons";
 import { t } from "./i18n";
 import { renderMarkdown } from "./md";
+import { esc } from "./esc";
 
 export interface LightboxItem {
   url: string;
   caption?: string;
   /** Längere Notiz (Markdown), erscheint in einer eigenen Scrollbox unter dem Bild. */
   note?: string;
+  /** Wenn gesetzt, ist die Notiz direkt im Lightbox editierbar (600ms-Debounce + Blur-Flush). */
+  onNoteSave?: (note: string) => void;
 }
 
 let open: HTMLElement | null = null;
@@ -33,15 +36,44 @@ export function openLightbox(items: LightboxItem[], start = 0): void {
   const img = back.querySelector<HTMLImageElement>(".lb-img")!;
   const cap = back.querySelector<HTMLElement>(".lb-cap")!;
   const noteEl = back.querySelector<HTMLElement>(".lb-note")!;
+  let noteTimer = 0;
+  // Ungespeicherte Notiz-Änderung (innerhalb der Debounce-Zeit) sofort sichern —
+  // beim Blättern zum nächsten Bild oder beim Schließen.
+  const flushNote = () => {
+    window.clearTimeout(noteTimer);
+    const it = items[idx];
+    const ta = noteEl.querySelector<HTMLTextAreaElement>(".lb-note-edit");
+    if (ta && it.onNoteSave) {
+      it.note = ta.value;
+      it.onNoteSave(ta.value);
+    }
+  };
   const show = () => {
     const it = items[idx];
     img.src = it.url;
     cap.textContent = it.caption || "";
     cap.hidden = !it.caption;
-    noteEl.innerHTML = it.note ? renderMarkdown(it.note) : "";
-    noteEl.hidden = !it.note;
+    if (it.onNoteSave) {
+      noteEl.hidden = false;
+      noteEl.innerHTML =
+        `<textarea class="lb-note-edit" placeholder="${t("img.noteHint")}">${esc(it.note || "")}</textarea>` +
+        `<div class="lb-note-prev"></div>`;
+      const ta = noteEl.querySelector<HTMLTextAreaElement>(".lb-note-edit")!;
+      const prev = noteEl.querySelector<HTMLElement>(".lb-note-prev")!;
+      prev.innerHTML = renderMarkdown(ta.value);
+      ta.addEventListener("input", () => {
+        prev.innerHTML = renderMarkdown(ta.value);
+        window.clearTimeout(noteTimer);
+        noteTimer = window.setTimeout(flushNote, 600);
+      });
+      ta.addEventListener("blur", flushNote);
+    } else {
+      noteEl.innerHTML = it.note ? renderMarkdown(it.note) : "";
+      noteEl.hidden = !it.note;
+    }
   };
   const step = (d: number) => {
+    flushNote();
     idx = (idx + d + items.length) % items.length;
     show();
   };
@@ -67,8 +99,10 @@ export function openLightbox(items: LightboxItem[], start = 0): void {
     else if (e.key === "ArrowRight") step(1);
   };
   document.addEventListener("keydown", onKey, true);
-  (back as unknown as { _cleanup: () => void })._cleanup = () =>
+  (back as unknown as { _cleanup: () => void })._cleanup = () => {
     document.removeEventListener("keydown", onKey, true);
+    flushNote();
+  };
 
   document.body.appendChild(back);
   open = back;

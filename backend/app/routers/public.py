@@ -319,6 +319,7 @@ async def public_live(websocket: WebSocket, token: str) -> None:
                 fields = {k: v for k, v in data.items() if k in IMAGE_UPDATE_FIELDS}
                 res = await run_in_threadpool(_update_image, plan_id, msg["id"], None, fields)
                 if res and phase_ok(res.get("phase_id")):
+                    res.pop("author", None)  # interner Nutzername gehört nicht in den öffentlichen Link
                     await hub.broadcast(plan_id, {"type": "image.upsert", "image": res})
             elif typ == "image.delete" and can_edit:
                 await run_in_threadpool(_delete_image, plan_id, msg["id"])

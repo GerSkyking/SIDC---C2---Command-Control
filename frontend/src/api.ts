@@ -122,6 +122,7 @@ export interface PlanImage {
   map_width: number;
   scale_fixed: boolean;
   ref_zoom: number;
+  author?: string | null;
 }
 export interface AdminImageRow {
   id: string;
@@ -330,6 +331,7 @@ export const api = {
   patchNode: (oid: string, nid: string, b: Partial<OrbatNode>) =>
     req<OrbatNode>("PATCH", `/api/orbats/${oid}/nodes/${nid}`, b),
   deleteNode: (oid: string, nid: string) => req<void>("DELETE", `/api/orbats/${oid}/nodes/${nid}`),
+  cloneNode: (oid: string, nid: string) => req<OrbatNode>("POST", `/api/orbats/${oid}/nodes/${nid}/clone`),
   orbatAcl: (id: string) =>
     req<{ entries: any[]; candidates: AclCandidate[] }>("GET", `/api/orbats/${id}/acl`),
   putOrbatAcl: (id: string, entries: any[]) => req<any>("PUT", `/api/orbats/${id}/acl`, entries),

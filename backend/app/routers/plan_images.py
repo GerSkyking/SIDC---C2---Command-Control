@@ -19,7 +19,7 @@ from ..deps import CurrentUser, DbDep, require_plan_level
 from ..models import Plan, PlanImage
 from ..permissions import effective_mission_builder
 from ..services.realtime import hub
-from .live import _create_image, _image_out, _phase_is_builder
+from .live import _author_of, _create_image, _image_out, _phase_is_builder
 
 router = APIRouter(prefix="/plans", tags=["plan-images"])
 _settings = get_settings()
@@ -110,7 +110,7 @@ async def upload_image(
 @router.get("/{plan_id}/images")
 def list_images(plan: ViewerPlan, db: DbDep) -> list[dict]:
     return [
-        _image_out(i)
+        _image_out(i, _author_of(db, i))
         for i in db.scalars(select(PlanImage).where(PlanImage.plan_id == plan.id).order_by(PlanImage.created_at))
     ]
 

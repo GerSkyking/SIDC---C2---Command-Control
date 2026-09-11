@@ -3557,9 +3557,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     el.classList.add("dragging");
     if (mode === "move") map.dragPan.disable();
     const canvasRect = () => map.getCanvas().getBoundingClientRect();
+    // Versatz zwischen Greifpunkt und dem Notiz-Anker merken (siehe onImageDown).
+    const a0 = annots.get(id);
+    const anchorPx0 = a0 ? map.project([a0.world_x, a0.world_y]) : { x: 0, y: 0 };
+    const cr0 = canvasRect();
+    const grabDx = ev.clientX - cr0.left - anchorPx0.x;
+    const grabDy = ev.clientY - cr0.top - anchorPx0.y;
     const onMove = (e: MouseEvent) => {
       const r = canvasRect();
-      const ll = map.unproject([e.clientX - r.left, e.clientY - r.top]);
+      const ll = map.unproject([e.clientX - r.left - grabDx, e.clientY - r.top - grabDy]);
       const a = annots.get(id);
       if (a) {
         a.world_x = ll.lng;
@@ -3574,7 +3580,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       if (mode === "move") map.dragPan.enable();
       annotDragId = null;
       const r = canvasRect();
-      const ll = map.unproject([e.clientX - r.left, e.clientY - r.top]);
+      const ll = map.unproject([e.clientX - r.left - grabDx, e.clientY - r.top - grabDy]);
       socket.send({ type: "annotation.move", id, data: { world_x: ll.lng, world_y: ll.lat } });
     };
     document.addEventListener("mousemove", onMove);
@@ -3740,6 +3746,30 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     });
     positionImgPopover();
   }
+  // Hover: Name / Notiz / Ersteller / Phase des Kartenbilds (analog Marker-Hover).
+  const imgHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 });
+  const showImgHover = (i: PlanImage) => {
+    const tip = document.createElement("div");
+    tip.className = "mk-tip";
+    const b = document.createElement("b");
+    b.textContent = i.caption || i.filename;
+    tip.append(b, document.createElement("br"));
+    for (const [k, v] of [
+      [t("marker.author"), i.author || "—"],
+      [t("phase.assign"), phaseNameOf(i.phase_id)],
+    ] as [string, string][]) {
+      tip.append(`${k}: ${v}`, document.createElement("br"));
+    }
+    if (i.note) {
+      const d = document.createElement("div");
+      d.className = "mk-tip-info";
+      d.textContent = i.note;
+      tip.append(d);
+    }
+    imgHoverPopup.setLngLat([i.world_x, i.world_y]).setDOMContent(tip).addTo(map);
+  };
+  const hideImgHover = () => imgHoverPopup.remove();
+
   function renderMapImages(): void {
     if (imgResizingId) return;
     if (!imgRefFallback) imgRefFallback = map.getZoom();
@@ -3754,15 +3784,19 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       el.style.width = `${i.map_width}px`;
       el.style.opacity = String(op);
       const tip = i.caption || i.filename;
-      el.title = tip;
       el.innerHTML =
-        `<img src="${esc(api.planImageUrl(planId, i.id))}" alt="${esc(tip)}" title="${esc(tip)}" draggable="false" />` +
+        `<img src="${esc(api.planImageUrl(planId, i.id))}" alt="${esc(tip)}" draggable="false" />` +
         (canEdit
           ? `<button class="pimg-gear" data-imggear title="${t("settings.title")}">${icon("settings", 12)}</button>` +
             `<button class="pimg-x" data-imgx title="${t("img.removeFromMap")}">${icon("x", 12)}</button>` +
             `<div class="pimg-rz"></div>`
           : "");
       el.addEventListener("mousedown", (ev) => onImageDown(ev, i.id));
+      el.addEventListener("mouseenter", () => {
+        const cur = images.get(i.id);
+        if (cur) showImgHover(cur);
+      });
+      el.addEventListener("mouseleave", hideImgHover);
       // Klick ohne vorherigen Drag/Resize -> groß anzeigen (Beschriftung als Notiz darunter).
       // Wird bei einer echten Verschiebung/Größenänderung von onImageDown unterdrückt.
       el.addEventListener("click", () => {
@@ -3770,7 +3804,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           imgClickSuppressed = false;
           return;
         }
-        openLightbox([{ url: api.planImageUrl(planId, i.id), caption: i.caption || i.filename, note: i.note }]);
+        openLightbox([
+          {
+            url: api.planImageUrl(planId, i.id),
+            caption: i.caption || i.filename,
+            note: i.note,
+            onNoteSave: canEdit
+              ? (v) => {
+                  const cur = images.get(i.id);
+                  if (cur) cur.note = v;
+                  socket.send({ type: "image.modify", id: i.id, data: { note: v, phase_id: cur?.phase_id ?? null } });
+                }
+              : undefined,
+          },
+        ]);
       });
       el.querySelector("[data-imggear]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -3825,10 +3872,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const startX = ev.clientX;
     const startY = ev.clientY;
     let moved = false;
+    // Versatz zwischen Greifpunkt und dem Bild-Anker (oben links) merken, damit das
+    // Bild beim Ziehen nicht unter den Cursor springt, sondern an der gegriffenen
+    // Stelle "kleben" bleibt.
+    const anchorPx0 = map.project([cur.world_x, cur.world_y]);
+    const cr0 = canvasRect();
+    const grabDx = ev.clientX - cr0.left - anchorPx0.x;
+    const grabDy = ev.clientY - cr0.top - anchorPx0.y;
     const onMove = (e: MouseEvent) => {
       if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) > 4) moved = true;
       const cr = canvasRect();
-      const ll = map.unproject([e.clientX - cr.left, e.clientY - cr.top]);
+      const ll = map.unproject([e.clientX - cr.left - grabDx, e.clientY - cr.top - grabDy]);
       cur.world_x = ll.lng;
       cur.world_y = ll.lat;
       positionImages();
@@ -3842,7 +3896,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       if (!moved) return; // reiner Klick -> Lightbox öffnet über den click-Listener
       imgClickSuppressed = true;
       const cr = canvasRect();
-      const ll = map.unproject([e.clientX - cr.left, e.clientY - cr.top]);
+      const ll = map.unproject([e.clientX - cr.left - grabDx, e.clientY - cr.top - grabDy]);
       socket.send({ type: "image.move", id, data: { world_x: ll.lng, world_y: ll.lat } });
     };
     document.addEventListener("mousemove", onMove);
