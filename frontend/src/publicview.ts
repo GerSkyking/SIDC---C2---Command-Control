@@ -196,7 +196,9 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       properties: {
         id: m.id,
         sidc: m.sidc,
-        label: m.unit_text || m.ai_text || "",
+        symset: m.sidc.slice(4, 6),
+        label: m.unit_text || "",
+        ai: m.ai_text || "",
         rot: m.icon_rotation || 0,
         dot: missingIcons.has(m.sidc),
         opacity: opacityOf(m),
@@ -504,18 +506,66 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         "icon-size": ["*", 0.8, ["coalesce", ["get", "scale"], 1]],
         "icon-rotate": ["get", "rot"],
         "icon-allow-overlap": true,
+      },
+      paint: {
+        "icon-opacity": ["get", "opacity"],
+      },
+    });
+    // Einheitstext/Zusatztext-Positionen je Symbol-Set — siehe plan.ts.
+    const UNIT_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
+      "match", ["get", "symset"],
+      "25", "bottom-left",
+      "top-right",
+    ];
+    const UNIT_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
+      "match", ["get", "symset"],
+      "25", ["literal", [0.9, -0.6]],
+      ["literal", [-0.9, 0.6]],
+    ];
+    const AI_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
+      "match", ["get", "symset"],
+      "25", "bottom",
+      "left",
+    ];
+    const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
+      "match", ["get", "symset"],
+      "25", ["literal", [0, -1.1]],
+      ["literal", [1.1, 0]],
+    ];
+    map.addLayer({
+      id: "m-unittext",
+      type: "symbol",
+      source: "m",
+      layout: {
         "text-field": ["get", "label"],
         "text-optional": true,
         "text-size": 11,
-        "text-anchor": "top",
-        "text-offset": [0, 1.4],
+        "text-anchor": UNIT_TEXT_ANCHOR,
+        "text-offset": UNIT_TEXT_OFFSET,
       },
       paint: {
         "text-color": "#e6e9ee",
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
         "text-opacity": ["get", "opacity"],
-        "icon-opacity": ["get", "opacity"],
+      },
+    });
+    map.addLayer({
+      id: "m-aitext",
+      type: "symbol",
+      source: "m",
+      layout: {
+        "text-field": ["get", "ai"],
+        "text-optional": true,
+        "text-size": 11,
+        "text-anchor": AI_TEXT_ANCHOR,
+        "text-offset": AI_TEXT_OFFSET,
+      },
+      paint: {
+        "text-color": "#9fd3ff",
+        "text-halo-color": "#000",
+        "text-halo-width": 1.4,
+        "text-opacity": ["get", "opacity"],
       },
     });
     renderAnnots();

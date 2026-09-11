@@ -430,7 +430,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       properties: {
         id: m.id,
         sidc: m.sidc,
+        // Symbol-Set (Stellen 5-6 der SIDC, z. B. "10" = Land Unit, "25" = Control
+        // Measure) — bestimmt, wo Einheitstext/Zusatztext relativ zum Symbol stehen.
+        symset: m.sidc.slice(4, 6),
         label: markerLabel(m),
+        ai: m.ai_text || "",
         rot: m.icon_rotation || 0,
         locked: m.locked,
         dot: missingIcons.has(m.sidc),
@@ -720,19 +724,73 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "icon-size": ["*", 0.8, ["coalesce", ["get", "scale"], 1]],
         "icon-rotate": ["get", "rot"],
         "icon-allow-overlap": true,
+      },
+      paint: {
+        "icon-opacity": ["*", ["case", ["get", "locked"], 0.6, 1], ["get", "opacity"]],
+      },
+    });
+    // Einheitstext (unit_text + SIDC-Modifikatoren) und Zusatztext (ai_text) als
+    // eigene Text-Layer, je Symbol-Set unterschiedlich positioniert (APP-6D-Layout
+    // variiert z. B. zwischen Land Unit und Control Measure). Weitere Symbol-Sets
+    // fallen auf das Land-Unit-Layout zurück, bis sie explizit ergänzt werden.
+    const UNIT_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
+      "match", ["get", "symset"],
+      "25", "bottom-left", // Control Measure: oben rechts vom Marker
+      "top-right", // Default (Land Unit u. a.): mittig links unten
+    ];
+    const UNIT_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
+      "match", ["get", "symset"],
+      "25", ["literal", [0.9, -0.6]],
+      ["literal", [-0.9, 0.6]],
+    ];
+    const AI_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
+      "match", ["get", "symset"],
+      "25", "bottom", // Control Measure: über dem Marker
+      "left", // Default (Land Unit u. a.): rechts, mittig
+    ];
+    const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
+      "match", ["get", "symset"],
+      "25", ["literal", [0, -1.1]],
+      ["literal", [1.1, 0]],
+    ];
+    map.addLayer({
+      id: "marker-unittext",
+      type: "symbol",
+      source: "markers",
+      layout: {
         "text-field": ["get", "label"],
         "text-optional": true,
         "text-size": 11,
-        "text-anchor": "top",
-        "text-offset": [0, 1.4],
+        "text-anchor": UNIT_TEXT_ANCHOR,
+        "text-offset": UNIT_TEXT_OFFSET,
         "text-allow-overlap": false,
+        "icon-allow-overlap": true,
       },
       paint: {
         "text-color": "#e6e9ee",
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
         "text-opacity": ["get", "opacity"],
-        "icon-opacity": ["*", ["case", ["get", "locked"], 0.6, 1], ["get", "opacity"]],
+      },
+    });
+    map.addLayer({
+      id: "marker-aitext",
+      type: "symbol",
+      source: "markers",
+      layout: {
+        "text-field": ["get", "ai"],
+        "text-optional": true,
+        "text-size": 11,
+        "text-anchor": AI_TEXT_ANCHOR,
+        "text-offset": AI_TEXT_OFFSET,
+        "text-allow-overlap": false,
+        "icon-allow-overlap": true,
+      },
+      paint: {
+        "text-color": "#9fd3ff",
+        "text-halo-color": "#000",
+        "text-halo-width": 1.4,
+        "text-opacity": ["get", "opacity"],
       },
     });
 
