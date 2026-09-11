@@ -6,6 +6,7 @@ import type { GeoJSONSource } from "maplibre-gl";
 import { api } from "./api";
 import { channelLabel, channelVisibility, type ChannelEntry } from "./sidc/catalog";
 import { ensureMapIcon } from "./sidc/symbol";
+import { markerLabelCategory } from "./sidc/sidc";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
@@ -196,7 +197,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       properties: {
         id: m.id,
         sidc: m.sidc,
-        symset: m.sidc.slice(4, 6),
+        labelcat: markerLabelCategory(m.sidc),
         label: m.unit_text || "",
         ai: m.ai_text || "",
         rot: m.icon_rotation || 0,
@@ -512,35 +513,41 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         "icon-opacity": ["get", "opacity"],
       },
     });
-    // Einheitstext/Zusatztext-Positionen je Symbol-Set — siehe plan.ts.
+    // Einheitstext/Zusatztext-Positionen je Marker-Kategorie — siehe plan.ts.
     const UNIT_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", "bottom-left",
+      "match", ["get", "labelcat"],
+      "line", "bottom",
+      "cm", "left",
       "right",
     ];
     const UNIT_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", ["literal", [0.6, -2.3]],
-      ["literal", [-0.5, 0.3]],
+      "match", ["get", "labelcat"],
+      "line", ["literal", [0, -1.6]],
+      "cm", ["literal", [0.6, -0.4]],
+      ["literal", [-0.5, 0.6]],
     ];
     const AI_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", "bottom",
+      "match", ["get", "labelcat"],
+      "line", "top",
+      "cm", "bottom",
       "left",
     ];
     const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", ["literal", [0, -2.7]],
+      "match", ["get", "labelcat"],
+      "line", ["literal", [0, 1.6]],
+      "cm", ["literal", [0, -2.7]],
       ["literal", [0.5, 0]],
     ];
     const UNIT_TEXT_JUSTIFY: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", "left",
+      "match", ["get", "labelcat"],
+      "line", "center",
+      "cm", "left",
       "right",
     ];
     const AI_TEXT_JUSTIFY: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", "center",
+      "match", ["get", "labelcat"],
+      "line", "center",
+      "cm", "center",
       "left",
     ];
     map.addLayer({

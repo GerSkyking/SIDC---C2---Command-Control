@@ -121,3 +121,36 @@ export function niceStep(raw: number): number {
   const n = raw / p;
   return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * p;
 }
+
+/**
+ * Funktions-IDs (Stellen 11-16 der SIDC) "linienhafter" Control-Measure-Symbole
+ * (Phase Line, Boundary, CFL, Release Line, Line of Contact, ...) — diese teilen
+ * sich zwar den Symbol-Set-Code "25" mit Punkt-Control-Measures (z. B. "Known
+ * Point"), bekommen aber ein anderes Einheitstext-/Zusatztext-Layout. Extrahiert
+ * aus SIDC-Framework/Configs/AllMarkers/AllMarkers.conf (Einträge mit
+ * `m_bIsMultiPointLine 1`).
+ */
+const LINE_CM_FUNCTION_IDS = new Set<string>([
+  "110100", "110200", "110300", "110500", "140100", "140200", "140300", "140400",
+  "140602", "140603", "140605", "140700", "140800", "140900", "141000", "141100",
+  "141200", "141300", "141400", "141500", "141600", "141800", "141900", "151401",
+  "151402", "151406", "190100", "190200", "217100", "217300", "217400", "217500",
+  "217600", "217700", "220100", "220101", "220102", "220103", "220104", "220105",
+  "220106", "220107", "220108", "240701", "240702", "240703", "260100", "260200",
+  "260300", "260400", "260500", "260600", "271202", "271203", "280100", "282003",
+  "290100", "290101", "290201", "290202", "290203", "290204", "290301", "290302",
+  "290303", "290304", "290305", "290306", "290307", "290308", "290500", "290600",
+  "290700", "290800", "290900", "300100", "330100", "330300", "330301", "330302",
+  "330303", "330400", "330401", "330402", "330403", "340800", "341200", "341300",
+  "341900", "342000", "342201", "342202", "342203", "342400", "342500", "343100",
+  "343300", "344000", "344100", "344200",
+]);
+
+/** Symbol-Set "25" (Control Measure) + Funktions-ID aus obiger Liste -> "line",
+ * Symbol-Set "25" sonst -> "cm" (Punkt-Control-Measure), alles andere -> "default"
+ * (Land Unit u. a.). Bestimmt, wo Einheitstext/Zusatztext relativ zum Symbol stehen. */
+export type MarkerLabelCategory = "default" | "cm" | "line";
+export function markerLabelCategory(sidc: string): MarkerLabelCategory {
+  if (sidc.slice(4, 6) !== "25") return "default";
+  return LINE_CM_FUNCTION_IDS.has(sidc.slice(10, 16)) ? "line" : "cm";
+}

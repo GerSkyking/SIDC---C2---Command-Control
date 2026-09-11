@@ -4,7 +4,14 @@ import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
 import { channelLabel, channelVisibility, describe, loadAllMarkers, loadChannels, loadModifiers, loadPhaseLineStyle, loadTranslations, translate } from "./sidc/catalog";
-import { lngLatToWorld, withModifiers, worldToLngLat, type Calibration, type SidcModifiers } from "./sidc/sidc";
+import {
+  lngLatToWorld,
+  markerLabelCategory,
+  withModifiers,
+  worldToLngLat,
+  type Calibration,
+  type SidcModifiers,
+} from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { confirmDialog, promptDialog, toast, toastError } from "./notify";
 import { makeMovable } from "./movable";
@@ -430,9 +437,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       properties: {
         id: m.id,
         sidc: m.sidc,
-        // Symbol-Set (Stellen 5-6 der SIDC, z. B. "10" = Land Unit, "25" = Control
-        // Measure) — bestimmt, wo Einheitstext/Zusatztext relativ zum Symbol stehen.
-        symset: m.sidc.slice(4, 6),
+        // "default" (Land Unit u. a.) / "cm" (Punkt-Control-Measure) / "line"
+        // (linienhaftes Control-Measure-Symbol, z. B. Phase Line) — bestimmt, wo
+        // Einheitstext/Zusatztext relativ zum Symbol stehen.
+        labelcat: markerLabelCategory(m.sidc),
         label: markerLabel(m),
         ai: m.ai_text || "",
         rot: m.icon_rotation || 0,
@@ -735,43 +743,49 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       },
     });
     // Einheitstext (unit_text + SIDC-Modifikatoren) und Zusatztext (ai_text) als
-    // eigene Text-Layer, je Symbol-Set unterschiedlich positioniert (APP-6D-Layout
-    // variiert z. B. zwischen Land Unit und Control Measure). Werte aus den
-    // Original-Layouts übernommen: UI/Layouts/Map/MapMarkerBaseSIDC(.CM).layout
-    // im SIDC-Framework-Repo (textLayout_Unit_AI, Text_Unit/Text_AI). Weitere
-    // Symbol-Sets fallen auf das Land-Unit-Layout zurück, bis sie ergänzt werden.
+    // eigene Text-Layer, je Marker-Kategorie unterschiedlich positioniert:
+    // - "default" (Land Unit u. a.): Zusatztext rechts/mittig/linksbündig,
+    //   Einheitstext links vom Symbol/rechtsbündig, mittig zwischen Icon-Mitte
+    //   und Icon-Unterkante.
+    // - "cm" (Punkt-Control-Measure, z. B. Known Point): Zusatztext oben/
+    //   zentriert, Einheitstext rechts vom Symbol im oberen/mittleren Bereich,
+    //   linksbündig.
+    // - "line" (linienhaftes Control-Measure-Symbol, z. B. Phase Line/Boundary/
+    //   CFL): Einheitstext oben/zentriert, Zusatztext unten/zentriert.
     const UNIT_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", "bottom-left", // Control Measure: oben rechts vom Marker
-      "right", // Default (Land Unit u. a.): dicht am Symbol, mittig links unten
+      "match", ["get", "labelcat"],
+      "line", "bottom",
+      "cm", "left",
+      "right",
     ];
     const UNIT_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", ["literal", [0.6, -2.3]],
-      ["literal", [-0.5, 0.3]],
+      "match", ["get", "labelcat"],
+      "line", ["literal", [0, -1.6]],
+      "cm", ["literal", [0.6, -0.4]],
+      ["literal", [-0.5, 0.6]],
     ];
     const AI_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", "bottom", // Control Measure: deutlich über dem Marker
-      "left", // Default (Land Unit u. a.): rechts, mittig
+      "match", ["get", "labelcat"],
+      "line", "top",
+      "cm", "bottom",
+      "left",
     ];
     const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", ["literal", [0, -2.7]],
+      "match", ["get", "labelcat"],
+      "line", ["literal", [0, 1.6]],
+      "cm", ["literal", [0, -2.7]],
       ["literal", [0.5, 0]],
     ];
-    // Textausrichtung ebenfalls aus den Referenz-Layouts: Default-Einheitstext ist
-    // rechtsbündig (Text endet dicht am Symbol), Default-Zusatztext ohne Angabe
-    // -> Engine-Standard linksbündig; bei Control Measure ist es umgekehrt
-    // (Einheitstext linksbündig) plus zentrierter Zusatztext.
     const UNIT_TEXT_JUSTIFY: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", "left",
+      "match", ["get", "labelcat"],
+      "line", "center",
+      "cm", "left",
       "right",
     ];
     const AI_TEXT_JUSTIFY: maplibregl.ExpressionSpecification = [
-      "match", ["get", "symset"],
-      "25", "center",
+      "match", ["get", "labelcat"],
+      "line", "center",
+      "cm", "center",
       "left",
     ];
     map.addLayer({
