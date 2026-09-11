@@ -3867,7 +3867,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     positionImgPopover();
   }
   // Hover: Name / Notiz / Ersteller / Phase des Kartenbilds (analog Marker-Hover).
-  const imgHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 });
+  const imgHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14, anchor: "bottom" });
   const showImgHover = (p: ImagePlacement, i: PlanImage) => {
     const tip = document.createElement("div");
     tip.className = "mk-tip";
@@ -3886,7 +3886,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       d.textContent = i.note;
       tip.append(d);
     }
-    imgHoverPopup.setLngLat([p.world_x, p.world_y]).setDOMContent(tip).addTo(map);
+    // world_x/world_y ist die linke obere Ecke des Bilds (siehe positionImages) —
+    // Popup horizontal auf die Bildmitte verschieben und über die obere Kante
+    // zwingen (anchor "bottom"), sonst rutscht der Tipp bei großen Bildern nach
+    // unten (maplibre würde sonst automatisch anchor "top" wählen).
+    const w = p.map_width * imageScale(p);
+    imgHoverPopup
+      .setLngLat([p.world_x, p.world_y])
+      .setOffset([w / 2, 0])
+      .setDOMContent(tip)
+      .addTo(map);
   };
   const hideImgHover = () => imgHoverPopup.remove();
 
