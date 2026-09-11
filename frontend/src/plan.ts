@@ -15,7 +15,7 @@ import {
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { confirmDialog, promptDialog, toast, toastError } from "./notify";
 import { makeMovable } from "./movable";
-import { ensureMapIcon, iconSrc } from "./sidc/symbol";
+import { ensureMapIcon, iconSrc, markerLabelOffsets } from "./sidc/symbol";
 import { openAclEditor } from "./acl";
 import { openHelp } from "./help";
 import { openVersionPanel } from "./versions";
@@ -431,25 +431,34 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   const markerFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
-    features: [...markers.values()].map((m) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [m.world_x, m.world_y] },
-      properties: {
-        id: m.id,
-        sidc: m.sidc,
-        // "default" (Land Unit u. a.) / "cm" (Punkt-Control-Measure) / "line"
-        // (linienhaftes Control-Measure-Symbol, z. B. Phase Line) — bestimmt, wo
-        // Einheitstext/Zusatztext relativ zum Symbol stehen.
-        labelcat: markerLabelCategory(m.sidc),
-        label: markerLabel(m),
-        ai: m.ai_text || "",
-        rot: m.icon_rotation || 0,
-        locked: m.locked,
-        dot: missingIcons.has(m.sidc),
-        opacity: phaseOpacity(m),
-        scale: Math.max(0.25, Math.min(3, m.scale ?? 1)) * personalScale,
-      },
-    })),
+    features: [...markers.values()].map((m) => {
+      const scale = Math.max(0.25, Math.min(3, m.scale ?? 1)) * personalScale;
+      // Text-Offset aus der tatsächlichen Icon-Größe berechnet (0.8 = derselbe
+      // Faktor wie in "icon-size" unten), damit der Text immer knapp außerhalb
+      // des Icons sitzt statt eines geschätzten Fixwerts.
+      const labelOff = markerLabelOffsets(m.sidc, 0.8 * scale);
+      return {
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [m.world_x, m.world_y] },
+        properties: {
+          id: m.id,
+          sidc: m.sidc,
+          // "default" (Land Unit u. a.) / "cm" (Punkt-Control-Measure) / "line"
+          // (linienhaftes Control-Measure-Symbol, z. B. Phase Line) — bestimmt, wo
+          // Einheitstext/Zusatztext relativ zum Symbol stehen.
+          labelcat: markerLabelCategory(m.sidc),
+          label: markerLabel(m),
+          ai: m.ai_text || "",
+          unitOff: labelOff.unit,
+          aiOff: labelOff.ai,
+          rot: m.icon_rotation || 0,
+          locked: m.locked,
+          dot: missingIcons.has(m.sidc),
+          opacity: phaseOpacity(m),
+          scale,
+        },
+      };
+    }),
   });
 
   // Richtungspfeile (rotation_degrees, 8 Richtungen à 45°, -1 = stationär) —
@@ -758,24 +767,18 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       "cm", "left",
       "right",
     ];
-    const UNIT_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
-      "match", ["get", "labelcat"],
-      "line", ["literal", [0, -1.6]],
-      "cm", ["literal", [1.7, -0.4]],
-      ["literal", [-1.7, 0.6]],
-    ];
+    // Offset selbst kommt NICHT mehr aus einer geschätzten Konstante, sondern
+    // wird pro Marker aus der tatsächlichen Icon-Größe berechnet (unitOff/aiOff
+    // in markerFC(), via markerLabelOffsets) — der Text sitzt damit immer knapp
+    // außerhalb des Icons, egal wie groß/klein es skaliert ist.
+    const UNIT_TEXT_OFFSET: maplibregl.ExpressionSpecification = ["get", "unitOff"];
     const AI_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
       "match", ["get", "labelcat"],
       "line", "top",
       "cm", "bottom",
       "left",
     ];
-    const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
-      "match", ["get", "labelcat"],
-      "line", ["literal", [0, 1.6]],
-      "cm", ["literal", [0, -2.7]],
-      ["literal", [1.7, 0]],
-    ];
+    const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = ["get", "aiOff"];
     const UNIT_TEXT_JUSTIFY: maplibregl.ExpressionSpecification = [
       "match", ["get", "labelcat"],
       "line", "center",

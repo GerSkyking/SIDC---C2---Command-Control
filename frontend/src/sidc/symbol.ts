@@ -6,7 +6,7 @@
 //  3. schlägt beides fehl → aufrufende Stelle zeigt einen Ersatzpunkt
 import ms from "milsymbol";
 import type { Map as MlMap } from "maplibre-gl";
-import { iconUrl } from "./sidc";
+import { iconUrl, markerLabelCategory } from "./sidc";
 
 export interface RgbaImage {
   width: number;
@@ -74,4 +74,43 @@ export async function ensureMapIcon(map: MlMap, sidc: string): Promise<boolean> 
   } catch {
     return false;
   }
+}
+
+/** Natürliche Pixelgröße des zuletzt für diese SIDC geladenen Icons (milsymbol-
+ * Canvas oder PNG), oder null solange noch nichts geladen wurde. */
+export function iconNaturalSize(sidc: string): { w: number; h: number } | null {
+  const img = symCache.get(sidc);
+  return img ? { w: img.width, h: img.height } : null;
+}
+
+const LABEL_TEXT_SIZE_PX = 11; // muss zu "text-size" der Label-Layer passen
+const LABEL_MARGIN_EM = 4 / LABEL_TEXT_SIZE_PX; // etwas Luft zwischen Icon-Rand und Text
+
+/**
+ * Text-Offset (in "em" des Label-Textes) für Einheitstext/Zusatztext, aus der
+ * TATSÄCHLICHEN gerenderten Icon-Größe berechnet (statt eines geschätzten
+ * Fixwerts) — der Text sitzt damit immer knapp außerhalb des Icons, egal wie
+ * groß/klein/nach welchem Symbol-Typ es skaliert wird.
+ * `iconSizeFactor` = kompletter Multiplikator aus der "icon-size"-Layer-Property
+ * (z. B. 0.8 * Marker-Scale), damit die Icon-Naturgröße korrekt umgerechnet wird.
+ */
+export function markerLabelOffsets(
+  sidc: string,
+  iconSizeFactor: number,
+): { unit: [number, number]; ai: [number, number] } {
+  const nat = iconNaturalSize(sidc) ?? { w: 32, h: 32 };
+  const halfXem = (nat.w * iconSizeFactor) / 2 / LABEL_TEXT_SIZE_PX + LABEL_MARGIN_EM;
+  const halfYem = (nat.h * iconSizeFactor) / 2 / LABEL_TEXT_SIZE_PX + LABEL_MARGIN_EM;
+  const cat = markerLabelCategory(sidc);
+  if (cat === "line") {
+    // Einheitstext oben/zentriert, Zusatztext unten/zentriert.
+    return { unit: [0, -halfYem], ai: [0, halfYem] };
+  }
+  if (cat === "cm") {
+    // Zusatztext oben/zentriert, Einheitstext rechts im oberen/mittleren Bereich.
+    return { unit: [halfXem, -halfYem * 0.4], ai: [0, -halfYem] };
+  }
+  // Default (Land Unit u. a.): Zusatztext rechts/mittig, Einheitstext links,
+  // mittig zwischen Icon-Mitte und -Unterkante.
+  return { unit: [-halfXem, halfYem * 0.5], ai: [halfXem, 0] };
 }

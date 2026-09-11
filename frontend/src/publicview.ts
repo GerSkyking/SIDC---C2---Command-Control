@@ -5,7 +5,7 @@ import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 import { api } from "./api";
 import { channelLabel, channelVisibility, type ChannelEntry } from "./sidc/catalog";
-import { ensureMapIcon } from "./sidc/symbol";
+import { ensureMapIcon, markerLabelOffsets } from "./sidc/symbol";
 import { markerLabelCategory } from "./sidc/sidc";
 import { t } from "./i18n";
 import { icon } from "./icons";
@@ -191,21 +191,27 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   };
   const mFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
-    features: [...markers.values()].map((m) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [m.world_x, m.world_y] },
-      properties: {
-        id: m.id,
-        sidc: m.sidc,
-        labelcat: markerLabelCategory(m.sidc),
-        label: m.unit_text || "",
-        ai: m.ai_text || "",
-        rot: m.icon_rotation || 0,
-        dot: missingIcons.has(m.sidc),
-        opacity: opacityOf(m),
-        scale: Math.max(0.25, Math.min(3, m.scale ?? 1)) * personalScale,
-      },
-    })),
+    features: [...markers.values()].map((m) => {
+      const scale = Math.max(0.25, Math.min(3, m.scale ?? 1)) * personalScale;
+      const labelOff = markerLabelOffsets(m.sidc, 0.8 * scale);
+      return {
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [m.world_x, m.world_y] },
+        properties: {
+          id: m.id,
+          sidc: m.sidc,
+          labelcat: markerLabelCategory(m.sidc),
+          label: m.unit_text || "",
+          ai: m.ai_text || "",
+          unitOff: labelOff.unit,
+          aiOff: labelOff.ai,
+          rot: m.icon_rotation || 0,
+          dot: missingIcons.has(m.sidc),
+          opacity: opacityOf(m),
+          scale,
+        },
+      };
+    }),
   });
   const sFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
@@ -520,24 +526,16 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       "cm", "left",
       "right",
     ];
-    const UNIT_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
-      "match", ["get", "labelcat"],
-      "line", ["literal", [0, -1.6]],
-      "cm", ["literal", [1.7, -0.4]],
-      ["literal", [-1.7, 0.6]],
-    ];
+    // Offset kommt aus der tatsächlichen Icon-Größe (unitOff/aiOff in mFC(),
+    // via markerLabelOffsets) — siehe plan.ts.
+    const UNIT_TEXT_OFFSET: maplibregl.ExpressionSpecification = ["get", "unitOff"];
     const AI_TEXT_ANCHOR: maplibregl.ExpressionSpecification = [
       "match", ["get", "labelcat"],
       "line", "top",
       "cm", "bottom",
       "left",
     ];
-    const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = [
-      "match", ["get", "labelcat"],
-      "line", ["literal", [0, 1.6]],
-      "cm", ["literal", [0, -2.7]],
-      ["literal", [1.7, 0]],
-    ];
+    const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = ["get", "aiOff"];
     const UNIT_TEXT_JUSTIFY: maplibregl.ExpressionSpecification = [
       "match", ["get", "labelcat"],
       "line", "center",
