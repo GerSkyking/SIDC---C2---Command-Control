@@ -3,28 +3,43 @@ import type { Map as MlMap } from "maplibre-gl";
 import { t } from "./i18n";
 
 export type ShotFormat = "png" | "jpeg" | "webp";
-export type ShotRes = "current" | "1920" | "2560" | "3840";
+export type ShotRes = "current" | "1920" | "2560" | "3840" | "custom";
 
 export interface ShotOpts {
   res: ShotRes;
   fmt: ShotFormat;
+  customW: number;
+  customH: number;
 }
 
-const RES_PX: Record<Exclude<ShotRes, "current">, [number, number]> = {
+const RES_PX: Record<Exclude<ShotRes, "current" | "custom">, [number, number]> = {
   "1920": [1920, 1080],
   "2560": [2560, 1440],
   "3840": [3840, 2160],
 };
+const CUSTOM_MIN = 16;
+const CUSTOM_MAX = 8000;
 const STORE = "sidc_shot_opts";
 
 export function loadShotOpts(): ShotOpts {
   try {
     const o = JSON.parse(localStorage.getItem(STORE) || "");
-    if (o && typeof o === "object") return { res: o.res ?? "current", fmt: o.fmt ?? "png" };
+    if (o && typeof o === "object")
+      return {
+        res: o.res ?? "current",
+        fmt: o.fmt ?? "png",
+        customW: clampCustom(o.customW) ?? 1920,
+        customH: clampCustom(o.customH) ?? 1080,
+      };
   } catch {
     /* ignore */
   }
-  return { res: "current", fmt: "png" };
+  return { res: "current", fmt: "png", customW: 1920, customH: 1080 };
+}
+function clampCustom(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(Math.max(CUSTOM_MIN, Math.min(CUSTOM_MAX, n)));
 }
 function save(o: ShotOpts): void {
   try {
@@ -51,7 +66,16 @@ export function shotOptsMarkup(): string {
           <option value="1920">1920 × 1080</option>
           <option value="2560">2560 × 1440</option>
           <option value="3840">3840 × 2160</option>
+          <option value="custom">${t("shot.custom")}</option>
         </select></label>
+      <div class="shot-custom" data-so-custom hidden>
+        <label>${t("shot.customW")}
+          <input type="number" data-so="customW" min="${CUSTOM_MIN}" max="${CUSTOM_MAX}" step="1" />
+        </label>
+        <label>${t("shot.customH")}
+          <input type="number" data-so="customH" min="${CUSTOM_MIN}" max="${CUSTOM_MAX}" step="1" />
+        </label>
+      </div>
       <label>${t("shot.format")}
         <select data-so="fmt">
           <option value="png">PNG</option>
@@ -67,9 +91,15 @@ export function wireShotOpts(root: HTMLElement): () => ShotOpts {
   const panel = root.querySelector<HTMLElement>("#shotOptsPanel")!;
   const resSel = panel.querySelector<HTMLSelectElement>('[data-so="res"]')!;
   const fmtSel = panel.querySelector<HTMLSelectElement>('[data-so="fmt"]')!;
+  const customRow = panel.querySelector<HTMLElement>("[data-so-custom]")!;
+  const wIn = panel.querySelector<HTMLInputElement>('[data-so="customW"]')!;
+  const hIn = panel.querySelector<HTMLInputElement>('[data-so="customH"]')!;
   const cur = loadShotOpts();
   resSel.value = cur.res;
   fmtSel.value = cur.fmt;
+  wIn.value = String(cur.customW);
+  hIn.value = String(cur.customH);
+  customRow.hidden = resSel.value !== "custom";
 
   caret.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -78,11 +108,22 @@ export function wireShotOpts(root: HTMLElement): () => ShotOpts {
   document.addEventListener("click", (e) => {
     if (!panel.hidden && !panel.contains(e.target as Node) && e.target !== caret) panel.hidden = true;
   });
-  const persist = () => save({ res: resSel.value as ShotRes, fmt: fmtSel.value as ShotFormat });
-  resSel.addEventListener("change", persist);
+  const current = (): ShotOpts => ({
+    res: resSel.value as ShotRes,
+    fmt: fmtSel.value as ShotFormat,
+    customW: clampCustom(wIn.value) ?? 1920,
+    customH: clampCustom(hIn.value) ?? 1080,
+  });
+  const persist = () => save(current());
+  resSel.addEventListener("change", () => {
+    customRow.hidden = resSel.value !== "custom";
+    persist();
+  });
   fmtSel.addEventListener("change", persist);
+  wIn.addEventListener("change", persist);
+  hIn.addEventListener("change", persist);
 
-  return () => ({ res: resSel.value as ShotRes, fmt: fmtSel.value as ShotFormat });
+  return current;
 }
 
 /**
@@ -90,7 +131,7 @@ export function wireShotOpts(root: HTMLElement): () => ShotOpts {
  * Karten-Container kurz auf Zielgröße gesetzt (offscreen), gerendert und
  * danach zurückgestellt. Die Canvas hat das Zielpixelmaß.
  */
-export async function renderMapCanvas(map: MlMap, res: ShotRes): Promise<HTMLCanvasElement> {
+export async function renderMapCanvas(map: MlMap, opts: ShotOpts): Promise<HTMLCanvasElement> {
   const idle = () =>
     new Promise<void>((r) => {
       if (map.loaded() && !map.isMoving()) return r();
@@ -102,8 +143,8 @@ export async function renderMapCanvas(map: MlMap, res: ShotRes): Promise<HTMLCan
   const dpr = window.devicePixelRatio || 1;
 
   let restore: (() => void) | null = null;
-  if (res !== "current") {
-    const [tw, th] = RES_PX[res];
+  if (opts.res !== "current") {
+    const [tw, th] = opts.res === "custom" ? [opts.customW, opts.customH] : RES_PX[opts.res];
     const prev = container.style.cssText;
     Object.assign(container.style, {
       position: "fixed",

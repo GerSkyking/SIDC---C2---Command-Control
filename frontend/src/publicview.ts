@@ -904,9 +904,9 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   shotBtn.addEventListener("click", async () => {
     shotBtn.disabled = true;
     try {
-      const { res, fmt } = getShotOpts();
-      const out = await renderMapCanvas(map, res);
-      const { mime, ext, quality } = mimeExt(fmt);
+      const opts = getShotOpts();
+      const out = await renderMapCanvas(map, opts);
+      const { mime, ext, quality } = mimeExt(opts.fmt);
       const a = document.createElement("a");
       a.href = out.toDataURL(mime, quality);
       const safe = (s: string) => s.replace(/[^\w.-]+/g, "_") || "map";

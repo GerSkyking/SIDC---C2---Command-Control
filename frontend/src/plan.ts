@@ -1218,8 +1218,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   shotBtn.addEventListener("click", async () => {
     shotBtn.disabled = true;
     try {
-      const { res, fmt } = getShotOpts();
-      const out = await renderMapCanvas(map, res);
+      const opts = getShotOpts();
+      const out = await renderMapCanvas(map, opts);
       const ctx = out.getContext("2d")!;
       if (baseLayerVisible.grid !== false) ctx.drawImage(gridCanvas, 0, 0, out.width, out.height);
 
@@ -1241,7 +1241,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const fileStamp =
         `${p2(d.getDate())}${p2(d.getMonth() + 1)}${d.getFullYear()}-` +
         `${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
-      const { mime, ext, quality } = mimeExt(fmt);
+      const { mime, ext, quality } = mimeExt(opts.fmt);
       const a = document.createElement("a");
       a.href = out.toDataURL(mime, quality);
       a.download = `${safe(snap.plan.name)}_${safe(phaseName)}_${fileStamp}.${ext}`;
