@@ -260,6 +260,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   if (!Number.isFinite(crossOpacity)) crossOpacity = 20;
   let personalScale = Number(localStorage.getItem("sidc_marker_scale") ?? "1"); // nur für mich
   if (!Number.isFinite(personalScale) || personalScale <= 0) personalScale = 1;
+  // Einheits-/Zusatztext ein-/ausblenden — Control-Measure-Beschriftung (cm/line)
+  // bleibt dabei immer stehen, nur der Text an normalen Einheiten wird versteckt.
+  let showUnitAiLabels = localStorage.getItem("sidc_labels_on") !== "0";
+  const unitAiOpacityExpr = (on: boolean): maplibregl.ExpressionSpecification =>
+    on ? ["get", "opacity"] : ["*", ["get", "opacity"], ["match", ["get", "labelcat"], "default", 0, 1]];
   const phaseListeners: (() => void)[] = []; // z. B. Notiz-Fenster bei Phasenwechsel
   const phaseOpacityOf = (phaseId: string | null | undefined): number => {
     if (phaseId == null) return 1;
@@ -303,6 +308,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <span class="presence" id="presence"></span>
       ${iconBtn("present", { id: "present", title: t("present.start") })}
       ${iconBtn("versions", { id: "versions", title: t("versions.open") })}
+      <label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" id="lblToggle" ${showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label>
       ${iconBtn("help", { id: "help", title: t("help.open") })}
       ${iconBtn("settings", { id: "settingsBtn", title: t("settings.open") })}
       ${myPlan?.level === "owner" ? `<button id="acl">${t("plans.shares")}</button>` : ""}
@@ -816,7 +822,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "text-color": "#e6e9ee",
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
-        "text-opacity": ["get", "opacity"],
+        "text-opacity": unitAiOpacityExpr(showUnitAiLabels),
       },
     });
     map.addLayer({
@@ -836,7 +842,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "text-color": "#e6e9ee",
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
-        "text-opacity": ["get", "opacity"],
+        "text-opacity": unitAiOpacityExpr(showUnitAiLabels),
       },
     });
 
@@ -1166,6 +1172,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         }
       });
     }
+  });
+
+  root.querySelector<HTMLInputElement>("#lblToggle")!.addEventListener("change", (e) => {
+    showUnitAiLabels = (e.target as HTMLInputElement).checked;
+    localStorage.setItem("sidc_labels_on", showUnitAiLabels ? "1" : "0");
+    map.setPaintProperty("marker-unittext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
+    map.setPaintProperty("marker-aitext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
   });
 
   // ── Kompass + Nach-Norden-Button ──────────────────────────────────────

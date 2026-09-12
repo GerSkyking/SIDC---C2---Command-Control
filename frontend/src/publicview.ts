@@ -84,6 +84,9 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   if (!Number.isFinite(outOpacity)) outOpacity = 20;
   let personalScale = Number(localStorage.getItem("sidc_marker_scale") ?? "1");
   if (!Number.isFinite(personalScale) || personalScale <= 0) personalScale = 1;
+  let showUnitAiLabels = localStorage.getItem("sidc_labels_on") !== "0";
+  const unitAiOpacityExpr = (on: boolean): maplibregl.ExpressionSpecification =>
+    on ? ["get", "opacity"] : ["*", ["get", "opacity"], ["match", ["get", "labelcat"], "default", 0, 1]];
   const _chCur = localStorage.getItem(`sidc_pubchan_${token}`) || snap.channels?.currentChannel || "";
   let myChannel = chanList?.find((c) => c.name === _chCur || c.languageKey === _chCur)?.name ?? _chCur;
   let is3D = false;
@@ -119,6 +122,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       }
       <div id="timeline" class="timeline"></div>
       <span class="grow"></span>
+      <label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" id="lblToggle" ${showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label>
       ${iconBtn("present", { id: "present", title: t("present.start") })}
       ${themeSwitch()}
     </div>
@@ -568,7 +572,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         "text-color": "#e6e9ee",
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
-        "text-opacity": ["get", "opacity"],
+        "text-opacity": unitAiOpacityExpr(showUnitAiLabels),
       },
     });
     map.addLayer({
@@ -587,7 +591,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         "text-color": "#e6e9ee",
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
-        "text-opacity": ["get", "opacity"],
+        "text-opacity": unitAiOpacityExpr(showUnitAiLabels),
       },
     });
     renderAnnots();
@@ -688,6 +692,13 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         }
       });
     }
+  });
+
+  root.querySelector<HTMLInputElement>("#lblToggle")!.addEventListener("change", (e) => {
+    showUnitAiLabels = (e.target as HTMLInputElement).checked;
+    localStorage.setItem("sidc_labels_on", showUnitAiLabels ? "1" : "0");
+    map.setPaintProperty("m-unittext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
+    map.setPaintProperty("m-aitext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
   });
 
   // ── Kompass ─────────────────────────────────────────────────────────
