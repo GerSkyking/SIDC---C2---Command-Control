@@ -308,7 +308,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <span class="presence" id="presence"></span>
       ${iconBtn("present", { id: "present", title: t("present.start") })}
       ${iconBtn("versions", { id: "versions", title: t("versions.open") })}
-      <label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" id="lblToggle" ${showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label>
       ${iconBtn("help", { id: "help", title: t("help.open") })}
       ${iconBtn("settings", { id: "settingsBtn", title: t("settings.open") })}
       ${myPlan?.level === "owner" ? `<button id="acl">${t("plans.shares")}</button>` : ""}
@@ -1174,13 +1173,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   });
 
-  root.querySelector<HTMLInputElement>("#lblToggle")!.addEventListener("change", (e) => {
-    showUnitAiLabels = (e.target as HTMLInputElement).checked;
-    localStorage.setItem("sidc_labels_on", showUnitAiLabels ? "1" : "0");
-    map.setPaintProperty("marker-unittext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
-    map.setPaintProperty("marker-aitext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
-  });
-
   // ── Kompass + Nach-Norden-Button ──────────────────────────────────────
   wireThemeSwitch(root);
   const compass = root.querySelector<HTMLButtonElement>("#compass")!;
@@ -1782,6 +1774,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ? `<label class="ph-op" title="${t("mb.crossOpacityHint")}">${t("mb.crossOpacity")}` +
           `<input type="range" id="cross-op" min="0" max="100" step="5" value="${crossOpacity}"/><span id="cross-op-v">${crossOpacity}%</span></label>`
         : "") +
+      `<label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" id="lblToggle" ${showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label>` +
       (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+ ${t("phase.heading")}</button>` : "") +
       `</div>`;
 
@@ -1902,6 +1895,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       });
     });
 
+    timelineEl.querySelector<HTMLInputElement>("#lblToggle")!.addEventListener("change", (e) => {
+      showUnitAiLabels = (e.target as HTMLInputElement).checked;
+      localStorage.setItem("sidc_labels_on", showUnitAiLabels ? "1" : "0");
+      map.setPaintProperty("marker-unittext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
+      map.setPaintProperty("marker-aitext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
+    });
     timelineEl.querySelector("#ph-add")?.addEventListener("click", async () => {
       const name = await promptDialog(t("phase.namePrompt"), { value: `Phase ${playerPhases().length}` });
       if (!name) return;
