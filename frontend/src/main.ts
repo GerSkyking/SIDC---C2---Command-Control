@@ -139,7 +139,6 @@ async function renderPlanList(): Promise<void> {
       ${themeSwitch()}
       ${langSelect()}
       <span class="muted">${esc(me!.username)} (${esc(me!.role)})</span>
-      <button id="logout">${t("auth.logout")}</button>
     </div>
     <div class="list stack">
       ${
@@ -178,11 +177,6 @@ async function renderPlanList(): Promise<void> {
     onOpenShares: (p) => openAclEditor(p.id, p.name),
   });
 
-  app.querySelector("#logout")!.addEventListener("click", async () => {
-    await api.logout();
-    location.hash = "#/";
-    route();
-  });
   const doCreate = async (withAccess: boolean) => {
     const name = app.querySelector<HTMLInputElement>("#pn")!.value.trim();
     const mapId = app.querySelector<HTMLSelectElement>("#pm")!.value;

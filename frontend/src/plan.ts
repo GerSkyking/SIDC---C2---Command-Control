@@ -312,6 +312,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ${iconBtn("settings", { id: "settingsBtn", title: t("settings.open") })}
       ${myPlan?.level === "owner" ? `<button id="acl">${t("plans.shares")}</button>` : ""}
       ${themeSwitch()}
+      ${iconBtn("logout", { id: "logoutBtn", title: t("auth.logout") })}
     </div>
     <div id="map"></div>
     <div id="annots" class="annots"></div>
@@ -1440,6 +1441,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   root.querySelector("#acl")?.addEventListener("click", () => openAclEditor(planId, snap.plan.name, undefined, isMB));
   root.querySelector("#help")!.addEventListener("click", openHelp);
+  root.querySelector("#logoutBtn")!.addEventListener("click", async () => {
+    await api.logout().catch(() => {});
+    location.hash = "#/";
+    location.reload();
+  });
   root.querySelector("#present")!.addEventListener("click", startPresent);
   root.querySelector("#undo")?.addEventListener("click", doUndo);
   root.querySelector("#redo")?.addEventListener("click", doRedo);
@@ -2512,7 +2518,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           orbat_strength: 1,
         };
         setMode("place");
-        orbatPanel.hidden = true;
+        if (!mvOrbat.isPinned()) orbatPanel.hidden = true;
       }),
     );
     orbatPanel.querySelector("#orb-link")?.addEventListener("click", async () => {
@@ -2523,7 +2529,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
     });
   }
-  const mvOrbat = makeMovable(orbatPanel, { plan: planId, key: "orbat", pinnable: true });
+  const mvOrbat = makeMovable(orbatPanel, { plan: planId, key: "orbat", pinnable: true, resizable: true });
   orbatBtn.addEventListener("click", () => {
     orbatPanel.hidden = !orbatPanel.hidden;
     if (!orbatPanel.hidden) {
@@ -2916,12 +2922,27 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
 
   const fmtDist = (mtr: number) => (mtr < 1000 ? `${Math.round(mtr)} m` : `${(mtr / 1000).toFixed(2)} km`);
+  // Höhe an einem Punkt — dieselbe Quelle wie im HUD (2D: DEM-Kacheln, 3D: Terrain-Mesh).
+  const elevationAt = (lng: number, lat: number): number => {
+    try {
+      const el = is3D
+        ? (map.queryTerrainElevation({ lng, lat }) ?? 0) / 1.5
+        : sampleElevation(lng, lat);
+      return el ?? 0;
+    } catch {
+      return 0;
+    }
+  };
+  // Lineal misst die tatsächliche Schrägentfernung (Horizontaldistanz + Höhenunterschied),
+  // nicht nur die 2D-Kartendistanz.
   const pathLen = (pts: [number, number][]): number => {
     let s = 0;
     for (let i = 1; i < pts.length; i++) {
       const [ax, ay] = lngLatToWorld(cal, pts[i - 1][0], pts[i - 1][1]);
       const [bx, by] = lngLatToWorld(cal, pts[i][0], pts[i][1]);
-      s += Math.hypot(bx - ax, by - ay);
+      const horiz = Math.hypot(bx - ax, by - ay);
+      const dz = elevationAt(pts[i][0], pts[i][1]) - elevationAt(pts[i - 1][0], pts[i - 1][1]);
+      s += Math.hypot(horiz, dz);
     }
     return s;
   };

@@ -17,10 +17,11 @@ const KEEP_Y = 70;
 
 export function makeMovable(
   el: HTMLElement,
-  opts: { plan: string; key: string; pinnable?: boolean; onClose?: () => void },
+  opts: { plan: string; key: string; pinnable?: boolean; onClose?: () => void; resizable?: boolean },
 ): Movable {
   const posKey = `sidc_ui_${opts.plan}_${opts.key}`;
   const pinKey = `sidc_uipin_${opts.plan}_${opts.key}`;
+  const sizeKey = `sidc_uisize_${opts.plan}_${opts.key}`;
 
   const bar = document.createElement("div");
   bar.className = "mv-bar";
@@ -36,6 +37,12 @@ export function makeMovable(
   el.prepend(bar);
   el.classList.add("mv");
 
+  const resizeHandle = opts.resizable ? document.createElement("div") : null;
+  if (resizeHandle) {
+    resizeHandle.className = "mv-resize";
+    el.appendChild(resizeHandle);
+  }
+
   // Panel-Inhalte werden teils per innerHTML neu aufgebaut (Favoriten, ORBAT,
   // Ebenen) — dabei geht die Leiste verloren. Wieder einsetzen, sobald das passiert.
   const ensureBar = () => {
@@ -43,8 +50,54 @@ export function makeMovable(
       el.prepend(bar);
       applyPin();
     }
+    if (resizeHandle && !el.contains(resizeHandle)) el.appendChild(resizeHandle);
   };
   new MutationObserver(ensureBar).observe(el, { childList: true });
+
+  if (resizeHandle) {
+    const applySize = () => {
+      try {
+        const s = JSON.parse(localStorage.getItem(sizeKey) || "null");
+        if (s && typeof s.w === "number" && typeof s.h === "number") {
+          el.style.width = `${s.w}px`;
+          el.style.height = `${s.h}px`;
+          el.style.maxWidth = "none";
+          el.style.maxHeight = "none";
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    applySize();
+    resizeHandle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const r = el.getBoundingClientRect();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startW = r.width;
+      const startH = r.height;
+      const onMove = (ev: MouseEvent) => {
+        const w = Math.max(220, startW + (ev.clientX - startX));
+        const h = Math.max(140, startH + (ev.clientY - startY));
+        el.style.width = `${w}px`;
+        el.style.height = `${h}px`;
+        el.style.maxWidth = "none";
+        el.style.maxHeight = "none";
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        try {
+          localStorage.setItem(sizeKey, JSON.stringify({ w: el.offsetWidth, h: el.offsetHeight }));
+        } catch {
+          /* ignore */
+        }
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  }
 
   const readPin = () => {
     try {
@@ -149,11 +202,16 @@ export function makeMovable(
   const reset = () => {
     try {
       localStorage.removeItem(posKey);
+      if (resizeHandle) localStorage.removeItem(sizeKey);
     } catch {
       /* ignore */
     }
     el.style.left = el.style.top = "";
     el.style.right = el.style.bottom = "";
+    if (resizeHandle) {
+      el.style.width = el.style.height = "";
+      el.style.maxWidth = el.style.maxHeight = "";
+    }
   };
 
   return {

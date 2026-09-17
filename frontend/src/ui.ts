@@ -3,6 +3,7 @@ import { icon } from "./icons";
 import { getTheme, setTheme, type ThemeChoice } from "./theme";
 import { t } from "./i18n";
 import { esc } from "./esc";
+import { api } from "./api";
 
 export function iconBtn(
   name: string,
@@ -78,6 +79,7 @@ export function sidebar(
     </div>
     <div class="sb-foot">
       <div class="sb-user">${icon("users", 16)}<span>${esc(opts.username)}</span></div>
+      <button class="sb-item sb-logout" id="sbLogout" title="${t("auth.logout")}">${icon("logout")}<span>${t("auth.logout")}</span></button>
     </div>
   </nav>`;
 }
@@ -91,5 +93,10 @@ export function wireSidebar(root: ParentNode): void {
     } catch {
       /* ignore */
     }
+  });
+  root.querySelector("#sbLogout")?.addEventListener("click", async () => {
+    await api.logout().catch(() => {});
+    location.hash = "#/";
+    location.reload();
   });
 }

@@ -201,7 +201,25 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
     }),
   );
 
-  // Drag & Drop zum Umhängen
+  // Drag & Drop zum Umhängen bzw. Umsortieren innerhalb einer Gruppe.
+  // Ziehen auf die obere/untere Kante eines Knotens sortiert ihn als Geschwister
+  // davor/danach ein; Ziehen auf die Mitte hängt ihn als Kind darunter.
+  const reorderTo = async (srcId: string, newParentId: string | null, targetId: string, before: boolean) => {
+    const key = newParentId ?? "";
+    const siblingIds = (byParent.get(key) ?? []).map((n) => n.id).filter((id) => id !== srcId);
+    const idx = siblingIds.indexOf(targetId);
+    siblingIds.splice(before ? idx : idx + 1, 0, srcId);
+    await Promise.all(
+      siblingIds.map((id, i) => {
+        const orig = nodes.find((x) => x.id === id)!;
+        const body: Record<string, unknown> = {};
+        if (orig.ordering !== i) body.ordering = i;
+        if (id === srcId && orig.parent_id !== newParentId) body.parent_id = newParentId;
+        return Object.keys(body).length ? api.patchNode(o.id, id, body).catch(fail) : Promise.resolve();
+      }),
+    );
+    void reload();
+  };
   if (canEdit) {
     host.querySelectorAll<HTMLElement>(".orb-node").forEach((el) => {
       el.addEventListener("dragstart", (e) => {
@@ -210,16 +228,27 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
       });
       el.addEventListener("dragover", (e) => {
         e.preventDefault();
-        el.classList.add("drop-hi");
+        const row = el.querySelector(".orb-row") as HTMLElement;
+        const r = (row ?? el).getBoundingClientRect();
+        const frac = ((e as DragEvent).clientY - r.top) / r.height;
+        el.classList.remove("drop-hi", "drop-before", "drop-after");
+        el.classList.add(frac < 0.3 ? "drop-before" : frac > 0.7 ? "drop-after" : "drop-hi");
       });
-      el.addEventListener("dragleave", () => el.classList.remove("drop-hi"));
+      el.addEventListener("dragleave", () => el.classList.remove("drop-hi", "drop-before", "drop-after"));
       el.addEventListener("drop", async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        el.classList.remove("drop-hi");
+        const before = el.classList.contains("drop-before");
+        const after = el.classList.contains("drop-after");
+        el.classList.remove("drop-hi", "drop-before", "drop-after");
         const src = e.dataTransfer?.getData("text/plain");
-        if (src && src !== el.dataset.n) {
-          await api.patchNode(o.id, src, { parent_id: el.dataset.n }).catch(fail);
+        const tgtId = el.dataset.n!;
+        if (!src || src === tgtId) return;
+        if (before || after) {
+          const tgt = nodes.find((n) => n.id === tgtId);
+          await reorderTo(src, tgt?.parent_id ?? null, tgtId, before);
+        } else {
+          await api.patchNode(o.id, src, { parent_id: tgtId }).catch(fail);
           void reload();
         }
       });
@@ -258,7 +287,7 @@ function editNode(
       <span class="orb-sym-pick">
         <img data-sym-prev width="30" height="30" src="${n.sidc ? iconSrc(n.sidc) : ""}" data-hide-on-error/>
         <button type="button" data-sym-btn>${t("orbat.pickSymbol")}</button>
-        <code data-sym-code>${n.sidc ?? ""}</code>
+        <input data-sym-input placeholder="${t("orbat.sidcManual")}" value="${n.sidc ?? ""}" size="22" />
       </span>
     </label>
     <div class="row">
@@ -273,7 +302,7 @@ function editNode(
       <label class="chk"><input type="checkbox" data-f="rel_visible" ${existing?.rel_visible ? "checked" : ""}/> ${t("orbat.relVisible")}</label>
       <label class="chk"><input type="checkbox" data-f="rel_show_type" ${existing?.rel_show_type ? "checked" : ""}/> ${t("orbat.relShowType")}</label>
       <label class="chk-lbl">${t("orbat.relStrength")}
-        <input type="range" min="-1" max="100" step="5" data-f="rel_strength" value="${n.rel_strength ?? 50}" />
+        <input type="range" min="-5" max="100" step="5" data-f="rel_strength" value="${n.rel_strength ?? 50}" />
         <span data-relv>${(n.rel_strength ?? 50) < 0 ? t("orbat.rel.hidden") : (n.rel_strength ?? 50) + "%"}</span>
       </label>
     </div>
@@ -285,15 +314,19 @@ function editNode(
   back.addEventListener("mousedown", (e) => e.target === back && close());
   back.querySelector("[data-x]")!.addEventListener("click", close);
   let symSidc = n.sidc ?? "";
+  const symInput = back.querySelector<HTMLInputElement>("[data-sym-input]")!;
+  const symPrev = back.querySelector<HTMLImageElement>("[data-sym-prev]")!;
+  const setSym = (s: string) => {
+    symSidc = s;
+    symInput.value = s;
+    symPrev.src = s ? iconSrc(s) : "";
+  };
   back.querySelector<HTMLButtonElement>("[data-sym-btn]")!.addEventListener("click", () => {
     void import("./sidc/builder").then(({ openMarkerBuilderModal }) =>
-      openMarkerBuilderModal(symSidc, (s) => {
-        symSidc = s;
-        back.querySelector<HTMLImageElement>("[data-sym-prev]")!.src = iconSrc(s);
-        back.querySelector<HTMLElement>("[data-sym-code]")!.textContent = s;
-      }),
+      openMarkerBuilderModal(symSidc, (s) => setSym(s)),
     );
   });
+  symInput.addEventListener("change", () => setSym(symInput.value.trim()));
   const rel = back.querySelector<HTMLInputElement>('[data-f="rel_strength"]')!;
   const relv = back.querySelector<HTMLSpanElement>("[data-relv]")!;
   rel.addEventListener("input", () => {
