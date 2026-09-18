@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from .. import audit
 
 from ..deps import CurrentUser, DbDep, load_plan, require_plan_level
+from ..ratelimit import hit_limit
 from ..models import (
     Annotation,
     ImagePlacement,
@@ -679,6 +680,11 @@ def create_share(
     import secrets
 
     from ..models import PublicShare
+
+    # 20 Links / 10 Min. pro User — bremst versehentliches/böswilliges Massen-Erstellen
+    # öffentlicher Links, ohne im Normalbetrieb (ein paar Links pro Plan) zu stören.
+    if not hit_limit(f"share-create:{user.id}", 20, 600):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Zu viele Links erstellt, kurz warten")
 
     s = PublicShare(token=secrets.token_urlsafe(24), plan_id=plan.id, created_by=user.id)
     _apply_share_body(s, body, is_mb=effective_mission_builder(db, user))

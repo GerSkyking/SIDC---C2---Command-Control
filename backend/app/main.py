@@ -6,6 +6,8 @@ Port weiter — deshalb kein Proxy-Container im Stack und keine CORS-Freigaben n
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,14 +17,16 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import __version__
+from . import __version__, audit
 from .bootstrap import ensure_bootstrap_admin, init_db
 from .config import get_settings
+from .db import SessionLocal
 from .routers import (
     admin,
     auth,
     catalog,
     favorites,
+    legal,
     live,
     map_sources,
     maps,
@@ -40,6 +44,22 @@ log = logging.getLogger("sidc")
 FRONTEND_DIST = Path(__file__).resolve().parent / "static"
 _settings = get_settings()
 
+_RETENTION_INTERVAL_S = 86400  # einmal täglich
+
+
+async def _audit_retention_loop() -> None:
+    """Löscht periodisch Audit-Log-Einträge älter als AUDIT_LOG_RETENTION_DAYS
+    (0 = deaktiviert). Läuft einmal beim Start und danach alle 24h."""
+    while True:
+        try:
+            with SessionLocal() as db:
+                n = audit.purge_old(db, _settings.audit_log_retention_days)
+                if n:
+                    log.info("Audit-Log-Retention: %d alte Einträge gelöscht", n)
+        except Exception:  # noqa: BLE001
+            log.exception("Audit-Log-Retention fehlgeschlagen")
+        await asyncio.sleep(_RETENTION_INTERVAL_S)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,8 +68,12 @@ async def lifespan(app: FastAPI):
     init_db()
     ensure_bootstrap_admin()
     await hub.start()
+    retention_task = asyncio.create_task(_audit_retention_loop())
     log.info("SIDC-C2 %s bereit", __version__)
     yield
+    retention_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await retention_task
     await hub.stop()
 
 
@@ -100,6 +124,7 @@ app.include_router(orbat.plan_orbat_router)
 app.include_router(admin.router)
 app.include_router(catalog.router)
 app.include_router(favorites.router)
+app.include_router(legal.router)
 app.include_router(public.router)
 app.add_api_websocket_route("/plans/{plan_id}/live", live.live_ws)
 

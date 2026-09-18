@@ -75,7 +75,7 @@ In-Process bleibt gültig, solange 1 uvicorn-Worker (aktuell so).
 | L1 | User-Enumeration per Timing | ✅ konstanter Dummy-Verify in `login()` |
 | L2 | `log.exception` bei Migrationsfehler leakt DB-Passwort | ✅ nur Exception-Typ geloggt |
 | L3 | `AuditLog.action.like()` LIKE-Wildcards | ✅ escaped mit `escape="\\"` |
-| L4 | Audit-Log ohne Retention | ⏸️ dokumentiert (MANUAL-STEPS #5) |
+| L4 | Audit-Log ohne Retention | ✅ automatischer täglicher Purge (`AUDIT_LOG_RETENTION_DAYS`, Default 180) |
 | L5 | Map-Source `follow_redirects=True` | ⏸️ akzeptiert (admin-only, httpx strippt Auth cross-host) |
 | L6 | Public-WS lädt Rechte nur beim Connect | ⏸️ akzeptiert (revoke wirkt beim Reconnect) |
 

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     map_import_max_mb: int = 2048
     image_max_mb: int = 10  # Plan-Bilder (in der DB gespeichert)
 
+    # Audit-Log-Aufbewahrung (Tage). 0 = deaktiviert (Log wächst unbegrenzt).
+    audit_log_retention_days: int = 180
+
     oidc_enabled: bool = False
     oidc_issuer: str = ""
     oidc_client_id: str = ""

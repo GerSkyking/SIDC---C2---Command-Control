@@ -311,6 +311,37 @@ export const api = {
   },
   deleteCatalog: (name: string) => req<void>("DELETE", `/api/admin/catalog/${name}`),
 
+  exportMyData: async (): Promise<{ blob: Blob; filename: string }> => {
+    const r = await fetch("/auth/me/export", { method: "GET", credentials: "include" });
+    if (!r.ok) throw new ApiError(r.status, r.statusText);
+    const cd = r.headers.get("content-disposition") || "";
+    const m = /filename="?([^"]+)"?/.exec(cd);
+    return { blob: await r.blob(), filename: m ? m[1] : "sidc-daten.zip" };
+  },
+  deleteMyAccount: () => req<{ ok: boolean }>("DELETE", "/auth/me"),
+
+  legal: (page: "imprint" | "privacy") => req<{ content: string | null }>("GET", `/api/legal/${page}`),
+  uploadLegal: async (page: "imprint" | "privacy", file: File) => {
+    const r = await fetch(`/api/admin/legal/${page}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "text/plain; charset=utf-8" },
+      body: await file.text(),
+    });
+    if (!r.ok) {
+      const body = await r.text().catch(() => "");
+      let detail = body;
+      try {
+        detail = JSON.parse(body).detail ?? body;
+      } catch {
+        /* nicht-JSON */
+      }
+      throw new ApiError(r.status, detail || `HTTP ${r.status}`);
+    }
+    return r.json();
+  },
+  deleteLegal: (page: "imprint" | "privacy") => req<void>("DELETE", `/api/admin/legal/${page}`),
+
   favorites: () => req<Favorite[]>("GET", "/api/favorites"),
   addFavorite: (f: Omit<Favorite, "id">) => req<Favorite>("POST", "/api/favorites", f),
   deleteFavorite: (id: string) => req<void>("DELETE", `/api/favorites/${id}`),

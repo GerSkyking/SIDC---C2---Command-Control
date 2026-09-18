@@ -470,9 +470,13 @@ a { color: var(--accent); }
 .sb-foot { border-top: 1px solid var(--border); padding-top: 0.5rem; }
 .sb-logout { width: 100%; margin-top: 0.3rem; background: transparent; border: none; font: inherit; cursor: pointer; }
 .sb-user { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+.sb-legal { display: flex; gap: 0.6rem; margin-top: 0.35rem; font-size: 0.72rem; white-space: nowrap; }
+.sb-legal a { color: var(--muted); text-decoration: none; }
+.sb-legal a:hover { color: var(--fg); text-decoration: underline; }
+.sidebar.collapsed .sb-legal { display: none; }
 @media (max-width: 640px) {
   .sidebar { width: 3.4rem; }
-  .sidebar .sb-brand, .sidebar .sb-item span, .sidebar .sb-user span { display: none; }
+  .sidebar .sb-brand, .sidebar .sb-item span, .sidebar .sb-user span, .sidebar .sb-legal { display: none; }
 }
 
 /* Sidebar: Admin-Untergruppen */

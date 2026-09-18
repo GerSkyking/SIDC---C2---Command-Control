@@ -8,8 +8,10 @@ import { renderPlanTree } from "./planTree";
 import { renderPublicView } from "./publicview";
 import { langSelect, t, wireLangSelect } from "./i18n";
 import { confirmDialog, toastError } from "./notify";
-import { initSettings } from "./settings";
+import { initSettings, openSettings } from "./settings";
+import { renderLegal } from "./legal";
 import { esc } from "./esc";
+import { icon } from "./icons";
 import { initTheme } from "./theme";
 import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
@@ -43,6 +45,10 @@ async function route(): Promise<void> {
   // #/p/<token> — optionaler ~slug (Linkbezeichnung) dahinter dient nur der Unterscheidung
   const pub = location.hash.match(/^#\/p\/([A-Za-z0-9_-]{10,})(?:~[a-z0-9-]*)?$/i);
   if (pub) return renderPublicView(app, pub[1]);
+
+  // Impressum/Datenschutz müssen ohne Login erreichbar sein.
+  if (location.hash === "#/impressum") return renderLegal(app, "imprint");
+  if (location.hash === "#/datenschutz") return renderLegal(app, "privacy");
 
   try {
     me = await api.me();
@@ -92,6 +98,10 @@ async function renderLogin(): Promise<void> {
       <button class="primary" id="go">${t("auth.login")}</button>
       ${oidc ? `<a href="/auth/oidc/login">${t("auth.oidc")}</a>` : ""}
       <div class="error" id="err"></div>
+      <div class="sb-legal" style="justify-content:center">
+        <a href="#/impressum">${t("legal.imprint")}</a>
+        <a href="#/datenschutz">${t("legal.privacy")}</a>
+      </div>
     </div></div>`;
   wireLangSelect(app);
   wireThemeSwitch(app);
@@ -138,6 +148,7 @@ async function renderPlanList(): Promise<void> {
       <span class="grow"></span>
       ${themeSwitch()}
       ${langSelect()}
+      <button class="icon-btn" id="settingsBtn" title="${t("settings.open")}" aria-label="${t("settings.open")}">${icon("settings")}</button>
       <span class="muted">${esc(me!.username)} (${esc(me!.role)})</span>
     </div>
     <div class="list stack">
@@ -164,6 +175,7 @@ async function renderPlanList(): Promise<void> {
   wireLangSelect(app);
   wireThemeSwitch(app);
   wireSidebar(app);
+  app.querySelector("#settingsBtn")!.addEventListener("click", openSettings);
 
   renderPlanTree(app.querySelector<HTMLDivElement>("#planTree")!, plans, folders, me!.can_create_plans_effective, {
     mapName: (id) => maps.find((m) => m.id === id)?.name ?? id,

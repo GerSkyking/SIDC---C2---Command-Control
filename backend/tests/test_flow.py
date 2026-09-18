@@ -252,6 +252,28 @@ def test_public_share(admin):
         assert anon.get(f"/public/plans/{tok}").status_code == 404
 
 
+def test_share_create_rate_limit(admin):
+    from app.db import SessionLocal
+    from app.models import Map, now
+    from app.ratelimit import _hits
+
+    admin.post("/api/maps", json={"id": "psrl", "name": "PSRL", "url": "http://x.invalid/a.zip"})
+    with SessionLocal() as db:
+        db.get(Map, "psrl").status = "ready"
+        db.get(Map, "psrl").imported_at = now()
+        db.commit()
+    pid = admin.post("/plans", json={"name": "RL", "map_id": "psrl"}).json()["id"]
+
+    me = admin.get("/auth/me").json()
+    _hits.pop(f"share-create:{me['id']}", None)  # isolieren von evtl. anderen Tests
+    try:
+        for _ in range(20):
+            assert admin.post(f"/plans/{pid}/shares", json={}).status_code == 201
+        assert admin.post(f"/plans/{pid}/shares", json={}).status_code == 429
+    finally:
+        _hits.pop(f"share-create:{me['id']}", None)
+
+
 def test_mission_builder_planes(admin):
     """Builder-Phasen + deren Marker sind für Nicht-Missionsbauer unsichtbar."""
     from fastapi.testclient import TestClient

@@ -27,13 +27,21 @@ Behebt GHSA-jrc7-96c5-q579.
 Commit `6225d2f`. `npm audit` jetzt **0 vulnerabilities**. Nur Core-API genutzt
 (kein `html()`/AcroForm), in v4 unverändert.
 
+### 5. Audit-Log-Retention
+Automatischer täglicher Purge im Backend-Prozess (`app/main.py:_audit_retention_loop`,
+löscht via `audit.purge_old`). Steuerbar über `AUDIT_LOG_RETENTION_DAYS` (Default 180,
+0 = deaktiviert). Kein externer Cron nötig.
+
+### 6. Rate-Limit für Share-Link-Erstellung
+`backend/app/routers/plans.py:create_share` — 20 Links / 10 Min. pro Nutzer
+(`ratelimit.hit_limit`), teilt sich den In-Process-Store mit dem Login-Limiter
+(siehe „Wenn Multi-Worker" unten).
+
 ---
 
 ## Offen (niedrige Priorität, optional)
 
 ### Datenschutz / Betrieb
-- **Audit-Log wächst unbegrenzt** und speichert Client-IPs. Bei Bedarf einen
-  Cron/SQL-Job ergänzen, der Einträge älter als N Tage löscht.
 - **Backups** (`deploy/backup.sh`) liegen unverschlüsselt im Volume `backups`.
   Für Offsite-Kopien verschlüsseln (z. B. `age`/`gpg`).
 

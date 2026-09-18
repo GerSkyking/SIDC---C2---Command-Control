@@ -4,7 +4,7 @@ import { api, type Me } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { themeSwitch, wireThemeSwitch } from "./ui";
-import { toast, toastError } from "./notify";
+import { confirmDialog, promptDialog, toast, toastError } from "./notify";
 import { esc } from "./esc";
 
 export type HotAction =
@@ -192,6 +192,15 @@ export function openSettings(): void {
     <div class="row" style="margin-top:.8rem">
       <button data-reset>${t("settings.reset")}</button>
     </div>
+    <h4>${t("settings.myData")}</h4>
+    <div class="row" style="gap:.5rem">
+      <button data-export>${icon("download", 16)} ${t("settings.exportData")}</button>
+      <button class="danger" data-delacc>${t("settings.deleteAccount")}</button>
+    </div>
+    <div class="row" style="margin-top:.6rem;gap:.8rem">
+      <a href="#/impressum">${t("legal.imprint")}</a>
+      <a href="#/datenschutz">${t("legal.privacy")}</a>
+    </div>
   </div>`;
 
   const close = () => {
@@ -208,6 +217,7 @@ export function openSettings(): void {
     if (e.target === back && !capturing) close();
   });
   back.querySelector("[data-x]")!.addEventListener("click", close);
+  back.querySelectorAll<HTMLAnchorElement>('a[href^="#/"]').forEach((a) => a.addEventListener("click", close));
   wireThemeSwitch(back);
 
   const dn = back.querySelector<HTMLInputElement>("#set-dname")!;
@@ -261,6 +271,44 @@ export function openSettings(): void {
     persist();
     back.querySelector("#kbRows")!.innerHTML = rows();
     wireKb();
+  });
+
+  back.querySelector("[data-export]")!.addEventListener("click", async (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    btn.disabled = true;
+    try {
+      const { blob, filename } = await api.exportMyData();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toastError(err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  back.querySelector("[data-delacc]")!.addEventListener("click", async () => {
+    if (!(await confirmDialog(t("settings.deleteAccountConfirm"), { danger: true, okLabel: t("settings.deleteAccount") })))
+      return;
+    const typed = await promptDialog(
+      t("settings.deleteAccountTypeName").replace("{name}", currentMe?.username ?? ""),
+      { okLabel: t("settings.deleteAccount") },
+    );
+    if (typed !== currentMe?.username) {
+      if (typed !== null) toastError(new Error(t("settings.deleteAccountMismatch")));
+      return;
+    }
+    try {
+      await api.deleteMyAccount();
+      location.hash = "#/";
+      location.reload();
+    } catch (err) {
+      toastError(err);
+    }
   });
 
   document.addEventListener("keydown", onEsc, true);

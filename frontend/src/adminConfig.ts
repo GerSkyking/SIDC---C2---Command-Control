@@ -14,10 +14,16 @@ export const CATALOGS: { key: string; label: string; file: string }[] = [
   { key: "translations", label: "Übersetzungen (#Namen)", file: "SIDC_Translations.json" },
 ];
 
+export const LEGAL_PAGES: { key: "imprint" | "privacy"; label: string }[] = [
+  { key: "imprint", label: "legal.imprint" },
+  { key: "privacy", label: "legal.privacy" },
+];
+
 export function configHtml(
   maps: MapItem[],
   sources: MapSource[],
   catStatus: Record<string, boolean>,
+  legalStatus: Record<string, boolean>,
 ): string {
   return `
     <div class="row"><h2 style="margin:0">${t("admin.maps")}</h2><span class="grow"></span>
@@ -82,6 +88,20 @@ export function configHtml(
           <input type="file" accept="${c.key === "translations" ? ".xlsx,application/json,.json" : "application/json,.json"}" data-cat="${c.key}" style="display:none" />
           <button data-catbtn="${c.key}">${catStatus[c.key] ? t("admin.update") : t("admin.upload")}</button>
           ${catStatus[c.key] ? `<button class="icon-btn" data-delcat="${c.key}" title="${t("common.delete")}">${icon("trash", 16)}</button>` : ""}
+        </td>
+      </tr>`,
+    ).join("")}</tbody></table>
+
+    <h2>${t("admin.legal")}</h2>
+    <p class="muted">${t("admin.legalHint")}</p>
+    <table><tbody>${LEGAL_PAGES.map(
+      (p) => `<tr>
+        <td>${t(p.label)}</td>
+        <td><span class="badge">${legalStatus[p.key] ? t("admin.loaded") : t("admin.missing")}</span></td>
+        <td>
+          <input type="file" accept=".md,.txt,text/markdown,text/plain" data-legal="${p.key}" style="display:none" />
+          <button data-legalbtn="${p.key}">${legalStatus[p.key] ? t("admin.update") : t("admin.upload")}</button>
+          ${legalStatus[p.key] ? `<button class="icon-btn" data-dellegal="${p.key}" title="${t("common.delete")}">${icon("trash", 16)}</button>` : ""}
         </td>
       </tr>`,
     ).join("")}</tbody></table>`;
@@ -265,6 +285,34 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
     b.addEventListener("click", async () => {
       try {
         await api.deleteCatalog(b.dataset.delcat!);
+        reload();
+      } catch (e) {
+        fail(e);
+      }
+    }),
+  );
+
+  // Impressum/Datenschutz
+  root.querySelectorAll<HTMLButtonElement>("[data-legalbtn]").forEach((b) =>
+    b.addEventListener("click", () => q<HTMLInputElement>(`[data-legal="${b.dataset.legalbtn}"]`)!.click()),
+  );
+  root.querySelectorAll<HTMLInputElement>("[data-legal]").forEach((inp) =>
+    inp.addEventListener("change", async () => {
+      const f = inp.files?.[0];
+      if (!f) return;
+      try {
+        await api.uploadLegal(inp.dataset.legal as "imprint" | "privacy", f);
+        reload();
+      } catch (e) {
+        fail(e);
+      }
+    }),
+  );
+  root.querySelectorAll<HTMLButtonElement>("[data-dellegal]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!(await confirmDialog(`${t("common.delete")}?`, { danger: true }))) return;
+      try {
+        await api.deleteLegal(b.dataset.dellegal as "imprint" | "privacy");
         reload();
       } catch (e) {
         fail(e);

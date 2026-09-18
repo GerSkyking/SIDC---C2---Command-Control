@@ -79,6 +79,10 @@ export function sidebar(
     </div>
     <div class="sb-foot">
       <div class="sb-user">${icon("users", 16)}<span>${esc(opts.username)}</span></div>
+      <div class="sb-legal">
+        <a href="#/impressum">${t("legal.imprint")}</a>
+        <a href="#/datenschutz">${t("legal.privacy")}</a>
+      </div>
       <button class="sb-item sb-logout" id="sbLogout" title="${t("auth.logout")}">${icon("logout")}<span>${t("auth.logout")}</span></button>
     </div>
   </nav>`;

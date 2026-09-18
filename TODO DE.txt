@@ -1,0 +1,63 @@
+[x] Impressum
+    → Seite + Route (#/impressum) + Admin-Upload (.md/.txt) vorhanden. Inhalt selbst
+      ist noch Platzhalter, bis ein echter Text hochgeladen wird.
+[x] Datenschutzerklärung
+    → Seite + Route (#/datenschutz) + Admin-Upload vorhanden. Inhalt noch Platzhalter
+      (siehe Punkt weiter unten: "muss tatsächliche Verarbeitung beschreiben").
+[x] DSGVO-konforme Benutzerverwaltung
+    → Rollen/Gruppen, granulare Zugriffsrechte, Auskunft (/auth/me/export) und
+      Account-Löschung (/auth/me) vorhanden.
+[x] Passwort-Hashing
+    → Argon2id (pwdlib), Mindestlänge 12 Zeichen serverseitig erzwungen.
+[x] HTTPS
+    → Backend-seitig vollständig vorbereitet (secure Cookies, HSTS-Header,
+      https_only). TLS-Terminierung passiert im externen Reverse Proxy (Nginx
+      Proxy Manager) — dort muss ein gültiges Zertifikat aktiv konfiguriert sein.
+[x] definierte Log-Aufbewahrung
+    → Automatischer täglicher Purge im Backend (app/main.py:_audit_retention_loop),
+      steuerbar über AUDIT_LOG_RETENTION_DAYS (Default 180 Tage, 0 = aus).
+[x] Möglichkeit zur Account-Löschung
+    → DELETE /auth/me, mit Tipp-Bestätigung im UI (Einstellungen → Meine Daten).
+      Schutz gegen Selbstaussperrung: letzter aktiver Admin kann sich nicht löschen.
+[ ] Datenschutz bei Cloudflare berücksichtigen
+    → Organisatorisch/vertraglich (AVV mit Cloudflare, falls genutzt), nicht im Code
+      abbildbar. Noch offen/zu klären, ob und wie Cloudflare eingesetzt wird.
+[x] Schutz gegen Session-/Account-Missbrauch
+    → Login-Rate-Limit (pro IP+User und pro IP), signierte Session-Cookies,
+      Session-Invalidierung bei Passwortwechsel (session_epoch), Admin kann Konten
+      deaktivieren.
+[ ] Datenschutzerklärung muss tatsächliche Verarbeitung beschreiben
+    → Der Upload-Mechanismus ist fertig, der eigentliche Text (welche Daten, wozu,
+      wie lange, an wen) fehlt noch inhaltlich.
+
+Was ich zusätzlich machen würde
+[x] Rate-Limiting für Login
+    → backend/app/ratelimit.py (8/IP+User, 30/IP pro 60s-Fenster).
+[x] Rate-Limiting für Share-Link-Erstellung
+    → 20 Links / 10 Min. pro Nutzer (plans.py:create_share, ratelimit.hit_limit).
+[x] sichere, nicht erratbare Share-IDs
+    → secrets.token_urlsafe(24), 192-bit-Zufallstoken.
+[~] CSRF-Schutz
+    → Kein dedizierter CSRF-Token, aber Cookie ist SameSite=Lax + API ist reines
+      JSON (kein klassisches Cross-Site-Formular-CSRF möglich). Als "erledigt mit
+      Einschränkung" zu verstehen, kein expliziter Token-Mechanismus.
+[x] sichere Session-Cookies (Secure, HttpOnly, SameSite)
+    → HttpOnly, SameSite=Lax, Secure (auto/erzwingbar je nach Deployment).
+[x] Security-Header
+    → CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy,
+      Cross-Origin-Opener-Policy, HSTS (backend/app/main.py).
+[x] regelmäßige Backups
+    → deploy/backup.sh: pg_dump-Loop mit Rotation (Standard: täglich, 14 behalten).
+      Offen: Dumps liegen unverschlüsselt im Volume — für Offsite-Kopien
+      verschlüsseln (age/gpg).
+[x] definierter Löschmechanismus für alte Logs
+    → Gleicher Punkt wie oben ("definierte Log-Aufbewahrung") — erledigt.
+[x] Möglichkeit, einen Account vollständig zu löschen
+    → Siehe oben, DELETE /auth/me (heute umgesetzt).
+
+── Noch offen ──────────────────────────────────────────────────────────────
+1. Echte Texte für Impressum & Datenschutzerklärung hochladen (Admin → Konfiguration
+   → Rechtliches) — inhaltlich, kann ich nicht für euch verfassen/entscheiden.
+2. Klären, ob/wie Cloudflare genutzt wird, und die Datenschutzerklärung + ggf. einen
+   AVV entsprechend ausrichten — organisatorisch/vertraglich.
+3. Optional: Backups verschlüsseln, bevor sie offsite kopiert werden (age/gpg).

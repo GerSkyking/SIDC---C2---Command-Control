@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from fastapi import Request
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
-from .models import AuditLog
+from .models import AuditLog, now
 
 log = logging.getLogger("sidc.audit")
 
@@ -44,3 +46,14 @@ def record(
     except Exception:  # noqa: BLE001
         log.exception("Audit-Eintrag '%s' fehlgeschlagen", action)
         db.rollback()
+
+
+def purge_old(db: Session, retention_days: int) -> int:
+    """Löscht Audit-Log-Einträge älter als retention_days. 0/negativ = no-op.
+    Gibt die Anzahl gelöschter Zeilen zurück."""
+    if retention_days <= 0:
+        return 0
+    cutoff = now() - timedelta(days=retention_days)
+    result = db.execute(delete(AuditLog).where(AuditLog.ts < cutoff))
+    db.commit()
+    return result.rowcount or 0
