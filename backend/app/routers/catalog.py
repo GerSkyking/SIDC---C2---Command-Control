@@ -28,8 +28,10 @@ _MAX_BYTES = 8 * 1024 * 1024
 
 
 def _xlsx_to_translations(raw: bytes) -> dict:
-    """Spiel-Lokalisierungs-Export (.xlsx) → { names: {Id: Name}, desc: {Id: Beschreibung} }.
-    Sprache: Deutsch bevorzugt, sonst Englisch (bearbeitete Spalte vor Rohspalte).
+    """Spiel-Lokalisierungs-Export (.xlsx) → { names: {Id: {de,en}}, desc: {Id: {de,en}} }.
+    Beide Sprachen werden aufbewahrt (bearbeitete EN-Spalte vor Rohspalte) — die
+    Sprachauswahl passiert im Frontend anhand der aktuellen UI-Sprache, mit
+    en_us als Basis-Fallback, statt hier eine Sprache endgültig zu verwerfen.
     Ids mit Suffix ``_Description`` liefern den Hover-Zusatztext."""
     import io
 
@@ -54,23 +56,25 @@ def _xlsx_to_translations(raw: bytes) -> dict:
         return header.index(col) if col in header else -1
 
     ci_id, ci_de, ci_en_e, ci_en = idx("Id"), idx("Target_de_de"), idx("Target_en_us_edited"), idx("Target_en_us")
-    names: dict[str, str] = {}
-    desc: dict[str, str] = {}
+    names: dict[str, dict[str, str]] = {}
+    desc: dict[str, dict[str, str]] = {}
     for row in it:
         if ci_id < 0 or ci_id >= len(row) or not row[ci_id]:
             continue
         rid = str(row[ci_id]).strip().lstrip("#")
-        val = ""
-        for ci in (ci_de, ci_en_e, ci_en):
+        de_val = str(row[ci_de]).strip() if 0 <= ci_de < len(row) and row[ci_de] else ""
+        en_val = ""
+        for ci in (ci_en_e, ci_en):
             if 0 <= ci < len(row) and row[ci]:
-                val = str(row[ci]).strip()
+                en_val = str(row[ci]).strip()
                 break
-        if not val:
+        if not de_val and not en_val:
             continue
+        entry = {k: v for k, v in (("de", de_val), ("en", en_val)) if v}
         if rid.endswith("_Description"):
-            desc[rid[:-12]] = val
+            desc[rid[:-12]] = entry
         else:
-            names[rid] = val
+            names[rid] = entry
     wb.close()
     return {"names": names, "desc": desc}
 

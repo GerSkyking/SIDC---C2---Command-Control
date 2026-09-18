@@ -1,4 +1,5 @@
 // Lädt die vom Admin hochgeladenen SIDC-Kataloge (Format 1:1 wie ingame LocalMapData).
+import { getLang } from "../i18n";
 
 export interface CatalogEntry {
   name: string;
@@ -181,10 +182,17 @@ export function loadPhaseLineStyle(): Promise<PhaseLineStyle | null> {
 }
 
 // ── Übersetzungen (Admin lädt SIDC_Translations.xlsx/.json nach) ─────────────
-// Gespeichert als { names: {Id: Name}, desc: {Id: Beschreibung} } (Ids ohne "#").
-let _trNames: Record<string, string> = {};
-let _trDesc: Record<string, string> = {};
+// Gespeichert als { names: {Id: TrValue}, desc: {Id: TrValue} } (Ids ohne "#").
+// TrValue ist entweder ein String (Alt-Format bzw. einsprachige Quellen) oder
+// {de, en} — dann wird nach aktueller UI-Sprache aufgelöst, mit en_us als Basis-Fallback.
+type TrValue = string | { de?: string; en?: string };
+let _trNames: Record<string, TrValue> = {};
+let _trDesc: Record<string, TrValue> = {};
 let _tr: Promise<void> | null = null;
+
+function isTrValue(v: unknown): v is TrValue {
+  return typeof v === "string" || (typeof v === "object" && v !== null);
+}
 
 function parseTranslations(d: unknown): void {
   _trNames = {};
@@ -193,9 +201,9 @@ function parseTranslations(d: unknown): void {
   const obj = d as Record<string, unknown>;
   if (obj.names && typeof obj.names === "object") {
     for (const [k, v] of Object.entries(obj.names as Record<string, unknown>))
-      if (typeof v === "string") _trNames[k] = v;
+      if (isTrValue(v)) _trNames[k] = v;
     for (const [k, v] of Object.entries((obj.desc as Record<string, unknown>) ?? {}))
-      if (typeof v === "string") _trDesc[k] = v;
+      if (isTrValue(v)) _trDesc[k] = v;
     return;
   }
   // Rückwärtskompatibel: flaches Objekt oder Liste
@@ -224,8 +232,17 @@ export function loadTranslations(): Promise<void> {
   return _tr;
 }
 
-function trLookup(map: Record<string, string>, raw: string): string | undefined {
-  return map[raw] ?? map[raw.replace(/^#/, "")];
+/** Löst einen TrValue nach aktueller UI-Sprache auf, mit en_us als Basis-Fallback
+ * (falls die aktuelle Sprache in der Übersetzungstabelle leer ist). */
+function resolveTr(v: TrValue | undefined): string | undefined {
+  if (v == null) return undefined;
+  if (typeof v === "string") return v || undefined;
+  const lang = getLang();
+  return v[lang] || v.en || v.de || undefined;
+}
+
+function trLookup(map: Record<string, TrValue>, raw: string): string | undefined {
+  return resolveTr(map[raw] ?? map[raw.replace(/^#/, "")]);
 }
 
 /** #Name → lesbarer Name; ohne Tabelle bzw. bei Fehltreffer heuristische Bereinigung. */
