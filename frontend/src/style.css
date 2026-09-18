@@ -432,7 +432,9 @@ a { color: var(--accent); }
 .src-file input { padding: 0.35rem 0.5rem; }
 
 /* ── Redesign: Einstellungs-Menü ─────────────────────────────────────── */
-.set-card { width: min(30rem, 96vw); }
+.set-card { width: min(30rem, 96vw); max-height: 88vh; overflow-y: auto; }
+.set-card > .row:first-child { position: sticky; top: -1.5rem; margin: -1.5rem -1.5rem 0; padding: 1.5rem 1.5rem 0.6rem;
+  background: var(--panel); z-index: 1; }
 .set-card h4 { margin: 1rem 0 0.4rem; font-size: 0.95rem; }
 .set-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .set-row span { flex: 1 1 8rem; overflow-wrap: anywhere; }
