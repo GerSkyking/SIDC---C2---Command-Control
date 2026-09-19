@@ -260,6 +260,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   if (!Number.isFinite(crossOpacity)) crossOpacity = 20;
   let personalScale = Number(localStorage.getItem("sidc_marker_scale") ?? "1"); // nur für mich
   if (!Number.isFinite(personalScale) || personalScale <= 0) personalScale = 1;
+  let textScale = Number(localStorage.getItem("sidc_text_scale") ?? "1"); // nur für mich
+  if (!Number.isFinite(textScale) || textScale <= 0) textScale = 1;
   // Einheits-/Zusatztext ein-/ausblenden — Control-Measure-Beschriftung (cm/line)
   // bleibt dabei immer stehen, nur der Text an normalen Einheiten wird versteckt.
   let showUnitAiLabels = localStorage.getItem("sidc_labels_on") !== "0";
@@ -363,10 +365,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         : ""
     }
     <div class="hud" id="hud">X: –  Y: –  H: –</div>
-    <div class="mk-scale" id="mkScale" title="${t("marker.scaleLocal")}">
-      ${icon("marker", 13)}
-      <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
-      <span id="mkScaleV">${Math.round(personalScale * 100)}%</span>
+    <div class="mk-scale" id="mkScale">
+      <div class="mk-scale-row" title="${t("marker.scaleLocal")}">
+        ${icon("marker", 13)}
+        <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
+        <span id="mkScaleV">${Math.round(personalScale * 100)}%</span>
+      </div>
+      <div class="mk-scale-row" title="${t("marker.textScaleLocal")}">
+        ${icon("textbox", 13)}
+        <input type="range" id="mkTextScaleIn" min="25" max="300" step="5" value="${Math.round(textScale * 100)}" />
+        <span id="mkTextScaleV">${Math.round(textScale * 100)}%</span>
+      </div>
     </div>
     <button class="line-done" id="lineDone" title="${t("line.finish")}" hidden>${icon("check", 18)}</button>
     <button class="line-done line-gear" id="strokeGear" title="${t("line.edit")}" hidden>${icon("settings", 16)}</button>
@@ -808,7 +817,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       source: "markers",
       layout: {
         "text-field": ["get", "label"],
-        "text-size": 11,
+        "text-size": 11 * textScale,
         "text-anchor": UNIT_TEXT_ANCHOR,
         "text-offset": UNIT_TEXT_OFFSET,
         "text-justify": UNIT_TEXT_JUSTIFY,
@@ -831,7 +840,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       source: "markers",
       layout: {
         "text-field": ["get", "ai"],
-        "text-size": 11,
+        "text-size": 11 * textScale,
         "text-anchor": AI_TEXT_ANCHOR,
         "text-offset": AI_TEXT_OFFSET,
         "text-justify": AI_TEXT_JUSTIFY,
@@ -1696,6 +1705,34 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     phases.sort((a, b) => a.ordering - b.ordering || (a.sub_ordering ?? 0) - (b.sub_ordering ?? 0));
   }
 
+  // Neue Spieler-Phase (Top-Level) anlegen — von Zeitstrahl-Leiste, Spieler-Lane-"+"
+  // und Notiz-Fenster gemeinsam genutzt.
+  async function addPlayerPhase(): Promise<void> {
+    const name = await promptDialog(t("phase.namePrompt"), { value: `Phase ${playerPhases().length}` });
+    if (!name) return;
+    const p = await api.createPhase(planId, name);
+    addLocalPhase(p as PhaseT);
+    if (isMB) {
+      // die server-seitig gepaarte Builder-Phase nachladen
+      for (const ph of await api.planPhases(planId))
+        if (!phases.some((x) => x.id === ph.id)) addLocalPhase(ph as PhaseT);
+    }
+    selectPlayerPhase(p.id);
+  }
+
+  // Neue Missionsbau-Zwischenphase unter parentId — von Zeitstrahl-Leiste (Builder-
+  // Lane-"+") und Notiz-Fenster gemeinsam genutzt.
+  async function addSubPhase(parentId: string): Promise<void> {
+    if (!parentId) return;
+    const name = await promptDialog(t("mb.subPhaseName"), {
+      value: `${playerPhases().findIndex((p) => p.id === parentId) + 1}.${builderChildren(parentId).length}`,
+    });
+    if (!name) return;
+    const p = await api.createPhase(planId, name, { plane: "builder", parent_id: parentId });
+    addLocalPhase(p as PhaseT);
+    selectPhase(p.id);
+  }
+
   let tlFirstPaint = true;
   let tlKeepScroll = -1;
   const esc0 = (s: string) =>
@@ -1774,6 +1811,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           `<button class="seg-btn ${actAs === "player" ? "active" : ""}" data-as="player">${t("mb.player")}</button>` +
           `<button class="seg-btn ${actAs === "builder" ? "active" : ""}" data-as="builder">${t("mb.builder")}</button></span>`
         : "") +
+      (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+ ${t("phase.heading")}</button>` : "") +
       `<label class="ph-op" title="${t("phase.outOpacityHint")}">${t("phase.outOpacity")}` +
       `<input type="range" id="ph-op" min="0" max="100" step="5" value="${outOpacity}"/><span id="ph-op-v">${outOpacity}%</span></label>` +
       (isMB
@@ -1781,7 +1819,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           `<input type="range" id="cross-op" min="0" max="100" step="5" value="${crossOpacity}"/><span id="cross-op-v">${crossOpacity}%</span></label>`
         : "") +
       `<label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" id="lblToggle" ${showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label>` +
-      (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+ ${t("phase.heading")}</button>` : "") +
       `</div>`;
 
     timelineEl.innerHTML =
@@ -1790,6 +1827,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       `<div class="tl-scroll"><div class="tl-canvas" style="width:${W}px">` +
       `<div class="tl-lane tl-player" style="height:${laneH(maxRow(rowP))}px">` +
       players.map((id) => bar(id, "player", rowP.get(id) ?? 0)).join("") +
+      (canEdit ? `<button id="player-add" class="tl-subadd" title="${t("phase.add")}">+</button>` : "") +
       `</div>` +
       `<div class="tl-ruler">${ticks.join("")}<div class="tl-hh" style="left:${xOf(opStart.getTime())}px" title="H">H</div></div>` +
       (isMB
@@ -1907,25 +1945,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       map.setPaintProperty("marker-unittext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
       map.setPaintProperty("marker-aitext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
     });
-    timelineEl.querySelector("#ph-add")?.addEventListener("click", async () => {
-      const name = await promptDialog(t("phase.namePrompt"), { value: `Phase ${playerPhases().length}` });
-      if (!name) return;
-      const p = await api.createPhase(planId, name);
-      addLocalPhase(p as PhaseT);
-      if (isMB) {
-        // die server-seitig gepaarte Builder-Phase nachladen
-        for (const ph of await api.planPhases(planId))
-          if (!phases.some((x) => x.id === ph.id)) addLocalPhase(ph as PhaseT);
-      }
-      selectPlayerPhase(p.id);
-    });
-    timelineEl.querySelector("#sub-add")?.addEventListener("click", async () => {
-      const name = await promptDialog(t("mb.subPhaseName"), { value: `${playerPhases().findIndex((p) => p.id === apid) + 1}.${builderChildren(apid).length}` });
-      if (!name) return;
-      const p = await api.createPhase(planId, name, { plane: "builder", parent_id: apid });
-      addLocalPhase(p as PhaseT);
-      selectPhase(p.id);
-    });
+    timelineEl.querySelector("#ph-add")?.addEventListener("click", () => void addPlayerPhase());
+    timelineEl.querySelector("#player-add")?.addEventListener("click", () => void addPlayerPhase());
+    timelineEl.querySelector("#sub-add")?.addEventListener("click", () => void addSubPhase(apid));
 
     const op = timelineEl.querySelector<HTMLInputElement>("#ph-op")!;
     const opv = timelineEl.querySelector<HTMLSpanElement>("#ph-op-v")!;
@@ -2045,10 +2067,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       `<button data-nt="${p.id}" class="${p.id === notesTabId ? "active" : ""}">${p.name}</button>`;
     const playerP = phases.filter((p) => (p.plane ?? "player") !== "builder");
     const builderP = phases.filter((p) => (p.plane ?? "player") === "builder");
+    const addBtn = (attr: string, title: string) =>
+      canEdit ? `<button class="notes-tab-add" ${attr} title="${title}">${icon("plus", 11)}</button>` : "";
     nTabs.innerHTML =
-      `<div class="notes-tab-grp"><span class="notes-grp-h">${t("mb.player")}</span>${playerP.map(tabBtn).join("")}</div>` +
-      (builderP.length
-        ? `<div class="notes-tab-sep"></div><div class="notes-tab-grp"><span class="notes-grp-h">${t("mb.builder")}</span>${builderP.map(tabBtn).join("")}</div>`
+      `<div class="notes-tab-grp"><span class="notes-grp-h">${t("mb.player")}</span>${playerP.map(tabBtn).join("")}` +
+      addBtn("data-add-player", t("phase.add")) +
+      `</div>` +
+      (builderP.length || isMB
+        ? `<div class="notes-tab-sep"></div><div class="notes-tab-grp"><span class="notes-grp-h">${t("mb.builder")}</span>${builderP.map(tabBtn).join("")}` +
+          addBtn("data-add-sub", t("mb.subPhase")) +
+          `</div>`
         : "");
     nTabs.querySelectorAll<HTMLButtonElement>("[data-nt]").forEach((b) =>
       b.addEventListener("click", () => {
@@ -2057,6 +2085,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         paintNotes();
       }),
     );
+    nTabs.querySelector("[data-add-player]")?.addEventListener("click", () => void addPlayerPhase());
+    nTabs.querySelector("[data-add-sub]")?.addEventListener("click", () => void addSubPhase(activePlayerId()));
     nEdit.value = ph.notes ?? "";
     nView.innerHTML = renderMarkdown(ph.notes ?? "");
     wireNoteImageRefs(nView);
@@ -2102,6 +2132,21 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         /* ignore */
       }
       void refreshMarkers();
+    });
+  }
+  {
+    const si = root.querySelector<HTMLInputElement>("#mkTextScaleIn")!;
+    const sv = root.querySelector<HTMLSpanElement>("#mkTextScaleV")!;
+    si.addEventListener("input", () => {
+      textScale = Number(si.value) / 100 || 1;
+      sv.textContent = `${si.value}%`;
+      try {
+        localStorage.setItem("sidc_text_scale", String(textScale));
+      } catch {
+        /* ignore */
+      }
+      map.setLayoutProperty("marker-unittext", "text-size", 11 * textScale);
+      map.setLayoutProperty("marker-aitext", "text-size", 11 * textScale);
     });
   }
   root.querySelector<HTMLSelectElement>("#chan")!.addEventListener("change", (e) => {

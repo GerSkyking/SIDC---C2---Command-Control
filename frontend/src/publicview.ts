@@ -139,10 +139,12 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       ${iconBtn("layers", { id: "layersBtn", title: t("tool.layers") })}
     </div>
     <button class="line-done" id="lineDone" title="${t("line.finish")}" hidden>${icon("check", 18)}</button>
-    <div class="mk-scale" id="mkScale" title="${t("marker.scaleLocal")}">
-      ${icon("marker", 13)}
-      <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
-      <span id="mkScaleV">${Math.round(personalScale * 100)}%</span>
+    <div class="mk-scale" id="mkScale">
+      <div class="mk-scale-row" title="${t("marker.scaleLocal")}">
+        ${icon("marker", 13)}
+        <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
+        <span id="mkScaleV">${Math.round(personalScale * 100)}%</span>
+      </div>
     </div>
     <div class="navcube" id="navcube" hidden></div>
     <div class="layers-panel" id="layersPanel" hidden></div>`;
