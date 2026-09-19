@@ -93,14 +93,19 @@ const LABEL_MARGIN_EM = 4 / LABEL_TEXT_SIZE_PX; // etwas Luft zwischen Icon-Rand
  * groß/klein/nach welchem Symbol-Typ es skaliert wird.
  * `iconSizeFactor` = kompletter Multiplikator aus der "icon-size"-Layer-Property
  * (z. B. 0.8 * Marker-Scale), damit die Icon-Naturgröße korrekt umgerechnet wird.
+ * `textScale` = Multiplikator auf "text-size" (Standard 1). Offset ist in em,
+ * also relativ zur tatsächlichen Textgröße — ohne diesen Ausgleich würde der
+ * Text bei größerem textScale automatisch weiter vom Icon wegrücken, obwohl
+ * der gewünschte Pixel-Abstand nur von der Icon-Größe abhängen soll.
  */
 export function markerLabelOffsets(
   sidc: string,
   iconSizeFactor: number,
+  textScale = 1,
 ): { unit: [number, number]; ai: [number, number] } {
   const nat = iconNaturalSize(sidc) ?? { w: 32, h: 32 };
-  const halfXem = (nat.w * iconSizeFactor) / 2 / LABEL_TEXT_SIZE_PX + LABEL_MARGIN_EM;
-  const halfYem = (nat.h * iconSizeFactor) / 2 / LABEL_TEXT_SIZE_PX + LABEL_MARGIN_EM;
+  const halfXem = ((nat.w * iconSizeFactor) / 2 / LABEL_TEXT_SIZE_PX + LABEL_MARGIN_EM) / textScale;
+  const halfYem = ((nat.h * iconSizeFactor) / 2 / LABEL_TEXT_SIZE_PX + LABEL_MARGIN_EM) / textScale;
   const cat = markerLabelCategory(sidc);
   if (cat === "line") {
     // Einheitstext oben/zentriert, Zusatztext unten/zentriert.

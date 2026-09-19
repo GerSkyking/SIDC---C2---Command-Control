@@ -22,7 +22,7 @@ import { openVersionPanel } from "./versions";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
-import { actionForKey, openSettings } from "./settings";
+import { actionForKey, getKeybinds, keyLabel, openSettings, type HotAction } from "./settings";
 import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
 import { esc } from "./esc";
@@ -234,6 +234,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     sub_ordering?: number;
     start_at?: string | null;
     end_at?: string | null;
+    locked?: boolean;
   }
   const isMB: boolean = !!me.is_mission_builder_effective;
   const phases: PhaseT[] = [...(snap.phases ?? [])].sort(
@@ -241,6 +242,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   );
   const isBuilderPhase = (id: string | null | undefined): boolean =>
     !!id && phases.some((p) => p.id === id && p.plane === "builder");
+  // Die an eine gesperrte Spieler-Phase (aktuell nur "Base") gekoppelte Missionsbau-
+  // "Spiegel"-Phase ist für ALLE dauerhaft sichtbar (Server liefert sie non-MB-Usern
+  // ohnehin mit) — Bearbeiten bleibt server- wie clientseitig Missionsbauern vorbehalten.
+  const isReleasedBuilderPhase = (id: string | null | undefined): boolean => {
+    const p = id ? phases.find((x) => x.id === id) : undefined;
+    if (!p || p.plane !== "builder") return false;
+    const parent = phases.find((x) => x.id === p.parent_id);
+    return !!parent?.locked;
+  };
   const playerPhases = (): PhaseT[] => phases.filter((p) => (p.plane ?? "player") === "player");
   const builderChildren = (playerId: string): PhaseT[] =>
     phases
@@ -271,6 +281,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const phaseOpacityOf = (phaseId: string | null | undefined): number => {
     if (phaseId == null) return 1;
     const mB = isBuilderPhase(phaseId);
+    // Freigegebene Base-Missionsbau-Phase: immer voll sichtbar, auch in der
+    // echten Spieler-Vorschau — unabhängig von der aktuell gewählten Phase.
+    if (mB && isReleasedBuilderPhase(phaseId)) return 1;
     // Missionsbau in Spieler-Ansicht = echte Spieler-Vorschau: Missionsbau-Inhalte weg.
     if (mB && isMB && actAs === "player") return 0;
     const curB = isBuilderPhase(currentPhaseId);
@@ -284,6 +297,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     channelVisibility(channels?.channels, myChannel, m.channel);
   const phaseNameOf = (id: string | null): string =>
     id ? (phases.find((p) => p.id === id)?.name ?? "—") : t("phase.global");
+  // Hotkey-Hinweis " (Taste)" für Tooltips, aus den (änderbaren) Nutzer-Keybinds.
+  const hk = (action: HotAction): string => {
+    const k = getKeybinds()[action];
+    return k ? ` (${keyLabel(k)})` : "";
+  };
 
   root.innerHTML = `
     <div class="topbar">
@@ -291,11 +309,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <strong>${esc(snap.plan.name)}</strong>
       <span class="badge" title="${t("plan.yourRole")}">${esc(myPlan?.level ?? "?")}</span>
       <button id="t3d" title="${t("map.threeD")}">3D</button>
-      ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") })}
+      ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") + hk("north") })}
       ${
         canEdit
-          ? iconBtn("undo", { id: "undo", title: t("edit.undo") }) +
-            iconBtn("redo", { id: "redo", title: t("edit.redo") })
+          ? iconBtn("undo", { id: "undo", title: t("edit.undo") + hk("undo") }) +
+            iconBtn("redo", { id: "redo", title: t("edit.redo") + hk("redo") })
           : ""
       }
       <input type="datetime-local" id="dtg" title="${t("map.dtg")}" />
@@ -322,15 +340,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     <div class="toolbar" id="toolbar">
       ${
         canEdit
-          ? iconBtn("pan", { data: { mode: "move" }, active: true, title: t("tool.move") }) +
-            iconBtn("markerMove", { data: { mode: "markermove" }, title: t("tool.markermove") }) +
-            iconBtn("point", { data: { mode: "point" }, title: t("tool.point") }) +
-            iconBtn("line", { data: { mode: "line" }, title: t("tool.line") }) +
-            iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") }) +
+          ? iconBtn("pan", { data: { mode: "move" }, active: true, title: t("tool.move") + hk("mapMove") }) +
+            iconBtn("markerMove", { data: { mode: "markermove" }, title: t("tool.markermove") + hk("markermove") }) +
+            iconBtn("point", { data: { mode: "point" }, title: t("tool.point") + hk("point") }) +
+            iconBtn("line", { data: { mode: "line" }, title: t("tool.line") + hk("line") }) +
+            iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") + hk("measure") }) +
             iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") }) +
-            iconBtn("textbox", { data: { mode: "text" }, title: t("tool.text") }) +
-            iconBtn("marker", { id: "tool-marker", title: t("tool.marker") }) +
-            iconBtn("star", { id: "tool-fav", title: t("tool.fav") }) +
+            iconBtn("textbox", { data: { mode: "text" }, title: t("tool.text") + hk("text") }) +
+            iconBtn("marker", { id: "tool-marker", title: t("tool.marker") + hk("place") }) +
+            iconBtn("star", { id: "tool-fav", title: t("tool.fav") + hk("fav") }) +
             `<span class="tb-sep"></span>`
           : ""
       }
@@ -456,7 +474,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       // Text-Offset aus der tatsächlichen Icon-Größe berechnet (0.8 = derselbe
       // Faktor wie in "icon-size" unten), damit der Text immer knapp außerhalb
       // des Icons sitzt statt eines geschätzten Fixwerts.
-      const labelOff = markerLabelOffsets(m.sidc, 0.8 * scale);
+      const labelOff = markerLabelOffsets(m.sidc, 0.8 * scale, textScale);
       return {
         type: "Feature" as const,
         geometry: { type: "Point" as const, coordinates: [m.world_x, m.world_y] },
@@ -1793,10 +1811,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         `data-pick="${id}" data-plane="${plane}" style="left:${left}px;width:${w}px;top:${row * 26}px" ` +
         `title="${esc0(p.name)} · ${durTxt}">` +
         (canEdit ? `<span class="tl-edge tl-edge-l" data-edge="l" data-id="${id}"></span>` : "") +
+        (p.locked ? `<span class="tl-lock" title="${t("phase.lockedHint")}">${icon("lock", 10)}</span>` : "") +
         `<span class="tl-bar-name">${esc0(p.name)}</span>` +
         (canEdit
           ? `<span class="tl-edge tl-edge-r" data-edge="r" data-id="${id}"></span>` +
-            `<button class="tl-del" data-del="${id}" title="${t("common.delete")}">${icon("x", 12)}</button>`
+            (p.locked
+              ? ""
+              : `<button class="tl-del" data-del="${id}" title="${t("common.delete")}">${icon("x", 12)}</button>`)
           : "") +
         `</div>`
       );
@@ -1804,7 +1825,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
     const ctl =
       `<div class="tl-ctl">` +
-      `<button class="icon-btn" id="ph-notes" title="${t("notes.open")}">${icon("notes", 16)}</button>` +
+      `<button class="icon-btn" id="ph-notes" title="${t("notes.open") + hk("notes")}">${icon("notes", 16)}</button>` +
       `<span class="tl-zoom"><button id="tl-zout" title="${t("tl.zoomOut")}">−</button><button id="tl-zin" title="${t("tl.zoomIn")}">+</button></span>` +
       (isMB
         ? `<span class="segmented mb-actas">` +
@@ -2147,6 +2168,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
       map.setLayoutProperty("marker-unittext", "text-size", 11 * textScale);
       map.setLayoutProperty("marker-aitext", "text-size", 11 * textScale);
+      void refreshMarkers(); // Text-Offsets neu berechnen, sonst rückt der Text vom Icon weg
     });
   }
   root.querySelector<HTMLSelectElement>("#chan")!.addEventListener("change", (e) => {
@@ -3467,7 +3489,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (dragId) return;
     const id = e.features?.[0]?.properties?.id as string | undefined;
     const m = id ? markers.get(id) : undefined;
-    if (!m) return;
+    // Komplett ausgeblendete Marker (Opacity 0 — fremde Phase/Ebene/Channel) zeigen
+    // keine Hover-Info, auch wenn ihre Trefferfläche noch da ist.
+    if (!m || phaseOpacity(m) <= 0) return;
     hoverMarkerId = m.id;
     map.getCanvas().style.cursor = "pointer";
     const info = markerInfoText(m.sidc);

@@ -178,6 +178,7 @@ a { color: var(--accent); }
 .tl-bar.tl-auto { border-style: dashed; opacity: 0.85; }
 .tl-bar.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); opacity: 1; }
 .tl-bar-name { padding: 0 0.4rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; pointer-events: none; }
+.tl-lock { display: inline-flex; align-items: center; padding-left: 0.3rem; opacity: 0.75; flex: none; }
 .tl-edge { width: 6px; align-self: stretch; cursor: ew-resize; flex: none; }
 .tl-edge:hover { background: var(--accent-weak); }
 .tl-del { position: absolute; right: 9px; top: 1px; width: 15px; height: 15px; padding: 0; border: none;
@@ -371,7 +372,8 @@ a { color: var(--accent); }
 
 /* Phasen-Notizfenster (verschiebbar) */
 .notes-win { position: fixed; z-index: 25; width: 22rem; max-width: 92vw; background: var(--panel);
-  border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); display: flex; flex-direction: column; }
+  border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); display: flex; flex-direction: column;
+  resize: horizontal; overflow: hidden; min-width: 16rem; }
 .notes-win[hidden] { display: none; }
 .notes-head { display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 0.6rem;
   border-bottom: 1px solid var(--border); cursor: move; font-weight: 600; font-size: 0.9rem; }

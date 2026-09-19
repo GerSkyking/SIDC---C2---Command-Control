@@ -70,14 +70,41 @@ def _builder_phase_ids(db: Session, plan_id: str) -> set[str]:
     )
 
 
-def _snapshot(db: Session, plan: Plan, *, include_builder: bool = True) -> dict:
+def _released_builder_phase_ids(db: Session, plan_id: str) -> set[str]:
+    """Die 1:1 gepaarte Missionsbau-"Spiegel"-Phase einer gesperrten Spieler-Phase
+    (aktuell nur die initiale "Base"-Phase, sub_ordering 0) — für ALLE sichtbar,
+    nicht nur Missionsbauer. Explizite Zwischenphasen (sub_ordering >= 1) unter
+    derselben Spieler-Phase bleiben normal verborgen. Bearbeiten bleibt trotzdem
+    Missionsbauern vorbehalten (siehe patch/delete_phase und live.py)."""
+    locked_ids = set(
+        db.scalars(
+            select(Phase.id).where(
+                Phase.plan_id == plan_id, Phase.plane == "player", Phase.locked.is_(True)
+            )
+        )
+    )
+    if not locked_ids:
+        return set()
+    return set(
+        db.scalars(
+            select(Phase.id).where(
+                Phase.plan_id == plan_id, Phase.plane == "builder", Phase.parent_id.in_(locked_ids),
+                Phase.sub_ordering == 0,
+            )
+        )
+    )
+
+
+def _snapshot(
+    db: Session, plan: Plan, *, include_builder: bool = True, visible_builder_ids: set[str] | None = None
+) -> dict:
     markers = list(db.scalars(select(Marker).where(Marker.plan_id == plan.id)))
     strokes = list(db.scalars(select(Stroke).where(Stroke.plan_id == plan.id)))
     anns = list(db.scalars(select(Annotation).where(Annotation.plan_id == plan.id)))
     imgs = list(db.scalars(select(PlanImage).where(PlanImage.plan_id == plan.id)))
     placements = list(db.scalars(select(ImagePlacement).where(ImagePlacement.plan_id == plan.id)))
     if not include_builder:
-        hide = _builder_phase_ids(db, plan.id)
+        hide = _builder_phase_ids(db, plan.id) - (visible_builder_ids or set())
         markers = [m for m in markers if m.phase_id not in hide]
         strokes = [s for s in strokes if s.phase_id not in hide]
         anns = [a for a in anns if a.phase_id not in hide]
@@ -241,10 +268,10 @@ def create_plan(body: PlanCreateIn, request: Request, user: CurrentUser, db: DbD
     db.flush()
     db.add(PlanACL(plan_id=plan.id, subject_type="user", subject_id=user.id, level="owner"))
     db.add(Layer(plan_id=plan.id, name="Allgemein", is_default=True))
-    base = Phase(plan_id=plan.id, name="Base", ordering=0)
+    base = Phase(plan_id=plan.id, name="Base", ordering=0, locked=True)
     db.add(base)
     db.flush()
-    db.add(Phase(plan_id=plan.id, name="Base", ordering=0, plane="builder", parent_id=base.id))
+    db.add(Phase(plan_id=plan.id, name="Base", ordering=0, plane="builder", parent_id=base.id, locked=True))
     db.commit()
     audit.record(db, "plan.create", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request, name=plan.name, map_id=plan.map_id)
@@ -397,10 +424,10 @@ def get_snapshot(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> dict:
     builder = effective_mission_builder(db, user)
     phase_rows = list(db.scalars(select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering)))
     if not phase_rows:  # Altbestand: fehlende Standard-Phase nachziehen
-        base = Phase(plan_id=plan.id, name="Base", ordering=0)
+        base = Phase(plan_id=plan.id, name="Base", ordering=0, locked=True)
         db.add(base)
         db.flush()
-        db.add(Phase(plan_id=plan.id, name="Base", ordering=0, plane="builder", parent_id=base.id))
+        db.add(Phase(plan_id=plan.id, name="Base", ordering=0, plane="builder", parent_id=base.id, locked=True))
         db.commit()
         phase_rows = list(db.scalars(select(Phase).where(Phase.plan_id == plan.id)))
     if builder:
@@ -410,12 +437,16 @@ def get_snapshot(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> dict:
                 select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering, Phase.sub_ordering)
             )
         )
-    phases = [p for p in phase_rows if builder or (p.plane or "player") == "player"]
+    released = _released_builder_phase_ids(db, plan.id)
+    phases = [
+        p for p in phase_rows
+        if builder or (p.plane or "player") == "player" or p.id in released
+    ]
     layers = db.scalars(select(Layer).where(Layer.plan_id == plan.id).order_by(Layer.ordering))
     from ..models import Map
 
     mp = db.get(Map, plan.map_id)
-    snap = _snapshot(db, plan, include_builder=builder)
+    snap = _snapshot(db, plan, include_builder=builder, visible_builder_ids=released)
     # Ersteller-Namen für die Marker-Anzeige (Hover) anreichern – nur hier,
     # nicht in _snapshot (dessen Output wird für Versionen/Klonen als Marker-kwargs
     # wiederverwendet).
@@ -475,6 +506,7 @@ def _phase_out(p: Phase) -> dict:
         "plane": p.plane or "player", "parent_id": p.parent_id, "sub_ordering": p.sub_ordering or 0,
         "start_at": p.start_at.isoformat() if p.start_at else None,
         "end_at": p.end_at.isoformat() if p.end_at else None,
+        "locked": bool(p.locked),
     }
 
 
@@ -501,7 +533,9 @@ def list_phases(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> list[dict]:
         _ensure_builder_pairs(db, plan.id)
     q = select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering, Phase.sub_ordering)
     if not builder:
-        q = q.where(Phase.plane == "player")
+        released = _released_builder_phase_ids(db, plan.id)
+        cond = Phase.plane == "player"
+        q = q.where(cond | Phase.id.in_(released) if released else cond)
     return [_phase_out(p) for p in db.scalars(q)]
 
 
@@ -565,6 +599,8 @@ def delete_phase(phase_id: str, plan: EditorPlan, user: CurrentUser, db: DbDep) 
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     if p.plane == "builder" and not effective_mission_builder(db, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN)
+    if p.locked:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Phase ist gesperrt und kann nicht gelöscht werden")
     victims = [p.id]
     if p.plane == "player":  # Spieler-Phase löschen → alle Builder-Kinder mit
         victims += list(db.scalars(select(Phase.id).where(Phase.parent_id == p.id)))

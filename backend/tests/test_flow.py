@@ -275,7 +275,9 @@ def test_share_create_rate_limit(admin):
 
 
 def test_mission_builder_planes(admin):
-    """Builder-Phasen + deren Marker sind für Nicht-Missionsbauer unsichtbar."""
+    """Builder-Phasen + deren Marker sind für Nicht-Missionsbauer unsichtbar —
+    AUSSER der an die gesperrte "Base"-Phase gekoppelten Builder-Phase, die für
+    alle sichtbar (aber weiterhin nur für Missionsbauer bearbeitbar) ist."""
     from fastapi.testclient import TestClient
 
     from app.db import SessionLocal
@@ -299,33 +301,52 @@ def test_mission_builder_planes(admin):
     ])
 
     phases = admin.get(f"/plans/{pid}/phases").json()
-    builder_ph = next(p for p in phases if p["plane"] == "builder")
     player_ph = next(p for p in phases if p["plane"] == "player")
+    released_ph = next(p for p in phases if p["plane"] == "builder")  # an gesperrte Base gekoppelt
+    assert player_ph["locked"] is True and released_ph["locked"] is True
 
-    # Admin (= Missionsbauer) legt einen Marker auf der Builder-Phase an
+    # Echte Missionsbau-Zwischenphase (Base-Kind) — bleibt für Spieler verborgen.
+    hidden_ph = admin.post(f"/plans/{pid}/phases", json={
+        "name": "1.1", "plane": "builder", "parent_id": player_ph["id"],
+    }).json()
+    assert hidden_ph["locked"] is False
+
+    # Admin (= Missionsbauer) legt je einen Marker auf allen drei Phasen an
     with admin.websocket_connect(f"/plans/{pid}/live") as ws:
         assert ws.receive_json()["mission_builder"] is True
         ws.receive_json()
-        ws.send_json({"type": "marker.create", "cid": "b1", "data": {
-            "sidc": "1", "world_x": 1.0, "world_y": 1.0, "phase_id": builder_ph["id"]}})
+        ws.send_json({"type": "marker.create", "cid": "r1", "data": {
+            "sidc": "1", "world_x": 1.0, "world_y": 1.0, "phase_id": released_ph["id"]}})
+        ws.receive_json()
+        ws.send_json({"type": "marker.create", "cid": "h1", "data": {
+            "sidc": "1", "world_x": 1.5, "world_y": 1.5, "phase_id": hidden_ph["id"]}})
         ws.receive_json()
         ws.send_json({"type": "marker.create", "cid": "p1", "data": {
             "sidc": "1", "world_x": 2.0, "world_y": 2.0, "phase_id": player_ph["id"]}})
         ws.receive_json()
 
-    # grunt (kein Missionsbauer): sieht nur die Spieler-Phase + den Spieler-Marker
+    # grunt (kein Missionsbauer): sieht Spieler-Phase + freigegebene Base-Builder-Phase,
+    # aber NICHT die echte Missionsbau-Zwischenphase.
     with TestClient(app) as c:
         c.post("/auth/login", json={"username": "grunt", "password": "grunt-pass-1234"})
         snap = c.get(f"/plans/{pid}/snapshot").json()
-        assert all(p["plane"] == "player" for p in snap["phases"])
-        assert [m["world_x"] for m in snap["markers"]] == [2.0]
-        # grunt darf nicht auf einer Builder-Phase setzen
+        assert {p["id"] for p in snap["phases"]} == {player_ph["id"], released_ph["id"]}
+        assert sorted(m["world_x"] for m in snap["markers"]) == [1.0, 2.0]
+        # grunt darf auf KEINER der beiden Builder-Phasen setzen — auch nicht der
+        # sichtbaren.
         with c.websocket_connect(f"/plans/{pid}/live") as ws:
             assert ws.receive_json()["mission_builder"] is False
             ws.receive_json()
             ws.send_json({"type": "marker.create", "cid": "x", "data": {
-                "sidc": "1", "world_x": 0.0, "world_y": 0.0, "phase_id": builder_ph["id"]}})
+                "sidc": "1", "world_x": 0.0, "world_y": 0.0, "phase_id": hidden_ph["id"]}})
             assert ws.receive_json()["type"] == "reject"
+            ws.send_json({"type": "marker.create", "cid": "y", "data": {
+                "sidc": "1", "world_x": 0.0, "world_y": 0.0, "phase_id": released_ph["id"]}})
+            assert ws.receive_json()["type"] == "reject"
+
+    # Die gesperrte Spieler-Phase kann nicht gelöscht werden.
+    assert admin.delete(f"/plans/{pid}/phases/{player_ph['id']}").status_code == 400
+    assert admin.delete(f"/plans/{pid}/phases/{released_ph['id']}").status_code == 400
 
 
 def test_orbat_library(admin):

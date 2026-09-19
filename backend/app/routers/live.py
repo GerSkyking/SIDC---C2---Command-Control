@@ -55,24 +55,47 @@ def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str, dict,
 
 
 _BUILDER_PHASES: dict[str, set[str]] = {}
+_RELEASED_BUILDER_PHASES: dict[str, set[str]] = {}
 
 
 def _refresh_builder_phases(plan_id: str) -> set[str]:
     with SessionLocal() as db:
-        ids = set(
-            db.scalars(select(Phase.id).where(Phase.plan_id == plan_id, Phase.plane == "builder"))
+        rows = list(
+            db.scalars(select(Phase).where(Phase.plan_id == plan_id, Phase.plane == "builder"))
         )
+        ids = {p.id for p in rows}
+        locked_ids = set(
+            db.scalars(
+                select(Phase.id).where(
+                    Phase.plan_id == plan_id, Phase.plane == "player", Phase.locked.is_(True)
+                )
+            )
+        )
+        # 1:1 gepaarte "Spiegel"-Phase (sub_ordering 0) einer gesperrten Spieler-
+        # Phase — für alle sichtbar. Echte Zwischenphasen (sub_ordering >= 1)
+        # bleiben builder-only, auch unter derselben Spieler-Phase.
+        released = {p.id for p in rows if p.parent_id in locked_ids and (p.sub_ordering or 0) == 0}
     _BUILDER_PHASES[plan_id] = ids
+    _RELEASED_BUILDER_PHASES[plan_id] = released
     return ids
 
 
 def _phase_is_builder(plan_id: str, phase_id: str | None) -> bool:
+    """Für's Bearbeiten-Gate: JEDE Builder-Phase, auch die freigegebene."""
     if not phase_id:
         return False
     ids = _BUILDER_PHASES.get(plan_id)
     if ids is None or phase_id not in ids:
         ids = _refresh_builder_phases(plan_id)
     return phase_id in ids
+
+
+def _phase_is_hidden_builder(plan_id: str, phase_id: str | None) -> bool:
+    """Für die Broadcast-Sichtbarkeit: Builder-Phase, AUSSER der an eine gesperrte
+    Spieler-Phase gekoppelten "Spiegel"-Phase (die geht an alle Sockets)."""
+    if not _phase_is_builder(plan_id, phase_id):
+        return False
+    return phase_id not in _RELEASED_BUILDER_PHASES.get(plan_id, set())
 
 
 def _marker_out(m: Marker, author: str | None = None) -> dict:
@@ -139,8 +162,14 @@ async def _handle(
     t = msg.get("type")
 
     def bo(phase_id: str | None) -> bool:
-        """builder_only: Op betrifft eine Builder-Phase → nur an Missionsbau-Sockets."""
+        """Bearbeiten-Gate: JEDE Builder-Phase (auch die freigegebene) ist Missionsbauern
+        vorbehalten."""
         return _phase_is_builder(plan_id, phase_id)
+
+    def hb(phase_id: str | None) -> bool:
+        """builder_only fürs Broadcasten: Builder-Phase, AUSSER der an eine gesperrte
+        Spieler-Phase gekoppelten "Spiegel"-Phase → die geht an alle Sockets."""
+        return _phase_is_hidden_builder(plan_id, phase_id)
 
     # presence.cursor immer erlaubt (auch für Nur-Leser sinnvoll: "Zeigen")
     if t == "presence.cursor":
@@ -201,7 +230,7 @@ async def _handle(
         m = await run_in_threadpool(_create_marker, plan_id, user.id, data)
         await hub.broadcast(
             plan_id, {"type": "marker.upsert", "cid": msg.get("cid"), "marker": m},
-            builder_only=bo(m.get("phase_id")),
+            builder_only=hb(m.get("phase_id")),
         )
 
     elif t == "marker.move":
@@ -226,7 +255,7 @@ async def _handle(
         pid = await run_in_threadpool(_delete_marker, plan_id, msg["id"], is_owner)
         if pid is not False:
             await hub.broadcast(
-                plan_id, {"type": "marker.delete", "id": msg["id"]}, builder_only=bo(pid)
+                plan_id, {"type": "marker.delete", "id": msg["id"]}, builder_only=hb(pid)
             )
         else:
             await _reject(ws, msg.get("cid"), "Marker gesperrt oder nicht vorhanden")
@@ -235,7 +264,7 @@ async def _handle(
         s = await run_in_threadpool(_create_stroke, plan_id, user.id, msg.get("data", {}))
         await hub.broadcast(
             plan_id, {"type": "stroke.upsert", "cid": msg.get("cid"), "stroke": s},
-            builder_only=bo(s.get("phase_id")),
+            builder_only=hb(s.get("phase_id")),
         )
 
     elif t == "stroke.modify":
@@ -243,20 +272,20 @@ async def _handle(
         if s is not None:
             await hub.broadcast(
                 plan_id, {"type": "stroke.upsert", "stroke": s},
-                builder_only=bo(s.get("phase_id")),
+                builder_only=hb(s.get("phase_id")),
             )
 
     elif t == "stroke.delete":
         pid = await run_in_threadpool(_delete_stroke, plan_id, msg["id"])
         await hub.broadcast(
-            plan_id, {"type": "stroke.delete", "id": msg["id"]}, builder_only=bo(pid)
+            plan_id, {"type": "stroke.delete", "id": msg["id"]}, builder_only=hb(pid)
         )
 
     elif t == "annotation.create":
         a = await run_in_threadpool(_create_annotation, plan_id, user.id, msg.get("data", {}))
         await hub.broadcast(
             plan_id, {"type": "annotation.upsert", "cid": msg.get("cid"), "annotation": a},
-            builder_only=bo(a.get("phase_id")),
+            builder_only=hb(a.get("phase_id")),
         )
 
     elif t in ("annotation.move", "annotation.modify"):
@@ -268,13 +297,13 @@ async def _handle(
         if res is not None:
             await hub.broadcast(
                 plan_id, {"type": "annotation.upsert", "annotation": res},
-                builder_only=bo(res.get("phase_id")),
+                builder_only=hb(res.get("phase_id")),
             )
 
     elif t == "annotation.delete":
         pid = await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
         await hub.broadcast(
-            plan_id, {"type": "annotation.delete", "id": msg["id"]}, builder_only=bo(pid)
+            plan_id, {"type": "annotation.delete", "id": msg["id"]}, builder_only=hb(pid)
         )
 
     elif t == "image.modify":
@@ -283,13 +312,13 @@ async def _handle(
         if res is not None:
             await hub.broadcast(
                 plan_id, {"type": "image.upsert", "image": res},
-                builder_only=bo(res.get("phase_id")),
+                builder_only=hb(res.get("phase_id")),
             )
 
     elif t == "image.delete":
         pid = await run_in_threadpool(_delete_image, plan_id, msg["id"])
         await hub.broadcast(
-            plan_id, {"type": "image.delete", "id": msg["id"]}, builder_only=bo(pid)
+            plan_id, {"type": "image.delete", "id": msg["id"]}, builder_only=hb(pid)
         )
 
     elif t == "placement.create":
@@ -298,7 +327,7 @@ async def _handle(
         if p is not None:
             await hub.broadcast(
                 plan_id, {"type": "placement.upsert", "cid": msg.get("cid"), "placement": p},
-                builder_only=bo(p.get("phase_id")),
+                builder_only=hb(p.get("phase_id")),
             )
         else:
             await _reject(ws, msg.get("cid"), "Bild nicht gefunden")
@@ -309,13 +338,13 @@ async def _handle(
         if res is not None:
             await hub.broadcast(
                 plan_id, {"type": "placement.upsert", "placement": res},
-                builder_only=bo(res.get("phase_id")),
+                builder_only=hb(res.get("phase_id")),
             )
 
     elif t == "placement.delete":
         pid = await run_in_threadpool(_delete_placement, plan_id, msg["id"])
         await hub.broadcast(
-            plan_id, {"type": "placement.delete", "id": msg["id"]}, builder_only=bo(pid)
+            plan_id, {"type": "placement.delete", "id": msg["id"]}, builder_only=hb(pid)
         )
 
 
@@ -325,7 +354,7 @@ async def _emit_update(ws: WebSocket, plan_id: str, msg: dict, res: dict | None)
     else:
         await hub.broadcast(
             plan_id, {"type": "marker.upsert", "marker": res},
-            builder_only=_phase_is_builder(plan_id, res.get("phase_id")),
+            builder_only=_phase_is_hidden_builder(plan_id, res.get("phase_id")),
         )
 
 

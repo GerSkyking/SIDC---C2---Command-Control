@@ -195,6 +195,10 @@ class Phase(Base):
     end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))     # optionales Ende
     notes: Mapped[str] = mapped_column(Text, default="")  # Markdown-Notizen zur Phase
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    # Nur die initiale "Base"-Spielerphase: nicht löschbar, und ihre gepaarte
+    # Missionsbau-Phase ist für ALLE (nicht nur Missionsbauer) sichtbar — aber
+    # weiterhin nur von Missionsbauern bearbeitbar (siehe live.py/plans.py).
+    locked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class Layer(Base):
