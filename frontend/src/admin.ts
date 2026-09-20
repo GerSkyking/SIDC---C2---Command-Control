@@ -31,16 +31,15 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   };
 
   if (section === "config") {
-    const [maps, sources, catStatus, imprint, privacy, packs] = await Promise.all([
+    const [maps, sources, catStatus, imprint, privacy] = await Promise.all([
       api.maps().catch(() => []),
       api.mapSources().catch(() => []),
       api.catalogStatus().catch(() => ({}) as Record<string, boolean>),
       api.legal("imprint").catch(() => ({ content: null })),
       api.legal("privacy").catch(() => ({ content: null })),
-      api.clientPacks().catch(() => ({})),
     ]);
     const legalStatus = { imprint: !!imprint.content, privacy: !!privacy.content };
-    app.innerHTML = shell(configHtml(maps, sources, catStatus, legalStatus, packs), t("admin.config"));
+    app.innerHTML = shell(configHtml(maps, sources, catStatus, legalStatus), t("admin.config"));
     postShell(app);
     wireConfig(app.querySelector<HTMLElement>(".list")!, reload);
     return;

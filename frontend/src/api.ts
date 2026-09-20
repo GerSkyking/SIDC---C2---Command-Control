@@ -52,16 +52,6 @@ export interface ApiTokenItem {
   revoked: boolean;
 }
 
-export interface ClientPackInfo {
-  map_name: string;
-  version: string;
-  size_bytes: number;
-  files: number;
-  uploaded_at: string | null;
-  layers: Record<string, { qualities: string[]; default_quality: string | null }>;
-  masks?: Record<string, { qualities: string[]; default_quality: string | null }>;
-}
-
 export interface MapSource {
   id: string;
   kind: string;
@@ -284,15 +274,6 @@ export const api = {
   reimportMap: (id: string) => req<MapItem>("POST", `/api/maps/${id}/reimport`),
   uploadMapFile: (id: string, name: string, file: File, onProgress?: (pct: number) => void) =>
     uploadZip<MapItem>(`/api/maps/${id}/upload?name=${encodeURIComponent(name)}`, file, onProgress),
-  uploadClientPack: (id: string, file: File, onProgress?: (pct: number) => void) =>
-    uploadZip<ClientPackInfo>(`/api/maps/${id}/client-pack`, file, onProgress),
-  deleteClientPack: (id: string) => req<{ ok: boolean }>("DELETE", `/api/maps/${id}/client-pack`),
-  /** Karten mit Client-Pack (Cookie-Session genügt, gleiche Route wie der lokale Client). */
-  clientPacks: () =>
-    req<{ maps: { id: string; name: string; client_pack: ClientPackInfo }[] }>("GET", "/api/client/ping").then(
-      (r) => Object.fromEntries(r.maps.map((m) => [m.id, m.client_pack])) as Record<string, ClientPackInfo>,
-    ),
-
   apiTokens: () => req<ApiTokenItem[]>("GET", "/api/tokens"),
   createApiToken: (name: string, expires_days: number | null) =>
     req<ApiTokenItem & { token: string }>("POST", "/api/tokens", { name, expires_days }),

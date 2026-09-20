@@ -10,7 +10,8 @@ from .db import get_db
 from .models import ApiToken, Plan, User
 from .permissions import effective_level, rank
 from .security import SESSION_COOKIE, read_session
-from .tokens import resolve_token
+from .ratelimit import hit_limit
+from .tokens import SCOPE_MAPS_READ, resolve_token
 
 DbDep = Annotated[Session, Depends(get_db)]
 
@@ -85,3 +86,19 @@ def require_plan_level(min_level: str):
         return plan
 
     return _dep
+
+
+# Pro Token und Minute. Eine Karte scrollend braucht ein paar Dutzend Kacheln; das Limit
+# bremst nur Massen-Abruf. Cookie-Sessions (Browser) bleiben unbegrenzt wie bisher.
+_TOKEN_MAPS_LIMIT = 6000
+
+
+def _maps_reader(auth: Annotated[ClientAuth, Depends(require_client_scope(SCOPE_MAPS_READ))]) -> ClientAuth:
+    if auth.token is not None and not hit_limit(f"maps:{auth.token.id}", _TOKEN_MAPS_LIMIT, 60):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Zu viele Anfragen")
+    return auth
+
+
+# Lesezugriff auf Kartendaten: Cookie-Session ODER Bearer-Token mit Scope maps:read.
+# Nur an reinen Karten-GET-Routen verwendet (Kacheln, style.json, Zusatzdaten, Kartenliste).
+MapsReader = Annotated[ClientAuth, Depends(_maps_reader)]

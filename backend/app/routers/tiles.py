@@ -11,7 +11,7 @@ import sqlite3
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import JSONResponse
 
-from ..deps import CurrentUser, DbDep
+from ..deps import DbDep, MapsReader
 from ..models import Map
 from ..services.maps_import import effective_maxzoom, map_dir
 
@@ -61,7 +61,7 @@ def _tile(map_id: str, layer: str, z: int, x: int, y: int, base_maxzoom: int) ->
 
 
 @router.get("/tiles/{layer}/{z}/{x}/{y}.png")
-def tile(map_id: str, layer: str, z: int, x: int, y: int, user: CurrentUser) -> Response:
+def tile(map_id: str, layer: str, z: int, x: int, y: int, auth: MapsReader) -> Response:
     data = read_tile(map_id, layer, z, x, y)
     if data is None:
         raise HTTPException(404)
@@ -69,7 +69,7 @@ def tile(map_id: str, layer: str, z: int, x: int, y: int, user: CurrentUser) -> 
 
 
 @router.get("/topo.geojson")
-def topo(map_id: str, user: CurrentUser) -> Response:
+def topo(map_id: str, auth: MapsReader) -> Response:
     p = map_dir(map_id) / "topo.geojson"
     if not p.is_file():
         raise HTTPException(404, "Kein Topo-Layer")
@@ -78,7 +78,7 @@ def topo(map_id: str, user: CurrentUser) -> Response:
 
 
 @router.get("/locations.json")
-def locations(map_id: str, user: CurrentUser) -> Response:
+def locations(map_id: str, auth: MapsReader) -> Response:
     p = map_dir(map_id) / "locations.json"
     if not p.is_file():
         raise HTTPException(404, "Keine Map-Locations")
@@ -87,7 +87,7 @@ def locations(map_id: str, user: CurrentUser) -> Response:
 
 
 @router.get("/contours.geojson")
-def contours(map_id: str, user: CurrentUser) -> Response:
+def contours(map_id: str, auth: MapsReader) -> Response:
     p = map_dir(map_id) / "contours.geojson"
     if not p.is_file():
         raise HTTPException(404, "Keine Hoehenlinien")
@@ -96,7 +96,7 @@ def contours(map_id: str, user: CurrentUser) -> Response:
 
 
 @router.get("/peaks.geojson")
-def peaks(map_id: str, user: CurrentUser) -> Response:
+def peaks(map_id: str, auth: MapsReader) -> Response:
     p = map_dir(map_id) / "peaks.geojson"
     if not p.is_file():
         raise HTTPException(404, "Keine Hoehenpunkte")
@@ -160,7 +160,7 @@ def read_tile(map_id: str, layer: str, z: int, x: int, y: int) -> bytes | None:
 
 
 @router.get("/style.json")
-def style_json(map_id: str, user: CurrentUser, db: DbDep) -> JSONResponse:
+def style_json(map_id: str, auth: MapsReader, db: DbDep) -> JSONResponse:
     if db.get(Map, map_id) is None:
         raise HTTPException(404, "Karte nicht gefunden")
     return JSONResponse(

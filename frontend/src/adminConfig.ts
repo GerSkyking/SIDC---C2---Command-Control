@@ -1,6 +1,6 @@
 // Admin → Config: Karten (Import/Update/Löschen), Gitea-Quellen, SIDC-Kataloge,
 // Backend-Neustart. Ein in sich geschlossener Baustein — `reload` rendert die Seite neu.
-import { api, ApiError, type ClientPackInfo, type MapItem, type MapSource } from "./api";
+import { api, ApiError, type MapItem, type MapSource } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { confirmDialog, toastError } from "./notify";
@@ -24,7 +24,6 @@ export function configHtml(
   sources: MapSource[],
   catStatus: Record<string, boolean>,
   legalStatus: Record<string, boolean>,
-  packs: Record<string, ClientPackInfo> = {},
 ): string {
   return `
     <div class="row"><h2 style="margin:0">${t("admin.maps")}</h2><span class="grow"></span>
@@ -36,11 +35,6 @@ export function configHtml(
             <td>${m.name} <span class="muted">${m.id}</span></td>
             <td><span class="badge">${m.status}</span></td>
             <td class="muted">${m.error ?? ""}</td>
-            <td>${packBadge(packs[m.id])}
-              <input type="file" accept=".zip" data-cpk="${m.id}" style="display:none" />
-              <button data-cpkbtn="${m.id}" title="${t("admin.clientPackHint")}">${t("admin.clientPack")}</button>
-              ${packs[m.id] ? `<button class="icon-btn" data-cpkdel="${m.id}" title="${t("common.delete")}">${icon("x", 16)}</button>` : ""}
-            </td>
             <td>
               <input type="file" accept=".zip" data-upd="${m.id}" style="display:none" />
               <button data-updbtn="${m.id}">${t("admin.update")}</button>
@@ -113,14 +107,6 @@ export function configHtml(
     ).join("")}</tbody></table>`;
 }
 
-function packBadge(p: ClientPackInfo | undefined): string {
-  if (!p) return `<span class="muted">${t("admin.clientPackNone")}</span>`;
-  const quals = [...new Set(Object.values(p.layers).flatMap((l) => l.qualities))].join("/");
-  const mb = (p.size_bytes / 1048576).toFixed(1);
-  const masks = Object.keys(p.masks ?? {}).length;
-  return `<span class="badge">${t("admin.clientPack")}: ${quals}${masks ? ` + ${masks} Mask` : ""} · ${mb} MB</span>`;
-}
-
 export function wireConfig(root: HTMLElement, reload: () => void): void {
   const q = <T extends HTMLElement>(s: string) => root.querySelector<T>(s);
   const mapId = () => q<HTMLInputElement>("#mid")!.value.trim();
@@ -173,34 +159,6 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
         setTimeout(reload, 1500);
       } catch (e) {
         prog().textContent = "";
-        fail(e);
-      }
-    }),
-  );
-  root.querySelectorAll<HTMLButtonElement>("[data-cpkbtn]").forEach((b) =>
-    b.addEventListener("click", () => q<HTMLInputElement>(`[data-cpk="${b.dataset.cpkbtn}"]`)!.click()),
-  );
-  root.querySelectorAll<HTMLInputElement>("[data-cpk]").forEach((inp) =>
-    inp.addEventListener("change", async () => {
-      const f = inp.files?.[0];
-      if (!f) return;
-      try {
-        await api.uploadClientPack(inp.dataset.cpk!, f, (p) => (prog().textContent = `Client-Pack ${p.toFixed(0)} %`));
-        prog().textContent = "";
-        reload();
-      } catch (e) {
-        prog().textContent = "";
-        fail(e);
-      }
-    }),
-  );
-  root.querySelectorAll<HTMLButtonElement>("[data-cpkdel]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (!(await confirmDialog(`${t("admin.clientPack")}: ${t("common.delete")}?`, { danger: true }))) return;
-      try {
-        await api.deleteClientPack(b.dataset.cpkdel!);
-        reload();
-      } catch (e) {
         fail(e);
       }
     }),

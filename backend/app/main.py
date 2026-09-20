@@ -117,7 +117,6 @@ async def security_headers(request, call_next):
 app.include_router(auth.router)
 app.include_router(api_tokens.router)
 app.include_router(client_api.router)
-app.include_router(client_api.admin_router)
 app.include_router(maps.router)
 app.include_router(map_sources.router)
 app.include_router(tiles.router)

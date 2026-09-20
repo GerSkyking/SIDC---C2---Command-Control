@@ -5,16 +5,16 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
-### Neu (Kartenserver für den lokalen SkyMap-X-Client)
+### Neu (Kartenserver für den lokalen ATAKmaps-Client)
 - **API-Tokens** (Einstellungen → „API-Tokens"): persönliche Tokens mit Scope `maps:read`,
   nur als SHA-256-Hash gespeichert (Klartext einmalig beim Erstellen), optionales Ablaufdatum,
-  Widerrufen, `last_used_at`. Ein Token funktioniert **ausschließlich** auf `/api/client/*` –
-  Pläne, Marker, Admin und Token-Verwaltung bleiben Cookie-only.
-- **Client-API** `/api/client/ping` + `/api/client/maps/{id}/files/…`: liefert nur Kartendaten
-  (Client-Pack). Rate-Limit pro Token, Pfad-/Endungs-Whitelist, keine Plan-Daten.
-- **Client-Pack** pro Karte (Admin → Config → Karten → „Client-Pack"): Kartenpaket im
-  Kachelformat der lokalen App (Pixel-Pyramide, Low/Mid), erzeugt mit dem Export-Tool der
-  lokalen App. Liegt außerhalb von `maps/<id>/` und überlebt daher Re-Importe der Karte.
+  Widerrufen, `last_used_at`.
+- **Token-Zugriff nur auf Karten-Lesen:** `GET /api/maps`, `/api/maps/{id}/tiles/…`, `style.json`,
+  `topo.geojson`, `locations.json`, `contours.geojson`, `peaks.geojson` akzeptieren zusätzlich zur
+  Cookie-Session einen `Authorization: Bearer`-Token (Rate-Limit pro Token). Pläne, Marker,
+  Admin, Kartenverwaltung und Token-Verwaltung bleiben Cookie-only.
+- `GET /api/client/ping` (Verbindungstest: Nutzer, Token, Protokoll) und `imported_at` in der
+  Kartenliste (Cache-Version für den Client).
 - Migration `0021_api_tokens`. Tests: `tests/test_client_api.py`.
 
 ### Neu (Roadmap-Batches)

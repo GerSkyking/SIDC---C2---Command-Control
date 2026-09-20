@@ -42,6 +42,7 @@ class MapOut(BaseModel):
     status: str
     error: str | None = None
     meta: dict = {}
+    imported_at: datetime | None = None  # ändert sich bei jedem (Re-)Import -> Cache-Version
 
 
 class MapSourceIn(BaseModel):
