@@ -84,6 +84,25 @@ class GroupMember(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
 
 
+class ApiToken(Base):
+    """Persönlicher API-Token (z. B. für den lokalen SkyMap-X-Client). Nur der SHA-256-Hash
+    wird gespeichert; der Klartext wird genau einmal beim Erstellen angezeigt. Ein Token
+    hat einen engen Scope (aktuell nur ``maps:read``) und kommt nie an Pläne heran."""
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    prefix: Mapped[str] = mapped_column(String(16))  # nur zur Anzeige ("sidc_ab12cd…")
+    scopes: Mapped[list] = mapped_column(JSON, default=lambda: ["maps:read"])
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 # ─── Karten ─────────────────────────────────────────────────────────────────
 
 class Map(Base):

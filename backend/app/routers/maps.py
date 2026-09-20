@@ -17,6 +17,7 @@ from ..deps import AdminUser, CurrentUser, DbDep
 from ..models import Map, MapSource, Plan, now
 from ..schemas import MapImportFromSourceIn, MapImportIn, MapOut
 from .map_sources import _list_files
+from ..services import client_pack
 from ..services.maps_import import map_dir, run_import
 
 router = APIRouter(prefix="/api/maps", tags=["maps"])
@@ -155,3 +156,4 @@ def delete_map(map_id: str, request: Request, admin: AdminUser, db: DbDep) -> No
     d = map_dir(map_id)
     if d.exists():
         shutil.rmtree(d, ignore_errors=True)
+    client_pack.delete_pack(map_id)

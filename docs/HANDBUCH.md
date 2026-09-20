@@ -245,6 +245,36 @@ danach Mappack neu exportieren und in C2 hochladen.
 Backend/Viewer brauchen die **verarbeitete** `locations.json` (Import-Tab
 „Verarbeiten & einpflegen", dann Export).
 
+### 7.1 Kartenserver für den lokalen SkyMap-X-Client
+
+C2 kann als **Kartenquelle für die lokale SkyMap-X-App** dienen. Nutzer müssen dann keine
+Kartenpakete selbst installieren; ihre Marker und Zeichnungen bleiben komplett lokal.
+
+**Ablauf**
+1. **Admin:** In der lokalen App das Client-Pack exportieren
+   (`scripts\10_export_client_pack.bat` bzw. `python -m tools.export_client_pack --map Arland`,
+   Standard: Qualitäten *Low + Mid*, ~5 MB je Karte) und in C2 unter *Admin → Config → Karten →
+   „Client-Pack"* bei der passenden Karte hochladen. Die Karte muss in C2 existieren.
+2. **Nutzer:** *Einstellungen → API-Tokens → Token erstellen*, Token kopieren.
+3. **Lokale App:** Wolken-Button (☁) → Name, Adresse (`https://…`) und Token eintragen →
+   „Speichern & verbinden".
+
+**Regeln**
+- Alle angemeldeten Nutzer dürfen alle Karten laden; es gibt keine Kartenrechte pro Nutzer.
+- Ein Token gibt nur Lesezugriff auf Kartendaten (`maps:read`). Pläne, Marker, Zeichnungen,
+  Nutzerdaten sind über Tokens nicht erreichbar; die lokale App sendet nichts an C2 außer
+  `GET`-Anfragen nach Kacheln.
+- Das Client-Pack enthält auch die Mask-Layer (Hillshade, Slope, Hypsometric, Contours; standardmäßig
+  Low). Der Wasser-Layer wird nicht mitgeliefert.
+- Der Token wird in der lokalen App im Windows-Anmeldeinformationsspeicher abgelegt.
+- Wird ein Token widerrufen, verliert der Client sofort den Zugriff; bereits geladene Kacheln
+  bleiben im lokalen Cache nutzbar.
+- **Mischmodus:** Ist dieselbe Karte lokal installiert (z. B. *High/SuperHigh*), bietet die App
+  beide Quellen in einer Qualitätsliste an (Server-Qualitäten mit ☁). Bei gleicher Qualität hat
+  die lokale Installation Vorrang. Ohne Kartenserver arbeitet die App rein lokal.
+- Neue Client-Pack-Version hochladen ⇒ Clients aktualisieren ihre Karte beim nächsten Start
+  bzw. „Speichern & verbinden" (Kacheln werden neu geladen).
+
 ## 8. Tastenkürzel
 
 | Taste | Wirkung |

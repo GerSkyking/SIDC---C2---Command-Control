@@ -192,6 +192,19 @@ export function openSettings(): void {
     <div class="row" style="margin-top:.8rem">
       <button data-reset>${t("settings.reset")}</button>
     </div>
+    <h4>${t("tok.title")}</h4>
+    <p class="muted" style="font-size:.78rem;margin:.2rem 0">${t("tok.hint")}</p>
+    <div id="tokBox"></div>
+    <div class="row" style="gap:.4rem;margin-top:.4rem">
+      <input id="tok-name" maxlength="64" placeholder="${esc(t("tok.name"))}" style="flex:1" />
+      <select id="tok-days">
+        <option value="">${t("tok.never")}</option>
+        <option value="30">30 ${t("tok.days")}</option>
+        <option value="90">90 ${t("tok.days")}</option>
+        <option value="365">365 ${t("tok.days")}</option>
+      </select>
+      <button id="tok-create">${t("tok.create")}</button>
+    </div>
     <h4>${t("settings.myData")}</h4>
     <div class="row" style="gap:.5rem">
       <button data-export>${icon("download", 16)} ${t("settings.exportData")}</button>
@@ -311,6 +324,78 @@ export function openSettings(): void {
     }
   });
 
+  wireTokens(back);
+
   document.addEventListener("keydown", onEsc, true);
   document.body.appendChild(back);
+}
+
+function wireTokens(root: HTMLElement): void {
+  const box = root.querySelector<HTMLElement>("#tokBox")!;
+  const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : null);
+
+  const render = async (fresh?: string) => {
+    let items;
+    try {
+      items = await api.apiTokens();
+    } catch (e) {
+      toastError(e);
+      return;
+    }
+    const rows = items
+      .map(
+        (tk) => `<div class="set-row" data-tok="${tk.id}">
+          <span><strong>${esc(tk.name)}</strong> <code>${esc(tk.prefix)}…</code>
+            <span class="muted" style="font-size:.78rem">
+              ${tk.revoked ? t("tok.revoked") : `${t("tok.lastUsed")}: ${fmt(tk.last_used_at) ?? t("tok.neverUsed")}`}
+              ${tk.expires_at ? ` · ${t("tok.expires")}: ${fmt(tk.expires_at)}` : ""}
+            </span></span>
+          ${tk.revoked ? "" : `<button class="danger" data-revoke="${tk.id}">${t("tok.revoke")}</button>`}
+        </div>`,
+      )
+      .join("");
+    box.innerHTML =
+      (fresh
+        ? `<div class="card" style="padding:.5rem;margin:.3rem 0">
+            <div style="font-size:.82rem">${t("tok.created")}</div>
+            <div class="row" style="gap:.4rem"><code style="flex:1;word-break:break-all;user-select:all">${esc(fresh)}</code>
+              <button data-tokcopy>${t("tok.copy")}</button></div>
+          </div>`
+        : "") + (rows || `<p class="muted">${t("tok.none")}</p>`);
+
+    box.querySelector<HTMLButtonElement>("[data-tokcopy]")?.addEventListener("click", async (e) => {
+      try {
+        await navigator.clipboard.writeText(fresh!);
+        (e.currentTarget as HTMLButtonElement).textContent = t("tok.copied");
+      } catch {
+        /* Clipboard nicht verfügbar — Token ist markierbar */
+      }
+    });
+    box.querySelectorAll<HTMLButtonElement>("[data-revoke]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        if (!(await confirmDialog(t("tok.revokeConfirm"), { danger: true, okLabel: t("tok.revoke") }))) return;
+        try {
+          await api.revokeApiToken(b.dataset.revoke!);
+          void render();
+        } catch (e) {
+          toastError(e);
+        }
+      }),
+    );
+  };
+
+  root.querySelector<HTMLButtonElement>("#tok-create")!.addEventListener("click", async () => {
+    const name = root.querySelector<HTMLInputElement>("#tok-name")!;
+    const days = root.querySelector<HTMLSelectElement>("#tok-days")!;
+    if (!name.value.trim()) return;
+    try {
+      const created = await api.createApiToken(name.value.trim(), days.value ? Number(days.value) : null);
+      name.value = "";
+      await render(created.token);
+    } catch (e) {
+      toastError(e);
+    }
+  });
+
+  void render();
 }

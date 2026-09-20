@@ -23,7 +23,9 @@ from .config import get_settings
 from .db import SessionLocal
 from .routers import (
     admin,
+    api_tokens,
     auth,
+    client_api,
     catalog,
     favorites,
     legal,
@@ -113,6 +115,9 @@ async def security_headers(request, call_next):
     return resp
 
 app.include_router(auth.router)
+app.include_router(api_tokens.router)
+app.include_router(client_api.router)
+app.include_router(client_api.admin_router)
 app.include_router(maps.router)
 app.include_router(map_sources.router)
 app.include_router(tiles.router)

@@ -5,6 +5,18 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### Neu (Kartenserver für den lokalen SkyMap-X-Client)
+- **API-Tokens** (Einstellungen → „API-Tokens"): persönliche Tokens mit Scope `maps:read`,
+  nur als SHA-256-Hash gespeichert (Klartext einmalig beim Erstellen), optionales Ablaufdatum,
+  Widerrufen, `last_used_at`. Ein Token funktioniert **ausschließlich** auf `/api/client/*` –
+  Pläne, Marker, Admin und Token-Verwaltung bleiben Cookie-only.
+- **Client-API** `/api/client/ping` + `/api/client/maps/{id}/files/…`: liefert nur Kartendaten
+  (Client-Pack). Rate-Limit pro Token, Pfad-/Endungs-Whitelist, keine Plan-Daten.
+- **Client-Pack** pro Karte (Admin → Config → Karten → „Client-Pack"): Kartenpaket im
+  Kachelformat der lokalen App (Pixel-Pyramide, Low/Mid), erzeugt mit dem Export-Tool der
+  lokalen App. Liegt außerhalb von `maps/<id>/` und überlebt daher Re-Importe der Karte.
+- Migration `0021_api_tokens`. Tests: `tests/test_client_api.py`.
+
 ### Neu (Roadmap-Batches)
 - **ACL beim Erstellen** ("Erstellen + Zugriff"), **Papierkorb** (`/plans/trash`,
   undelete/purge, `#/trash`), **Plan umbenennen** für Editor (nicht nur Owner).
