@@ -104,6 +104,21 @@ def peaks(map_id: str, auth: MapsReader) -> Response:
                     headers={"Cache-Control": "public, max-age=86400"})
 
 
+# Enfusion-TopoExport-Layer (aus dem ATAKmaps-Mappack, pipeline/enfusion_layers.py)
+ENFUSION_LAYERS = ("buildings", "roads", "water", "powerlines", "trees")
+
+
+@router.get("/{layer}.geojson")
+def enfusion_layer(map_id: str, layer: str, auth: MapsReader) -> Response:
+    if layer not in ENFUSION_LAYERS:
+        raise HTTPException(404)
+    p = map_dir(map_id) / f"{layer}.geojson"
+    if not p.is_file():
+        raise HTTPException(404, "Layer nicht vorhanden")
+    return Response(p.read_bytes(), media_type="application/geo+json",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
 def build_style(map_id: str, tile_base: str) -> dict:
     """MapLibre-style.json für eine Karte. `tile_base` = URL-Präfix der Tile-Routen
     (authentifiziert: /api/maps/<id>/tiles, öffentlich: /public/plans/<token>/tiles)."""

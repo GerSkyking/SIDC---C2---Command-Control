@@ -8,6 +8,7 @@ import { channelLabel, channelVisibility, type ChannelEntry } from "./sidc/catal
 import { ensureMapIcon, markerLabelOffsets } from "./sidc/symbol";
 import { markerLabelCategory } from "./sidc/sidc";
 import { t } from "./i18n";
+import { addEnfusionLayers, ENFUSION_MAPLIBRE_IDS, type EnfusionKey } from "./enfusionLayers";
 import { icon } from "./icons";
 import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
 import { makeMovable } from "./movable";
@@ -234,8 +235,14 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   });
 
   // ── Ebenen-Panel ──────────────────────────────────────────────────────
-  const baseVisible: Record<string, boolean> = { sat: true, grid: true, contours: true, peaks: true };
-  const overlay: Record<string, string[]> = { contours: ["contours-line", "contours-label"], peaks: ["peaks-sym"] };
+  const baseVisible: Record<string, boolean> = {
+    sat: true, grid: true, contours: true, peaks: true,
+    buildings: false, roads: false, water: false, powerlines: false, trees: false,
+  };
+  const overlay: Record<string, string[]> = {
+    contours: ["contours-line", "contours-label"], peaks: ["peaks-sym"], ...ENFUSION_MAPLIBRE_IDS,
+  };
+  let enfusionPresent: EnfusionKey[] = [];
   let hasContours = false;
   let hasPeaks = false;
   const layersPanel = root.querySelector<HTMLDivElement>("#layersPanel")!;
@@ -247,6 +254,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     for (const ly of ["sat", "grid"]) if (map.getLayer(ly)) ents.push([ly, ly]);
     if (hasContours) ents.push(["contours", t("layers.contours")]);
     if (hasPeaks) ents.push(["peaks", t("layers.peaks")]);
+    for (const k of enfusionPresent) ents.push([k, t(`layers.${k}`)]);
     for (const [name, label] of ents)
       rows.push(
         `<div class="layer-row"><label><input type="checkbox" data-base="${name}" ${
@@ -318,6 +326,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     } catch {
       /* keine Locations */
     }
+    enfusionPresent = await addEnfusionLayers(map, (k) => `/public/plans/${token}/${k}.geojson`);
     for (const [layer, srcName] of [
       ["contours", "contours"],
       ["peaks", "peaks"],

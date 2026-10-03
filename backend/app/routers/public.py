@@ -15,7 +15,7 @@ from ..services.maps_import import map_dir
 from ..services.realtime import hub
 from .live import _marker_out
 from .plans import _builder_phase_ids, _image_dict, _placement_dict, _stroke_dict, released_markers
-from .tiles import build_style, read_tile
+from .tiles import ENFUSION_LAYERS, build_style, read_tile
 
 router = APIRouter(prefix="/public/plans", tags=["public"])
 
@@ -215,6 +215,17 @@ def public_contours(token: str, db: DbDep) -> Response:
 def public_peaks(token: str, db: DbDep) -> Response:
     plan = _resolve(token, db)
     p = map_dir(plan.map_id) / "peaks.geojson"
+    if not p.is_file():
+        raise HTTPException(404)
+    return Response(p.read_bytes(), media_type="application/geo+json")
+
+
+@router.get("/{token}/{layer}.geojson")
+def public_enfusion_layer(token: str, layer: str, db: DbDep) -> Response:
+    if layer not in ENFUSION_LAYERS:
+        raise HTTPException(404)
+    plan = _resolve(token, db)
+    p = map_dir(plan.map_id) / f"{layer}.geojson"
     if not p.is_file():
         raise HTTPException(404)
     return Response(p.read_bytes(), media_type="application/geo+json")

@@ -5,6 +5,12 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### Neu (Enfusion-TopoExport-Layer)
+- **5 neue Karten-Ebenen** aus dem ATAKmaps-Mappack: Gebäude, Straßen & Wege, Gewässer,
+  Stromleitungen, Bäume (`buildings|roads|water|powerlines|trees.geojson`). Routen
+  `GET /api/maps/{id}/{layer}.geojson` (Cookie/Bearer) und `/public/plans/{token}/{layer}.geojson`;
+  im Ebenen-Panel (Editor + öffentliche Ansicht) schaltbar, standardmäßig aus, mit Deckkraft-Regler.
+
 ### Neu (Kartenserver für den lokalen ATAKmaps-Client)
 - **API-Tokens** (Einstellungen → „API-Tokens"): persönliche Tokens mit Scope `maps:read`,
   nur als SHA-256-Hash gespeichert (Klartext einmalig beim Erstellen), optionales Ablaufdatum,

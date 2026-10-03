@@ -20,6 +20,7 @@ import { openAclEditor } from "./acl";
 import { openHelp } from "./help";
 import { openVersionPanel } from "./versions";
 import { t } from "./i18n";
+import { addEnfusionLayers, ENFUSION_MAPLIBRE_IDS, setEnfusionOpacity, type EnfusionKey } from "./enfusionLayers";
 import { icon } from "./icons";
 import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
 import { actionForKey, getKeybinds, keyLabel, openSettings, type HotAction } from "./settings";
@@ -2225,12 +2226,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let locData: { langs: string[]; groups: LocGroup[] } | null = null;
   let mapLang = "en_us";
   const groupVisible = new Map<string, boolean>();
-  const baseLayerVisible: Record<string, boolean> = { sat: true, grid: true, contours: true, peaks: true };
+  const baseLayerVisible: Record<string, boolean> = {
+    sat: true, grid: true, contours: true, peaks: true,
+    buildings: false, roads: false, water: false, powerlines: false, trees: false,
+  };
   // Logische Overlay-Layer -> tatsaechliche MapLibre-Layer-IDs
   const overlayLayers: Record<string, string[]> = {
     contours: ["contours-line", "contours-label"],
     peaks: ["peaks-sym"],
+    ...ENFUSION_MAPLIBRE_IDS,
   };
+  let enfusionPresent: EnfusionKey[] = [];
   let hasContours = false;
   let hasPeaks = false;
 
@@ -2262,6 +2268,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           ["case", ["get", "bold"], 0.85, 0.5],
         ]);
       if (has("contours-label")) map.setPaintProperty("contours-label", "text-opacity", f);
+    } else if (name in ENFUSION_MAPLIBRE_IDS) {
+      setEnfusionOpacity(map, name as EnfusionKey, f);
     } else if (name === "peaks") {
       if (has("peaks-sym")) map.setPaintProperty("peaks-sym", "text-opacity", f);
     } else if (name === "locations") {
@@ -2334,7 +2342,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       /* keine Locations */
     }
     await addTerrainOverlays();
-    for (const n of ["sat", "grid", "contours", "peaks", "locations"])
+    for (const n of ["sat", "grid", "contours", "peaks", "locations", ...enfusionPresent])
       if (layerOpacity[n] != null) setLayerOpacity(n, layerOpacity[n]);
     buildLayersPanel();
     buildMapLangSelector();
@@ -2344,6 +2352,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Standardmaessig aus — Umschalten ueber das Ebenen-Panel.
   async function addTerrainOverlays(): Promise<void> {
     const beforeId = map.getLayer("strokes") ? "strokes" : undefined;
+    enfusionPresent = await addEnfusionLayers(map, (k) => `/api/maps/${mapId}/${k}.geojson`, beforeId);
     try {
       const r = await fetch(`/api/maps/${mapId}/contours.geojson`, { credentials: "include" });
       if (r.ok) {
@@ -2620,6 +2629,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       if (map.getLayer(ly)) entries.push([ly, ly, ly !== "terrain"]);
     if (hasContours) entries.push(["contours", t("layers.contours"), true]);
     if (hasPeaks) entries.push(["peaks", t("layers.peaks"), true]);
+    for (const k of enfusionPresent) entries.push([k, t(`layers.${k}`), true]);
 
     for (const [name, label, hasSlider] of entries) {
       const on = baseLayerVisible[name] !== false;

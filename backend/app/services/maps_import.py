@@ -9,6 +9,7 @@ ZIP-Struktur (ATAKmaps-Mappack, erweitert):
     mbtiles/grid.mbtiles                 (optional)
     mbtiles/dlc/<layer>_z<N>.mbtiles     (optional, hochauflösende Zoomstufen)
     topo.geojson                         (optional, Vektor-Overlay Straßen/Gewässer/…)
+    buildings|roads|water|powerlines|trees.geojson  (optional, Enfusion-TopoExport-Layer)
     mapLocations_locations.json          (optional, benannte Orte)
     mapLocations_translations.json       (optional, Ortsnamen je Sprache)
 """
@@ -137,6 +138,11 @@ def run_import(
             # Hoehenlinien + dominante Hoehenpunkte (pipeline/terrain_features.py)
             meta["has_contours"] = _validate_json(dest / "contours.geojson", "FeatureCollection")
             meta["has_peaks"] = _validate_json(dest / "peaks.geojson", "FeatureCollection")
+            # Enfusion-TopoExport-Layer (Gebaeude/Strassen/Wasser/Strom/Baeume)
+            meta["enfusion_layers"] = [
+                ly for ly in ("buildings", "roads", "water", "powerlines", "trees")
+                if _validate_json(dest / f"{ly}.geojson", "FeatureCollection")
+            ]
             loc = _validate_locations(dest)
             meta["has_locations"] = loc is not None
             if loc is not None:
