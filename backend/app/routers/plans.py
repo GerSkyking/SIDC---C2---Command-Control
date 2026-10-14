@@ -192,7 +192,7 @@ def _marker_dict(m: Marker) -> dict:
         "unit_text": m.unit_text, "ai_text": m.ai_text, "channel": m.channel,
         "locked": m.locked, "timestamp_visible": m.timestamp_visible,
         "linked_group_id": m.linked_group_id, "point_index": m.point_index,
-        "line_color": m.line_color, "line_width": m.line_width,
+        "line_color": m.line_color, "line_width": m.line_width, "tint": m.tint or "",
     }
 
 

@@ -149,8 +149,16 @@ const LINE_CM_FUNCTION_IDS = new Set<string>([
 /** Symbol-Set "25" (Control Measure) + Funktions-ID aus obiger Liste -> "line",
  * Symbol-Set "25" sonst -> "cm" (Punkt-Control-Measure), alles andere -> "default"
  * (Land Unit u. a.). Bestimmt, wo Einheitstext/Zusatztext relativ zum Symbol stehen. */
-export type MarkerLabelCategory = "default" | "cm" | "line";
+export type MarkerLabelCategory = "default" | "cm" | "line" | "text";
 export function markerLabelCategory(sidc: string): MarkerLabelCategory {
+  if (isTextMarker(sidc)) return "text";
   if (sidc.slice(4, 6) !== "25") return "default";
   return LINE_CM_FUNCTION_IDS.has(sidc.slice(10, 16)) ? "line" : "cm";
+}
+
+/** "Only Text Marker" (Kategorie Spezial / "Clear for Text"): kein Symbol-Set, keine
+ * Funktions-ID — es wird nur der Einheitstext angezeigt, ohne Icon/Punkt. */
+export function isTextMarker(sidc: string): boolean {
+  const s = (sidc || "").padEnd(30, "0");
+  return s.slice(4, 8) === "0000" && /^0+$/.test(s.slice(10));
 }

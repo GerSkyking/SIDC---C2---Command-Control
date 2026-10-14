@@ -176,6 +176,7 @@ class MarkerOut(BaseModel):
     point_index: int
     line_color: int
     line_width: float
+    tint: str = ""
 
 
 class StrokeOut(BaseModel):

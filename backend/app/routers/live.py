@@ -8,6 +8,7 @@ Server und werden gegen Rechte + Marker-Lock geprüft.
 from __future__ import annotations
 
 import logging
+import re
 
 from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
@@ -31,8 +32,18 @@ MARKER_FIELDS = (
     "phase_id", "layer_id", "orbat_node_id", "orbat_strength", "sidc", "world_x", "world_y",
     "rotation_degrees", "icon_rotation", "scale",
     "unit_text", "ai_text", "channel", "timestamp_visible",
-    "linked_group_id", "point_index", "line_color", "line_width",
+    "linked_group_id", "point_index", "line_color", "line_width", "tint",
 )
+
+_TINT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _clean_marker_fields(fields: dict) -> dict:
+    """Farbwert auf "#rrggbb" oder "" normalisieren (kommt ungeprüft vom Client)."""
+    if "tint" in fields:
+        v = fields["tint"]
+        fields["tint"] = v.lower() if isinstance(v, str) and _TINT_RE.match(v) else ""
+    return fields
 
 
 def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str, dict, bool] | None:
@@ -108,7 +119,7 @@ def _marker_out(m: Marker, author: str | None = None) -> dict:
         "author": author,
         "locked": m.locked, "timestamp_visible": m.timestamp_visible,
         "linked_group_id": m.linked_group_id, "point_index": m.point_index,
-        "line_color": m.line_color, "line_width": m.line_width,
+        "line_color": m.line_color, "line_width": m.line_width, "tint": m.tint or "",
     }
 
 
@@ -390,7 +401,7 @@ def _sync_node(db, node_id: str | None, *, delta: int = 0) -> None:
 
 def _create_marker(plan_id: str, uid: str, data: dict) -> dict:
     with SessionLocal() as db:
-        m = Marker(plan_id=plan_id, created_by=uid, updated_by=uid, **data)
+        m = Marker(plan_id=plan_id, created_by=uid, updated_by=uid, **_clean_marker_fields(data))
         db.add(m)
         db.commit()
         _sync_node(db, m.orbat_node_id,
@@ -407,7 +418,7 @@ def _update_marker(plan_id: str, marker_id: str, uid: str, is_owner: bool, field
             return None
         old_node = m.orbat_node_id
         old_loss = _losses(status_from_sidc(m.sidc), m.orbat_strength)
-        for k, v in fields.items():
+        for k, v in _clean_marker_fields(fields).items():
             setattr(m, k, v)
         m.updated_by = uid
         m.updated_at = now()

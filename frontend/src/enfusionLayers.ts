@@ -14,6 +14,18 @@ interface Def {
   base: number;
 }
 
+/** Strassenfarben: Hauptstrasse (+ Start-/Landebahn), Nebenstrasse, Pfade/Sonstige. */
+export interface RoadColors {
+  main: string;
+  secondary: string;
+  path: string;
+}
+export const ROAD_COLOR_DEFAULTS: RoadColors = { main: "#000000", secondary: "#4a2e14", path: "#8c8c8c" };
+
+function roadColorExpr(c: RoadColors): unknown {
+  return ["match", ["get", "typeName"], "runway", c.main, "main", c.main, "secondary", c.secondary, c.path];
+}
+
 const DEFS: Record<EnfusionKey, Def[]> = {
   buildings: [
     {
@@ -41,7 +53,7 @@ const DEFS: Record<EnfusionKey, Def[]> = {
         id: "roads-line", type: "line",
         layout: { "line-join": "round", "line-cap": "round" },
         paint: {
-          "line-color": ["match", ["get", "typeName"], "runway", "#000000", "main", "#000000", "secondary", "#4a2e14", "#8c8c8c"],
+          "line-color": roadColorExpr(ROAD_COLOR_DEFAULTS),
           "line-width": ["interpolate", ["exponential", 2], ["zoom"], 10, ["max", 0.6, ["*", ["get", "width"], 0.0131]], 20, ["*", ["get", "width"], 13.4]],
           "line-opacity": 1,
         },
@@ -125,6 +137,11 @@ export async function addEnfusionLayers(
     }
   }
   return present;
+}
+
+export function setRoadColors(map: MlMap, c: RoadColors): void {
+  if (map.getLayer("roads-line"))
+    map.setPaintProperty("roads-line", "line-color", roadColorExpr(c) as never);
 }
 
 export function setEnfusionOpacity(map: MlMap, key: EnfusionKey, f: number): void {

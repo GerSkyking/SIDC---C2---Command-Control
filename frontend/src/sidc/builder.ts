@@ -41,6 +41,7 @@ export interface BuilderOpts {
   initialSidc?: string;
   templateFields?: boolean; // Texte/Channel/Richtung/Flags zusätzlich anzeigen
   defaultChannel?: string;  // Vorauswahl im Channel-Dropdown (Sichtbarkeit!)
+  defaultAffiliation?: string; // Vorauswahl Zugehörigkeit (SIDC-Ziffer), Standard BLUFOR
   submitLabel?: string;
   onSidc?: (sidc: string) => void;
   onTemplate?: (tpl: MarkerTemplate) => void;
@@ -60,7 +61,7 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
 
   // Zustand
   let entry: CatalogEntry | null = null;
-  let aff = "1";
+  let aff = opts.defaultAffiliation ?? "3"; // BLUFOR, sofern nichts gewählt wurde
   let echelon = "00";
   const modSel: SidcModifiers = {};
 

@@ -5,8 +5,8 @@ import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 import { api } from "./api";
 import { channelLabel, channelVisibility, type ChannelEntry } from "./sidc/catalog";
-import { ensureMapIcon, markerLabelOffsets } from "./sidc/symbol";
-import { markerLabelCategory } from "./sidc/sidc";
+import { ensureMapIcon, mapIconId, markerLabelOffsets } from "./sidc/symbol";
+import { isTextMarker, markerLabelCategory } from "./sidc/sidc";
 import { t } from "./i18n";
 import { addEnfusionLayers, ENFUSION_MAPLIBRE_IDS, type EnfusionKey } from "./enfusionLayers";
 import { icon } from "./icons";
@@ -31,6 +31,7 @@ interface M {
   channel?: string;
   phase_id?: string | null;
   scale?: number;
+  tint?: string;
 }
 interface S {
   id: string;
@@ -191,10 +192,13 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   // ── Marker / Linien ───────────────────────────────────────────────────
   const loaded = new Set<string>();
   const missingIcons = new Set<string>();
-  const ensureIcon = async (sidc: string) => {
-    if (loaded.has(sidc)) return;
-    loaded.add(sidc);
-    if (!(await ensureMapIcon(map, sidc))) missingIcons.add(sidc);
+  const iconIdOf = (m: M): string => mapIconId(m.sidc, isTextMarker(m.sidc) ? "" : m.tint || "");
+  const ensureIcon = async (m: M) => {
+    if (isTextMarker(m.sidc)) return;
+    const id = iconIdOf(m);
+    if (loaded.has(id)) return;
+    loaded.add(id);
+    if (!(await ensureMapIcon(map, m.sidc, m.tint || ""))) missingIcons.add(id);
   };
   const mFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
@@ -207,13 +211,16 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         properties: {
           id: m.id,
           sidc: m.sidc,
+          icon: iconIdOf(m),
+          istext: isTextMarker(m.sidc),
+          tcolor: isTextMarker(m.sidc) ? m.tint || "" : "",
           labelcat: markerLabelCategory(m.sidc),
-          label: m.unit_text || "",
+          label: isTextMarker(m.sidc) ? m.unit_text || "Text" : m.unit_text || "",
           ai: m.ai_text || "",
           unitOff: labelOff.unit,
           aiOff: labelOff.ai,
           rot: m.icon_rotation || 0,
-          dot: missingIcons.has(m.sidc),
+          dot: missingIcons.has(iconIdOf(m)) && !isTextMarker(m.sidc),
           opacity: opacityOf(m),
           scale,
         },
@@ -467,7 +474,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   const refreshPeers = () => (map.getSource("peers") as GeoJSONSource)?.setData(peerFC());
 
   map.on("load", async () => {
-    await Promise.all([...new Set([...markers.values()].map((m) => m.sidc))].map(ensureIcon));
+    await Promise.all([...markers.values()].map(ensureIcon));
     void loadExtras();
     if (map.getSource("terrain-dem")) {
       /* Start in 2D: kein Terrain-Mesh */
@@ -527,8 +534,9 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       id: "m",
       type: "symbol",
       source: "m",
+      filter: ["!=", ["get", "istext"], true],
       layout: {
-        "icon-image": ["get", "sidc"],
+        "icon-image": ["get", "icon"],
         "icon-size": ["*", 0.8, ["coalesce", ["get", "scale"], 1]],
         "icon-rotate": ["get", "rot"],
         "icon-allow-overlap": true,
@@ -543,6 +551,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       "match", ["get", "labelcat"],
       "line", "bottom",
       "cm", "left",
+      "text", "center",
       "right",
     ];
     // Offset kommt aus der tatsächlichen Icon-Größe (unitOff/aiOff in mFC(),
@@ -552,12 +561,14 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       "match", ["get", "labelcat"],
       "line", "top",
       "cm", "bottom",
+      "text", "top",
       "left",
     ];
     const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = ["get", "aiOff"];
     const UNIT_TEXT_JUSTIFY: maplibregl.ExpressionSpecification = [
       "match", ["get", "labelcat"],
       "line", "center",
+      "text", "center",
       "cm", "left",
       "right",
     ];
@@ -565,6 +576,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       "match", ["get", "labelcat"],
       "line", "center",
       "cm", "center",
+      "text", "center",
       "left",
     ];
     map.addLayer({
@@ -580,7 +592,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         "text-allow-overlap": true,
       },
       paint: {
-        "text-color": "#e6e9ee",
+        "text-color": ["case", ["!=", ["get", "tcolor"], ""], ["get", "tcolor"], "#e6e9ee"],
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
         "text-opacity": unitAiOpacityExpr(showUnitAiLabels),
@@ -610,7 +622,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   });
 
   const refreshM = async () => {
-    await Promise.all([...new Set([...markers.values()].map((m) => m.sidc))].map(ensureIcon));
+    await Promise.all([...markers.values()].map(ensureIcon));
     (map.getSource("m") as GeoJSONSource)?.setData(mFC());
   };
   const refreshS = () => (map.getSource("s") as GeoJSONSource)?.setData(sFC());

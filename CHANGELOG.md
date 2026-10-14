@@ -5,6 +5,16 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### Neu (Marker-Farbe, Nur-Text-Marker, Kartenanpassung)
+- **Markerfarbe:** im Marker-Editor eine eigene Farbe wählen — färbt die schwarzen Symbolanteile
+  (Rahmenfarben bleiben); für alle sichtbar (Spalte `markers.tint`, Migration `0022_marker_tint`).
+- **Nur-Text-Marker** („Spezial → Clear for Text"): zeigt nur noch den Text, ohne Icon/Punkt;
+  Textfarbe frei wählbar.
+- **Straßenfarben** im Ebenen-Panel: Hauptstraße/Piste, Nebenstraße, Wege/Pfade (pro Browser).
+- **Sat-Bild anpassen:** Helligkeit, Kontrast, Sättigung; neue Ebene **Sat (vereinfacht)**
+  (weichgezeichnet, auf wenige Flächenfarben reduziert; Tiles serverseitig per Pillow).
+- Marker-Baukasten: Vorauswahl BLUFOR statt Unknown; im QuickMenü gewählte Fraktion wird übernommen.
+
 ### Neu (Enfusion-TopoExport-Layer)
 - **5 neue Karten-Ebenen** aus dem ATAKmaps-Mappack: Gebäude, Straßen & Wege, Gewässer,
   Stromleitungen, Bäume (`buildings|roads|water|powerlines|trees.geojson`). Routen

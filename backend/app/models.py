@@ -270,6 +270,9 @@ class Marker(Base):
     point_index: Mapped[int] = mapped_column(Integer, default=-1)
     line_color: Mapped[int] = mapped_column(Integer, default=-1)
     line_width: Mapped[float] = mapped_column(Float, default=-1)
+    # Eigene Farbe "#rrggbb" ("" = Standard): färbt dunkle Symbolanteile bzw. den Text
+    # eines Nur-Text-Markers.
+    tint: Mapped[str] = mapped_column(String(9), default="", server_default="")
 
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

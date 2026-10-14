@@ -461,3 +461,11 @@ def test_orbat_marker_link(admin):
         rel = [m for m in psnap["markers"] if m.get("released")]
         assert len(rel) == 1
         assert rel[0]["phase_id"] == player_ph["id"] and rel[0]["locked"] is True
+
+
+def test_marker_tint_is_sanitized():
+    from app.routers.live import _clean_marker_fields
+
+    assert _clean_marker_fields({"tint": "#A0B0C0"}) == {"tint": "#a0b0c0"}
+    assert _clean_marker_fields({"tint": "red"}) == {"tint": ""}
+    assert _clean_marker_fields({"sidc": "x"}) == {"sidc": "x"}

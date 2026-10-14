@@ -144,7 +144,7 @@ ATAKmaps, als Vektor-Geometrie).
 | **Zeitstrahl** | Phasen – siehe 4.6. |
 | **🗒️ Notizen** | Phasen-Notizfenster – siehe 4.7. |
 | **Karten-Sprache** | 13 Sprachen für die Orts-Labels auf der Karte (separat von der UI-Sprache). |
-| **☰ Ebenen** | Sat / Grid / Terrain, **Höhenlinien**, **Höhenpunkte** und die Orts-Gruppen einzeln ein-/ausblenden; je Ebene ein **Deckkraft-Regler** (0–100 %, pro Browser gespeichert). |
+| **☰ Ebenen** | Sat / Grid / Terrain, **Höhenlinien**, **Höhenpunkte** und die Orts-Gruppen einzeln ein-/ausblenden; je Ebene ein **Deckkraft-Regler** (0–100 %, pro Browser gespeichert). Zusätzlich: **Sat (vereinfacht)**, Regler für Helligkeit/Kontrast/Sättigung des Sat-Bilds und **Straßenfarben** (Hauptstraße, Nebenstraße, Wege). |
 | **🕑 Versionen** | Versionsverlauf – siehe 4.8. |
 | **? Hilfe** | Overlay mit Werkzeugen, Topbar und Tastenkürzeln (DE/EN). |
 | **Freigaben** (nur Owner) | Öffentliche Links + ACL – siehe 5 und 6. |

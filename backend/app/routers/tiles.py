@@ -148,6 +148,15 @@ def build_style(map_id: str, tile_base: str) -> dict:
             "tileSize": 256, "minzoom": min_z, "maxzoom": max_z, "bounds": bounds,
         }
         doc["layers"].append({"id": "sat", "type": "raster", "source": "sat"})
+        # Vereinfachte Karte als eigene, standardmäßig ausgeblendete Ebene
+        doc["sources"][SIMPLE_LAYER] = {
+            "type": "raster", "tiles": [f"{base}/{SIMPLE_LAYER}/{{z}}/{{x}}/{{y}}.png"],
+            "tileSize": 256, "minzoom": min_z, "maxzoom": max_z, "bounds": bounds,
+        }
+        doc["layers"].append({
+            "id": SIMPLE_LAYER, "type": "raster", "source": SIMPLE_LAYER,
+            "layout": {"visibility": "none"},
+        })
 
     if _conn(map_id, "grid") is not None:
         g_bounds = [float(v) for v in (grid.get("bounds") or bounds_str).split(",")]
@@ -167,7 +176,54 @@ def build_style(map_id: str, tile_base: str) -> dict:
     return doc
 
 
+# Vereinfachte Satellitenkarte: aus dem Sat-Tile abgeleitet (weichgezeichnet, auf wenige
+# flache Kartenfarben reduziert). Wird bei Bedarf berechnet und im Speicher gepuffert.
+SIMPLE_LAYER = "satsimple"
+_SIMPLE_PALETTE: tuple[tuple[int, int, int], ...] = (
+    (126, 168, 92),    # Wiese
+    (88, 138, 72),     # Busch/Feld dunkel
+    (52, 100, 56),     # Wald
+    (205, 192, 140),   # Acker/Sand
+    (166, 150, 112),   # Erde/Fels hell
+    (150, 150, 146),   # Fels/Beton
+    (226, 226, 220),   # Hell/Asphalt
+    (70, 120, 176),    # Wasser
+)
+_simple_cache: dict[tuple[str, int, int, int], bytes | None] = {}
+
+
+def _simple_tile(map_id: str, z: int, x: int, y: int) -> bytes | None:
+    key = (map_id, z, x, y)
+    if key in _simple_cache:
+        return _simple_cache[key]
+    try:
+        from PIL import Image, ImageFilter
+    except ImportError:  # Pillow nicht installiert -> Ebene steht nicht zur Verfügung
+        return None
+    import io
+
+    src = read_tile(map_id, "sat", z, x, y)
+    out: bytes | None = None
+    if src:
+        img = Image.open(io.BytesIO(src)).convert("RGB")
+        img = img.filter(ImageFilter.GaussianBlur(radius=max(2.0, img.width / 48)))
+        pal = Image.new("P", (1, 1))
+        flat = [c for rgb in _SIMPLE_PALETTE for c in rgb]
+        pal.putpalette(flat + [0] * (768 - len(flat)))
+        img = img.quantize(palette=pal, dither=Image.Dither.NONE).convert("RGB")
+        img = img.filter(ImageFilter.ModeFilter(5))  # Einzelpixel-Rauschen glätten
+        buf = io.BytesIO()
+        img.save(buf, "PNG", optimize=True)
+        out = buf.getvalue()
+    if len(_simple_cache) > 4000:
+        _simple_cache.clear()
+    _simple_cache[key] = out
+    return out
+
+
 def read_tile(map_id: str, layer: str, z: int, x: int, y: int) -> bytes | None:
+    if layer == SIMPLE_LAYER:
+        return _simple_tile(map_id, z, x, y)
     if layer not in _LAYERS:
         return None
     base_maxzoom = int(_meta(map_id, layer).get("maxzoom", 18))

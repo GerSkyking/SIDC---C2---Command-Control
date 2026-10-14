@@ -85,6 +85,12 @@ export async function openWizard(
   wrap.querySelector("[data-close]")!.addEventListener("click", close);
   wrap.addEventListener("click", (e) => e.target === wrap && close());
 
+  // Im QuickMenü gewählte Fraktion — der Baukasten übernimmt sie als Vorauswahl.
+  let pickedAff: string | null = null;
+  const onIdentity = (identity: string) => {
+    pickedAff = IDENTITY_TO_AFFILIATION[identity] ?? pickedAff;
+  };
+
   let tab: "quick" | "builder" = "quick";
   wrap.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach((b) =>
     b.addEventListener("click", () => {
@@ -239,6 +245,7 @@ export async function openWizard(
         renderMarkerBuilder(body, {
           templateFields: true,
           defaultChannel,
+          defaultAffiliation: pickedAff ?? "3",
           submitLabel: t("wiz.place"),
           onTemplate: (tpl) => {
             onPick(tpl);
@@ -253,7 +260,7 @@ export async function openWizard(
       body.innerHTML = `<p class="muted">Kein QuickMenü-Katalog hochgeladen.</p>`;
       return;
     }
-    renderQuick(body, quick.categoryRows.flatMap((r) => r.categories), cats!, configure);
+    renderQuick(body, quick.categoryRows.flatMap((r) => r.categories), cats!, configure, onIdentity);
   }
 
   render();
@@ -264,6 +271,7 @@ function renderQuick(
   categories: import("./catalog").QuickMenuCategory[],
   cats: CatalogCategory[],
   configure: (e: CatalogEntry, identity: string | null, btn?: QuickMenuButton) => void,
+  onIdentity: (identity: string) => void,
 ): void {
   const nav = document.createElement("div");
   nav.className = "wiz-quick";
@@ -310,6 +318,7 @@ function renderQuick(
 
   const openSubs = (cat: import("./catalog").QuickMenuCategory, back: () => void) => {
     const ident = cat.setsIdentity ? cat.identity : null;
+    if (ident) onIdentity(ident);
     const subs = cat.subCategories.filter(
       (s) => !isMain(translate(s.buttonLanguageKey || s.subCategoryName)),
     );

@@ -5,6 +5,7 @@ import type { GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
 import { channelLabel, channelVisibility, describe, loadAllMarkers, loadChannels, loadModifiers, loadPhaseLineStyle, loadTranslations, translate } from "./sidc/catalog";
 import {
+  isTextMarker,
   lngLatToWorld,
   markerLabelCategory,
   withModifiers,
@@ -15,12 +16,20 @@ import {
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
 import { confirmDialog, promptDialog, toast, toastError } from "./notify";
 import { makeMovable } from "./movable";
-import { ensureMapIcon, iconSrc, markerLabelOffsets } from "./sidc/symbol";
+import { ensureMapIcon, iconSrc, mapIconId, markerLabelOffsets } from "./sidc/symbol";
 import { openAclEditor } from "./acl";
 import { openHelp } from "./help";
 import { openVersionPanel } from "./versions";
 import { t } from "./i18n";
-import { addEnfusionLayers, ENFUSION_MAPLIBRE_IDS, setEnfusionOpacity, type EnfusionKey } from "./enfusionLayers";
+import {
+  addEnfusionLayers,
+  ENFUSION_MAPLIBRE_IDS,
+  ROAD_COLOR_DEFAULTS,
+  setEnfusionOpacity,
+  setRoadColors,
+  type EnfusionKey,
+  type RoadColors,
+} from "./enfusionLayers";
 import { icon } from "./icons";
 import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
 import { actionForKey, getKeybinds, keyLabel, openSettings, type HotAction } from "./settings";
@@ -61,6 +70,7 @@ interface Marker {
   rotation_degrees: number;
   icon_rotation: number;
   scale?: number;
+  tint?: string;
   phase_id: string | null;
   layer_id: string | null;
   orbat_node_id?: string | null;
@@ -204,6 +214,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     return out;
   };
   const markerLabel = (m: Marker): string => {
+    if (isTextMarker(m.sidc)) return m.unit_text || "Text";
     const base = m.unit_text || nameBySidc.get(m.sidc.slice(4, 6) + m.sidc.slice(10, 16)) || "";
     return [base, ...markerModifierLabels(m.sidc)].filter(Boolean).join(", ");
   };
@@ -461,11 +472,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   const loadedIcons = new Set<string>();
   const missingIcons = new Set<string>(); // weder milsymbol noch PNG → Ersatzpunkt
-  async function ensureIcon(sidc: string): Promise<void> {
-    if (loadedIcons.has(sidc) || map.hasImage(sidc)) return;
-    loadedIcons.add(sidc);
-    const ok = await ensureMapIcon(map, sidc);
-    if (!ok) missingIcons.add(sidc);
+  // Icon-Id = SIDC (+ "|#farbe" bei eigener Markerfarbe)
+  const iconIdOf = (m: Marker): string => mapIconId(m.sidc, isTextMarker(m.sidc) ? "" : m.tint || "");
+  async function ensureIcon(m: Marker): Promise<void> {
+    if (isTextMarker(m.sidc)) return; // Nur-Text-Marker hat kein Icon
+    const id = iconIdOf(m);
+    if (loadedIcons.has(id) || map.hasImage(id)) return;
+    loadedIcons.add(id);
+    const ok = await ensureMapIcon(map, m.sidc, m.tint || "");
+    if (!ok) missingIcons.add(id);
   }
 
   const markerFC = (): GeoJSON.FeatureCollection => ({
@@ -482,6 +497,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         properties: {
           id: m.id,
           sidc: m.sidc,
+          icon: iconIdOf(m),
+          // Textfarbe (nur Nur-Text-Marker; sonst leer = Standardfarbe)
+          tcolor: isTextMarker(m.sidc) ? m.tint || "" : "",
+          istext: isTextMarker(m.sidc),
           // "default" (Land Unit u. a.) / "cm" (Punkt-Control-Measure) / "line"
           // (linienhaftes Control-Measure-Symbol, z. B. Phase Line) — bestimmt, wo
           // Einheitstext/Zusatztext relativ zum Symbol stehen.
@@ -492,7 +511,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           aiOff: labelOff.ai,
           rot: m.icon_rotation || 0,
           locked: m.locked,
-          dot: missingIcons.has(m.sidc),
+          dot: missingIcons.has(iconIdOf(m)) && !isTextMarker(m.sidc),
           opacity: phaseOpacity(m),
           scale,
         },
@@ -654,7 +673,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   map.on("load", async () => {
-    await Promise.all([...new Set([...markers.values()].map((m) => m.sidc))].map(ensureIcon));
+    await Promise.all([...markers.values()].map(ensureIcon));
 
     map.addSource("strokes", { type: "geojson", data: strokeFC() });
     map.addLayer({
@@ -775,8 +794,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       id: "marker-icon",
       type: "symbol",
       source: "markers",
+      filter: ["!=", ["get", "istext"], true],
       layout: {
-        "icon-image": ["get", "sidc"],
+        "icon-image": ["get", "icon"],
         "icon-size": ["*", 0.8, ["coalesce", ["get", "scale"], 1]],
         "icon-rotate": ["get", "rot"],
         "icon-allow-overlap": true,
@@ -804,6 +824,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       "match", ["get", "labelcat"],
       "line", "bottom",
       "cm", "left",
+      "text", "center",
       "right",
     ];
     // Offset selbst kommt NICHT mehr aus einer geschätzten Konstante, sondern
@@ -815,12 +836,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       "match", ["get", "labelcat"],
       "line", "top",
       "cm", "bottom",
+      "text", "top",
       "left",
     ];
     const AI_TEXT_OFFSET: maplibregl.ExpressionSpecification = ["get", "aiOff"];
     const UNIT_TEXT_JUSTIFY: maplibregl.ExpressionSpecification = [
       "match", ["get", "labelcat"],
       "line", "center",
+      "text", "center",
       "cm", "left",
       "right",
     ];
@@ -828,12 +851,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       "match", ["get", "labelcat"],
       "line", "center",
       "cm", "center",
+      "text", "center",
       "left",
     ];
     map.addLayer({
       id: "marker-unittext",
       type: "symbol",
       source: "markers",
+      filter: ["!=", ["get", "istext"], true],
       layout: {
         "text-field": ["get", "label"],
         "text-size": 11 * textScale,
@@ -847,10 +872,31 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "icon-allow-overlap": true,
       },
       paint: {
-        "text-color": "#e6e9ee",
+        "text-color": ["case", ["!=", ["get", "tcolor"], ""], ["get", "tcolor"], "#e6e9ee"],
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
         "text-opacity": unitAiOpacityExpr(showUnitAiLabels),
+      },
+    });
+    // Nur-Text-Marker ("Spezial"): kein Symbol, nur der Text — eigene Farbe, immer sichtbar.
+    map.addLayer({
+      id: "marker-textmark",
+      type: "symbol",
+      source: "markers",
+      filter: ["==", ["get", "istext"], true],
+      layout: {
+        "text-field": ["get", "label"],
+        "text-size": 14 * textScale,
+        "text-anchor": "center",
+        "text-justify": "center",
+        "text-allow-overlap": true,
+        "text-max-width": 20,
+      },
+      paint: {
+        "text-color": ["case", ["!=", ["get", "tcolor"], ""], ["get", "tcolor"], "#e6e9ee"],
+        "text-halo-color": "#000",
+        "text-halo-width": 1.6,
+        "text-opacity": ["get", "opacity"],
       },
     });
     map.addLayer({
@@ -900,7 +946,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const refreshStrokes = () => (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
   const refreshMarkers = async () => {
-    await Promise.all([...new Set([...markers.values()].map((m) => m.sidc))].map(ensureIcon));
+    await Promise.all([...markers.values()].map(ensureIcon));
     (map.getSource("markers") as GeoJSONSource)?.setData(markerFC());
     (map.getSource("chains") as GeoJSONSource)?.setData(chainFC());
     refreshDir();
@@ -2169,6 +2215,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
       map.setLayoutProperty("marker-unittext", "text-size", 11 * textScale);
       map.setLayoutProperty("marker-aitext", "text-size", 11 * textScale);
+      map.setLayoutProperty("marker-textmark", "text-size", 14 * textScale);
       void refreshMarkers(); // Text-Offsets neu berechnen, sonst rückt der Text vom Icon weg
     });
   }
@@ -2227,7 +2274,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let mapLang = "en_us";
   const groupVisible = new Map<string, boolean>();
   const baseLayerVisible: Record<string, boolean> = {
-    sat: true, grid: true, contours: true, peaks: true,
+    sat: true, satsimple: false, grid: true, contours: true, peaks: true,
     buildings: false, roads: false, water: false, powerlines: false, trees: false,
   };
   // Logische Overlay-Layer -> tatsaechliche MapLibre-Layer-IDs
@@ -2250,6 +2297,36 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   })();
   const opac = (name: string): number => (layerOpacity[name] ?? 1);
 
+  // Sat-Bild-Anpassung (Helligkeit/Kontrast/Sättigung, -100..100) und Strassenfarben —
+  // wie die Deckkraft pro Browser gespeichert.
+  const loadJson = <T,>(key: string, def: T): T => {
+    try {
+      return { ...def, ...JSON.parse(localStorage.getItem(key) || "{}") };
+    } catch {
+      return def;
+    }
+  };
+  const saveJson = (key: string, v: unknown): void => {
+    try {
+      localStorage.setItem(key, JSON.stringify(v));
+    } catch {
+      /* ignore */
+    }
+  };
+  const satAdj = loadJson("sidc_satadjust", { brightness: 0, contrast: 0, saturation: 0 });
+  const roadColors: RoadColors = loadJson("sidc_roadcolors", { ...ROAD_COLOR_DEFAULTS });
+
+  function applySatAdjust(): void {
+    const b = satAdj.brightness / 100;
+    for (const id of ["sat", "satsimple"]) {
+      if (!map.getLayer(id)) continue;
+      map.setPaintProperty(id, "raster-brightness-min", Math.max(0, b));
+      map.setPaintProperty(id, "raster-brightness-max", Math.min(1, 1 + b));
+      map.setPaintProperty(id, "raster-contrast", satAdj.contrast / 100);
+      map.setPaintProperty(id, "raster-saturation", satAdj.saturation / 100);
+    }
+  }
+
   function setLayerOpacity(name: string, f: number): void {
     layerOpacity[name] = f;
     try {
@@ -2258,7 +2335,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       /* ignore */
     }
     const has = (id: string) => !!map.getLayer(id);
-    if ((name === "sat" || name === "grid") && has(name)) {
+    if ((name === "sat" || name === "satsimple" || name === "grid") && has(name)) {
       map.setPaintProperty(name, "raster-opacity", f);
     } else if (name === "contours") {
       if (has("contours-line"))
@@ -2342,8 +2419,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       /* keine Locations */
     }
     await addTerrainOverlays();
-    for (const n of ["sat", "grid", "contours", "peaks", "locations", ...enfusionPresent])
+    for (const n of ["sat", "satsimple", "grid", "contours", "peaks", "locations", ...enfusionPresent])
       if (layerOpacity[n] != null) setLayerOpacity(n, layerOpacity[n]);
+    applySatAdjust();
+    if (enfusionPresent.includes("roads")) setRoadColors(map, roadColors);
     buildLayersPanel();
     buildMapLangSelector();
   });
@@ -2625,8 +2704,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const rows: string[] = [`<div class="fav-head">${t('layers.heading')}</div>`];
     // name -> (Anzeigename, Deckkraft-Regler?)
     const entries: [string, string, boolean][] = [];
-    for (const ly of ["sat", "grid", "terrain"])
-      if (map.getLayer(ly)) entries.push([ly, ly, ly !== "terrain"]);
+    for (const ly of ["sat", "satsimple", "grid", "terrain"])
+      if (map.getLayer(ly)) entries.push([ly, ly === "satsimple" ? t("layers.satsimple") : ly, ly !== "terrain"]);
     if (hasContours) entries.push(["contours", t("layers.contours"), true]);
     if (hasPeaks) entries.push(["peaks", t("layers.peaks"), true]);
     for (const k of enfusionPresent) entries.push([k, t(`layers.${k}`), true]);
@@ -2638,6 +2717,29 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         : "";
       rows.push(
         `<div class="layer-row"><label><input type="checkbox" data-base="${name}" ${on ? "checked" : ""}/> ${label}</label>${slider}</div>`,
+      );
+    }
+
+    if (map.getLayer("sat")) {
+      const sl = (k: keyof typeof satAdj, label: string) =>
+        `<div class="layer-row"><label>${label}</label><input type="range" min="-100" max="100" step="5" value="${satAdj[k]}" data-sat="${k}"/></div>`;
+      rows.push(
+        `<div class="fav-head">${t("layers.satAdjust")}</div>`,
+        sl("brightness", t("layers.brightness")),
+        sl("contrast", t("layers.contrast")),
+        sl("saturation", t("layers.saturation")),
+        `<div class="layer-row"><button type="button" data-sat-reset>${t("layers.reset")}</button></div>`,
+      );
+    }
+    if (enfusionPresent.includes("roads")) {
+      const cp = (k: keyof RoadColors, label: string) =>
+        `<div class="layer-row"><label>${label}</label><input type="color" value="${roadColors[k]}" data-road="${k}"/></div>`;
+      rows.push(
+        `<div class="fav-head">${t("layers.roadColors")}</div>`,
+        cp("main", t("layers.roadMain")),
+        cp("secondary", t("layers.roadSecondary")),
+        cp("path", t("layers.roadPath")),
+        `<div class="layer-row"><button type="button" data-road-reset>${t("layers.reset")}</button></div>`,
       );
     }
 
@@ -2666,6 +2768,32 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     layersPanel.querySelectorAll<HTMLInputElement>("[data-op]").forEach((sl) =>
       sl.addEventListener("input", () => setLayerOpacity(sl.dataset.op!, +sl.value / 100)),
     );
+    layersPanel.querySelectorAll<HTMLInputElement>("[data-sat]").forEach((sl) =>
+      sl.addEventListener("input", () => {
+        satAdj[sl.dataset.sat as keyof typeof satAdj] = +sl.value;
+        saveJson("sidc_satadjust", satAdj);
+        applySatAdjust();
+      }),
+    );
+    layersPanel.querySelector("[data-sat-reset]")?.addEventListener("click", () => {
+      Object.assign(satAdj, { brightness: 0, contrast: 0, saturation: 0 });
+      saveJson("sidc_satadjust", satAdj);
+      applySatAdjust();
+      buildLayersPanel();
+    });
+    layersPanel.querySelectorAll<HTMLInputElement>("[data-road]").forEach((inp) =>
+      inp.addEventListener("input", () => {
+        roadColors[inp.dataset.road as keyof RoadColors] = inp.value;
+        saveJson("sidc_roadcolors", roadColors);
+        setRoadColors(map, roadColors);
+      }),
+    );
+    layersPanel.querySelector("[data-road-reset]")?.addEventListener("click", () => {
+      Object.assign(roadColors, ROAD_COLOR_DEFAULTS);
+      saveJson("sidc_roadcolors", roadColors);
+      setRoadColors(map, roadColors);
+      buildLayersPanel();
+    });
     layersPanel.querySelectorAll<HTMLInputElement>("[data-group]").forEach((cb) =>
       cb.addEventListener("change", () => {
         groupVisible.set(cb.dataset.group!, cb.checked);
@@ -3442,6 +3570,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   map.on("click", "marker-icon", onMarkerClick);
   map.on("click", "marker-dot", onMarkerClick); // Marker ohne PNG-Icon klickbar halten
+  map.on("click", "marker-textmark", onMarkerClick); // Nur-Text-Marker
 
   // Marker ziehen (siehe unten) — früh deklariert, weil der Hover-Handler prüft.
   let dragId: string | null = null;
@@ -3532,7 +3661,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     map.getCanvas().style.cursor = modeCursor(); // nicht hart auf Default zurück
     hoverPopup.remove();
   };
-  for (const ly of ["marker-icon", "marker-dot"]) {
+  for (const ly of ["marker-icon", "marker-dot", "marker-textmark"]) {
     map.on("mouseenter", ly, showHover);
     map.on("mouseleave", ly, hideHover);
   }
@@ -3583,6 +3712,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   map.on("mousedown", "marker-icon", onMarkerMouseDown);
   map.on("mousedown", "marker-dot", onMarkerMouseDown);
+  map.on("mousedown", "marker-textmark", onMarkerMouseDown);
   // Mittelklick auf dem Canvas nie als Browser-Autoscroll interpretieren
   map.getCanvas().addEventListener("mousedown", (ev) => {
     if (ev.button === 1) ev.preventDefault();
@@ -4346,6 +4476,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <label>${t("marker.unitText")}</label><input data-unit value="${esc(m.unit_text)}" />
       <label>${t("marker.aiText")}</label><input data-ai value="${esc(m.ai_text)}" />
       <label>${t("marker.iconRot")}</label><input data-rot type="number" value="${m.icon_rotation || 0}" />
+      <label>${isTextMarker(m.sidc) ? t("marker.textColor") : t("marker.color")}</label>
+      <div class="row"><input type="color" data-tint value="${esc(m.tint || (isTextMarker(m.sidc) ? "#e6e9ee" : "#000000"))}" />
+        <button type="button" data-tint-reset>${t("marker.colorReset")}</button></div>
       <label class="ph-op">${t("marker.scale")}
         <input type="range" min="25" max="300" step="5" data-mscale value="${Math.round((m.scale ?? 1) * 100)}" />
         <span data-mscalev>${Math.round((m.scale ?? 1) * 100)}%</span></label>
@@ -4395,11 +4528,24 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       return s;
     };
     const nextSidc = () => withModifiers(m.sidc, readModSel());
+    let tint = m.tint || "";
+    const tintIn = p.querySelector<HTMLInputElement>("[data-tint]")!;
+    const refreshIco = () => {
+      p.querySelector<HTMLImageElement>(".edit-ico")!.src = iconSrc(nextSidc(), 28, tint || undefined);
+    };
+    tintIn.addEventListener("input", () => {
+      tint = tintIn.value;
+      refreshIco();
+    });
+    p.querySelector("[data-tint-reset]")!.addEventListener("click", () => {
+      tint = "";
+      tintIn.value = isTextMarker(m.sidc) ? "#e6e9ee" : "#000000";
+      refreshIco();
+    });
     p.querySelectorAll<HTMLSelectElement>("[data-mod]").forEach((sel) =>
-      sel.addEventListener("change", () => {
-        p.querySelector<HTMLImageElement>(".edit-ico")!.src = iconSrc(nextSidc());
-      }),
+      sel.addEventListener("change", refreshIco),
     );
+    if (tint) refreshIco();
     root.appendChild(back);
     {
       const ms = p.querySelector<HTMLInputElement>("[data-mscale]")!;
@@ -4425,6 +4571,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || null,
         channel: p.querySelector<HTMLSelectElement>("[data-chan]")!.value,
         scale: Math.max(0.25, Math.min(3, Number(p.querySelector<HTMLInputElement>("[data-mscale]")!.value) / 100 || 1)),
+        tint,
         ...(modDefs ? { sidc: nextSidc() } : {}),
         ...(isMB
           ? {
