@@ -133,6 +133,23 @@ app.include_router(public.router)
 app.add_api_websocket_route("/plans/{plan_id}/live", live.live_ws)
 
 
+@app.get("/api/ui-defaults")
+async def ui_defaults() -> JSONResponse:
+    """Serverseitige Voreinstellungen für die Oberfläche (aus der .env), ohne Login lesbar."""
+    import re
+
+    def col(v: str, fallback: str) -> str:
+        return v if re.fullmatch(r"#[0-9a-fA-F]{6}", v or "") else fallback
+
+    return JSONResponse({
+        "road_colors": {
+            "main": col(_settings.road_color_main, "#000000"),
+            "secondary": col(_settings.road_color_secondary, "#4a2e14"),
+            "path": col(_settings.road_color_path, "#8c8c8c"),
+        }
+    })
+
+
 @app.get("/healthz")
 async def healthz() -> JSONResponse:
     return JSONResponse({"status": "ok", "version": __version__})

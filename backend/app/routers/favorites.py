@@ -1,8 +1,10 @@
 """Persönliche Marker-Favoriten."""
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
 
 from ..deps import CurrentUser, DbDep
@@ -20,6 +22,12 @@ class FavoriteIn(BaseModel):
     channel: str = ""
     is_multipoint: bool = False
     max_line_points: int = 0
+    tint: str = ""
+
+    @field_validator("tint")
+    @classmethod
+    def _tint(cls, v: str) -> str:
+        return v.lower() if re.fullmatch(r"#[0-9a-fA-F]{6}", v or "") else ""
 
 
 class FavoriteOut(FavoriteIn):
@@ -30,7 +38,7 @@ def _out(f: Favorite) -> FavoriteOut:
     return FavoriteOut(
         id=f.id, label=f.label, sidc=f.sidc, rotation_degrees=f.rotation_degrees,
         unit_text=f.unit_text, ai_text=f.ai_text, channel=f.channel or "",
-        is_multipoint=bool(f.is_multipoint), max_line_points=f.max_line_points or 0,
+        is_multipoint=bool(f.is_multipoint), max_line_points=f.max_line_points or 0, tint=f.tint or "",
     )
 
 

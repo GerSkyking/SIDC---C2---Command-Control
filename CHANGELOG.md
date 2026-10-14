@@ -5,6 +5,14 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### Neu (Nachtrag)
+- **Markerfarbe im QuickMenü/Baukasten:** Farbwähler direkt beim Platzieren.
+- **Favoriten speichern die Farbe** (`favorites.tint`, Migration `0023`); jeder Favorit ist ein eigener
+  Eintrag, ein gefärbter überschreibt keinen ungefärbten.
+- **Straßen-Standardfarben per `.env`:** `ROAD_COLOR_MAIN/SECONDARY/PATH` (`GET /api/ui-defaults`);
+  Nutzer-Änderungen gelten pro Browser nur für die geänderten Farben.
+- **„Marker Info"-Checkbox** in der Topbar: der große Beschreibungsblock im Marker-Hover ist standardmäßig aus.
+
 ### Neu (Marker-Farbe, Nur-Text-Marker, Kartenanpassung)
 - **Markerfarbe:** im Marker-Editor eine eigene Farbe wählen — färbt die schwarzen Symbolanteile
   (Rahmenfarben bleiben); für alle sichtbar (Spalte `markers.tint`, Migration `0022_marker_tint`).

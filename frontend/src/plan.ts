@@ -287,6 +287,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Einheits-/Zusatztext ein-/ausblenden — Control-Measure-Beschriftung (cm/line)
   // bleibt dabei immer stehen, nur der Text an normalen Einheiten wird versteckt.
   let showUnitAiLabels = localStorage.getItem("sidc_labels_on") !== "0";
+  // Großer Beschreibungsblock im Marker-Hover — standardmäßig aus.
+  let showMarkerInfo = localStorage.getItem("sidc_markerinfo") === "1";
   const unitAiOpacityExpr = (on: boolean): maplibregl.ExpressionSpecification =>
     on ? ["get", "opacity"] : ["*", ["get", "opacity"], ["match", ["get", "labelcat"], "default", 0, 1]];
   const phaseListeners: (() => void)[] = []; // z. B. Notiz-Fenster bei Phasenwechsel
@@ -1887,6 +1889,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           `<input type="range" id="cross-op" min="0" max="100" step="5" value="${crossOpacity}"/><span id="cross-op-v">${crossOpacity}%</span></label>`
         : "") +
       `<label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" id="lblToggle" ${showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label>` +
+      `<label class="chk" title="${t("map.infoToggle")}"><input type="checkbox" id="infoToggle" ${showMarkerInfo ? "checked" : ""}/> ${t("map.info")}</label>` +
       `</div>`;
 
     timelineEl.innerHTML =
@@ -2012,6 +2015,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       localStorage.setItem("sidc_labels_on", showUnitAiLabels ? "1" : "0");
       map.setPaintProperty("marker-unittext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
       map.setPaintProperty("marker-aitext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
+    });
+    timelineEl.querySelector<HTMLInputElement>("#infoToggle")!.addEventListener("change", (e) => {
+      showMarkerInfo = (e.target as HTMLInputElement).checked;
+      localStorage.setItem("sidc_markerinfo", showMarkerInfo ? "1" : "0");
     });
     timelineEl.querySelector("#ph-add")?.addEventListener("click", () => void addPlayerPhase());
     timelineEl.querySelector("#player-add")?.addEventListener("click", () => void addPlayerPhase());
@@ -2314,7 +2321,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   };
   const satAdj = loadJson("sidc_satadjust", { brightness: 0, contrast: 0, saturation: 0 });
-  const roadColors: RoadColors = loadJson("sidc_roadcolors", { ...ROAD_COLOR_DEFAULTS });
+  // Server-Default (.env) + nur die vom Nutzer geänderten Farben (localStorage).
+  let roadDefaults: RoadColors = { ...ROAD_COLOR_DEFAULTS };
+  try {
+    roadDefaults = { ...roadDefaults, ...(await api.uiDefaults()).road_colors };
+  } catch {
+    /* Server ohne Endpunkt -> eingebaute Defaults */
+  }
+  const roadOverrides = loadJson<Partial<RoadColors>>("sidc_roadcolors", {});
+  const roadColors: RoadColors = { ...roadDefaults, ...roadOverrides };
 
   function applySatAdjust(): void {
     const b = satAdj.brightness / 100;
@@ -2783,14 +2798,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     });
     layersPanel.querySelectorAll<HTMLInputElement>("[data-road]").forEach((inp) =>
       inp.addEventListener("input", () => {
-        roadColors[inp.dataset.road as keyof RoadColors] = inp.value;
-        saveJson("sidc_roadcolors", roadColors);
+        const k = inp.dataset.road as keyof RoadColors;
+        roadColors[k] = inp.value;
+        roadOverrides[k] = inp.value;
+        saveJson("sidc_roadcolors", roadOverrides);
         setRoadColors(map, roadColors);
       }),
     );
     layersPanel.querySelector("[data-road-reset]")?.addEventListener("click", () => {
-      Object.assign(roadColors, ROAD_COLOR_DEFAULTS);
-      saveJson("sidc_roadcolors", roadColors);
+      Object.assign(roadColors, roadDefaults);
+      for (const k of Object.keys(roadOverrides)) delete roadOverrides[k as keyof RoadColors];
+      saveJson("sidc_roadcolors", roadOverrides);
       setRoadColors(map, roadColors);
       buildLayersPanel();
     });
@@ -3281,6 +3299,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     max_line_points: 0,
     orbat_node_id: m.orbat_node_id ?? null,
     orbat_strength: m.orbat_strength ?? 1,
+    tint: m.tint || "",
   });
   const onHotkey = (ev: KeyboardEvent) => {
     if (document.querySelector(".edit-modal, .wiz-backdrop")) return; // Dialog offen
@@ -3347,6 +3366,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       rotation_degrees: tpl.rotation_degrees,
       phase_id: currentPhaseId || null,
     };
+    if (tpl.tint) data.tint = tpl.tint;
     if (tpl.orbat_node_id) {
       data.orbat_node_id = tpl.orbat_node_id;
       data.orbat_strength = tpl.orbat_strength ?? 1;
@@ -3499,7 +3519,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ? favs
             .map(
               (f) => `<div class="fav" data-fav="${esc(f.id)}">
-                <img src="${esc(iconSrc(f.sidc))}" width="24" height="24" data-hide-on-error/>
+                <img src="${esc(iconSrc(f.sidc, 28, f.tint || undefined))}" width="24" height="24" data-hide-on-error/>
                 <span>${esc(f.label)}</span><button class="icon-btn" data-delfav="${esc(f.id)}">${icon("x", 14)}</button></div>`,
             )
             .join("")
@@ -3520,6 +3540,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           locked: false,
           timestamp_visible: true,
           rotation_degrees: f.rotation_degrees,
+          tint: f.tint || "",
           is_multipoint: f.is_multipoint,
           max_line_points: f.max_line_points,
         };
@@ -3633,7 +3654,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (!m || phaseOpacity(m) <= 0) return;
     hoverMarkerId = m.id;
     map.getCanvas().style.cursor = "pointer";
-    const info = markerInfoText(m.sidc);
+    const info = showMarkerInfo ? markerInfoText(m.sidc) : "";
     // setDOMContent statt setHTML: keine HTML-Zeichenkette -> kein Sanitizer-Pfad,
     // Werte landen ausschließlich als textContent.
     const tip = document.createElement("div");
@@ -4615,6 +4636,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         locked: m.locked,
         timestamp_visible: true,
         rotation_degrees: m.rotation_degrees,
+        tint: m.tint || "",
         is_multipoint: false,
         max_line_points: 0,
       };
@@ -4630,6 +4652,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         unit_text: m.unit_text,
         ai_text: m.ai_text,
         channel: m.channel,
+        tint: m.tint || "",
         is_multipoint: m.linked_group_id != null && m.linked_group_id >= 0,
         max_line_points: 0,
       });

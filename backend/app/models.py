@@ -417,6 +417,7 @@ class Favorite(Base):
     channel: Mapped[str] = mapped_column(String(64), default="")
     is_multipoint: Mapped[bool] = mapped_column(Boolean, default=False)
     max_line_points: Mapped[int] = mapped_column(Integer, default=0)
+    tint: Mapped[str] = mapped_column(String(9), default="", server_default="")
     ordering: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     map_import_max_mb: int = 2048
     image_max_mb: int = 10  # Plan-Bilder (in der DB gespeichert)
 
+    # Standardfarben der Straßen-Ebene (Hex). Nutzer können sie im Ebenen-Panel überschreiben.
+    road_color_main: str = "#000000"
+    road_color_secondary: str = "#4a2e14"
+    road_color_path: str = "#8c8c8c"
+
     # Audit-Log-Aufbewahrung (Tage). 0 = deaktiviert (Log wächst unbegrenzt).
     audit_log_retention_days: int = 180
 

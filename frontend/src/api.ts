@@ -86,6 +86,7 @@ export interface Favorite {
   channel?: string;
   is_multipoint: boolean;
   max_line_points: number;
+  tint?: string;
 }
 export interface Phase {
   id: string;
@@ -266,6 +267,7 @@ export const api = {
   login: (username: string, password: string) =>
     req<Me>("POST", "/auth/login", { username, password }),
   logout: () => req<void>("POST", "/auth/logout"),
+  uiDefaults: () => req<{ road_colors: { main: string; secondary: string; path: string } }>("GET", "/api/ui-defaults"),
   oidcEnabled: () => req<{ enabled: boolean }>("GET", "/auth/oidc/enabled"),
 
   maps: () => req<MapItem[]>("GET", "/api/maps"),

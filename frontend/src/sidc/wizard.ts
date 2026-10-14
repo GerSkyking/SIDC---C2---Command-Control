@@ -43,6 +43,7 @@ export interface MarkerTemplate {
   max_line_points: number;
   orbat_node_id?: string | null;
   orbat_strength?: number;
+  tint?: string;
 }
 
 type Done = (t: MarkerTemplate) => void;
@@ -108,6 +109,7 @@ export async function openWizard(
     const modDefs: Record<string, import("./catalog").ModifierOption[]> | null =
       (mods && entry.subCategory && (mods as ModifierCatalog)[entry.subCategory]) || null;
     let advOpen = false;
+    let tint = ""; // eigene Markerfarbe (leer = Standard)
     const modSel: SidcModifiers = {};
 
     const buildSidc = () => {
@@ -180,6 +182,9 @@ export async function openWizard(
         <label>${t("wiz.channel")}</label><select data-channel>${(channels?.channels ?? [])
           .map((c) => `<option value="${c.name}" ${c.name === defaultChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
           .join("")}</select>
+        <label>${t("marker.color")}</label>
+        <div class="row"><input type="color" data-tint value="${tint || "#000000"}" />
+          <button type="button" data-tint-reset>${t("marker.colorReset")}</button></div>
         <div class="wiz-flags">
           <label><input type="checkbox" data-lock ${entry.defaultLocked ? "checked" : ""}/> ${t("wiz.locked")}</label>
           <label><input type="checkbox" data-ts ${entry.defaultTimestampVisible !== false ? "checked" : ""}/> ${t("wiz.timestamp")}</label>
@@ -216,6 +221,13 @@ export async function openWizard(
           draw();
         }),
       );
+      config.querySelector<HTMLInputElement>("[data-tint]")?.addEventListener("input", (e) => {
+        tint = (e.target as HTMLInputElement).value; // ohne draw(): Farbwähler bleibt offen
+      });
+      config.querySelector("[data-tint-reset]")?.addEventListener("click", () => {
+        tint = "";
+        draw();
+      });
       config.querySelector(".wiz-place")!.addEventListener("click", () => {
         const sidc = buildSidc();
         onPick({
@@ -226,6 +238,7 @@ export async function openWizard(
           locked: config.querySelector<HTMLInputElement>("[data-lock]")!.checked,
           timestamp_visible: config.querySelector<HTMLInputElement>("[data-ts]")!.checked,
           rotation_degrees: dir,
+          tint,
           is_multipoint: !!entry.isMultiPointLine,
           max_line_points: entry.maxLinePoints ?? 0,
         });

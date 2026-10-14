@@ -114,6 +114,9 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
                <select data-channel>${(channels?.channels ?? [])
                  .map((c) => `<option value="${c.name}" ${c.name === opts.defaultChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
                  .join("")}</select>
+               <label>${t("marker.color")}</label>
+               <div class="row"><input type="color" data-tint value="#000000" />
+                 <button type="button" data-tint-reset>${t("marker.colorReset")}</button></div>
                <div class="mkb-flags">
                  <label><input type="checkbox" data-lock/> ${t("wiz.locked")}</label>
                  <label><input type="checkbox" data-ts checked/> ${t("wiz.timestamp")}</label>
@@ -219,6 +222,15 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
   });
   echSel.addEventListener("change", () => { echelon = echSel.value; refresh(); });
 
+  let tint = "";
+  host.querySelector<HTMLInputElement>("[data-tint]")?.addEventListener("input", (e) => {
+    tint = (e.target as HTMLInputElement).value;
+  });
+  host.querySelector("[data-tint-reset]")?.addEventListener("click", () => {
+    tint = "";
+    host.querySelector<HTMLInputElement>("[data-tint]")!.value = "#000000";
+  });
+
   host.querySelector("[data-submit]")!.addEventListener("click", () => {
     const sidc = buildSidc();
     if (!sidc) return;
@@ -232,6 +244,7 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
         locked: q<HTMLInputElement>("[data-lock]")?.checked ?? false,
         timestamp_visible: q<HTMLInputElement>("[data-ts]")?.checked ?? true,
         rotation_degrees: Number(q<HTMLSelectElement>("[data-dir]")?.value ?? -1),
+        tint,
         is_multipoint: !!entry?.isMultiPointLine,
         max_line_points: entry?.maxLinePoints ?? 0,
       });
