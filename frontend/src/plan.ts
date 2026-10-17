@@ -1589,6 +1589,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const defaultHHour = (): Date => {
     const raw = snap.plan.h_hour as string | null | undefined;
     if (raw) return parseNaive(raw);
+    // Ohne H-Zeit: frühester expliziter Phasenbeginn (alte Missionen), sonst heute 08:00.
+    const starts = phases.filter((p) => p.start_at).map((p) => parseNaive(p.start_at as string).getTime());
+    if (starts.length) return new Date(Math.min(...starts));
     const d = new Date();
     d.setHours(8, 0, 0, 0);
     return d;
@@ -1823,14 +1826,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const step = tickMin();
     const stepMs = step * 60000;
     // Zeitbereich (Domäne)
-    let dom0 = opStart.getTime();
-    let dom1 = opStart.getTime() + 4 * 3600e3;
+    // Nur Phasenbereich ±12 h (kein Auffüllen bis heute).
+    let dom0 = Infinity;
+    let dom1 = -Infinity;
     for (const sp of spans.values()) {
       dom0 = Math.min(dom0, sp.s);
       dom1 = Math.max(dom1, sp.e);
     }
-    dom0 = Math.floor(dom0 / stepMs) * stepMs - stepMs;
-    dom1 = Math.ceil(dom1 / stepMs) * stepMs + stepMs;
+    if (!Number.isFinite(dom0)) {
+      dom0 = opStart.getTime();
+      dom1 = dom0 + 4 * 3600e3;
+    }
+    const first = dom0;
+    dom0 = Math.floor((dom0 - 12 * 3600e3) / stepMs) * stepMs;
+    dom1 = Math.ceil((dom1 + 12 * 3600e3) / stepMs) * stepMs;
     const xOf = (t: number) => ((t - dom0) / 60000) * tlPxPerMin;
     const W = Math.max(200, xOf(dom1));
 
@@ -1900,7 +1909,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       players.map((id) => bar(id, "player", rowP.get(id) ?? 0)).join("") +
       (canEdit ? `<button id="player-add" class="tl-subadd" title="${t("phase.add")}">+</button>` : "") +
       `</div>` +
-      `<div class="tl-ruler">${ticks.join("")}<div class="tl-hh" style="left:${xOf(opStart.getTime())}px" title="H">H</div></div>` +
+      `<div class="tl-ruler">${ticks.join("")}${opStart.getTime() >= dom0 && opStart.getTime() <= dom1 ? `<div class="tl-hh" style="left:${xOf(opStart.getTime())}px" title="H">H</div>` : ""}</div>` +
       (isMB
         ? `<div class="tl-lane tl-builder" style="height:${laneH(maxRow(rowB))}px">` +
           builders.map((id) => bar(id, "builder", rowB.get(id) ?? 0)).join("") +
@@ -1911,7 +1920,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
     const scEl = timelineEl.querySelector<HTMLElement>(".tl-scroll")!;
     if (tlFirstPaint) {
-      scEl.scrollLeft = Math.max(0, xOf(opStart.getTime()) - 48);
+      scEl.scrollLeft = Math.max(0, xOf(first) - 48);
       tlFirstPaint = false;
     } else if (tlKeepScroll >= 0) {
       scEl.scrollLeft = tlKeepScroll;
