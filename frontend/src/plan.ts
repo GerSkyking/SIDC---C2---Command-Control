@@ -1838,8 +1838,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       dom1 = dom0 + 4 * 3600e3;
     }
     const first = dom0;
-    dom0 = Math.floor((dom0 - 12 * 3600e3) / stepMs) * stepMs;
-    dom1 = Math.ceil((dom1 + 12 * 3600e3) / stepMs) * stepMs;
+    dom0 -= 12 * 3600e3;
+    dom1 += 12 * 3600e3;
     const xOf = (t: number) => ((t - dom0) / 60000) * tlPxPerMin;
     const W = Math.max(200, xOf(dom1));
 
@@ -1909,7 +1909,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       players.map((id) => bar(id, "player", rowP.get(id) ?? 0)).join("") +
       (canEdit ? `<button id="player-add" class="tl-subadd" title="${t("phase.add")}">+</button>` : "") +
       `</div>` +
-      `<div class="tl-ruler">${ticks.join("")}${opStart.getTime() >= dom0 && opStart.getTime() <= dom1 ? `<div class="tl-hh" style="left:${xOf(opStart.getTime())}px" title="H">H</div>` : ""}</div>` +
+      `<div class="tl-ruler">${ticks.join("")}</div>` +
       (isMB
         ? `<div class="tl-lane tl-builder" style="height:${laneH(maxRow(rowB))}px">` +
           builders.map((id) => bar(id, "builder", rowB.get(id) ?? 0)).join("") +
