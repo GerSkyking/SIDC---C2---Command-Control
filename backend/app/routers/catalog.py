@@ -20,7 +20,6 @@ CATALOGS = {
     "all-markers": "SIDC_AllMarkersCatalog.json",
     "quick-menu": "SIDC_QuickMarkerMenuCatalog.json",
     "phaseline-style": "SIDC_PhaseLineStyleCatalog.json",
-    "channels": "SIDC_ChannelSettings.json",
     "modifiers": "SIDC_ModifierCatalog.json",
     "translations": "SIDC_Translations.json",
 }

@@ -1,7 +1,7 @@
 """Plan-Lebenszyklus: CRUD, ACL, Klonen, Versionen, Snapshot-Laden."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -37,6 +37,7 @@ from ..permissions import (
     can_create_plans,
     effective_level,
     effective_mission_builder,
+    effective_zeus,
     rank,
 )
 from ..schemas import (
@@ -95,6 +96,22 @@ def _released_builder_phase_ids(db: Session, plan_id: str) -> set[str]:
     )
 
 
+def _zeus_released_phase_ids(db: Session, plan_id: str) -> set[str]:
+    """Missionsbau-Phasen, die jetzt für Zeus freigegeben sind (Frist nicht abgelaufen)."""
+    t_now = now()
+    out: set[str] = set()
+    for p in db.scalars(
+        select(Phase).where(Phase.plan_id == plan_id, Phase.plane == "builder", Phase.zeus_released.is_(True))
+    ):
+        if p.zeus_until is None:
+            out.add(p.id)
+            continue
+        until = p.zeus_until if p.zeus_until.tzinfo else p.zeus_until.replace(tzinfo=t_now.tzinfo)
+        if until > t_now:
+            out.add(p.id)
+    return out
+
+
 def _snapshot(
     db: Session, plan: Plan, *, include_builder: bool = True, visible_builder_ids: set[str] | None = None
 ) -> dict:
@@ -110,8 +127,12 @@ def _snapshot(
         anns = [a for a in anns if a.phase_id not in hide]
         imgs = [i for i in imgs if i.phase_id not in hide]
         placements = [p for p in placements if p.phase_id not in hide]
+    mdicts = [_marker_dict(m) for m in markers]
+    if not include_builder:  # verborgene Zusatz-Phasen nicht verraten
+        for d in mdicts:
+            d["extra_phase_ids"] = [x for x in d["extra_phase_ids"] if x not in hide]
     return {
-        "markers": [_marker_dict(m) for m in markers],
+        "markers": mdicts,
         "strokes": [_stroke_dict(s) for s in strokes],
         "annotations": [_annotation_dict(a) for a in anns],
         "images": [_image_dict(i) for i in imgs],
@@ -185,7 +206,8 @@ def _placement_dict(p: ImagePlacement) -> dict:
 
 def _marker_dict(m: Marker) -> dict:
     return {
-        "id": m.id, "phase_id": m.phase_id, "layer_id": m.layer_id,
+        "id": m.id, "phase_id": m.phase_id, "extra_phase_ids": list(m.extra_phase_ids or []),
+        "layer_id": m.layer_id,
         "orbat_node_id": m.orbat_node_id, "orbat_strength": m.orbat_strength, "sidc": m.sidc,
         "world_x": m.world_x, "world_y": m.world_y, "rotation_degrees": m.rotation_degrees,
         "icon_rotation": m.icon_rotation, "scale": m.scale,
@@ -438,6 +460,9 @@ def get_snapshot(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> dict:
             )
         )
     released = _released_builder_phase_ids(db, plan.id)
+    zeus = (not builder) and effective_zeus(db, user)
+    if zeus:
+        released = released | _zeus_released_phase_ids(db, plan.id)
     phases = [
         p for p in phase_rows
         if builder or (p.plane or "player") == "player" or p.id in released
@@ -479,13 +504,102 @@ def get_snapshot(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> dict:
         "phases": [
             _phase_out(p) for p in phases
         ],
-        "layers": [
-            {"id": ly.id, "name": ly.name, "color": ly.color, "ordering": ly.ordering,
-             "group_id": ly.group_id, "is_default": ly.is_default}
-            for ly in layers
-        ],
+        "layers": [_layer_out(ly) for ly in layers],
         **snap,
     }
+
+
+# ─── Taktische Layer (eigene, plan-weit; Auto-Layer BLUFOR/REDFOR/… liegen im Client) ──
+
+class LayerBody(BaseModel):
+    name: str | None = None
+    color: int | None = None
+    ordering: int | None = None
+
+
+def _layer_out(ly: Layer) -> dict:
+    return {
+        "id": ly.id, "name": ly.name, "color": ly.color, "ordering": ly.ordering,
+        "group_id": ly.group_id, "is_default": ly.is_default,
+    }
+
+
+def _layers_of(db: Session, plan_id: str) -> list[dict]:
+    return [
+        _layer_out(ly)
+        for ly in db.scalars(select(Layer).where(Layer.plan_id == plan_id).order_by(Layer.ordering, Layer.created_at))
+    ]
+
+
+def _clean_layer_name(db: Session, plan_id: str, raw: str | None, *, keep_id: str | None = None) -> str:
+    name = (raw or "").strip()[:40]
+    if not name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Name fehlt")
+    low = name.casefold()
+    reserved = {"blufor", "bluefor", "redfor", "opfor", "civ", "greenfor", "civ/greenfor", "unbekannt"}
+    if low in reserved:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Name ist für einen Standard-Layer reserviert")
+    for ly in db.scalars(select(Layer).where(Layer.plan_id == plan_id)):
+        if ly.id != keep_id and ly.name.casefold() == low:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Layer existiert bereits")
+    return name
+
+
+@router.get("/{plan_id}/layers")
+def list_layers(plan: ViewerPlan, db: DbDep) -> list[dict]:
+    return _layers_of(db, plan.id)
+
+
+@router.post("/{plan_id}/layers", status_code=status.HTTP_201_CREATED)
+async def create_layer(body: LayerBody, plan: EditorPlan, db: DbDep) -> dict:
+    name = _clean_layer_name(db, plan.id, body.name)
+    nxt = db.scalar(select(func.coalesce(func.max(Layer.ordering), 0)).where(Layer.plan_id == plan.id))
+    ly = Layer(plan_id=plan.id, name=name, color=body.color if body.color is not None else -1,
+               ordering=int(nxt or 0) + 1)
+    db.add(ly)
+    db.commit()
+    from ..services.realtime import hub
+
+    await hub.broadcast(plan.id, {"type": "layers.changed", "layers": _layers_of(db, plan.id)})
+    return _layer_out(ly)
+
+
+@router.patch("/{plan_id}/layers/{layer_id}")
+async def patch_layer(layer_id: str, body: LayerBody, plan: EditorPlan, db: DbDep) -> dict:
+    ly = db.get(Layer, layer_id)
+    if ly is None or ly.plan_id != plan.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if ly.is_default:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Standard-Layer kann nicht geändert werden")
+    if body.name is not None:
+        ly.name = _clean_layer_name(db, plan.id, body.name, keep_id=ly.id)
+    if body.color is not None:
+        ly.color = body.color
+    if body.ordering is not None:
+        ly.ordering = body.ordering
+    db.commit()
+    from ..services.realtime import hub
+
+    await hub.broadcast(plan.id, {"type": "layers.changed", "layers": _layers_of(db, plan.id)})
+    return _layer_out(ly)
+
+
+@router.delete("/{plan_id}/layers/{layer_id}")
+async def delete_layer(layer_id: str, plan: EditorPlan, db: DbDep) -> dict:
+    ly = db.get(Layer, layer_id)
+    if ly is None or ly.plan_id != plan.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if ly.is_default:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Standard-Layer kann nicht gelöscht werden")
+    # Objekte behalten (zurück auf "kein eigener Layer") — nicht per FK allein verlassen (SQLite-Tests)
+    db.execute(update(Marker).where(Marker.layer_id == ly.id).values(layer_id=None))
+    db.execute(update(Stroke).where(Stroke.layer_id == ly.id).values(layer_id=None))
+    db.delete(ly)
+    db.commit()
+    from ..services.realtime import hub
+
+    await hub.broadcast(plan.id, {"type": "layers.changed", "layers": _layers_of(db, plan.id), "removed": layer_id})
+    return {"ok": True}
 
 
 # ─── Phasen (Zeitstrahl) ───────────────────────────────────────────────────
@@ -498,6 +612,8 @@ class PhaseBody(BaseModel):
     parent_id: str | None = None   # bei plane="builder": zugehörige Spieler-Phase
     start_at: datetime | None = None
     end_at: datetime | None = None
+    zeus_released: bool | None = None  # Missionsbau-Phase für Zeus freigeben
+    zeus_hours: float | None = None    # Frist in Stunden (None/0 = unbegrenzt); ohne Angabe: 48 h
 
 
 def _phase_out(p: Phase) -> dict:
@@ -507,6 +623,8 @@ def _phase_out(p: Phase) -> dict:
         "start_at": p.start_at.isoformat() if p.start_at else None,
         "end_at": p.end_at.isoformat() if p.end_at else None,
         "locked": bool(p.locked),
+        "zeus_released": bool(p.zeus_released),
+        "zeus_until": p.zeus_until.isoformat() if p.zeus_until else None,
     }
 
 
@@ -534,6 +652,8 @@ def list_phases(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> list[dict]:
     q = select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering, Phase.sub_ordering)
     if not builder:
         released = _released_builder_phase_ids(db, plan.id)
+        if effective_zeus(db, user):
+            released = released | _zeus_released_phase_ids(db, plan.id)
         cond = Phase.plane == "player"
         q = q.where(cond | Phase.id.in_(released) if released else cond)
     return [_phase_out(p) for p in db.scalars(q)]
@@ -572,7 +692,7 @@ def create_phase(body: PhaseBody, plan: EditorPlan, user: CurrentUser, db: DbDep
 
 
 @router.patch("/{plan_id}/phases/{phase_id}")
-def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: CurrentUser, db: DbDep) -> dict:
+async def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: CurrentUser, db: DbDep) -> dict:
     p = db.get(Phase, phase_id)
     if p is None or p.plan_id != plan.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -588,8 +708,22 @@ def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: CurrentU
         p.start_at = body.start_at
     if "end_at" in body.model_fields_set:
         p.end_at = body.end_at
+    zeus_changed = False
+    if body.zeus_released is not None and p.plane == "builder":
+        p.zeus_released = body.zeus_released
+        if body.zeus_released:
+            hours = 48.0 if "zeus_hours" not in body.model_fields_set else body.zeus_hours
+            p.zeus_until = now() + timedelta(hours=min(float(hours), 24 * 365)) if hours and hours > 0 else None
+        else:
+            p.zeus_until = None
+        zeus_changed = True
     db.commit()
-    return _phase_out(p)
+    out = _phase_out(p)
+    if zeus_changed:
+        from ..services.realtime import hub
+
+        await hub.broadcast(plan.id, {"type": "phases.changed"})
+    return out
 
 
 @router.delete("/{plan_id}/phases/{phase_id}")
@@ -802,6 +936,7 @@ def clone_plan(
         d = _marker_dict(m)
         d.pop("id")
         d["phase_id"] = phase_map.get(m.phase_id or "")
+        d["extra_phase_ids"] = [phase_map[x] for x in (m.extra_phase_ids or []) if x in phase_map]
         d["layer_id"] = layer_map.get(m.layer_id or "")
         db.add(Marker(plan_id=clone.id, created_by=user.id, **d))
 

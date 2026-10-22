@@ -19,11 +19,13 @@ class UserOut(BaseModel):
     role: str
     can_create_plans: bool
     is_mission_builder: bool = False
+    is_zeus: bool = False
 
 
 class MeOut(UserOut):
     can_create_plans_effective: bool
     is_mission_builder_effective: bool = False
+    is_zeus_effective: bool = False
     ui_settings: dict = {}
 
 
@@ -73,7 +75,7 @@ class MapSourceFile(BaseModel):
 
 class SourceImportIn(BaseModel):
     path: str          # Datei-Pfad im Repo (relativ), z. B. "catalog/SIDC_Translations.xlsx"
-    target: str         # Katalog-Schlüssel: all-markers|quick-menu|channels|modifiers|phaseline-style|translations
+    target: str         # Katalog-Schlüssel: all-markers|quick-menu|modifiers|phaseline-style|translations
 
 
 class MapImportFromSourceIn(BaseModel):

@@ -37,6 +37,8 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16), default="user")   # 'admin' | 'user'
     can_create_plans: Mapped[bool] = mapped_column(Boolean, default=False)
     is_mission_builder: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Zeus: Unterrolle des Missionsbaus — sieht/bearbeitet nur dafür freigegebene Missionsbau-Phasen.
+    is_zeus: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # Bei Passwortwechsel / "überall abmelden" hochgezählt -> alte Session-Cookies ungültig.
     session_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
@@ -72,6 +74,7 @@ class Group(Base):
     name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     can_create_plans: Mapped[bool] = mapped_column(Boolean, default=False)
     is_mission_builder: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_zeus: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
     members: Mapped[list[User]] = relationship(secondary="group_members", back_populates="groups")
@@ -218,6 +221,9 @@ class Phase(Base):
     # Missionsbau-Phase ist für ALLE (nicht nur Missionsbauer) sichtbar — aber
     # weiterhin nur von Missionsbauern bearbeitbar (siehe live.py/plans.py).
     locked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Freigabe einer Missionsbau-Phase für Zeus (optional zeitlich begrenzt; None = unbegrenzt).
+    zeus_released: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    zeus_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Layer(Base):
@@ -249,6 +255,8 @@ class Marker(Base):
     layer_id: Mapped[str | None] = mapped_column(
         ForeignKey("layers.id", ondelete="SET NULL"), index=True
     )
+    # Weitere Phasen, in denen der Marker ebenfalls erscheint (zusätzlich zu phase_id).
+    extra_phase_ids: Mapped[list] = mapped_column(JSON, default=list)
     orbat_node_id: Mapped[str | None] = mapped_column(
         ForeignKey("orbat_nodes.id", ondelete="SET NULL"), index=True
     )

@@ -74,8 +74,6 @@ def _allowed_phases(db, plan, sh) -> set[str] | None:
 
 @router.get("/{token}")
 def public_snapshot(token: str, db: DbDep) -> dict:
-    from .catalog import read_catalog
-
     plan, sh = _resolve_share(token, db)
     mp = db.get(Map, plan.map_id)
     incl = bool(sh.include_builder)
@@ -112,7 +110,6 @@ def public_snapshot(token: str, db: DbDep) -> dict:
         "readonly": not (sh.can_edit or sh.can_move),
         "rights": {"point": sh.can_point, "edit": sh.can_edit, "move": sh.can_move},
         "include_builder": incl,
-        "channels": read_catalog("channels"),
         "phases": [
             {"id": p.id, "name": p.name, "ordering": p.ordering,
              "plane": p.plane or "player", "parent_id": p.parent_id,

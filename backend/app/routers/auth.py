@@ -170,6 +170,7 @@ def export_my_data(user: CurrentUser, db: DbDep) -> StreamingResponse:
         "role": user.role,
         "can_create_plans": user.can_create_plans,
         "is_mission_builder": user.is_mission_builder,
+        "is_zeus": user.is_zeus,
         "is_active": user.is_active,
         "created_at": _iso(user.created_at),
         "ui_settings": user.ui_settings or {},
@@ -282,7 +283,7 @@ def delete_my_account(request: Request, response: Response, user: CurrentUser, d
 
 
 def _me(db: DbDep, user: User) -> MeOut:
-    from ..permissions import effective_mission_builder
+    from ..permissions import effective_mission_builder, effective_zeus
 
     return MeOut(
         id=user.id,
@@ -291,8 +292,10 @@ def _me(db: DbDep, user: User) -> MeOut:
         role=user.role,
         can_create_plans=user.can_create_plans,
         is_mission_builder=user.is_mission_builder,
+        is_zeus=user.is_zeus,
         can_create_plans_effective=can_create_plans(db, user),
         is_mission_builder_effective=effective_mission_builder(db, user),
+        is_zeus_effective=effective_zeus(db, user),
         ui_settings=user.ui_settings or {},
     )
 

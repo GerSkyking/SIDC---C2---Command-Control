@@ -107,3 +107,16 @@ def effective_mission_builder(db: Session, user: User) -> bool:
             select(Group.id).where(Group.id.in_(gids), Group.is_mission_builder.is_(True))
         ).first()
     )
+
+
+def effective_zeus(db: Session, user: User) -> bool:
+    """Zeus-Rolle: User-Flag ODER eine Gruppen-Flag. (Missionsbauer/Admins brauchen sie nicht —
+    sie sehen ohnehin alles; die Zeus-Ansicht können sie im Client zum Testen wählen.)"""
+    if getattr(user, "is_zeus", False):
+        return True
+    from .models import Group
+
+    gids = list(db.scalars(select(GroupMember.group_id).where(GroupMember.user_id == user.id)))
+    if not gids:
+        return False
+    return bool(db.scalars(select(Group.id).where(Group.id.in_(gids), Group.is_zeus.is_(True))).first())
