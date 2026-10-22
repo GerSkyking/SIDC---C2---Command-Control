@@ -159,7 +159,7 @@ a { color: var(--accent); }
 .tl { display: flex; flex-direction: column; gap: 0.2rem; width: 100%; }
 .tl-ctl { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .tl-ctl .tl-zoom { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
-.tl-ctl .tl-zoom button { border: none; background: transparent; width: 1.5rem; height: 1.5rem; font-size: 1rem; line-height: 1; }
+.tl-ctl .tl-zoom button { border: none; background: transparent; width: 1.5rem; height: 1.5rem; padding: 0; display: grid; place-items: center; }
 .tl-ctl .tl-zoom button:hover { background: var(--elevated); }
 .tl-ctl #ph-add { padding: 0.15rem 0.5rem; font-size: 0.8rem; }
 .tl-scroll { overflow-x: auto; overflow-y: hidden; width: 100%; overscroll-behavior-x: contain; }
@@ -284,7 +284,8 @@ a { color: var(--accent); }
 .navcube .navcube-home:hover { background: var(--elevated); }
 .presenting .navcube { display: none !important; }
 
-.grid-canvas { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0; pointer-events: none; z-index: 4; }
+.grid-canvas { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0; pointer-events: none; z-index: 1; } /* hinter den Karten-Bedienelementen (+/−, Kompass: z-index 2) */
+.maplibregl-popup { z-index: 3; }
 .layers-panel { position: fixed; right: 0.6rem; top: calc(var(--topbar-h, 3.2rem) + 0.4rem); width: auto;
   min-width: 16rem; max-width: min(24rem, 90vw); min-height: 2.5rem; z-index: 9;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem;
@@ -814,3 +815,24 @@ body.rail-open .layers-panel:not(.mv-pinned) { right: calc(var(--rail-w, 300px) 
 .lightbox .lb-x, .lightbox .lb-nav { background: rgba(0, 0, 0, 0.5); color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.3); border-radius: var(--r-sm); padding: 0.35rem; }
 .lightbox .lb-x:hover, .lightbox .lb-nav:hover { background: rgba(0, 0, 0, 0.8); }
+
+/* ── Lösch-Symbole immer rot ─────────────────────────────────────────── */
+[data-del]:not(.danger), [data-delf], [data-delmap], [data-src-del], [data-delcat], [data-dellegal], [data-adel],
+[data-orm], [data-delfav], [data-is-del], [data-ps-del], .tl-del, .ir-del, .pimg-x, .line-del { color: var(--danger); }
+button.danger .ic { color: var(--danger); }
+
+/* ── Radierer: Kreis + Größen-Panel ──────────────────────────────────── */
+.eraser-ring { position: absolute; z-index: 6; pointer-events: none; border: 2px solid var(--danger); border-radius: 50%;
+  background: rgba(255, 80, 80, 0.12); transform: translate(-50%, -50%); box-sizing: border-box; }
+.eraser-ring[hidden] { display: none; }
+.eraser-panel { position: absolute; left: 3.4rem; top: calc(var(--topbar-h, 3.2rem) + 0.7rem); width: 13rem; z-index: 9;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; box-shadow: var(--shadow); }
+.eraser-panel[hidden] { display: none; }
+.eraser-panel input[type=range] { width: 100%; }
+
+/* ── Rechtsklick-Menü (Standard-Werkzeug) ────────────────────────────── */
+.ctx-menu { position: fixed; z-index: 60; min-width: 11rem; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.25rem; box-shadow: var(--shadow); display: flex; flex-direction: column; }
+.ctx-menu button { display: flex; align-items: center; gap: 0.5rem; border: none; background: transparent; text-align: left;
+  padding: 0.4rem 0.6rem; border-radius: var(--r-sm); }
+.ctx-menu button:hover:not(:disabled) { background: var(--elevated); }

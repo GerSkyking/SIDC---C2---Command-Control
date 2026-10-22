@@ -62,7 +62,7 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
   const tab = document.createElement("button");
   tab.className = "img-rail-tab";
   tab.title = t("imgrail.toggle");
-  tab.innerHTML = icon("chevron", 16);
+  tab.innerHTML = icon("back", 16); // "<" = Leiste ausklappen (sie fährt von rechts herein)
   root.appendChild(tab);
 
   const listEl = rail.querySelector<HTMLElement>(".ir-list")!;

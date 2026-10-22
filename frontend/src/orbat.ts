@@ -144,7 +144,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
         ${AFFIL.map((a) => `<option value="${a}" ${a === o.affiliation ? "selected" : ""}>${t("orbat.aff." + a)}</option>`).join("")}
       </select>
       ${o.is_owner ? `<button data-acl>${t("plans.shares")}</button>` : ""}
-      ${o.is_owner ? `<button class="danger" data-delo>${t("common.delete")}</button>` : ""}
+      ${o.is_owner ? `<button class="danger" data-delo>${icon("trash", 14)} ${t("common.delete")}</button>` : ""}
     </div>
     <textarea class="orb-notes" placeholder="${t("orbat.notes")}" ${canEdit ? "" : "readonly"}>${o.notes ?? ""}</textarea>
     <div class="orb-total">${t("orbat.totalStrength")}: <strong>${sumCur} / ${sumMax}</strong></div>
@@ -163,7 +163,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
   aff.addEventListener("change", () => void reload().then(saveHead));
   notes.addEventListener("change", saveHead);
   host.querySelector("[data-delo]")?.addEventListener("click", async () => {
-    if (!(await confirmDialog(t("orbat.confirmDelete"), { danger: true }))) return;
+    if (!(await confirmDialog(t("orbat.confirmDelete"), { danger: true, trash: true }))) return;
     await api.deleteOrbat(o.id).catch(fail);
     location.hash = "#/orbat";
   });
@@ -195,7 +195,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
   );
   host.querySelectorAll<HTMLButtonElement>("[data-del]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (!(await confirmDialog(t("orbat.confirmDeleteNode"), { danger: true }))) return;
+      if (!(await confirmDialog(t("orbat.confirmDeleteNode"), { danger: true, trash: true }))) return;
       await api.deleteNode(o.id, b.dataset.del!).catch(fail);
       void reload();
     }),

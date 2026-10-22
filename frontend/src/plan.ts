@@ -91,6 +91,11 @@ interface Stroke {
 }
 type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text";
 
+// Touch-Gerät erkannt → "Marker verschieben" als Werkzeug anzeigen (am Desktop genügt die mittlere Maustaste).
+const IS_MOBILE =
+  /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent) ||
+  (matchMedia("(pointer: coarse)").matches && navigator.maxTouchPoints > 0);
+
 interface Annot {
   id: string;
   phase_id: string | null;
@@ -226,7 +231,21 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let lineColor = (lineColors.find((c) => c.isDefault) ?? lineColors[0]).packedColor;
   let lineWidth = (lineWidths.find((w) => w.isDefault) ?? lineWidths[0]).width;
 
-  const peers = new Map<string, { name: string; lng: number; lat: number; t: number }>();
+  // hl: Zeitstempel bis zu dem der Punkt gelb hervorgehoben ist (Infinity = Linksklick gehalten);
+  // arrow: Startpunkt des Pfeils, solange diese Person rechts klickt+zieht.
+  type Peer = { name: string; lng: number; lat: number; t: number; color: string; hl: number; arrow: [number, number] | null };
+  const peers = new Map<string, Peer>();
+  // Jede Person bekommt eine eigene, aus der User-ID abgeleitete Farbe.
+  const peerColor = (uid: string): string => {
+    let h = 0;
+    for (let i = 0; i < uid.length; i++) h = (h * 31 + uid.charCodeAt(i)) >>> 0;
+    return `hsl(${Math.round((h * 137.508) % 360)} 85% 62%)`;
+  };
+  const upsertPeer = (uid: string, name: string, lng: number, lat: number, hl: boolean, arrow: [number, number] | null) => {
+    const prev = peers.get(uid);
+    const hlUntil = hl ? Infinity : prev && prev.hl === Infinity ? Date.now() + 1200 : (prev?.hl ?? 0);
+    peers.set(uid, { name, lng, lat, t: Date.now(), color: peerColor(uid), hl: hlUntil, arrow });
+  };
   const caps = { place: canEdit, move: canEdit, delete: canEdit, draw: canEdit };
   let mode: Mode = "move";
   let pending: MarkerTemplate | null = null;
@@ -355,19 +374,19 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ${
         canEdit
           ? iconBtn("pan", { data: { mode: "move" }, active: true, title: t("tool.move") + hk("mapMove") }) +
-            iconBtn("markerMove", { data: { mode: "markermove" }, title: t("tool.markermove") + hk("markermove") }) +
+            (IS_MOBILE ? iconBtn("markerMove", { data: { mode: "markermove" }, title: t("tool.markermove") + hk("markermove") }) : "") +
             iconBtn("point", { data: { mode: "point" }, title: t("tool.point") + hk("point") }) +
             iconBtn("line", { data: { mode: "line" }, title: t("tool.line") + hk("line") }) +
             iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") + hk("measure") }) +
             iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") }) +
             iconBtn("textbox", { data: { mode: "text" }, title: t("tool.text") + hk("text") }) +
             iconBtn("marker", { id: "tool-marker", title: t("tool.marker") + hk("place") }) +
-            iconBtn("star", { id: "tool-fav", title: t("tool.fav") + hk("fav") }) +
             `<span class="tb-sep"></span>`
           : ""
       }
       ${iconBtn("layers", { id: "layersBtn", title: t("tool.layers") })}
       ${iconBtn("groups", { id: "orbatBtn", title: t("orbat.inPlan") })}
+      ${canEdit ? iconBtn("star", { id: "tool-fav", title: t("tool.fav") + hk("fav") }) : ""}
     </div>
     ${
       canEdit
@@ -411,6 +430,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     </div>
     <button class="line-done" id="lineDone" title="${t("line.finish")}" hidden>${icon("check", 18)}</button>
     <button class="line-done line-gear" id="strokeGear" title="${t("line.edit")}" hidden>${icon("settings", 16)}</button>
+    <button class="line-done line-gear line-del" id="strokeDel" title="${t("line.delete")}" hidden>${icon("trash", 16)}</button>
+    <div class="eraser-ring" id="eraserRing" hidden></div>
+    <div class="eraser-panel" id="eraserPanel" hidden>
+      <div class="fav-head">${t("tool.erase").split(" – ")[0]}</div>
+      <label>${t("erase.size")}</label>
+      <input type="range" id="eraserSize" min="8" max="150" step="1" />
+      <div class="muted" id="eraserInfo" style="font-size:.75rem"></div>
+    </div>
     <div class="navcube" id="navcube" hidden></div>
     <div class="layers-panel" id="layersPanel" hidden></div>
     <div class="layers-panel orbat-panel" id="orbatPanel" hidden></div>
@@ -666,13 +693,50 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const peerFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
     features: [...peers.values()]
-      .filter((p) => Date.now() - p.t < 5000)
+      .filter((p) => Date.now() - p.t < 5000 || p.arrow || p.hl === Infinity)
       .map((p) => ({
         type: "Feature",
         geometry: { type: "Point", coordinates: [p.lng, p.lat] },
-        properties: { name: p.name },
+        properties: { name: p.name, color: p.color, hl: p.hl > Date.now() ? 1 : 0 },
       })),
   });
+
+  // Zeige-Pfeile (nur solange die Person rechts klickt): Schaft in Geo-Koordinaten,
+  // Spitze in Bildschirmgröße (konstant, unabhängig vom Zoom).
+  const peerArrowFC = (): GeoJSON.FeatureCollection => {
+    const feats: GeoJSON.Feature[] = [];
+    const ll = (x: number, y: number): [number, number] => {
+      const q = map.unproject([x, y]);
+      return [q.lng, q.lat];
+    };
+    for (const p of peers.values()) {
+      if (!p.arrow) continue;
+      const a = map.project(p.arrow);
+      const b = map.project([p.lng, p.lat]);
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < 6) continue;
+      const ux = (b.x - a.x) / len;
+      const uy = (b.y - a.y) / len;
+      const headLen = 18;
+      const headW = 8;
+      const bx = b.x - ux * headLen;
+      const by = b.y - uy * headLen;
+      feats.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: [p.arrow, ll(bx, by)] },
+        properties: { color: p.color },
+      });
+      feats.push({
+        type: "Feature",
+        geometry: {
+          type: "Polygon",
+          coordinates: [[ll(b.x, b.y), ll(bx - uy * headW, by + ux * headW), ll(bx + uy * headW, by - ux * headW), ll(b.x, b.y)]],
+        },
+        properties: { color: p.color },
+      });
+    }
+    return { type: "FeatureCollection", features: feats };
+  };
 
   map.on("load", async () => {
     await Promise.all([...markers.values()].map(ensureIcon));
@@ -923,18 +987,39 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     });
 
     map.addSource("peers", { type: "geojson", data: peerFC() });
+    map.addSource("peer-arrows", { type: "geojson", data: peerArrowFC() });
+    map.addLayer({
+      id: "peer-arrows-line",
+      type: "line",
+      source: "peer-arrows",
+      filter: ["==", ["geometry-type"], "LineString"],
+      paint: { "line-color": ["get", "color"], "line-width": 4 },
+      layout: { "line-cap": "round" },
+    });
+    map.addLayer({
+      id: "peer-arrows-head",
+      type: "fill",
+      source: "peer-arrows",
+      filter: ["==", ["geometry-type"], "Polygon"],
+      paint: { "fill-color": ["get", "color"] },
+    });
     map.addLayer({
       id: "peers",
       type: "circle",
       source: "peers",
-      paint: { "circle-radius": 6, "circle-color": "#ff5bd0", "circle-stroke-color": "#fff", "circle-stroke-width": 2 },
+      paint: {
+        "circle-radius": ["case", ["==", ["get", "hl"], 1], 9, 6],
+        "circle-color": ["get", "color"],
+        "circle-stroke-color": ["case", ["==", ["get", "hl"], 1], "#ffe600", "#fff"],
+        "circle-stroke-width": ["case", ["==", ["get", "hl"], 1], 5, 2],
+      },
     });
     map.addLayer({
       id: "peers-label",
       type: "symbol",
       source: "peers",
       layout: { "text-field": ["get", "name"], "text-size": 11, "text-offset": [0, 1.2] },
-      paint: { "text-color": "#ff9be4", "text-halo-color": "#000", "text-halo-width": 1 },
+      paint: { "text-color": ["get", "color"], "text-halo-color": "#000", "text-halo-width": 1.5 },
     });
 
     // Start in 2D: KEIN Terrain-Mesh (ressourcenschonend). Die Cursor-Höhe kommt
@@ -992,7 +1077,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     refreshStrokeVerts();
     onEditSelChange();
   };
-  const refreshPeers = () => (map.getSource("peers") as GeoJSONSource)?.setData(peerFC());
+  const refreshPeers = () => {
+    (map.getSource("peers") as GeoJSONSource)?.setData(peerFC());
+    (map.getSource("peer-arrows") as GeoJSONSource)?.setData(peerArrowFC());
+  };
+  // Hervorhebung läuft aus / Zeiger verschwindet, auch ohne neue Nachricht
+  const peerTick = window.setInterval(() => peers.size && refreshPeers(), 500);
+  window.addEventListener("hashchange", () => window.clearInterval(peerTick), { once: true });
+  map.on("move", () => {
+    if ([...peers.values()].some((p) => p.arrow)) refreshPeers(); // Pfeilspitze hat feste Bildschirmgröße
+  });
   let dirRaf = 0;
   map.on("move", () => {
     if (dirRaf) return;
@@ -1065,7 +1159,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         break;
       case "presence.cursor":
         if (msg.uid !== me.id) {
-          peers.set(msg.uid, { name: names.get(msg.uid) ?? "?", lng: msg.lng, lat: msg.lat, t: Date.now() });
+          upsertPeer(msg.uid, names.get(msg.uid) ?? "?", msg.lng, msg.lat, !!msg.hl, (msg.arrow as [number, number] | null) ?? null);
           refreshPeers();
         }
         break;
@@ -1216,13 +1310,33 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       measureCursor = [e.lngLat.lng, e.lngLat.lat];
       redrawMeasure();
     }
-    if (mode === "point" && Date.now() - lastCursorSent > 60) {
-      lastCursorSent = Date.now();
-      socket.send({ type: "presence.cursor", lng: e.lngLat.lng, lat: e.lngLat.lat });
-      // eigener Zeiger auch bei mir anzeigen
-      peers.set(me.id, { name: me.display_name || me.username, lng: e.lngLat.lng, lat: e.lngLat.lat, t: Date.now() });
-      refreshPeers();
-    }
+    if (mode === "point") sendPointer(e.lngLat.lng, e.lngLat.lat);
+  });
+  // Zeigen: Linksklick = gelbe Hervorhebung, Rechtsklick halten + ziehen = Pfeil (nur solange gehalten)
+  let ptrHl = false;
+  let ptrArrowFrom: [number, number] | null = null;
+  let ptrLast: [number, number] | null = null;
+  const sendPointer = (lng: number, lat: number, force = false) => {
+    if (!force && Date.now() - lastCursorSent <= 60) return;
+    lastCursorSent = Date.now();
+    ptrLast = [lng, lat];
+    socket.send({ type: "presence.cursor", lng, lat, hl: ptrHl, arrow: ptrArrowFrom });
+    // eigener Zeiger auch bei mir anzeigen
+    upsertPeer(me.id, me.display_name || me.username, lng, lat, ptrHl, ptrArrowFrom);
+    refreshPeers();
+  };
+  map.on("mousedown", (e) => {
+    if (mode !== "point") return;
+    if (e.originalEvent.button === 0) ptrHl = true;
+    else if (e.originalEvent.button === 2) ptrArrowFrom = [e.lngLat.lng, e.lngLat.lat];
+    else return;
+    sendPointer(e.lngLat.lng, e.lngLat.lat, true);
+  });
+  document.addEventListener("mouseup", () => {
+    if (!ptrHl && !ptrArrowFrom) return;
+    ptrHl = false;
+    ptrArrowFrom = null;
+    if (mode === "point" && ptrLast) sendPointer(ptrLast[0], ptrLast[1], true);
   });
 
   // ── 2D/3D + Navigations-Würfel ───────────────────────────────────────
@@ -1884,7 +1998,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const ctl =
       `<div class="tl-ctl">` +
       `<button class="icon-btn" id="ph-notes" title="${t("notes.open") + hk("notes")}">${icon("notes", 16)}</button>` +
-      `<span class="tl-zoom"><button id="tl-zout" title="${t("tl.zoomOut")}">−</button><button id="tl-zin" title="${t("tl.zoomIn")}">+</button></span>` +
+      `<span class="tl-zoom"><button id="tl-zout" title="${t("tl.zoomOut")}">${icon("minus", 14)}</button><button id="tl-zin" title="${t("tl.zoomIn")}">${icon("plus", 14)}</button></span>` +
       (isMB
         ? `<span class="segmented mb-actas">` +
           `<button class="seg-btn ${actAs === "player" ? "active" : ""}" data-as="player">${t("mb.player")}</button>` +
@@ -2013,7 +2127,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       });
       el.querySelector<HTMLButtonElement>(".tl-del")?.addEventListener("click", async (e) => {
         e.stopPropagation();
-        if (!(await confirmDialog(t("phase.confirmDelete"), { danger: true }))) return;
+        if (!(await confirmDialog(t("phase.confirmDelete"), { danger: true, trash: true }))) return;
         await api.deletePhase(planId, id);
         removePhaseLocal(id);
       });
@@ -3100,10 +3214,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   const lineDoneBtn = root.querySelector<HTMLButtonElement>("#lineDone")!;
   const strokeGearBtn = root.querySelector<HTMLButtonElement>("#strokeGear")!;
+  const strokeDelBtn = root.querySelector<HTMLButtonElement>("#strokeDel")!;
+  const eraserPanel = root.querySelector<HTMLDivElement>("#eraserPanel")!;
+  const eraserRing = root.querySelector<HTMLDivElement>("#eraserRing")!;
   // Anker für den grünen Haken (und das Zahnrad): letzter Punkt der laufenden
   // Linie bzw. der gerade bearbeiteten Linie/Messlinie.
   const doneAnchor = (): [number, number] | null => {
     if (mode === "line" && linePts.length >= 2) return linePts[linePts.length - 1];
+    if (mode === "measure" && measureActive.length >= 2) return measureActive[measureActive.length - 1];
     if (editStrokeId) {
       const p = strokes.get(editStrokeId)?.points;
       if (p && p.length) return p[p.length - 1] as [number, number];
@@ -3116,11 +3234,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const positionLineDone = () => {
     const a = doneAnchor();
-    // Zahnrad nur beim Bearbeiten einer bestehenden Phasenlinie
-    const showGear = !!editStrokeId && mode !== "line";
+    // Zahnrad nur beim Bearbeiten einer bestehenden Phasenlinie, Papierkorb auch bei Messlinien
+    const running = (mode === "line" && linePts.length >= 2) || (mode === "measure" && measureActive.length >= 2);
+    const showGear = !!editStrokeId && !running;
+    const showDel = (!!editStrokeId || !!editMeasureId) && !running;
     if (!a) {
       lineDoneBtn.hidden = true;
       strokeGearBtn.hidden = true;
+      strokeDelBtn.hidden = true;
       return;
     }
     const p = map.project(a);
@@ -3138,15 +3259,32 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       strokeGearBtn.style.left = `${Math.round(bx + 22)}px`;
       strokeGearBtn.style.top = `${Math.round(by - 46)}px`;
     }
+    strokeDelBtn.hidden = !showDel;
+    if (showDel) {
+      strokeDelBtn.style.left = `${Math.round(bx + (showGear ? 60 : 22))}px`;
+      strokeDelBtn.style.top = `${Math.round(by - 46)}px`;
+    }
   };
   onEditSelChange = positionLineDone;
   lineDoneBtn.addEventListener("click", () => {
-    if (mode === "line") finishLine();
+    if (mode === "line" && linePts.length >= 2) finishLine();
+    else if (mode === "measure" && measureActive.length >= 2) commitMeasure();
     else if (editStrokeId) setEditStroke(null);
     else if (editMeasureId) setEditMeasure(null);
   });
   strokeGearBtn.addEventListener("click", () => {
     if (editStrokeId) openStrokeSettings(editStrokeId);
+  });
+  strokeDelBtn.addEventListener("click", () => {
+    if (editStrokeId) {
+      if (caps.draw) socket.send({ type: "stroke.delete", id: editStrokeId });
+      setEditStroke(null);
+    } else if (editMeasureId) {
+      const mid = editMeasureId;
+      measureLines = measureLines.filter((x) => x.id !== mid);
+      setEditMeasure(null);
+      redrawMeasure();
+    }
   });
   const refreshLineDraft = () => {
     (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts));
@@ -3216,8 +3354,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       addLine("__active", live);
     }
     src.setData({ type: "FeatureCollection", features: feats });
+    positionLineDone();
   };
   const commitMeasure = () => {
+    // Doppelklick setzt den letzten Punkt doppelt — Duplikat entfernen
+    const n = measureActive.length;
+    if (n >= 2 && measureActive[n - 1][0] === measureActive[n - 2][0] && measureActive[n - 1][1] === measureActive[n - 2][1])
+      measureActive.pop();
     if (measureActive.length >= 2)
       measureLines.push({
         id: `m${Date.now()}`,
@@ -3233,7 +3376,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     m === "place" || m === "line" || m === "point" || m === "measure" || m === "text"
       ? "crosshair"
       : m === "erase"
-        ? "not-allowed"
+        ? "crosshair"
         : m === "markermove"
           ? "move"
           : "";
@@ -3244,15 +3387,21 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     );
     map.getCanvas().style.cursor = modeCursor(m);
     // Zeigen + Linie + Radierer + Messen + Marker-Verschieben: Karte fixieren
-    if (m === "point" || m === "line" || m === "erase" || m === "measure" || m === "markermove") {
-      map.dragPan.disable();
-      map.dragRotate.disable();
-    } else {
-      map.dragPan.enable();
+    if (m === "point" || m === "line" || m === "erase" || m === "measure" || m === "markermove") map.dragPan.disable();
+    else map.dragPan.enable();
+    // Drehen nur im normalen Karten-Werkzeug
+    if (m === "move") {
       map.dragRotate.enable();
+      map.touchZoomRotate.enableRotation();
+    } else {
+      map.dragRotate.disable();
+      map.touchZoomRotate.disableRotation();
     }
-    if (m === "line") map.doubleClickZoom.disable();
+    if (m === "line" || m === "measure") map.doubleClickZoom.disable();
     else map.doubleClickZoom.enable();
+    eraserPanel.hidden = m !== "erase";
+    if (m !== "erase") eraserRing.hidden = true;
+    toolbar.querySelector("#tool-marker")?.classList.toggle("active", m === "place");
     lineStylePanel.hidden = mvLine.isPinned() ? false : m !== "line";
     if (m === "line") {
       linePhaseId = currentPhaseId || null;
@@ -3263,16 +3412,24 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       linePts = [];
       refreshLineDraft();
     }
-    if (m !== "move" && m !== "markermove") setEditStroke(null);
+    if (m !== "move" && m !== "markermove" && m !== "line") setEditStroke(null);
     if (m !== "measure") {
       measureActive = [];
       measureCursor = null;
       redrawMeasure();
     }
-    if (m !== "move" && m !== "markermove") setEditMeasure(null);
-    if (m !== "point" && peers.has(me.id)) {
-      peers.delete(me.id);
-      refreshPeers();
+    if (m !== "move" && m !== "markermove" && m !== "measure") setEditMeasure(null);
+    positionLineDone();
+    if (m !== "point") {
+      ptrHl = false;
+      if (ptrArrowFrom) {
+        ptrArrowFrom = null;
+        if (ptrLast) sendPointer(ptrLast[0], ptrLast[1], true); // Pfeil bei den anderen beenden
+      }
+      if (peers.has(me.id)) {
+        peers.delete(me.id);
+        refreshPeers();
+      }
     }
     if (m !== "place") {
       pending = null;
@@ -3284,6 +3441,98 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   toolbar.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => setMode(b.dataset.mode as Mode)),
   );
+
+  // ── Radierer: Kreis mit einstellbarem Radius (Bildschirm-Pixel) ───────
+  // Löscht beim Klicken/Ziehen alles im Kreis: Marker, Phasenlinien, Messlinien.
+  const ERASER_KEY = "sidc_eraser_r";
+  let eraserR = (() => {
+    const v = Number(localStorage.getItem(ERASER_KEY));
+    return v >= 8 && v <= 150 ? v : 24;
+  })();
+  let erasing = false;
+  let eraseDownAt = 0;
+  const eraserSizeIn = root.querySelector<HTMLInputElement>("#eraserSize")!;
+  const eraserInfo = root.querySelector<HTMLDivElement>("#eraserInfo")!;
+  const updateEraserUi = () => {
+    eraserSizeIn.value = String(eraserR);
+    eraserRing.style.width = eraserRing.style.height = `${eraserR * 2}px`;
+    // Durchmesser des Kreises in Kartenmetern (an der Kartenmitte)
+    const c = map.project(map.getCenter());
+    const q = map.unproject([c.x + eraserR * 2, c.y]);
+    const a = lngLatToWorld(cal, map.getCenter().lng, map.getCenter().lat);
+    const b = lngLatToWorld(cal, q.lng, q.lat);
+    eraserInfo.textContent = `${t("erase.diameter")}: ${fmtDist(Math.hypot(b[0] - a[0], b[1] - a[1]))}`;
+  };
+  updateEraserUi();
+  eraserSizeIn.addEventListener("input", () => {
+    eraserR = Number(eraserSizeIn.value);
+    try {
+      localStorage.setItem(ERASER_KEY, String(eraserR));
+    } catch {
+      /* ignore */
+    }
+    updateEraserUi();
+  });
+  map.on("zoom", () => mode === "erase" && updateEraserUi());
+  const erasedIds = new Set<string>(); // schon gesendet, Server-Antwort steht noch aus
+  const distToSeg = (px: number, py: number, a: { x: number; y: number }, b: { x: number; y: number }): number => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    const tt = l2 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / l2)) : 0;
+    return Math.hypot(px - (a.x + tt * dx), py - (a.y + tt * dy));
+  };
+  const polyHit = (px: number, py: number, pts: { x: number; y: number }[], r: number): boolean => {
+    if (pts.length === 1) return Math.hypot(pts[0].x - px, pts[0].y - py) <= r;
+    for (let i = 1; i < pts.length; i++) if (distToSeg(px, py, pts[i - 1], pts[i]) <= r) return true;
+    return false;
+  };
+  const eraseAt = (px: number, py: number) => {
+    const once = (id: string): boolean => {
+      if (erasedIds.has(id)) return false;
+      erasedIds.add(id);
+      setTimeout(() => erasedIds.delete(id), 3000);
+      return true;
+    };
+    if (caps.draw)
+      for (const s of strokes.values()) {
+        if (phaseOpacityOf(s.phase_id) * channelVisibility(channels?.channels, myChannel, s.channel || "") <= 0) continue;
+        const r = eraserR + Math.max(2, s.width) / 2;
+        if (polyHit(px, py, s.points.map((p) => map.project(p)), r) && once(s.id))
+          socket.send({ type: "stroke.delete", id: s.id });
+      }
+    if (caps.delete)
+      for (const m of markers.values()) {
+        if (m.released || m.locked || phaseOpacity(m) <= 0) continue;
+        const p = map.project([m.world_x, m.world_y]);
+        if (Math.hypot(p.x - px, p.y - py) <= eraserR + 8 && once(m.id)) socket.send({ type: "marker.delete", id: m.id });
+      }
+    const curBuilder = isBuilderPhase(currentPhaseId);
+    const hitIds = measureLines
+      .filter((ml) => ml.builder === curBuilder && polyHit(px, py, ml.pts.map((p) => map.project(p)), eraserR))
+      .map((ml) => ml.id);
+    if (hitIds.length) {
+      measureLines = measureLines.filter((x) => !hitIds.includes(x.id));
+      if (editMeasureId && hitIds.includes(editMeasureId)) setEditMeasure(null);
+      redrawMeasure();
+    }
+  };
+  map.on("mousedown", (e) => {
+    if (mode !== "erase" || e.originalEvent.button !== 0) return;
+    erasing = true;
+    eraseDownAt = Date.now();
+    eraseAt(e.point.x, e.point.y);
+  });
+  map.on("mousemove", (e) => {
+    if (mode !== "erase") return;
+    const rr = root.getBoundingClientRect();
+    eraserRing.hidden = false;
+    eraserRing.style.left = `${e.originalEvent.clientX - rr.left}px`;
+    eraserRing.style.top = `${e.originalEvent.clientY - rr.top}px`;
+    if (erasing) eraseAt(e.point.x, e.point.y);
+  });
+  document.addEventListener("mouseup", () => (erasing = false));
+  map.getCanvas().addEventListener("mouseleave", () => (eraserRing.hidden = true));
 
   root.querySelector("#settingsBtn")!.addEventListener("click", openSettings);
 
@@ -3592,9 +3841,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const m = markers.get(id);
     if (!m) return;
     if (m.released) return; // freigegebene Feind-Marker sind nur Anzeige
-    if (mode === "erase") {
-      if (caps.delete) socket.send({ type: "marker.delete", id: m.id });
-    } else if (mode === "move" || mode === "markermove") {
+    if (mode === "move" || mode === "markermove") {
       openEditPanel(m);
     }
   };
@@ -3606,23 +3853,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let dragId: string | null = null;
 
   // Linie zum Bearbeiten wählen (Verschieben-Modus), Stützpunkte ziehen
+  // (im Zeichnen-Werkzeug nur, wenn gerade keine neue Linie läuft — sonst setzt der Klick einen Punkt)
   map.on("click", "strokes", (e) => {
-    if (!canEdit || (mode !== "move" && mode !== "markermove")) return;
+    if (!canEdit) return;
+    if (mode !== "move" && mode !== "markermove" && !(mode === "line" && !linePts.length)) return;
     e.preventDefault();
     setEditStroke((e.features?.[0]?.properties?.id as string) ?? null);
   });
   map.on("click", "measure-line", (e) => {
-    if (mode === "erase") {
-      e.preventDefault();
-      const mid = e.features?.[0]?.properties?.mid as string | undefined;
-      if (mid && mid !== "__active") {
-        measureLines = measureLines.filter((x) => x.id !== mid);
-        if (editMeasureId === mid) setEditMeasure(null);
-        redrawMeasure();
-      }
-      return;
-    }
-    if (mode !== "move" && mode !== "markermove") return;
+    if (mode !== "move" && mode !== "markermove" && !(mode === "measure" && !measureActive.length)) return;
     e.preventDefault();
     const mid = e.features?.[0]?.properties?.mid as string | undefined;
     setEditMeasure(mid && mid !== "__active" ? mid : null);
@@ -3752,6 +3991,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (mode === "line") {
       e.preventDefault();
       finishLine();
+    } else if (mode === "measure") {
+      e.preventDefault();
+      commitMeasure();
     }
   });
 
@@ -3764,15 +4006,106 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     } else if (mode === "line" && linePts.length) {
       e.preventDefault();
       cancelLine(); // laufende Linie verwerfen, NICHT setzen
-    } else if (mode === "measure") {
+    } else if (mode === "measure" && measureActive.length) {
       e.preventDefault();
-      commitMeasure(); // Rechtsklick: Messlinie festhalten …
-      setMode("move"); // … und zurück zum Karten-Ziehen
+      measureActive = []; // laufende Messlinie verwerfen (wie beim Zeichnen)
+      measureCursor = null;
+      redrawMeasure();
+      positionLineDone();
     } else if (mode === "place" && chainGroup != null && chainIndex > 0) {
       e.preventDefault();
       setMode("move");
+    } else if (mode === "move") {
+      e.preventDefault();
+      // Rechtsklick-Ziehen dreht die Karte — Menü nur bei einem echten Klick
+      const oe = e.originalEvent as MouseEvent;
+      if (!rightDown || Math.hypot(oe.clientX - rightDown.x, oe.clientY - rightDown.y) > 5) return;
+      openCtxMenu(oe.clientX, oe.clientY, [e.lngLat.lng, e.lngLat.lat]);
     }
   });
+  let rightDown: { x: number; y: number } | null = null;
+  map.getCanvas().addEventListener("mousedown", (ev) => {
+    rightDown = ev.button === 2 ? { x: ev.clientX, y: ev.clientY } : null;
+  });
+
+  // ── Rechtsklick-Menü im Karten-Werkzeug: alle anderen Werkzeuge ───────
+  let ctxMenuEl: HTMLElement | null = null;
+  const closeCtxMenu = () => {
+    ctxMenuEl?.remove();
+    ctxMenuEl = null;
+  };
+  function openCtxMenu(cx: number, cy: number, pos: [number, number]): void {
+    closeCtxMenu();
+    const items: { ic: string; label: string; ok: boolean; run: () => void }[] = [
+      {
+        ic: "marker",
+        label: t("tool.marker").split(" – ")[0],
+        ok: caps.place,
+        run: () => {
+          pending = null;
+          setMode("place");
+          awaitingPos = false;
+          startPlaceAt(pos);
+        },
+      },
+      {
+        ic: "line",
+        label: t("tool.line").split(" (")[0],
+        ok: caps.draw,
+        run: () => {
+          setMode("line");
+          linePts.push(pos);
+          refreshLineDraft();
+        },
+      },
+      {
+        ic: "ruler",
+        label: t("tool.measure").split(" – ")[0],
+        ok: true,
+        run: () => {
+          setMode("measure");
+          measureActive.push(pos);
+          redrawMeasure();
+        },
+      },
+      {
+        ic: "textbox",
+        label: t("tool.text").split(" (")[0],
+        ok: caps.place,
+        run: () => createAnnotAt(pos),
+      },
+      { ic: "point", label: t("tool.point").split(" – ")[0], ok: true, run: () => setMode("point") },
+      { ic: "eraser", label: t("tool.erase").split(" – ")[0], ok: caps.delete || caps.draw, run: () => setMode("erase") },
+    ];
+    const el = document.createElement("div");
+    el.className = "ctx-menu";
+    for (const it of items) {
+      const b = document.createElement("button");
+      b.innerHTML = `${icon(it.ic, 16)}<span>${esc(it.label)}</span>`;
+      b.disabled = !it.ok;
+      b.addEventListener("click", () => {
+        closeCtxMenu();
+        it.run();
+      });
+      el.appendChild(b);
+    }
+    document.body.appendChild(el);
+    const r = el.getBoundingClientRect();
+    el.style.left = `${Math.max(4, Math.min(cx, window.innerWidth - r.width - 4))}px`;
+    el.style.top = `${Math.max(4, Math.min(cy, window.innerHeight - r.height - 4))}px`;
+    ctxMenuEl = el;
+    const off = (ev: Event) => {
+      if (ev instanceof MouseEvent && el.contains(ev.target as Node)) return;
+      if (ev instanceof KeyboardEvent && ev.key !== "Escape") return;
+      closeCtxMenu();
+      document.removeEventListener("mousedown", off, true);
+      document.removeEventListener("keydown", off, true);
+      map.off("movestart", closeCtxMenu);
+    };
+    document.addEventListener("mousedown", off, true);
+    document.addEventListener("keydown", off, true);
+    map.once("movestart", closeCtxMenu);
+  }
 
   // ── Annotationen (platzierbare Markdown-Textfelder) ───────────────────
   const annotsEl = root.querySelector<HTMLDivElement>("#annots")!;
@@ -3845,7 +4178,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <div class="notes-view annot-prev"></div>
       <div class="row" style="margin-top:.6rem">
         <button class="primary" data-save style="flex:1">${t("common.save")}</button>
-        <button class="danger" data-del>${t("common.delete")}</button>
+        <button class="danger" data-del>${icon("trash", 14)} ${t("common.delete")}</button>
       </div>
     </div>`;
     document.body.appendChild(back);
@@ -4368,48 +4701,79 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
   phaseListeners.push(() => imageRail?.refresh());
 
+  // Marker-Wizard an einer bereits gewählten Position öffnen (Klick im Platzier-Modus / Rechtsklick-Menü)
+  function startPlaceAt(pos: [number, number]): void {
+    awaitingPos = false;
+    pendingPos = pos;
+    openWizard(root, (tpl) => {
+      pending = tpl;
+      chainGroup = tpl.is_multipoint ? Math.floor(Math.random() * 1e9) : null;
+      chainIndex = 0;
+      placeMarker(pendingPos ?? pos, tpl); // sofort an der geklickten Position
+      if (!tpl.is_multipoint) setMode("move");
+    }, myChannel);
+  }
+  function createAnnotAt(pos: [number, number]): void {
+    const ac = cid();
+    pendingAnnotCid = ac; // Antwort öffnet direkt den Editor
+    socket.send({
+      type: "annotation.create",
+      cid: ac,
+      data: {
+        world_x: pos[0],
+        world_y: pos[1],
+        text: "",
+        width: 220,
+        phase_id: currentPhaseId || null,
+        ref_zoom: map.getZoom(),
+      },
+    });
+  }
+
   map.on("click", (e) => {
     if ((e as { defaultPrevented?: boolean }).defaultPrevented) return;
 
     // Klick ins Leere beendet das Bearbeiten einer Linie/Messlinie
-    if ((mode === "move" || mode === "markermove") && (editStrokeId || editMeasureId)) {
+    if (
+      (mode === "move" || mode === "markermove" || (mode === "line" && !linePts.length) || (mode === "measure" && !measureActive.length)) &&
+      (editStrokeId || editMeasureId)
+    ) {
       setEditStroke(null);
       setEditMeasure(null);
       return;
     }
 
+    // Zeichnen/Lineal: Klick nahe einer bestehenden Linie wählt sie (statt eine neue zu beginnen)
+    if ((mode === "line" && !linePts.length) || (mode === "measure" && !measureActive.length)) {
+      const box: [maplibregl.PointLike, maplibregl.PointLike] = [
+        [e.point.x - 6, e.point.y - 6],
+        [e.point.x + 6, e.point.y + 6],
+      ];
+      if (mode === "line") {
+        const id = map.queryRenderedFeatures(box, { layers: ["strokes"] })[0]?.properties?.id as string | undefined;
+        if (id && caps.draw) {
+          setEditStroke(id);
+          return;
+        }
+      } else {
+        const mid = map.queryRenderedFeatures(box, { layers: ["measure-line"] })[0]?.properties?.mid as string | undefined;
+        if (mid && mid !== "__active") {
+          setEditMeasure(mid);
+          return;
+        }
+      }
+    }
+
     if (mode === "text") {
       if (!caps.place) return;
-      const ac = cid();
-      pendingAnnotCid = ac; // Antwort öffnet direkt den Editor
-      socket.send({
-        type: "annotation.create",
-        cid: ac,
-        data: {
-          world_x: e.lngLat.lng,
-          world_y: e.lngLat.lat,
-          text: "",
-          width: 220,
-          phase_id: currentPhaseId || null,
-          ref_zoom: map.getZoom(),
-        },
-      });
+      createAnnotAt([e.lngLat.lng, e.lngLat.lat]);
       setMode("move");
       return;
     }
 
     if (mode === "erase") {
-      // Linien haben eine schmale Trefferfläche — mit etwas Toleranz suchen.
-      const pad = 6;
-      const hits = map.queryRenderedFeatures(
-        [
-          [e.point.x - pad, e.point.y - pad],
-          [e.point.x + pad, e.point.y + pad],
-        ],
-        { layers: ["strokes"] },
-      );
-      const id = hits[0]?.properties?.id as string | undefined;
-      if (id && caps.draw) socket.send({ type: "stroke.delete", id });
+      // Mausklick wurde schon bei mousedown radiert; hier nur noch der Touch-Tipp.
+      if (Date.now() - eraseDownAt > 500) eraseAt(e.point.x, e.point.y);
       return;
     }
 
@@ -4428,15 +4792,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (mode === "place") {
       const pos: [number, number] = [e.lngLat.lng, e.lngLat.lat];
       if (awaitingPos) {
-        awaitingPos = false;
-        pendingPos = pos;
-        openWizard(root, (tpl) => {
-          pending = tpl;
-          chainGroup = tpl.is_multipoint ? Math.floor(Math.random() * 1e9) : null;
-          chainIndex = 0;
-          placeMarker(pendingPos ?? pos, tpl); // sofort an der geklickten Position
-          if (!tpl.is_multipoint) setMode("move");
-        }, myChannel);
+        startPlaceAt(pos);
         return;
       }
       if (pending) {
@@ -4451,7 +4807,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
       if (mode === "line" && linePts.length) cancelLine();
-      else if (editStrokeId || editMeasureId) {
+      else if (mode === "measure" && measureActive.length) {
+        measureActive = [];
+        measureCursor = null;
+        redrawMeasure();
+        positionLineDone();
+      } else if (editStrokeId || editMeasureId) {
         setEditStroke(null);
         setEditMeasure(null);
       } else setMode("move");
@@ -4545,7 +4906,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         <button class="primary" data-apply>${t("common.apply")}</button>
         <button data-fav>${t("fav.add")}</button>
         <button data-clone>${t("marker.clone")}</button>
-        <button data-del>${t("common.delete")}</button>
+        <button class="danger" data-del>${icon("trash", 14)} ${t("common.delete")}</button>
       </div>`;
     back.appendChild(p);
 

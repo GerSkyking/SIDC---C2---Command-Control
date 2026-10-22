@@ -165,7 +165,7 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
   );
   root.querySelectorAll<HTMLButtonElement>("[data-delmap]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (!(await confirmDialog(`${t("common.delete")}: ${b.dataset.delmap}?`, { danger: true }))) return;
+      if (!(await confirmDialog(`${t("common.delete")}: ${b.dataset.delmap}?`, { danger: true, trash: true }))) return;
       try {
         await api.deleteMap(b.dataset.delmap!);
         reload();
@@ -189,7 +189,7 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
   });
   root.querySelectorAll<HTMLButtonElement>("[data-src-del]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (!(await confirmDialog(t("common.delete") + "?", { danger: true }))) return;
+      if (!(await confirmDialog(t("common.delete") + "?", { danger: true, trash: true }))) return;
       await api.deleteMapSource(b.dataset.srcDel!);
       reload();
     }),
@@ -310,7 +310,7 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
   );
   root.querySelectorAll<HTMLButtonElement>("[data-dellegal]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (!(await confirmDialog(`${t("common.delete")}?`, { danger: true }))) return;
+      if (!(await confirmDialog(`${t("common.delete")}?`, { danger: true, trash: true }))) return;
       try {
         await api.deleteLegal(b.dataset.dellegal as "imprint" | "privacy");
         reload();

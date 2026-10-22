@@ -42,6 +42,7 @@ interface ConfirmOpts {
   okLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  trash?: boolean; // Lösch-Dialog: Papierkorb-Icon (rot) im OK-Button
 }
 
 export function confirmDialog(message: string, opts: ConfirmOpts = {}): Promise<boolean> {
@@ -53,7 +54,7 @@ export function confirmDialog(message: string, opts: ConfirmOpts = {}): Promise<
       <p class="nd-msg" style="margin:0;white-space:pre-line"></p>
       <div class="row" style="justify-content:flex-end;gap:.5rem">
         <button data-c>${opts.cancelLabel ?? t("common.cancel")}</button>
-        <button class="${opts.danger ? "danger" : "primary"}" data-ok>${opts.okLabel ?? t("common.ok")}</button>
+        <button class="${opts.danger ? "danger" : "primary"}" data-ok>${opts.trash ? icon("trash", 16) + " " : ""}${opts.okLabel ?? t("common.ok")}</button>
       </div></div>`;
     back.querySelector(".nd-msg")!.textContent = message;
     document.body.appendChild(back);

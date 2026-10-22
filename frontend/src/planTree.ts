@@ -177,7 +177,7 @@ export function renderPlanTree(
         if (name && name.trim() && name !== f.name) void guard(() => api.renameFolder(f.id, name.trim()));
       });
       fRow.querySelector("[data-delf]")?.addEventListener("click", async () => {
-        if (await confirmDialog(t("folder.confirmDelete"), { danger: true })) void guard(() => api.deleteFolder(f.id));
+        if (await confirmDialog(t("folder.confirmDelete"), { danger: true, trash: true })) void guard(() => api.deleteFolder(f.id));
       });
       box.appendChild(fRow);
 

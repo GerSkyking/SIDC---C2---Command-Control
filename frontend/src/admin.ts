@@ -128,7 +128,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
     postShell(app);
     app.querySelectorAll<HTMLElement>("[data-img]").forEach((row) => {
       row.querySelector("[data-img-del]")?.addEventListener("click", async () => {
-        if (await confirmDialog(t("admin.img.deleteConfirm"), { danger: true })) {
+        if (await confirmDialog(t("admin.img.deleteConfirm"), { danger: true, trash: true })) {
           guard(() => api.adminDeleteImage(row.dataset.img!));
         }
       });
@@ -199,7 +199,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
       if (pw) guard(() => api.patchUser(id, { password: pw }));
     });
     el.querySelector("[data-del]")?.addEventListener("click", async () => {
-      if (await confirmDialog(t("admin.confirmDeleteUser"), { danger: true })) guard(() => api.deleteUser(id));
+      if (await confirmDialog(t("admin.confirmDeleteUser"), { danger: true, trash: true })) guard(() => api.deleteUser(id));
     });
   });
 
@@ -216,7 +216,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
     const id = el.dataset.g!;
     const g = groups.find((x) => x.id === id)!;
     el.querySelector("[data-delg]")?.addEventListener("click", async () => {
-      if (await confirmDialog(t("admin.confirmDeleteGroup"), { danger: true })) guard(() => api.deleteGroup(id));
+      if (await confirmDialog(t("admin.confirmDeleteGroup"), { danger: true, trash: true })) guard(() => api.deleteGroup(id));
     });
     // Rechte: Checkboxen im Dropdown → PATCH (kein Reload, Dropdown bleibt offen)
     el.querySelectorAll<HTMLInputElement>("[data-gr]").forEach((cb) =>

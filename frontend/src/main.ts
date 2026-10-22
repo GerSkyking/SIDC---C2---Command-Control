@@ -181,7 +181,7 @@ async function renderPlanList(): Promise<void> {
     mapName: (id) => maps.find((m) => m.id === id)?.name ?? id,
     onChanged: () => renderPlanList(),
     onDeletePlan: async (p) => {
-      if (await confirmDialog(t("plans.confirmDelete"), { danger: true })) {
+      if (await confirmDialog(t("plans.confirmDelete"), { danger: true, trash: true })) {
         await api.deletePlan(p.id);
         renderPlanList();
       }
@@ -252,7 +252,7 @@ async function renderTrash(): Promise<void> {
       }
     });
     row.querySelector("[data-purge]")!.addEventListener("click", async () => {
-      if (!(await confirmDialog(t("trash.purgeConfirm"), { danger: true }))) return;
+      if (!(await confirmDialog(t("trash.purgeConfirm"), { danger: true, trash: true }))) return;
       try {
         await api.purgePlan(id);
         renderTrash();

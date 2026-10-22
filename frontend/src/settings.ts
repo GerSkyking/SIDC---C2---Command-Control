@@ -305,7 +305,7 @@ export function openSettings(): void {
   });
 
   back.querySelector("[data-delacc]")!.addEventListener("click", async () => {
-    if (!(await confirmDialog(t("settings.deleteAccountConfirm"), { danger: true, okLabel: t("settings.deleteAccount") })))
+    if (!(await confirmDialog(t("settings.deleteAccountConfirm"), { danger: true, trash: true, okLabel: t("settings.deleteAccount") })))
       return;
     const typed = await promptDialog(
       t("settings.deleteAccountTypeName").replace("{name}", currentMe?.username ?? ""),
