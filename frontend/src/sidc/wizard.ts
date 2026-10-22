@@ -6,10 +6,8 @@ import { t } from "../i18n";
 import { icon } from "../icons";
 import { toast } from "../notify";
 import {
-  channelLabel,
   findEntry,
   loadAllMarkers,
-  loadChannels,
   loadModifiers,
   loadQuickMenu,
   loadTranslations,
@@ -29,13 +27,16 @@ import {
   withModifiers,
   type SidcModifiers,
 } from "./sidc";
+import { layerSelectHtml, phaseMultiHtml, readPhaseMulti, type TplCtx } from "./layerui";
 import { iconSrc } from "./symbol";
 
 export interface MarkerTemplate {
   sidc: string;
   unit_text: string;
   ai_text: string;
-  channel: string;
+  channel?: string;
+  layer_id?: string | null;
+  extra_phase_ids?: string[];
   locked: boolean;
   timestamp_visible: boolean;
   rotation_degrees: number;
@@ -51,12 +52,11 @@ type Done = (t: MarkerTemplate) => void;
 export async function openWizard(
   host: HTMLElement,
   onPick: Done,
-  defaultChannel = "",
+  ctx: TplCtx = {},
 ): Promise<void> {
-  const [cats, quick, channels, mods] = await Promise.all([
+  const [cats, quick, mods] = await Promise.all([
     loadAllMarkers(),
     loadQuickMenu(),
-    loadChannels(),
     loadModifiers(),
     loadTranslations(),
   ]);
@@ -179,9 +179,16 @@ export async function openWizard(
         }
         <label>${t("wiz.unitText")}</label><input data-unit maxlength="60" />
         <label>${t("wiz.aiText")}</label><input data-ai maxlength="120" />
-        <label>${t("wiz.channel")}</label><select data-channel>${(channels?.channels ?? [])
-          .map((c) => `<option value="${c.name}" ${c.name === defaultChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
-          .join("")}</select>
+        ${
+          ctx.layers?.length
+            ? `<label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", ctx.layers, ctx.layerId)}`
+            : ""
+        }
+        ${
+          ctx.phases && ctx.phases.length > 1
+            ? `<label>${t("phase.extra")}</label>${phaseMultiHtml("data-xphases", ctx.phases, [], ctx.phaseId)}`
+            : ""
+        }
         <label>${t("marker.color")}</label>
         <div class="row"><input type="color" data-tint value="${tint || "#000000"}" />
           <button type="button" data-tint-reset>${t("marker.colorReset")}</button></div>
@@ -234,7 +241,8 @@ export async function openWizard(
           sidc,
           unit_text: config.querySelector<HTMLInputElement>("[data-unit]")!.value,
           ai_text: config.querySelector<HTMLInputElement>("[data-ai]")!.value,
-          channel: config.querySelector<HTMLSelectElement>("[data-channel]")!.value,
+          layer_id: config.querySelector<HTMLSelectElement>("[data-layer]")?.value || null,
+          extra_phase_ids: readPhaseMulti(config, "data-xphases"),
           locked: config.querySelector<HTMLInputElement>("[data-lock]")!.checked,
           timestamp_visible: config.querySelector<HTMLInputElement>("[data-ts]")!.checked,
           rotation_degrees: dir,
@@ -257,7 +265,7 @@ export async function openWizard(
       void import("./builder").then(({ renderMarkerBuilder }) =>
         renderMarkerBuilder(body, {
           templateFields: true,
-          defaultChannel,
+          ctx,
           defaultAffiliation: pickedAff ?? "3",
           submitLabel: t("wiz.place"),
           onTemplate: (tpl) => {

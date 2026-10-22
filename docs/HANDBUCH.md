@@ -12,9 +12,13 @@ Für Architektur/Stufenplan siehe [`../PLAN.md`](../PLAN.md), für Betrieb [`../
   Live-Vorschau + SIDC-Anzeige.
 - **Marker-Text** steht unter dem Symbol; **Icon-Größe** je Marker (25–300 %) im Editor,
   zusätzlich ein persönlicher Größen-Regler oben rechts (nur für den Betrachter).
-- **Channels**: Channel-Auswahl im Marker-Editor; der oben gewählte Channel steuert die
-  Deckkraft fremder Marker nach `SIDC_ChannelSettings.json` (`visibilityRules[].percent`).
-  Favoriten merken sich den Channel.
+- **Taktische Layer** (Listen-Symbol neben „Ebenen"): BLUFOR / REDFOR / Zivil-GREENFOR / Unbekannt
+  automatisch nach Identität, dazu eigene Layer pro Plan (Editoren legen sie an). Haken + Deckkraft
+  gelten je Nutzer lokal. Eigene Layer werden beim Platzieren, im Bearbeiten-Panel und bei Linien gewählt.
+- **Zeus**: eigene Rolle (Admin → Nutzer/Gruppen). Missionsbauer geben Missionsbau-Phasen für Zeus frei
+  (Standard 48 h, unbegrenzt möglich). Zeus-Ansicht: Spieler-Inhalt nur ansehen + freigegebene Phasen
+  bearbeiten; in Spieler-Phasen wird nichts gesetzt.
+- **Mehrere Phasen**: ein Marker kann zusätzlich in weiteren Phasen derselben Ebene erscheinen.
 - **Textfelder (Notizen)**: Editor öffnet beim Erstellen, leere Felder werden verworfen,
   Einklappen (nur erste Zeile), „auf Größe fixieren"-Checkbox (skaliert sonst mit dem Zoom),
   Löschen per Bestätigungs-Checkbox.
@@ -95,7 +99,7 @@ Instanzen wird eine Linie gezogen (`linked_group_id` / `point_index`).
   (nach Kategorie), mit Suche.
 - Pro Marker einstellbar: **Zugehörigkeit** (Unknown / Friend / Neutral / Hostile – ohne
   „Assumed"), **Echelon** (nur Land-Einheiten), **Richtung** (8 + stationär → Richtungspfeil),
-  **Einheitstext**, **Zusatztext**, **Channel**, **Sperren**, **Zeitstempel**.
+  **Einheitstext**, **Zusatztext**, **Layer**, **Sperren**, **Zeitstempel**.
 - **Erweitert** (Button, wenn der Marker-Typ Modifikatoren hat): rechte Spalte mit Dropdowns
   für **Modifikator 1/2**, **HQ / Task Force / Dummy** und **Zustand / Einsatzbereitschaft**
   aus `SIDC_ModifierCatalog.json`. Die Icon-Vorschau rendert live mit.
@@ -112,7 +116,7 @@ Theme-Schalter (Dunkel / Hell / System).
 
 **Beschriftung:** dauerhaft unter jedem Marker der Name (Einheitstext, sonst der
 Symbol-Name aus dem Katalog) + gesetzte Modifikatoren, durch Komma getrennt.
-**Maus über einen Marker** → Tooltip mit **Channel**, **Ersteller** und **Phase**.
+**Maus über einen Marker** → Tooltip mit **Ersteller**, **Phase** (ggf. **Layer**) und Aktions-Icons (Löschen / Verschieben / Bearbeiten).
 
 Klick auf einen Marker (Modus „Karte bewegen" oder „Marker verschieben") öffnet ein
 **zentriertes Fenster** (Klick außerhalb oder **Esc** schließt): Einheits-/Zusatztext,
@@ -140,7 +144,7 @@ ATAKmaps, als Vektor-Geometrie).
 | **↑ Kompass** | Zeigt Norden (dreht mit dem Kartenwinkel). Klick = Karte nach Norden ausrichten. |
 | **📅 Datum/Zeit** | Für den Screenshot-Zeitstempel. Leer = aktuelle Zeit. |
 | **📷 Screenshot** | PNG **nur mit Karteninhalt** (Sat/Grid + Orte + Marker + Zeichnungen + Pfeile + Grid-Beschriftung), keine Bedienelemente, kein MapLibre-Logo. Unten links ein militärischer DTG `DDHHMMZ MMM YY`. Dateiname `<Plan>_<Phase>_<DDMMYYYY-HHMMSS>.png`. |
-| **Channel** | Eigener Funkkanal (aus `SIDC_ChannelSettings.json`). |
+| **Layer** | Eigener taktischer Layer (optional). |
 | **Zeitstrahl** | Phasen – siehe 4.6. |
 | **🗒️ Notizen** | Phasen-Notizfenster – siehe 4.7. |
 | **Karten-Sprache** | 13 Sprachen für die Orts-Labels auf der Karte (separat von der UI-Sprache). |
@@ -192,7 +196,7 @@ Kategorisiert über die Sidebar: **Benutzer & Gruppen**, **Log**, **Config**
 - **SIDC-Kataloge hochladen** (Format 1:1 wie ingame `LocalMapData`), persistent im
   `uploads`-Volume:
   `SIDC_AllMarkersCatalog.json`, `SIDC_QuickMarkerMenuCatalog.json`,
-  `SIDC_PhaseLineStyleCatalog.json`, `SIDC_ChannelSettings.json`, `SIDC_ModifierCatalog.json`.
+  `SIDC_PhaseLineStyleCatalog.json`, `SIDC_ModifierCatalog.json`.
   Upload als roher `application/json`-Body (kein Multipart) – bei sehr großen Dateien ggf.
   im NPM `client_max_body_size` erhöhen.
 - **Karten**: Import per **Download-Link**, **Direkt-Upload** oder **aus einer

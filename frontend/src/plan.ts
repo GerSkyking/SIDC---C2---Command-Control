@@ -3,7 +3,7 @@
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
-import { channelLabel, channelVisibility, describe, loadAllMarkers, loadChannels, loadModifiers, loadPhaseLineStyle, loadTranslations, translate } from "./sidc/catalog";
+import { describe, loadAllMarkers, loadModifiers, loadPhaseLineStyle, loadTranslations, translate } from "./sidc/catalog";
 import {
   isTextMarker,
   lngLatToWorld,
@@ -14,6 +14,7 @@ import {
   type SidcModifiers,
 } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
+import { layerSelectHtml, phaseMultiHtml, readPhaseMulti, type PhaseOpt, type TplCtx } from "./sidc/layerui";
 import { confirmDialog, promptDialog, toast, toastError } from "./notify";
 import { makeMovable } from "./movable";
 import { ensureMapIcon, iconSrc, mapIconId, markerLabelOffsets } from "./sidc/symbol";
@@ -73,7 +74,7 @@ interface Marker {
   sidc: string;
   unit_text: string;
   ai_text: string;
-  channel: string;
+  channel?: string;
   author?: string;
   locked: boolean;
   rotation_degrees: number;
@@ -81,6 +82,7 @@ interface Marker {
   scale?: number;
   tint?: string;
   phase_id: string | null;
+  extra_phase_ids?: string[];
   layer_id: string | null;
   orbat_node_id?: string | null;
   orbat_strength?: number;
@@ -96,6 +98,7 @@ interface Stroke {
   color: number;
   width: number;
   phase_id?: string | null;
+  layer_id?: string | null;
   channel?: string;
 }
 type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text";
@@ -188,7 +191,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const myPlan = (await api.plans()).find((p) => p.id === planId);
   const canEdit = myPlan?.level === "editor" || myPlan?.level === "owner";
-  const channels = await loadChannels();
   const lineStyle = await loadPhaseLineStyle();
   const modCat = await loadModifiers();
   // SIDC (Symbolset + Entity) → subCategory, um die Modifikatoren eines
@@ -258,9 +260,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const caps = { place: canEdit, move: canEdit, delete: canEdit, draw: canEdit };
   let mode: Mode = "move";
   let pending: MarkerTemplate | null = null;
-  const _chCur = localStorage.getItem(`sidc_channel_${planId}`) || channels?.currentChannel || "";
-  let myChannel =
-    channels?.channels.find((c) => c.name === _chCur || c.languageKey === _chCur)?.name ?? _chCur;
   let is3D = false;
 
   // Phasen / Zeitstrahl (+ Missionsbau-Parallelebene)
@@ -275,6 +274,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     start_at?: string | null;
     end_at?: string | null;
     locked?: boolean;
+    zeus_released?: boolean;
+    zeus_until?: string | null;
   }
   const isMB: boolean = !!me.is_mission_builder_effective;
   const phases: PhaseT[] = [...(snap.phases ?? [])].sort(
@@ -298,8 +299,25 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       .sort((a, b) => (a.sub_ordering ?? 0) - (b.sub_ordering ?? 0));
 
   let currentPhaseId: string = playerPhases()[0]?.id ?? phases[0]?.id ?? "";
-  let actAs: "player" | "builder" =
-    isMB && localStorage.getItem(`sidc_actas_${planId}`) === "builder" ? "builder" : "player";
+  type ActAs = "player" | "builder" | "zeus";
+  const canZeus = isMB || !!me.is_zeus_effective;
+  let actAs: ActAs = (() => {
+    const v = localStorage.getItem(`sidc_actas_${planId}`);
+    return v === "builder" && isMB ? "builder" : v === "zeus" && canZeus ? "zeus" : "player";
+  })();
+  // Zeus-Freigabe einer Missionsbau-Phase: aktiv, solange keine Frist gesetzt ist oder sie noch nicht abgelaufen ist.
+  const parseUtc = (s: string): number => Date.parse(/Z$|[+-]\d\d:?\d\d$/.test(s) ? s : s + "Z");
+  const zeusOpen = (id: string | null | undefined): boolean => {
+    const ph = id ? phases.find((x) => x.id === id) : undefined;
+    return !!ph && ph.plane === "builder" && !!ph.zeus_released && (!ph.zeus_until || parseUtc(ph.zeus_until) > Date.now());
+  };
+  const zeusChildren = (playerId: string): PhaseT[] => builderChildren(playerId).filter((p) => zeusOpen(p.id));
+  // Zeus-Ansicht: in Spieler-Phasen wird nichts gesetzt.
+  const zeusBlocked = (): boolean => {
+    if (actAs !== "zeus" || isBuilderPhase(currentPhaseId)) return false;
+    toast(t("zeus.noPlayerPhase"), { kind: "error" });
+    return true;
+  };
   const activePlayerId = (): string => {
     const cur = phases.find((p) => p.id === currentPhaseId);
     return cur?.plane === "builder" ? cur.parent_id ?? "" : currentPhaseId;
@@ -320,12 +338,69 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const unitAiOpacityExpr = (on: boolean): maplibregl.ExpressionSpecification =>
     on ? ["get", "opacity"] : ["*", ["get", "opacity"], ["match", ["get", "labelcat"], "default", 0, 1]];
   const phaseListeners: (() => void)[] = []; // z. B. Notiz-Fenster bei Phasenwechsel
+  // ── Taktische Layer: Auto-Layer nach Identität + eigene Layer pro Plan ──
+  interface TacLayer {
+    id: string;
+    name: string;
+    color: number;
+    ordering: number;
+    is_default?: boolean;
+  }
+  let tacLayers: TacLayer[] = ((snap.layers ?? []) as TacLayer[]).filter((l) => !l.is_default);
+  const layerListeners: (() => void)[] = [];
+  type TacAuto = "bluefor" | "redfor" | "civgreen" | "unknown";
+  const TAC_AUTO: TacAuto[] = ["bluefor", "redfor", "civgreen", "unknown"];
+  const autoLayerOf = (sidc: string): TacAuto | null => {
+    if (isTextMarker(sidc)) return null;
+    const id = sidc[3];
+    if (id === "2" || id === "3") return "bluefor";
+    if (id === "5" || id === "6" || id === "7" || id === "8") return "redfor";
+    if (id === "4") return "civgreen";
+    return "unknown";
+  };
+  const tacKey = `sidc_tac_${planId}`;
+  let tacState: Record<string, { on?: boolean; op?: number }> = {};
+  try {
+    tacState = JSON.parse(localStorage.getItem(tacKey) || "{}") || {};
+  } catch {
+    tacState = {};
+  }
+  const tacVis = (key: string): number => {
+    const st = tacState[key];
+    if (!st) return 1;
+    return st.on === false ? 0 : Math.max(0, Math.min(100, st.op ?? 100)) / 100;
+  };
+  const tacOpacity = (sidc: string | null, layerId: string | null | undefined): number => {
+    const a = sidc ? autoLayerOf(sidc) : null;
+    return (a ? tacVis("auto:" + a) : 1) * (layerId && tacLayers.some((l) => l.id === layerId) ? tacVis(layerId) : 1);
+  };
+  // Phasen derselben Ebene (Spieler/Missionsbau) zur Mehrfach-Auswahl
+  const samePlanePhases = (pid: string | null | undefined): PhaseOpt[] => {
+    const b = isBuilderPhase(pid);
+    return phases
+      .filter((p) => (p.plane === "builder") === b && (actAs !== "zeus" || !b || zeusOpen(p.id)))
+      .map((p) => ({ id: p.id, name: p.name, builder: p.plane === "builder" }));
+  };
+  const tplCtx = (): TplCtx => ({
+    layers: tacLayers.map((l) => ({ id: l.id, name: l.name })),
+    layerId: null,
+    phases: samePlanePhases(currentPhaseId),
+    phaseId: currentPhaseId,
+  });
+
   const phaseOpacityOf = (phaseId: string | null | undefined): number => {
     if (phaseId == null) return 1;
     const mB = isBuilderPhase(phaseId);
     // Freigegebene Base-Missionsbau-Phase: immer voll sichtbar, auch in der
     // echten Spieler-Vorschau — unabhängig von der aktuell gewählten Phase.
     if (mB && isReleasedBuilderPhase(phaseId)) return 1;
+    // Zeus-Ansicht: Spieler-Inhalt (nur ansehen) + für Zeus freigegebene Missionsbau-Phasen
+    if (actAs === "zeus") {
+      const outO = Math.max(0, Math.min(100, outOpacity)) / 100;
+      if (mB) return zeusOpen(phaseId) ? (phaseId === currentPhaseId ? 1 : outO) : 0;
+      return phaseId === activePlayerId() || phaseId === currentPhaseId ? 1 : outO;
+    }
+    if (mB && !isMB) return 0; // Zeus-freigegebene Phasen nur in der Zeus-Ansicht
     // Missionsbau in Spieler-Ansicht = echte Spieler-Vorschau: Missionsbau-Inhalte weg.
     if (mB && isMB && actAs === "player") return 0;
     const curB = isBuilderPhase(currentPhaseId);
@@ -334,9 +409,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     return Math.max(0, Math.min(100, outOpacity)) / 100; // Fremdphase (gleiche Ebene)
   };
   const phaseOpacity = (m: Marker): number =>
-    phaseOpacityOf(m.phase_id) *
+    Math.max(phaseOpacityOf(m.phase_id), ...(m.extra_phase_ids ?? []).map((x) => phaseOpacityOf(x))) *
     (m.released ? 0.6 : 1) *
-    channelVisibility(channels?.channels, myChannel, m.channel);
+    tacOpacity(m.sidc, m.layer_id);
   const phaseNameOf = (id: string | null): string =>
     id ? (phases.find((p) => p.id === id)?.name ?? "—") : t("phase.global");
   // Hotkey-Hinweis " (Taste)" für Tooltips, aus den (änderbaren) Nutzer-Keybinds.
@@ -361,9 +436,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <input type="datetime-local" id="dtg" title="${t("map.dtg")}" />
       <span class="shot-wrap">${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}${shotOptsMarkup()}</span>
       ${iconBtn("pdf", { id: "briefing", title: t("briefing.export") })}
-      <select id="chan" title="${t('map.channel')}">${(channels?.channels ?? [])
-        .map((c) => `<option value="${esc(c.name)}" ${c.name === myChannel ? "selected" : ""}>${esc(channelLabel(c))}</option>`)
-        .join("")}</select>
       <div id="timeline" class="timeline"></div>
       <select id="maplang" title="${t("map.lang")}"></select>
       <span class="grow"></span>
@@ -394,6 +466,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           : ""
       }
       ${iconBtn("layers", { id: "layersBtn", title: t("tool.layers") })}
+      ${iconBtn("tactical", { id: "tacBtn", title: t("tool.tactical") })}
       ${iconBtn("groups", { id: "orbatBtn", title: t("orbat.inPlan") })}
       ${canEdit ? iconBtn("star", { id: "tool-fav", title: t("tool.fav") + hk("fav") }) : ""}
     </div>
@@ -415,10 +488,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
                  .map((ph) => `<option value="${esc(ph.id)}">${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`)
                  .join("")}
              </select>
-             <label>${t("wiz.channel")}</label>
-             <select id="lChan">${(channels?.channels ?? [])
-               .map((c) => `<option value="${esc(c.name)}">${esc(channelLabel(c))}</option>`)
-               .join("")}</select>
+             <label>${t("wiz.layer")}</label>
+             <select id="lLayer"></select>
              <button class="primary" id="lineFinish">${t("line.finish")}</button>
              <p class="muted" style="margin:.35rem 0 0;font-size:.72rem">${t("line.rmbHint")}</p>
            </div>`
@@ -449,6 +520,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     </div>
     <div class="navcube" id="navcube" hidden></div>
     <div class="layers-panel" id="layersPanel" hidden></div>
+    <div class="layers-panel" id="tacPanel" hidden></div>
     <div class="layers-panel orbat-panel" id="orbatPanel" hidden></div>
     <canvas class="grid-canvas" id="gridCanvas"></canvas>`;
 
@@ -642,9 +714,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         id: s.id,
         color: packedToHex(s.color),
         width: s.width > 0 ? s.width : 2,
-        opacity:
-          phaseOpacityOf(s.phase_id) *
-          channelVisibility(channels?.channels, myChannel, s.channel || ""),
+        opacity: phaseOpacityOf(s.phase_id) * tacOpacity(null, s.layer_id),
       },
     })),
   });
@@ -1515,7 +1585,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         currentPhaseId = phase.id;
         // Marker dieser Phase (+ globale) für den Bildausschnitt
         const pts = [...markers.values()]
-          .filter((m) => m.phase_id === phase.id || m.phase_id == null)
+          .filter((m) => m.phase_id === phase.id || m.phase_id == null || (m.extra_phase_ids ?? []).includes(phase.id))
           .map((m) => [m.world_x, m.world_y] as [number, number]);
         if (pts.length) {
           let m0 = pts[0].slice() as [number, number];
@@ -1836,10 +1906,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     applyPhase();
   }
   function selectPlayerPhase(pid: string): void {
-    currentPhaseId = actAs === "builder" ? builderChildren(pid)[0]?.id ?? pid : pid;
+    currentPhaseId =
+      actAs === "builder" ? builderChildren(pid)[0]?.id ?? pid : actAs === "zeus" ? zeusChildren(pid)[0]?.id ?? pid : pid;
     applyPhase();
   }
-  function setActAs(mode: "player" | "builder"): void {
+  function setActAs(mode: ActAs): void {
     actAs = mode;
     try {
       localStorage.setItem(`sidc_actas_${planId}`, mode);
@@ -1847,7 +1918,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       /* ignore */
     }
     const pid = activePlayerId();
-    currentPhaseId = mode === "builder" ? builderChildren(pid)[0]?.id ?? pid : pid;
+    currentPhaseId =
+      mode === "builder" ? builderChildren(pid)[0]?.id ?? pid : mode === "zeus" ? zeusChildren(pid)[0]?.id ?? pid : pid;
     applyPhase();
   }
 
@@ -1972,7 +2044,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const W = Math.max(200, xOf(dom1));
 
     const players = phases.filter((p) => (p.plane ?? "player") === "player").map((p) => p.id);
-    const builders = phases.filter((p) => p.plane === "builder").map((p) => p.id);
+    const builders = phases.filter((p) => p.plane === "builder" && (actAs !== "zeus" || zeusOpen(p.id))).map((p) => p.id);
     const rowP = assignRows(players, spans);
     const rowB = assignRows(builders, spans);
     const maxRow = (m: Map<string, number>) => Math.max(0, ...[...m.values()].map((r) => r + 1));
@@ -1996,10 +2068,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         `<div class="tl-bar ${id === currentPhaseId ? "active" : ""} ${explicit ? "" : "tl-auto"}" ` +
         `data-pick="${id}" data-plane="${plane}" style="left:${left}px;width:${w}px;top:${row * 26}px" ` +
         `title="${esc0(p.name)} · ${durTxt}">` +
-        (canEdit ? `<span class="tl-edge tl-edge-l" data-edge="l" data-id="${id}"></span>` : "") +
+        (canEdit && (plane === "player" || isMB) ? `<span class="tl-edge tl-edge-l" data-edge="l" data-id="${id}"></span>` : "") +
+        (plane === "builder" && isMB && zeusOpen(id) ? `<span class="tl-zeus" title="${t("zeus.badge")}">Z</span>` : "") +
         (p.locked ? `<span class="tl-lock" title="${t("phase.lockedHint")}">${icon("lock", 10)}</span>` : "") +
         `<span class="tl-bar-name">${esc0(p.name)}</span>` +
-        (canEdit
+        (canEdit && (plane === "player" || isMB)
           ? `<span class="tl-edge tl-edge-r" data-edge="r" data-id="${id}"></span>` +
             (p.locked
               ? ""
@@ -2013,10 +2086,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       `<div class="tl-ctl">` +
       `<button class="icon-btn" id="ph-notes" title="${t("notes.open") + hk("notes")}">${icon("notes", 16)}</button>` +
       `<span class="tl-zoom"><button id="tl-zout" title="${t("tl.zoomOut")}">${icon("minus", 14)}</button><button id="tl-zin" title="${t("tl.zoomIn")}">${icon("plus", 14)}</button></span>` +
-      (isMB
+      (isMB || canZeus
         ? `<span class="segmented mb-actas">` +
           `<button class="seg-btn ${actAs === "player" ? "active" : ""}" data-as="player">${t("mb.player")}</button>` +
-          `<button class="seg-btn ${actAs === "builder" ? "active" : ""}" data-as="builder">${t("mb.builder")}</button></span>`
+          (isMB ? `<button class="seg-btn ${actAs === "builder" ? "active" : ""}" data-as="builder">${t("mb.builder")}</button>` : "") +
+          (canZeus ? `<button class="seg-btn ${actAs === "zeus" ? "active" : ""}" data-as="zeus">${t("mb.zeus")}</button>` : "") +
+          `</span>`
         : "") +
       (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+ ${t("phase.heading")}</button>` : "") +
       `<label class="ph-op" title="${t("phase.outOpacityHint")}">${t("phase.outOpacity")}` +
@@ -2038,10 +2113,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       (canEdit ? `<button id="player-add" class="tl-subadd" title="${t("phase.add")}">+</button>` : "") +
       `</div>` +
       `<div class="tl-ruler">${ticks.join("")}</div>` +
-      (isMB
+      (isMB || actAs === "zeus"
         ? `<div class="tl-lane tl-builder" style="height:${laneH(maxRow(rowB))}px">` +
           builders.map((id) => bar(id, "builder", rowB.get(id) ?? 0)).join("") +
-          (canEdit ? `<button id="sub-add" class="tl-subadd" title="${t("mb.subPhase")}">+</button>` : "") +
+          (canEdit && isMB ? `<button id="sub-add" class="tl-subadd" title="${t("mb.subPhase")}">+</button>` : "") +
           `</div>`
         : "") +
       `</div></div></div>`;
@@ -2069,14 +2144,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
     timelineEl.querySelector("#ph-notes")?.addEventListener("click", () => toggleNotesWin());
     timelineEl.querySelectorAll<HTMLButtonElement>("[data-as]").forEach((b) =>
-      b.addEventListener("click", () => setActAs(b.dataset.as as "player" | "builder")),
+      b.addEventListener("click", () => setActAs(b.dataset.as as ActAs)),
     );
 
     // Balken: klicken = wählen, ziehen = verschieben, Kanten = Dauer ändern
     const pickPhase = (id: string): void => {
       const p = phases.find((x) => x.id === id);
       if (!p) return;
-      if (isMB) {
+      if (isMB && actAs !== "zeus") {
         const want = p.plane === "builder" ? "builder" : "player";
         if (actAs !== want) {
           actAs = want;
@@ -2094,7 +2169,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     timelineEl.querySelectorAll<HTMLElement>(".tl-bar").forEach((el) => {
       const id = el.dataset.pick!;
       const startDrag = (ev: MouseEvent, edge: "" | "l" | "r") => {
-        if (!canEdit) {
+        if (!canEdit || (el.dataset.plane === "builder" && !isMB)) {
           if (!edge) pickPhase(id);
           return;
         }
@@ -2237,8 +2312,35 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       `<label>${t("phase.end")}<input type="datetime-local" data-nend ${canEdit ? "" : "disabled"} value="${val(ph.end_at, sp?.e)}"/></label>` +
       (ph.start_at || ph.end_at
         ? `<button data-ntclear title="${t("common.reset")}">${icon("x", 12)}</button>`
-        : `<span class="muted">(auto)</span>`);
+        : `<span class="muted">(auto)</span>`) +
+      (isMB && canEdit && ph.plane === "builder"
+        ? `<span class="nt-zeus"><label class="chk"><input type="checkbox" data-zrel ${ph.zeus_released ? "checked" : ""}/> ${t("zeus.release")}</label>` +
+          `<label>${t("zeus.hours")}<input type="number" min="0" step="1" data-zhours style="width:4.5rem" value="${
+            ph.zeus_released && ph.zeus_until ? Math.max(1, Math.round((parseUtc(ph.zeus_until) - Date.now()) / 3600e3)) : ph.zeus_released ? "" : 48
+          }"/></label>` +
+          (ph.zeus_released && ph.zeus_until
+            ? `<span class="muted">${t("zeus.until")} ${fmtInput(new Date(parseUtc(ph.zeus_until)))}</span>`
+            : "") +
+          `</span>`
+        : "");
     if (!canEdit) return;
+    const sendZeus = async () => {
+      const rel = nTimes.querySelector<HTMLInputElement>("[data-zrel]")!.checked;
+      const hv = nTimes.querySelector<HTMLInputElement>("[data-zhours]")!.value.trim();
+      try {
+        const upd = await api.patchPhase(planId, ph.id, { zeus_released: rel, zeus_hours: hv === "" ? null : Number(hv) });
+        ph.zeus_released = upd.zeus_released;
+        ph.zeus_until = upd.zeus_until;
+      } catch (e) {
+        toastError(e);
+      }
+      renderTimeline();
+      renderNotesTimes();
+    };
+    nTimes.querySelector("[data-zrel]")?.addEventListener("change", () => void sendZeus());
+    nTimes.querySelector("[data-zhours]")?.addEventListener("change", () => {
+      if (nTimes.querySelector<HTMLInputElement>("[data-zrel]")!.checked) void sendZeus();
+    });
     const get = (s: string) => {
       const v = nTimes.querySelector<HTMLInputElement>(s)!.value;
       return v ? parseNaive(v).getTime() : null;
@@ -2363,15 +2465,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       void refreshMarkers(); // Text-Offsets neu berechnen, sonst rückt der Text vom Icon weg
     });
   }
-  root.querySelector<HTMLSelectElement>("#chan")!.addEventListener("change", (e) => {
-    myChannel = (e.target as HTMLSelectElement).value;
-    try {
-      localStorage.setItem(`sidc_channel_${planId}`, myChannel);
-    } catch {
-      /* ignore */
-    }
-    void refreshMarkers(); // Channel steuert die Sichtbarkeit fremder Marker
-  });
   // Ziehen am Kopf
   {
     const head = notesWin.querySelector<HTMLDivElement>(".notes-head")!;
@@ -2676,6 +2769,132 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     buildLayersPanel();
   }
 
+  // ── Taktische Layer (Auto-Layer nach Identität + eigene Layer) ────────
+  const tacPanel = root.querySelector<HTMLDivElement>("#tacPanel")!;
+  const tacBtn = root.querySelector<HTMLButtonElement>("#tacBtn")!;
+  const mvTac = makeMovable(tacPanel, { plan: planId, key: "tactical", pinnable: true });
+  const applyTac = (): void => {
+    void refreshMarkers();
+    refreshStrokes();
+  };
+  const saveTac = (): void => {
+    try {
+      localStorage.setItem(tacKey, JSON.stringify(tacState));
+    } catch {
+      /* ignore */
+    }
+  };
+  function buildTacPanel(): void {
+    const row = (key: string, label: string, del: boolean): string => {
+      const st = tacState[key] ?? {};
+      return (
+        `<div class="layer-row"><label><input type="checkbox" data-tk="${esc(key)}" ${st.on === false ? "" : "checked"}/> ${esc(label)}</label>` +
+        `<input type="range" min="0" max="100" step="5" value="${st.op ?? 100}" data-to="${esc(key)}" title="${t("layers.opacityHint")}"/>` +
+        (del
+          ? `<button class="icon-btn" style="color:var(--danger)" data-tdel="${esc(key)}" title="${t("common.delete")}">${icon("trash", 14)}</button>`
+          : "") +
+        `</div>`
+      );
+    };
+    const auto: Record<TacAuto, string> = {
+      bluefor: t("tac.blufor"),
+      redfor: t("tac.redfor"),
+      civgreen: t("tac.civgreen"),
+      unknown: t("tac.unknown"),
+    };
+    tacPanel.innerHTML =
+      `<div class="fav-head">${t("tac.heading")}</div>` +
+      `<div class="tac-sep">${t("tac.auto")}</div>` +
+      TAC_AUTO.map((k) => row("auto:" + k, auto[k], false)).join("") +
+      (tacLayers.length || canEdit ? `<div class="tac-sep">${t("tac.custom")}</div>` : "") +
+      tacLayers.map((l) => row(l.id, l.name, canEdit)).join("") +
+      (canEdit
+        ? `<div class="tac-new"><input id="tacNewName" maxlength="40" placeholder="${t("tac.new")}"/><button id="tacNewBtn">${t("tac.add")}</button></div>`
+        : "") +
+      `<div class="muted" style="font-size:.72rem;margin-top:.4rem">${t("tac.hint")}</div>`;
+    tacPanel.querySelectorAll<HTMLInputElement>("[data-tk]").forEach((cb) =>
+      cb.addEventListener("change", () => {
+        const k = cb.dataset.tk!;
+        tacState[k] = { ...tacState[k], on: cb.checked };
+        saveTac();
+        applyTac();
+      }),
+    );
+    tacPanel.querySelectorAll<HTMLInputElement>("[data-to]").forEach((sl) =>
+      sl.addEventListener("input", () => {
+        const k = sl.dataset.to!;
+        tacState[k] = { ...tacState[k], op: +sl.value };
+        saveTac();
+        applyTac();
+      }),
+    );
+    tacPanel.querySelectorAll<HTMLButtonElement>("[data-tdel]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        if (!(await confirmDialog(t("tac.confirmDelete"), { danger: true, trash: true }))) return;
+        await api.deleteLayer(planId, b.dataset.tdel!).catch(toastError);
+      }),
+    );
+    const nameIn = tacPanel.querySelector<HTMLInputElement>("#tacNewName");
+    const create = async () => {
+      const name = nameIn?.value.trim();
+      if (!name) return;
+      await api.createLayer(planId, name).catch(toastError);
+      if (nameIn) nameIn.value = "";
+    };
+    tacPanel.querySelector("#tacNewBtn")?.addEventListener("click", () => void create());
+    nameIn?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") void create();
+    });
+  }
+  tacBtn.addEventListener("click", () => {
+    tacPanel.hidden = !tacPanel.hidden;
+    if (!tacPanel.hidden) {
+      if (!mvTac.hasPos()) placeNextToTool(tacPanel, tacBtn);
+      buildTacPanel();
+      mvTac.bringIntoView();
+    }
+  });
+  if (mvTac.isPinned()) {
+    tacPanel.hidden = false;
+    buildTacPanel();
+  }
+  // Layer-Liste vom Server (anderer Nutzer legt an/löscht)
+  const onLayersChanged = (list: TacLayer[], removed?: string): void => {
+    tacLayers = list.filter((l) => !l.is_default);
+    if (removed) {
+      for (const m of markers.values()) if (m.layer_id === removed) m.layer_id = null;
+      for (const st of strokes.values()) if (st.layer_id === removed) st.layer_id = null;
+      delete tacState[removed];
+      saveTac();
+    }
+    layerListeners.forEach((f) => f());
+    if (!tacPanel.hidden) buildTacPanel();
+    applyTac();
+  };
+  // Phasen-Freigaben (Zeus) oder Phasen/Inhalte haben sich geändert → alles neu holen
+  const resync = async (): Promise<void> => {
+    const sn = await api.snapshot(planId);
+    const sorted = [...(sn.phases ?? [])].sort(
+      (a: PhaseT, b: PhaseT) => a.ordering - b.ordering || (a.sub_ordering ?? 0) - (b.sub_ordering ?? 0),
+    );
+    phases.splice(0, phases.length, ...sorted);
+    markers.clear();
+    for (const m of sn.markers as Marker[]) markers.set(m.id, m);
+    strokes.clear();
+    for (const st of sn.strokes as Stroke[]) strokes.set(st.id, st);
+    annots.clear();
+    for (const a of (sn.annotations ?? []) as Annot[]) annots.set(a.id, a);
+    if (!phases.some((x) => x.id === currentPhaseId)) currentPhaseId = playerPhases()[0]?.id ?? "";
+    if (actAs === "zeus" && !canZeus) actAs = "player";
+    applyPhase();
+    refreshStrokes();
+    renderAnnots();
+  };
+  socket.on((msg: WsMessage) => {
+    if (msg.type === "layers.changed") onLayersChanged(msg.layers as TacLayer[], msg.removed as string | undefined);
+    else if (msg.type === "phases.changed") void resync().catch(() => {});
+  });
+
   // ── ORBAT-Panel (Kräfteübersicht im Plan) ─────────────────────────────
   const orbatPanel = root.querySelector<HTMLDivElement>("#orbatPanel")!;
   const orbatBtn = root.querySelector<HTMLButtonElement>("#orbatBtn")!;
@@ -2804,7 +3023,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           sidc: b.dataset.osidc || "10060000000000000000",
           unit_text: b.dataset.oname || "",
           ai_text: "",
-          channel: myChannel,
           locked: false,
           timestamp_visible: true,
           rotation_degrees: -1,
@@ -3216,7 +3434,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let linePts: [number, number][] = [];
   let lineCursor: [number, number] | null = null; // Mauszeiger für die Vorschau-Linie
   let linePhaseId: string | null = currentPhaseId || null;
-  let lineChannel = myChannel;
+  let lineLayerId: string | null = null;
   let chainGroup: number | null = null;
   let chainIndex = 0;
   // Marker-Workflow wie im ATAK: erst Position auf der Karte klicken, dann öffnet
@@ -3515,7 +3733,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     };
     if (caps.draw)
       for (const s of strokes.values()) {
-        if (phaseOpacityOf(s.phase_id) * channelVisibility(channels?.channels, myChannel, s.channel || "") <= 0) continue;
+        if (phaseOpacityOf(s.phase_id) * tacOpacity(null, s.layer_id) <= 0) continue;
         const r = eraserR + Math.max(2, s.width) / 2;
         if (polyHit(px, py, s.points.map((p) => map.project(p)), r) && once(s.id))
           socket.send({ type: "stroke.delete", id: s.id });
@@ -3557,18 +3775,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // Tastenkürzel (pro Nutzer, im Einstellungs-Menü umbelegbar).
   let clipboardMarker: MarkerTemplate | null = null;
-  const cycleChannel = (dir: number) => {
-    const sel = root.querySelector<HTMLSelectElement>("#chan");
-    if (!sel || !sel.options.length) return;
-    const i = (sel.selectedIndex + dir + sel.options.length) % sel.options.length;
-    sel.selectedIndex = i;
-    sel.dispatchEvent(new Event("change"));
-  };
   const markerToTpl = (m: Marker): MarkerTemplate => ({
     sidc: m.sidc,
     unit_text: m.unit_text,
     ai_text: m.ai_text,
-    channel: m.channel,
+    layer_id: m.layer_id,
+    extra_phase_ids: m.extra_phase_ids ?? [],
     locked: false,
     timestamp_visible: true,
     rotation_degrees: m.rotation_degrees,
@@ -3601,8 +3813,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ev.preventDefault();
         if (canEdit && tb("#tool-marker") && !tb("#tool-marker")!.disabled) tb("#tool-marker")!.click();
         break;
-      case "channelUp": ev.preventDefault(); cycleChannel(-1); break;
-      case "channelDown": ev.preventDefault(); cycleChannel(1); break;
       case "phasePrev": ev.preventDefault(); stepPhase(-1); break;
       case "phaseNext": ev.preventDefault(); stepPhase(1); break;
       case "notes": toggleNotesWin(); break;
@@ -3631,18 +3841,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   function placeMarker(pos: [number, number], tpl: MarkerTemplate): void {
+    if (zeusBlocked()) return;
     const data: Record<string, unknown> = {
       sidc: tpl.sidc,
       world_x: pos[0],
       world_y: pos[1],
       unit_text: tpl.unit_text,
       ai_text: tpl.ai_text,
-      channel: tpl.channel || myChannel,
       locked: tpl.locked,
       timestamp_visible: tpl.timestamp_visible,
       rotation_degrees: tpl.rotation_degrees,
       phase_id: currentPhaseId || null,
     };
+    if (tpl.layer_id) data.layer_id = tpl.layer_id;
+    if (tpl.extra_phase_ids?.length) data.extra_phase_ids = tpl.extra_phase_ids;
     if (tpl.tint) data.tint = tpl.tint;
     if (tpl.orbat_node_id) {
       data.orbat_node_id = tpl.orbat_node_id;
@@ -3690,13 +3902,22 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
   {
     const lp = root.querySelector<HTMLSelectElement>("#lPhase")!;
-    const lc = root.querySelector<HTMLSelectElement>("#lChan")!;
+    const ll = root.querySelector<HTMLSelectElement>("#lLayer")!;
     lp.value = linePhaseId ?? "";
-    lc.value = lineChannel;
+    const fillLayers = () => {
+      ll.innerHTML =
+        `<option value="">—</option>` +
+        tacLayers.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("");
+      if (lineLayerId && !tacLayers.some((l) => l.id === lineLayerId)) lineLayerId = null;
+      ll.value = lineLayerId ?? "";
+    };
+    fillLayers();
+    layerListeners.push(fillLayers);
     lp.addEventListener("change", () => (linePhaseId = lp.value || null));
-    lc.addEventListener("change", () => (lineChannel = lc.value));
+    ll.addEventListener("change", () => (lineLayerId = ll.value || null));
   }
   const finishLine = () => {
+    if (linePts.length >= 2 && zeusBlocked()) return;
     if (linePts.length >= 2) {
       socket.send({
         type: "stroke.commit",
@@ -3707,7 +3928,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           color: lineColor,
           width: lineWidth,
           phase_id: linePhaseId,
-          channel: lineChannel,
+          layer_id: lineLayerId,
         },
       });
     }
@@ -3739,10 +3960,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             )
             .join("")}
         </select></label>
-      <label class="chk-lbl">${t("wiz.channel")}
-        <select data-schan>${(channels?.channels ?? [])
-          .map((c) => `<option value="${esc(c.name)}" ${c.name === (s.channel || "") ? "selected" : ""}>${esc(channelLabel(c))}</option>`)
-          .join("")}</select></label>
+      ${
+        tacLayers.length
+          ? `<label class="chk-lbl">${t("wiz.layer")}${layerSelectHtml("data-slayer", tacLayers, s.layer_id)}</label>`
+          : ""
+      }
       <label class="chk-lbl">${t("line.color")}
         <select data-scolor>${lineColors
           .map((c) => `<option value="${c.packedColor}" ${c.packedColor === s.color ? "selected" : ""}>${c.name}</option>`)
@@ -3763,7 +3985,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         id: strokeId,
         data: {
           phase_id: back.querySelector<HTMLSelectElement>("[data-sphase]")!.value || null,
-          channel: back.querySelector<HTMLSelectElement>("[data-schan]")!.value,
+          layer_id: back.querySelector<HTMLSelectElement>("[data-slayer]")
+            ? back.querySelector<HTMLSelectElement>("[data-slayer]")!.value || null
+            : (s.layer_id ?? null),
           color: Number(back.querySelector<HTMLSelectElement>("[data-scolor]")!.value),
           width: Number(back.querySelector<HTMLSelectElement>("[data-swidth]")!.value),
         },
@@ -3813,7 +4037,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           sidc: f.sidc,
           unit_text: f.unit_text,
           ai_text: f.ai_text,
-          channel: f.channel || myChannel,
           locked: false,
           timestamp_visible: true,
           rotation_degrees: f.rotation_degrees,
@@ -3971,8 +4194,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const b = document.createElement("b");
     b.textContent = markerLabel(m) || "—";
     tip.append(b, document.createElement("br"));
+    const lyName = tacLayers.find((l) => l.id === m.layer_id)?.name;
     for (const [k, v] of [
-      [t("map.channel"), m.channel || "—"],
+      ...(lyName ? [[t("wiz.layer"), lyName]] : []),
       [t("marker.author"), m.author || "—"],
       [t("phase.assign"), phaseNameOf(m.phase_id)],
     ] as [string, string][]) {
@@ -4827,7 +5051,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       chainIndex = 0;
       placeMarker(pendingPos ?? pos, tpl); // sofort an der geklickten Position
       if (!tpl.is_multipoint) setMode("move");
-    }, myChannel);
+    }, tplCtx());
   }
   function createAnnotAt(pos: [number, number]): void {
     const ac = cid();
@@ -4999,10 +5223,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           )
           .join("")}
       </select>
-      <label>${t("wiz.channel")}</label>
-      <select data-chan>${(channels?.channels ?? [])
-        .map((c) => `<option value="${esc(c.name)}" ${c.name === m.channel ? "selected" : ""}>${esc(channelLabel(c))}</option>`)
-        .join("")}</select>
+      <label>${t("phase.extra")}</label>
+      ${phaseMultiHtml("data-xphases", samePlanePhases(m.phase_id), m.extra_phase_ids ?? [], m.phase_id)}
+      ${tacLayers.length ? `<label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", tacLayers, m.layer_id)}` : ""}
       <label class="chk"><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> <span>${t("marker.locked")}</span></label>
       ${
         isMB
@@ -5055,6 +5278,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (tint) refreshIco();
     root.appendChild(back);
     {
+      const phSel = p.querySelector<HTMLSelectElement>("[data-phase]")!;
+      phSel.addEventListener("change", () => {
+        const host = p.querySelector<HTMLElement>("[data-xphases]");
+        if (!host) return;
+        const cur = readPhaseMulti(p, "data-xphases");
+        host.outerHTML = phaseMultiHtml("data-xphases", samePlanePhases(phSel.value || null), cur, phSel.value || null);
+      });
+    }
+    {
       const ms = p.querySelector<HTMLInputElement>("[data-mscale]")!;
       const mv = p.querySelector<HTMLSpanElement>("[data-mscalev]")!;
       ms.addEventListener("input", () => (mv.textContent = `${ms.value}%`));
@@ -5076,7 +5308,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ai_text: p.querySelector<HTMLInputElement>("[data-ai]")!.value,
         icon_rotation: Number(p.querySelector<HTMLInputElement>("[data-rot]")!.value) || 0,
         phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || null,
-        channel: p.querySelector<HTMLSelectElement>("[data-chan]")!.value,
+        layer_id: p.querySelector<HTMLSelectElement>("[data-layer]")
+          ? p.querySelector<HTMLSelectElement>("[data-layer]")!.value || null
+          : (m.layer_id ?? null),
+        extra_phase_ids: readPhaseMulti(p, "data-xphases"),
         scale: Math.max(0.25, Math.min(3, Number(p.querySelector<HTMLInputElement>("[data-mscale]")!.value) / 100 || 1)),
         tint,
         ...(modDefs ? { sidc: nextSidc() } : {}),
@@ -5118,7 +5353,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         sidc: m.sidc,
         unit_text: m.unit_text,
         ai_text: m.ai_text,
-        channel: m.channel,
+        layer_id: m.layer_id,
+        extra_phase_ids: m.extra_phase_ids ?? [],
         locked: m.locked,
         timestamp_visible: true,
         rotation_degrees: m.rotation_degrees,

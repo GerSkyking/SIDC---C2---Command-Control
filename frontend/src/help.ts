@@ -24,7 +24,9 @@ const DE = `
 - **Datum/Zeit** – für den Screenshot-Zeitstempel (leer = jetzt).
 - **Screenshot** – über den Pfeil neben der Kamera lassen sich Auflösung (Aktuell / feste Größe / benutzerdefinierte Breite×Höhe) und Format (PNG/JPEG/WebP) einstellen; PNG/JPEG/WebP-Export nur mit Karteninhalt (DTG unten links), Dateiname *Plan_Phase_Zeit*.
 - **Briefing-PDF** – je Phase eine Seite (Karte auf die Phasen-Marker gerahmt) + Notizen inkl. eingefügter Bilder.
-- **Channel** – eigener Funkkanal.
+- **Taktische Layer** (Listen-Symbol neben Ebenen) – BLUFOR / REDFOR / Zivil-GREENFOR / Unbekannt automatisch nach Identität, dazu eigene Layer (anlegen, löschen); jeweils Haken + Deckkraft nur für dich. Eigene Layer wählst du beim Platzieren, im Bearbeiten-Panel und bei Linien.
+- **Zeus** – eigene Rolle (Admin → Nutzer/Gruppen). Missionsbauer geben Missionsbau-Phasen für Zeus frei (Standard 48 h, oder unbegrenzt); Zeus sieht dann die Spieler-Phase plus die freigegebenen Missionsbau-Phasen und kann dort arbeiten, setzt aber keine Elemente in Spieler-Phasen. Umschalter *Spieler / Zeus* im Zeitstrahl.
+- **Mehrere Phasen** – im Bearbeiten-Panel/Marker-Baukasten unter „Weitere Phasen“ lässt sich ein Marker zusätzlich in weiteren Phasen derselben Ebene zeigen.
 - **Zeitstrahl** – Phasen wählen/anlegen/löschen; Regler = Sichtbarkeit von Markern fremder Phasen.
 - **Sprache der Kartenbeschriftung** – Sprache der Orts-/Kartenlabels.
 - **Notizen** – verschiebbares Fenster, ein Reiter je Phase, Markdown.
@@ -74,7 +76,9 @@ const EN = `
 - **Date/time** – for the screenshot timestamp (empty = now).
 - **Screenshot** – the arrow next to the camera opens resolution (current / fixed sizes / custom width×height) and format (PNG/JPEG/WebP) options; export is map content only (DTG bottom-left), filename *Plan_Phase_Time*.
 - **Briefing PDF** – one page per phase (map framed to that phase's markers) + notes, including any inserted images.
-- **Channel** – your radio channel.
+- **Tactical layers** (list icon next to Layers) – BLUFOR / REDFOR / civilian-GREENFOR / unknown automatically by identity, plus custom layers (create, delete); each with checkbox + opacity just for you. Pick custom layers when placing, in the edit panel and for lines.
+- **Zeus** – its own role (Admin → users/groups). Mission builders release builder phases to Zeus (default 48 h, or unlimited); Zeus then sees the player phase plus the released builder phases and can work there, but places nothing in player phases. *Player / Zeus* switch in the timeline.
+- **Multiple phases** – under “More phases” in the edit panel/marker builder a marker can additionally be shown in further phases of the same plane.
 - **Timeline** – pick/add/delete phases; slider = visibility of markers from other phases.
 - **Map label language** – language of place/map labels.
 - **Notes** – movable window, one tab per phase, Markdown.

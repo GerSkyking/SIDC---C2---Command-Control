@@ -1,10 +1,9 @@
 // Öffentliche Nur-Lese-Ansicht: fast der volle Plan (Karte, Phasen/Zeitstrahl,
-// Ebenen, Channel, 2D/3D + Würfel, Screenshot, Präsentation, Dark/Hell, eigener
+// Ebenen, 2D/3D + Würfel, Screenshot, Präsentation, Dark/Hell, eigener
 // Zeiger, lokale Icon-Skalierung) — nur ohne Bearbeiten.
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 import { api } from "./api";
-import { channelLabel, channelVisibility, type ChannelEntry } from "./sidc/catalog";
 import { ensureMapIcon, mapIconId, markerLabelOffsets } from "./sidc/symbol";
 import { isTextMarker, markerLabelCategory } from "./sidc/sidc";
 import { t } from "./i18n";
@@ -79,7 +78,6 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   const strokes = new Map<string, S>(snap.strokes.map((s: S) => [s.id, s]));
   const annots: An[] = snap.annotations ?? [];
   const phases: Ph[] = (snap.phases ?? []).slice().sort((a: Ph, b: Ph) => a.ordering - b.ordering);
-  const chanList: ChannelEntry[] | undefined = snap.channels?.channels;
 
   let currentPhaseId = "";
   let outOpacity = Number(localStorage.getItem("sidc_phaseopacity") ?? "20");
@@ -89,8 +87,6 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   let showUnitAiLabels = localStorage.getItem("sidc_labels_on") !== "0";
   const unitAiOpacityExpr = (on: boolean): maplibregl.ExpressionSpecification =>
     on ? ["get", "opacity"] : ["*", ["get", "opacity"], ["match", ["get", "labelcat"], "default", 0, 1]];
-  const _chCur = localStorage.getItem(`sidc_pubchan_${token}`) || snap.channels?.currentChannel || "";
-  let myChannel = chanList?.find((c) => c.name === _chCur || c.languageKey === _chCur)?.name ?? _chCur;
   let is3D = false;
   const rights: { point: boolean; edit: boolean; move: boolean } = snap.rights ?? {
     point: true,
@@ -104,8 +100,8 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     if (pid == null || !currentPhaseId || pid === currentPhaseId) return 1;
     return Math.max(0, Math.min(100, outOpacity)) / 100;
   };
-  const opacityOf = (o: { phase_id?: string | null; channel?: string }): number =>
-    phaseOpacityOf(o.phase_id) * channelVisibility(chanList, myChannel, o.channel || "");
+  const opacityOf = (o: { phase_id?: string | null; extra_phase_ids?: string[] }): number =>
+    Math.max(phaseOpacityOf(o.phase_id), ...(o.extra_phase_ids ?? []).map((x) => phaseOpacityOf(x)));
 
   root.innerHTML = `
     <div class="topbar">
@@ -115,13 +111,6 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       <button id="t3d" title="${t("map.threeD")}">3D</button>
       ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") })}
       <span class="shot-wrap">${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}${shotOptsMarkup()}</span>
-      ${
-        chanList?.length
-          ? `<select id="chan" title="${t("map.channel")}">${chanList
-              .map((c) => `<option value="${esc(c.name)}" ${c.name === myChannel ? "selected" : ""}>${esc(channelLabel(c))}</option>`)
-              .join("")}</select>`
-          : ""
-      }
       <div id="timeline" class="timeline"></div>
       <span class="grow"></span>
       <label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" id="lblToggle" ${showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label>
@@ -633,16 +622,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     renderMapImages();
   };
 
-  // ── Channel / Icon-Skalierung ────────────────────────────────────────
-  root.querySelector<HTMLSelectElement>("#chan")?.addEventListener("change", (e) => {
-    myChannel = (e.target as HTMLSelectElement).value;
-    try {
-      localStorage.setItem(`sidc_pubchan_${token}`, myChannel);
-    } catch {
-      /* ignore */
-    }
-    refreshAll();
-  });
+  // ── Icon-Skalierung ──────────────────────────────────────────────────
   {
     const si = root.querySelector<HTMLInputElement>("#mkScaleIn")!;
     const sv = root.querySelector<HTMLSpanElement>("#mkScaleV")!;

@@ -5,6 +5,14 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### Neu (Layer / Zeus)
+- **Channels entfernt** (`SIDC_ChannelSettings.json`, Channel-Auswahl, Hotkeys). Stattdessen **taktische Layer**:
+  Auto-Layer BLUFOR/REDFOR/Zivil-GREENFOR/Unbekannt + eigene Layer pro Plan (`/plans/{id}/layers`, WS `layers.changed`).
+- **Zeus-Rolle** (`users/groups.is_zeus`, Migration `0024`) und **Zeus-Freigabe** je Missionsbau-Phase (Standard 48 h).
+- **Marker in mehreren Phasen** (`markers.extra_phase_ids`).
+- Marker-Hover mit Löschen/Verschieben/Bearbeiten, SIDC-Nummer-Eingabe im Baukasten, Zeigen: großer gelber Ring,
+  Mittelklick-Pan, Bilder-Tab auf Höhe des Schließen-Knopfs.
+
 ### Neu (Nachtrag)
 - **Markerfarbe im QuickMenü/Baukasten:** Farbwähler direkt beim Platzieren.
 - **Favoriten speichern die Farbe** (`favorites.tint`, Migration `0023`); jeder Favorit ist ein eigener

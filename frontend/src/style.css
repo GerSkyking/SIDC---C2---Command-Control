@@ -850,3 +850,13 @@ button.danger .ic { color: var(--danger); }
 .mk-acts .icon-btn { width: 1.9rem; height: 1.9rem; }
 
 .mkb input.invalid { border-color: var(--danger); }
+
+/* Mehrfach-Phasen-Auswahl */
+.ph-multi { position: relative; }
+.ph-multi > summary { cursor: pointer; padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; list-style: none; font-size: 0.85rem; }
+.ph-multi-body { max-height: 11rem; overflow: auto; margin-top: 0.25rem; padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel, var(--bg)); display: flex; flex-direction: column; gap: 0.15rem; }
+/* Taktische Layer */
+.tac-sep { margin: 0.4rem 0 0.2rem; font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.tac-new { display: flex; gap: 0.3rem; margin-top: 0.4rem; }
+.tac-new input { flex: 1; min-width: 0; }
+.tl-zeus { position: absolute; right: 16px; top: 1px; font-size: 0.6rem; font-weight: 700; color: #ffe600; pointer-events: none; }

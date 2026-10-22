@@ -9,7 +9,6 @@ export const CATALOGS: { key: string; label: string; file: string }[] = [
   { key: "all-markers", label: "Alle Marker", file: "SIDC_AllMarkersCatalog.json" },
   { key: "quick-menu", label: "QuickMenü", file: "SIDC_QuickMarkerMenuCatalog.json" },
   { key: "phaseline-style", label: "Phase-Line-Stil", file: "SIDC_PhaseLineStyleCatalog.json" },
-  { key: "channels", label: "Channels", file: "SIDC_ChannelSettings.json" },
   { key: "modifiers", label: "Modifikatoren", file: "SIDC_ModifierCatalog.json" },
   { key: "translations", label: "Übersetzungen (#Namen)", file: "SIDC_Translations.json" },
 ];
@@ -210,7 +209,6 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
                 const guessId = f.name.replace(/_mappack.*$/i, "").replace(/[^a-z0-9_-]/gi, "").toLowerCase();
                 const guessCat =
                   /translation/i.test(f.name) ? "translations" :
-                  /channel/i.test(f.name) ? "channels" :
                   /modifier/i.test(f.name) ? "modifiers" :
                   /quick/i.test(f.name) ? "quick-menu" :
                   /phaseline|phase.line/i.test(f.name) ? "phaseline-style" :

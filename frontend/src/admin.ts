@@ -147,6 +147,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
        <select id="nu-role"><option value="user">user</option><option value="admin">admin</option></select>
        <label><input type="checkbox" id="nu-ccp" /> ${t("admin.canCreatePlans")}</label>
        <label><input type="checkbox" id="nu-mb" /> ${t("admin.missionBuilder")}</label>
+       <label><input type="checkbox" id="nu-zeus" /> ${t("admin.zeus")}</label>
        <button class="primary" id="nu-add">${t("common.create")}</button>
      </div>
 
@@ -157,6 +158,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
        <input id="ng-name" placeholder="${t("admin.groupName")}" />
        <label><input type="checkbox" id="ng-ccp" /> ${t("admin.canCreatePlans")}</label>
        <label><input type="checkbox" id="ng-mb" /> ${t("admin.missionBuilder")}</label>
+       <label><input type="checkbox" id="ng-zeus" /> ${t("admin.zeus")}</label>
        <button class="primary" id="ng-add">${t("common.create")}</button>
      </div>`,
     t("admin.usersGroups"),
@@ -171,15 +173,17 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
         role: (app.querySelector("#nu-role") as HTMLSelectElement).value,
         can_create_plans: (app.querySelector("#nu-ccp") as HTMLInputElement).checked,
         is_mission_builder: (app.querySelector("#nu-mb") as HTMLInputElement).checked,
+        is_zeus: (app.querySelector("#nu-zeus") as HTMLInputElement).checked,
       }),
     ),
   );
   app.querySelectorAll<HTMLElement>("[data-u]").forEach((el) => {
     const id = el.dataset.u!;
-    const field: Record<string, "is_active" | "can_create_plans" | "is_mission_builder"> = {
+    const field: Record<string, "is_active" | "can_create_plans" | "is_mission_builder" | "is_zeus"> = {
       active: "is_active",
       ccp: "can_create_plans",
       mb: "is_mission_builder",
+      zeus: "is_zeus",
     };
     el.querySelectorAll<HTMLInputElement>("[data-ur]").forEach((cb) =>
       cb.addEventListener("change", async () => {
@@ -209,6 +213,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
         name: (app.querySelector("#ng-name") as HTMLInputElement).value.trim(),
         can_create_plans: (app.querySelector("#ng-ccp") as HTMLInputElement).checked,
         is_mission_builder: (app.querySelector("#ng-mb") as HTMLInputElement).checked,
+        is_zeus: (app.querySelector("#ng-zeus") as HTMLInputElement).checked,
       }),
     ),
   );
@@ -225,6 +230,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
           name: g.name,
           can_create_plans: el.querySelector<HTMLInputElement>('[data-gr="ccp"]')!.checked,
           is_mission_builder: el.querySelector<HTMLInputElement>('[data-gr="mb"]')!.checked,
+          is_zeus: el.querySelector<HTMLInputElement>('[data-gr="zeus"]')!.checked,
         };
         try {
           await api.patchGroup(id, body);
@@ -268,6 +274,7 @@ function userRow(u: AdminUser): string {
           <label class="chk"><input type="checkbox" data-ur="active" ${u.is_active ? "checked" : ""}/> ${t("admin.active")}</label>
           <label class="chk"><input type="checkbox" data-ur="ccp" ${u.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
           <label class="chk"><input type="checkbox" data-ur="mb" ${u.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
+          <label class="chk"><input type="checkbox" data-ur="zeus" ${u.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
           <label class="chk-lbl">${t("settings.displayName")}
             <input data-uname maxlength="64" value="${esc(u.display_name ?? "")}" /></label>
         </div>
@@ -287,6 +294,7 @@ function groupRow(g: AdminGroup, users: AdminUser[]): string {
         <div class="drop-body">
           <label class="chk"><input type="checkbox" data-gr="ccp" ${g.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
           <label class="chk"><input type="checkbox" data-gr="mb" ${g.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
+          <label class="chk"><input type="checkbox" data-gr="zeus" ${g.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
         </div>
       </details>
     </td>

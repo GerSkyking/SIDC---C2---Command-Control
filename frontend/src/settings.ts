@@ -18,8 +18,6 @@ export type HotAction =
   | "text"
   | "fav"
   | "place"
-  | "channelUp"
-  | "channelDown"
   | "phasePrev"
   | "phaseNext"
   | "notes"
@@ -42,8 +40,6 @@ export const HOT_ORDER: HotAction[] = [
   "cut",
   "copy",
   "paste",
-  "channelUp",
-  "channelDown",
   "phasePrev",
   "phaseNext",
   "notes",
@@ -64,8 +60,6 @@ const DEFAULTS: Record<HotAction, string> = {
   cut: "x",
   copy: "c",
   paste: "v",
-  channelUp: "arrowup",
-  channelDown: "arrowdown",
   phasePrev: "arrowleft",
   phaseNext: "arrowright",
   notes: "y",
@@ -227,8 +221,6 @@ export function openSettings(): void {
     cut: t("hot.cut"),
     copy: t("hot.copy"),
     paste: t("hot.paste"),
-    channelUp: t("hot.channelUp"),
-    channelDown: t("hot.channelDown"),
     phasePrev: t("hot.phasePrev"),
     phaseNext: t("hot.phaseNext"),
     notes: t("hot.notes"),

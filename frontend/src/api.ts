@@ -32,6 +32,7 @@ export interface Me {
   role: string;
   can_create_plans_effective: boolean;
   is_mission_builder_effective: boolean;
+  is_zeus_effective?: boolean;
   ui_settings?: Record<string, unknown>;
 }
 export interface MapItem {
@@ -98,6 +99,16 @@ export interface Phase {
   sub_ordering?: number;
   start_at?: string | null;
   end_at?: string | null;
+  locked?: boolean;
+  zeus_released?: boolean;
+  zeus_until?: string | null;
+}
+export interface PlanLayer {
+  id: string;
+  name: string;
+  color: number;
+  ordering: number;
+  is_default?: boolean;
 }
 export interface PlanVersionRow {
   id: string;
@@ -114,6 +125,7 @@ export interface AdminUser {
   role: string;
   can_create_plans: boolean;
   is_mission_builder: boolean;
+  is_zeus?: boolean;
   is_active: boolean;
   is_local: boolean;
 }
@@ -160,6 +172,7 @@ export interface AdminGroup {
   name: string;
   can_create_plans: boolean;
   is_mission_builder: boolean;
+  is_zeus?: boolean;
   member_ids: string[];
 }
 export interface AclEntry {
@@ -369,14 +382,14 @@ export const api = {
   deleteFavorite: (id: string) => req<void>("DELETE", `/api/favorites/${id}`),
 
   adminUsers: () => req<AdminUser[]>("GET", "/api/admin/users"),
-  createUser: (b: { username: string; password: string; role: string; can_create_plans: boolean; is_mission_builder?: boolean; display_name?: string }) =>
+  createUser: (b: { username: string; password: string; role: string; can_create_plans: boolean; is_mission_builder?: boolean; is_zeus?: boolean; display_name?: string }) =>
     req<AdminUser>("POST", "/api/admin/users", b),
-  patchUser: (id: string, b: Partial<{ role: string; can_create_plans: boolean; is_mission_builder: boolean; is_active: boolean; password: string; display_name: string }>) =>
+  patchUser: (id: string, b: Partial<{ role: string; can_create_plans: boolean; is_mission_builder: boolean; is_zeus: boolean; is_active: boolean; password: string; display_name: string }>) =>
     req<AdminUser>("PATCH", `/api/admin/users/${id}`, b),
   deleteUser: (id: string) => req<void>("DELETE", `/api/admin/users/${id}`),
   adminGroups: () => req<AdminGroup[]>("GET", "/api/admin/groups"),
-  createGroup: (b: { name: string; can_create_plans: boolean; is_mission_builder?: boolean }) => req<AdminGroup>("POST", "/api/admin/groups", b),
-  patchGroup: (id: string, b: { name: string; can_create_plans: boolean; is_mission_builder: boolean }) =>
+  createGroup: (b: { name: string; can_create_plans: boolean; is_mission_builder?: boolean; is_zeus?: boolean }) => req<AdminGroup>("POST", "/api/admin/groups", b),
+  patchGroup: (id: string, b: { name: string; can_create_plans: boolean; is_mission_builder: boolean; is_zeus?: boolean }) =>
     req<AdminGroup>("PATCH", `/api/admin/groups/${id}`, b),
 
   orbats: () => req<Orbat[]>("GET", "/api/orbats"),
@@ -448,6 +461,9 @@ export const api = {
   trash: () => req<PlanItem[]>("GET", "/plans/trash"),
   undeletePlan: (planId: string) => req<PlanItem>("POST", `/plans/${planId}/undelete`),
   purgePlan: (planId: string) => req<void>("DELETE", `/plans/${planId}/purge`),
+  planLayers: (planId: string) => req<PlanLayer[]>("GET", `/plans/${planId}/layers`),
+  createLayer: (planId: string, name: string) => req<PlanLayer>("POST", `/plans/${planId}/layers`, { name }),
+  deleteLayer: (planId: string, layerId: string) => req<void>("DELETE", `/plans/${planId}/layers/${layerId}`),
   planPhases: (planId: string) => req<Phase[]>("GET", `/plans/${planId}/phases`),
   createPhase: (planId: string, name: string, opts: { plane?: string; parent_id?: string } = {}) =>
     req<Phase>("POST", `/plans/${planId}/phases`, { name, ...opts }),
@@ -458,7 +474,7 @@ export const api = {
   patchPhase: (
     planId: string,
     phaseId: string,
-    body: { start_at?: string | null; end_at?: string | null; name?: string },
+    body: { start_at?: string | null; end_at?: string | null; name?: string; zeus_released?: boolean; zeus_hours?: number | null },
   ) => req<Phase>("PATCH", `/plans/${planId}/phases/${phaseId}`, body),
   patchPlan: (planId: string, body: { name?: string; h_hour?: string | null }) =>
     req<PlanItem>("PATCH", `/plans/${planId}`, body),

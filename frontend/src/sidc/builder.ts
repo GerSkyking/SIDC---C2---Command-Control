@@ -4,11 +4,9 @@
 import { t } from "../i18n";
 import {
   loadAllMarkers,
-  loadChannels,
   loadModifiers,
   loadTranslations,
   translate,
-  channelLabel,
   type CatalogEntry,
   type ModifierCatalog,
   type ModifierOption,
@@ -23,6 +21,7 @@ import {
   withModifiers,
   type SidcModifiers,
 } from "./sidc";
+import { layerSelectHtml, phaseMultiHtml, readPhaseMulti, type TplCtx } from "./layerui";
 import { iconSrc } from "./symbol";
 import type { MarkerTemplate } from "./wizard";
 
@@ -39,8 +38,8 @@ function baseKey(sidc: string): string {
 
 export interface BuilderOpts {
   initialSidc?: string;
-  templateFields?: boolean; // Texte/Channel/Richtung/Flags zusätzlich anzeigen
-  defaultChannel?: string;  // Vorauswahl im Channel-Dropdown (Sichtbarkeit!)
+  templateFields?: boolean; // Texte/Layer/Richtung/Flags zusätzlich anzeigen
+  ctx?: TplCtx;             // eigene Layer + Phasen zur Auswahl
   defaultAffiliation?: string; // Vorauswahl Zugehörigkeit (SIDC-Ziffer), Standard BLUFOR
   submitLabel?: string;
   onSidc?: (sidc: string) => void;
@@ -48,10 +47,9 @@ export interface BuilderOpts {
 }
 
 export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts): Promise<void> {
-  const [cats, mods, channels] = await Promise.all([
+  const [cats, mods] = await Promise.all([
     loadAllMarkers(),
     loadModifiers(),
-    opts.templateFields ? loadChannels() : Promise.resolve(null),
     loadTranslations(),
   ]);
   if (!cats) {
@@ -113,10 +111,16 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
                <select data-dir>${DIRECTIONS.map((d) => `<option value="${d.degrees}">${d.label}</option>`).join("")}</select>
                <label>${t("wiz.unitText")}</label><input data-unit maxlength="60" />
                <label>${t("wiz.aiText")}</label><input data-ai maxlength="120" />
-               <label>${t("wiz.channel")}</label>
-               <select data-channel>${(channels?.channels ?? [])
-                 .map((c) => `<option value="${c.name}" ${c.name === opts.defaultChannel ? "selected" : ""}>${channelLabel(c)}</option>`)
-                 .join("")}</select>
+               ${
+                 opts.ctx?.layers?.length
+                   ? `<label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", opts.ctx.layers, opts.ctx.layerId)}`
+                   : ""
+               }
+               ${
+                 opts.ctx?.phases && opts.ctx.phases.length > 1
+                   ? `<label>${t("phase.extra")}</label>${phaseMultiHtml("data-xphases", opts.ctx.phases, [], opts.ctx.phaseId)}`
+                   : ""
+               }
                <label>${t("marker.color")}</label>
                <div class="row"><input type="color" data-tint value="#000000" />
                  <button type="button" data-tint-reset>${t("marker.colorReset")}</button></div>
@@ -296,7 +300,8 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
         sidc,
         unit_text: q<HTMLInputElement>("[data-unit]")?.value ?? "",
         ai_text: q<HTMLInputElement>("[data-ai]")?.value ?? "",
-        channel: q<HTMLSelectElement>("[data-channel]")?.value ?? "",
+        layer_id: q<HTMLSelectElement>("[data-layer]")?.value || null,
+        extra_phase_ids: readPhaseMulti(host, "data-xphases"),
         locked: q<HTMLInputElement>("[data-lock]")?.checked ?? false,
         timestamp_visible: q<HTMLInputElement>("[data-ts]")?.checked ?? true,
         rotation_degrees: Number(q<HTMLSelectElement>("[data-dir]")?.value ?? -1),
