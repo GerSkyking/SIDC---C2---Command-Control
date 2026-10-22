@@ -9,7 +9,7 @@ const DE = `
 - **Zeigen** – Karte fixiert, der Cursor wird anderen Nutzern in deren eigener Farbe angezeigt. **Linksklick** = gelbe Hervorhebung + eine Welle über die ganze Karte („hier bin ich"), **rechte Maustaste halten und ziehen** = Pfeil, solange gehalten.
 - **Linie** – gerade Segmente klicken (Vorschau-Linie zum Cursor). Grüner Haken oder Doppelklick beendet, roter Papierkorb/**Rechtsklick**/Esc verwirft. Klick auf eine bestehende Linie wählt sie: Punkte ziehen, Zahnrad (Phase/Farbe), Papierkorb löscht.
 - **Lineal** – bedient wie Linie: Punkte klicken, je Teilstrecke die Entfernung, am Ende die Summe Σ. Messlinien bleiben (nur lokal) und lassen sich auswählen, ändern und löschen.
-- **Radierer** – Kreis um den Cursor (Größe einstellbar, Durchmesser in Metern): Klicken/Ziehen löscht Marker, Linien und Messlinien im Kreis.
+- **Radierer** – Kreis um den Cursor (Größe einstellbar, Panel verschiebbar/fixierbar, Durchmesser in Metern): Klicken/Ziehen löscht Marker, Linien und Messlinien im Kreis.
 - **Textfeld** – auf die Karte klicken → platzierbares Markdown-Notizfeld. Bearbeiten per Doppelklick, verschieben im Bewegen-Modus. Über den Bild-Button in der Notiz lässt sich ein hochgeladenes Bild als Verweis-Chip einfügen, Klick öffnet es groß.
 - **Marker** – erst Position auf der Karte klicken, dann öffnet der Auswahl-Wizard (mit „Erweitert" für Modifikatoren). Verbindungs-Marker: weiter klicken, **Rechtsklick** beendet.
 - **Ebenen** – Sat/Grid/Orte/Höhenlinien/Peaks einzeln ein- und ausblenden, jeweils mit Deckkraft.
@@ -34,7 +34,7 @@ const DE = `
 
 ### Tastenkürzel
 - **Esc** – Werkzeug zurück auf „Karte bewegen" / offenes Fenster schließen.
-- **Rechtsklick** (Karte bewegen) – Menü mit allen anderen Werkzeugen; verschiebbar und über die Pinnadel fixierbar. Marker, Text, Linie und Lineal starten direkt an der geklickten Stelle. Rechtsklick-Ziehen dreht die Karte (Drehen geht nur in diesem Werkzeug).
+- **Rechtsklick** (Karte bewegen) – Menü mit allen anderen Werkzeugen. Marker, Text, Linie und Lineal starten direkt an der geklickten Stelle. Rechtsklick-Ziehen dreht die Karte (Drehen geht nur in diesem Werkzeug).
 - **Rechtsklick** (Linie/Lineal) – laufende Linie verwerfen; (Marker-Kette) beenden.
 - **Mittlere Maustaste ziehen** – Marker verschieben (im Karten-Modus).
 - **Doppelklick** – bei aktiver Linie/Lineal: beenden.
@@ -59,7 +59,7 @@ const EN = `
 - **Point** – map locked, your cursor is shown to others in your own colour. **Left-click** = yellow highlight + a wave across the whole map ("I'm here"), **hold right button and drag** = arrow while held.
 - **Line** – click straight segments (preview line to the cursor). Green check or double-click finishes, red trash/**right-click**/Esc discards. Clicking an existing line selects it: drag points, gear (phase/colour), trash deletes.
 - **Ruler** – works like Line: click points, distance per segment, total Σ at the end. Measure lines stay (local only) and can be selected, edited and deleted.
-- **Eraser** – circle around the cursor (adjustable size, diameter in metres): click/drag deletes markers, lines and measure lines inside the circle.
+- **Eraser** – circle around the cursor (adjustable size, movable/pinnable panel, diameter in metres): click/drag deletes markers, lines and measure lines inside the circle.
 - **Text box** – click the map → a placeable Markdown note. Double-click to edit, drag in pan mode. The image button in a note inserts an uploaded image as a reference chip; clicking it opens the image full-size.
 - **Marker** – click the position on the map first, then the picker wizard opens ("Advanced" for modifiers). Multi-point markers: keep clicking, **right-click** ends.
 - **Layers** – toggle sat/grid/places/contours/peaks individually, each with opacity.
@@ -84,7 +84,7 @@ const EN = `
 
 ### Keyboard
 - **Esc** – tool back to "Pan" / close the open window.
-- **Right-click** (Pan) – menu with all other tools; movable and pinnable. Marker, text, line and ruler start right at the clicked spot. Right-drag rotates the map (rotation only works in this tool).
+- **Right-click** (Pan) – menu with all other tools. Marker, text, line and ruler start right at the clicked spot. Right-drag rotates the map (rotation only works in this tool).
 - **Right-click** (Line/Ruler) – discard the running line; (marker chain) end it.
 - **Middle-mouse drag** – move a marker (in pan mode).
 - **Double-click** – with an active line/ruler: finish it.

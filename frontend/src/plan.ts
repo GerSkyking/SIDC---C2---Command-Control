@@ -3246,6 +3246,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const strokeGearBtn = root.querySelector<HTMLButtonElement>("#strokeGear")!;
   const strokeDelBtn = root.querySelector<HTMLButtonElement>("#strokeDel")!;
   const eraserPanel = root.querySelector<HTMLDivElement>("#eraserPanel")!;
+  const mvEraser = makeMovable(eraserPanel, { plan: planId, key: "eraser", pinnable: true });
   const eraserRing = root.querySelector<HTMLDivElement>("#eraserRing")!;
   // Anker für den grünen Haken (und das Zahnrad): letzter Punkt der laufenden
   // Linie bzw. der gerade bearbeiteten Linie/Messlinie.
@@ -3435,7 +3436,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
     if (m === "line" || m === "measure") map.doubleClickZoom.disable();
     else map.doubleClickZoom.enable();
-    eraserPanel.hidden = m !== "erase";
+    eraserPanel.hidden = mvEraser.isPinned() ? false : m !== "erase";
     if (m !== "erase") eraserRing.hidden = true;
     toolbar.querySelector("#tool-marker")?.classList.toggle("active", m === "place");
     lineStylePanel.hidden = mvLine.isPinned() ? false : m !== "line";
@@ -4065,100 +4066,83 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   // ── Rechtsklick-Menü im Karten-Werkzeug: alle anderen Werkzeuge ───────
-  // Persistentes Panel: verschiebbar + fixierbar (bleibt dann offen, wie die anderen Panels).
-  // Aktionen mit Position (Marker/Text/Linie/Lineal) nutzen den letzten Rechtsklick, sonst das normale Werkzeug.
-  const ctxEl = document.createElement("div");
-  ctxEl.className = "ctx-menu";
-  ctxEl.hidden = true;
-  root.appendChild(ctxEl);
-  const mvCtx = makeMovable(ctxEl, { plan: planId, key: "ctxmenu", pinnable: true });
-  let ctxPos: [number, number] | null = null;
+  let ctxMenuEl: HTMLElement | null = null;
   const closeCtxMenu = () => {
-    if (!mvCtx.isPinned()) ctxEl.hidden = true;
+    ctxMenuEl?.remove();
+    ctxMenuEl = null;
   };
-  {
-    const items: { ic: string; label: string; ok: () => boolean; run: (pos: [number, number] | null) => void }[] = [
+  function openCtxMenu(cx: number, cy: number, pos: [number, number]): void {
+    closeCtxMenu();
+    const items: { ic: string; label: string; ok: boolean; run: () => void }[] = [
       {
         ic: "marker",
         label: t("tool.marker").split(" – ")[0],
-        ok: () => caps.place,
-        run: (pos) => {
+        ok: caps.place,
+        run: () => {
           pending = null;
           setMode("place");
-          if (pos) startPlaceAt(pos);
-          else awaitingPos = true;
+          awaitingPos = false;
+          startPlaceAt(pos);
         },
       },
       {
         ic: "line",
         label: t("tool.line").split(" (")[0],
-        ok: () => caps.draw,
-        run: (pos) => {
+        ok: caps.draw,
+        run: () => {
           setMode("line");
-          if (pos) {
-            linePts.push(pos);
-            refreshLineDraft();
-          }
+          linePts.push(pos);
+          refreshLineDraft();
         },
       },
       {
         ic: "ruler",
         label: t("tool.measure").split(" – ")[0],
-        ok: () => true,
-        run: (pos) => {
+        ok: true,
+        run: () => {
           setMode("measure");
-          if (pos) {
-            measureActive.push(pos);
-            redrawMeasure();
-          }
+          measureActive.push(pos);
+          redrawMeasure();
         },
       },
       {
         ic: "textbox",
         label: t("tool.text").split(" (")[0],
-        ok: () => caps.place,
-        run: (pos) => (pos ? createAnnotAt(pos) : setMode("text")),
+        ok: caps.place,
+        run: () => createAnnotAt(pos),
       },
-      { ic: "point", label: t("tool.point").split(" – ")[0], ok: () => true, run: () => setMode("point") },
-      { ic: "eraser", label: t("tool.erase").split(" – ")[0], ok: () => caps.delete || caps.draw, run: () => setMode("erase") },
+      { ic: "point", label: t("tool.point").split(" – ")[0], ok: true, run: () => setMode("point") },
+      { ic: "eraser", label: t("tool.erase").split(" – ")[0], ok: caps.delete || caps.draw, run: () => setMode("erase") },
     ];
-    const list = document.createElement("div");
-    list.className = "ctx-items";
-    ctxEl.appendChild(list);
-    const btns = items.map((it) => {
+    const el = document.createElement("div");
+    el.className = "ctx-menu";
+    for (const it of items) {
       const b = document.createElement("button");
       b.innerHTML = `${icon(it.ic, 16)}<span>${esc(it.label)}</span>`;
+      b.disabled = !it.ok;
       b.addEventListener("click", () => {
-        const pos = ctxPos;
-        ctxPos = null; // Position gilt nur einmal
         closeCtxMenu();
-        it.run(pos);
+        it.run();
       });
-      list.appendChild(b);
-      return b;
-    });
-    (ctxEl as unknown as { sync: () => void }).sync = () => btns.forEach((b, i) => (b.disabled = !items[i].ok()));
-  }
-  function openCtxMenu(cx: number, cy: number, pos: [number, number]): void {
-    ctxPos = pos;
-    (ctxEl as unknown as { sync: () => void }).sync();
-    ctxEl.hidden = false;
-    // Verschobene/fixierte Position bleibt; sonst am Mauszeiger öffnen
-    if (!mvCtx.hasPos() && !mvCtx.isPinned()) {
-      const r = ctxEl.getBoundingClientRect();
-      ctxEl.style.left = `${Math.max(4, Math.min(cx, window.innerWidth - r.width - 4))}px`;
-      ctxEl.style.top = `${Math.max(4, Math.min(cy, window.innerHeight - r.height - 4))}px`;
+      el.appendChild(b);
     }
-    else mvCtx.bringIntoView();
+    document.body.appendChild(el);
+    const r = el.getBoundingClientRect();
+    el.style.left = `${Math.max(4, Math.min(cx, window.innerWidth - r.width - 4))}px`;
+    el.style.top = `${Math.max(4, Math.min(cy, window.innerHeight - r.height - 4))}px`;
+    ctxMenuEl = el;
+    const off = (ev: Event) => {
+      if (ev instanceof MouseEvent && el.contains(ev.target as Node)) return;
+      if (ev instanceof KeyboardEvent && ev.key !== "Escape") return;
+      closeCtxMenu();
+      document.removeEventListener("mousedown", off, true);
+      document.removeEventListener("keydown", off, true);
+      map.off("movestart", closeCtxMenu);
+    };
+    document.addEventListener("mousedown", off, true);
+    document.addEventListener("keydown", off, true);
+    map.once("movestart", closeCtxMenu);
   }
-  document.addEventListener("mousedown", (ev) => {
-    if (!ctxEl.hidden && !ctxEl.contains(ev.target as Node)) closeCtxMenu();
-  });
-  document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") closeCtxMenu();
-  });
-  map.on("movestart", closeCtxMenu);
-  window.addEventListener("hashchange", () => ctxEl.remove(), { once: true });
 
   // ── Annotationen (platzierbare Markdown-Textfelder) ───────────────────
   const annotsEl = root.querySelector<HTMLDivElement>("#annots")!;
