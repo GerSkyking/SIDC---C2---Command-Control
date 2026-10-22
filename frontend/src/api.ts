@@ -102,6 +102,7 @@ export interface Phase {
   locked?: boolean;
   zeus_released?: boolean;
   zeus_until?: string | null;
+  player_released?: boolean;
 }
 export interface PlanLayer {
   id: string;
@@ -474,7 +475,7 @@ export const api = {
   patchPhase: (
     planId: string,
     phaseId: string,
-    body: { start_at?: string | null; end_at?: string | null; name?: string; zeus_released?: boolean; zeus_hours?: number | null },
+    body: { start_at?: string | null; end_at?: string | null; name?: string; zeus_released?: boolean; zeus_hours?: number | null; player_released?: boolean },
   ) => req<Phase>("PATCH", `/plans/${planId}/phases/${phaseId}`, body),
   patchPlan: (planId: string, body: { name?: string; h_hour?: string | null }) =>
     req<PlanItem>("PATCH", `/plans/${planId}`, body),

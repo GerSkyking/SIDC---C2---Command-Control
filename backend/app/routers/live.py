@@ -93,7 +93,10 @@ def _refresh_builder_phases(plan_id: str) -> set[str]:
         # 1:1 gepaarte "Spiegel"-Phase (sub_ordering 0) einer gesperrten Spieler-
         # Phase — für alle sichtbar. Echte Zwischenphasen (sub_ordering >= 1)
         # bleiben builder-only, auch unter derselben Spieler-Phase.
-        released = {p.id for p in rows if p.parent_id in locked_ids and (p.sub_ordering or 0) == 0}
+        released = {
+            p.id for p in rows
+            if p.player_released or (p.parent_id in locked_ids and (p.sub_ordering or 0) == 0)
+        }
     _BUILDER_PHASES[plan_id] = ids
     _RELEASED_BUILDER_PHASES[plan_id] = released
     return ids

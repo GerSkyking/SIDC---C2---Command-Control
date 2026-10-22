@@ -16,6 +16,7 @@ export interface TplCtx {
   layerId?: string | null;
   phases?: PhaseOpt[];
   phaseId?: string | null;
+  onClose?: () => void; // Dialog wurde geschlossen (egal ob mit oder ohne Auswahl)
 }
 
 const esc = (s: string): string =>
@@ -23,7 +24,7 @@ const esc = (s: string): string =>
 
 export function layerSelectHtml(attr: string, layers: LayerOpt[], selected: string | null | undefined): string {
   return (
-    `<select ${attr}><option value="">—</option>` +
+    `<select ${attr}><option value="">${t("tac.autoOpt")}</option>` +
     layers.map((l) => `<option value="${esc(l.id)}" ${l.id === selected ? "selected" : ""}>${esc(l.name)}</option>`).join("") +
     `</select>`
   );

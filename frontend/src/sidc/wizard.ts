@@ -82,7 +82,10 @@ export async function openWizard(
 
   const body = wrap.querySelector<HTMLDivElement>(".wiz-body")!;
   const config = wrap.querySelector<HTMLDivElement>(".wiz-config")!;
-  const close = () => wrap.remove();
+  const close = () => {
+    wrap.remove();
+    ctx.onClose?.();
+  };
   wrap.querySelector("[data-close]")!.addEventListener("click", close);
   wrap.addEventListener("click", (e) => e.target === wrap && close());
 
@@ -180,7 +183,7 @@ export async function openWizard(
         <label>${t("wiz.unitText")}</label><input data-unit maxlength="60" />
         <label>${t("wiz.aiText")}</label><input data-ai maxlength="120" />
         ${
-          ctx.layers?.length
+          ctx.layers
             ? `<label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", ctx.layers, ctx.layerId)}`
             : ""
         }

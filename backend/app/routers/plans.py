@@ -84,9 +84,16 @@ def _released_builder_phase_ids(db: Session, plan_id: str) -> set[str]:
             )
         )
     )
+    manual = set(
+        db.scalars(
+            select(Phase.id).where(
+                Phase.plan_id == plan_id, Phase.plane == "builder", Phase.player_released.is_(True)
+            )
+        )
+    )
     if not locked_ids:
-        return set()
-    return set(
+        return manual
+    return manual | set(
         db.scalars(
             select(Phase.id).where(
                 Phase.plan_id == plan_id, Phase.plane == "builder", Phase.parent_id.in_(locked_ids),
@@ -612,6 +619,7 @@ class PhaseBody(BaseModel):
     parent_id: str | None = None   # bei plane="builder": zugehörige Spieler-Phase
     start_at: datetime | None = None
     end_at: datetime | None = None
+    player_released: bool | None = None  # Missionsbau-Phase für Spieler freigeben (wirkt wie Base)
     zeus_released: bool | None = None  # Missionsbau-Phase für Zeus freigeben
     zeus_hours: float | None = None    # Frist in Stunden (None/0 = unbegrenzt); ohne Angabe: 48 h
 
@@ -623,6 +631,7 @@ def _phase_out(p: Phase) -> dict:
         "start_at": p.start_at.isoformat() if p.start_at else None,
         "end_at": p.end_at.isoformat() if p.end_at else None,
         "locked": bool(p.locked),
+        "player_released": bool(p.player_released),
         "zeus_released": bool(p.zeus_released),
         "zeus_until": p.zeus_until.isoformat() if p.zeus_until else None,
     }
@@ -717,9 +726,15 @@ async def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: Cu
         else:
             p.zeus_until = None
         zeus_changed = True
+    if body.player_released is not None and p.plane == "builder":
+        p.player_released = body.player_released
+        zeus_changed = True
     db.commit()
     out = _phase_out(p)
     if zeus_changed:
+        from .live import _refresh_builder_phases
+
+        _refresh_builder_phases(plan.id)
         from ..services.realtime import hub
 
         await hub.broadcast(plan.id, {"type": "phases.changed"})

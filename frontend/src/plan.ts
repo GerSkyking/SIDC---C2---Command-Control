@@ -276,6 +276,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     locked?: boolean;
     zeus_released?: boolean;
     zeus_until?: string | null;
+    player_released?: boolean;
   }
   const isMB: boolean = !!me.is_mission_builder_effective;
   const phases: PhaseT[] = [...(snap.phases ?? [])].sort(
@@ -289,6 +290,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const isReleasedBuilderPhase = (id: string | null | undefined): boolean => {
     const p = id ? phases.find((x) => x.id === id) : undefined;
     if (!p || p.plane !== "builder") return false;
+    if (p.player_released) return true;
     const parent = phases.find((x) => x.id === p.parent_id);
     return !!parent?.locked;
   };
@@ -381,6 +383,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       .filter((p) => (p.plane === "builder") === b && (actAs !== "zeus" || !b || zeusOpen(p.id)))
       .map((p) => ({ id: p.id, name: p.name, builder: p.plane === "builder" }));
   };
+  // Phasen, die ich zuordnen darf: Spieler-Phasen, für Missionsbauer alles, für Zeus die freigegebenen
+  const selectablePhases = (): PhaseT[] =>
+    phases.filter((p) => p.plane !== "builder" || isMB || zeusOpen(p.id));
   const tplCtx = (): TplCtx => ({
     layers: tacLayers.map((l) => ({ id: l.id, name: l.name })),
     layerId: null,
@@ -412,8 +417,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     Math.max(phaseOpacityOf(m.phase_id), ...(m.extra_phase_ids ?? []).map((x) => phaseOpacityOf(x))) *
     (m.released ? 0.6 : 1) *
     tacOpacity(m.sidc, m.layer_id);
-  const phaseNameOf = (id: string | null): string =>
-    id ? (phases.find((p) => p.id === id)?.name ?? "—") : t("phase.global");
+  const phaseNameOf = (id: string | null): string => {
+    const ph = id ? phases.find((p) => p.id === id) : undefined;
+    if (!id) return t("phase.global");
+    // Für Spieler freigegebene Missionsbau-Phase: erscheint als die Spieler-Phase darüber
+    if (ph && ph.plane === "builder" && !isMB) return phases.find((p) => p.id === ph.parent_id)?.name ?? ph.name;
+    return ph?.name ?? "—";
+  };
   // Hotkey-Hinweis " (Taste)" für Tooltips, aus den (änderbaren) Nutzer-Keybinds.
   const hk = (action: HotAction): string => {
     const k = getKeybinds()[action];
@@ -484,7 +494,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <label>${t("phase.assign")}</label>
              <select id="lPhase">
                <option value="">${t("phase.global")}</option>
-               ${phases
+               ${selectablePhases()
                  .map((ph) => `<option value="${esc(ph.id)}">${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`)
                  .join("")}
              </select>
@@ -492,6 +502,18 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <select id="lLayer"></select>
              <button class="primary" id="lineFinish">${t("line.finish")}</button>
              <p class="muted" style="margin:.35rem 0 0;font-size:.72rem">${t("line.rmbHint")}</p>
+           </div>
+           <div class="line-style" id="measureStyle" hidden>
+             <div class="fav-head">${t("tool.measure").split(" – ")[0]}</div>
+             <label>${t("phase.assign")}</label>
+             <select id="mPhase">
+               <option value="">${t("phase.global")}</option>
+               ${selectablePhases()
+                 .map((ph) => `<option value="${esc(ph.id)}">${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`)
+                 .join("")}
+             </select>
+             <label>${t("wiz.layer")}</label>
+             <select id="mLayer"></select>
            </div>`
         : ""
     }
@@ -1123,7 +1145,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // ── Linien nachträglich bearbeiten: Stützpunkte ziehen ───────────────
   // Lineal: mehrsegmentige, bleibende Messlinien (nur lokal, je Sitzung)
   // builder=true → nur in der Missionsbau-Ebene sichtbar, sonst nur in der Spieler-Ebene
-  let measureLines: { id: string; pts: [number, number][]; builder: boolean }[] = [];
+  let measureLines: { id: string; pts: [number, number][]; phase_id: string | null; layer_id: string | null }[] = [];
+  const measureVisible = (ml: { phase_id: string | null; layer_id: string | null }): boolean =>
+    phaseOpacityOf(ml.phase_id) * tacOpacity(null, ml.layer_id) > 0;
   let measureActive: [number, number][] = [];
   let measureCursor: [number, number] | null = null;
   let editMeasureId: string | null = null;
@@ -2314,7 +2338,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ? `<button data-ntclear title="${t("common.reset")}">${icon("x", 12)}</button>`
         : `<span class="muted">(auto)</span>`) +
       (isMB && canEdit && ph.plane === "builder"
-        ? `<span class="nt-zeus"><label class="chk"><input type="checkbox" data-zrel ${ph.zeus_released ? "checked" : ""}/> ${t("zeus.release")}</label>` +
+        ? `<span class="nt-zeus"><label class="chk"><input type="checkbox" data-prel ${ph.player_released ? "checked" : ""}/> ${t("phase.playerRelease")}</label>` +
+          `<label class="chk"><input type="checkbox" data-zrel ${ph.zeus_released ? "checked" : ""}/> ${t("zeus.release")}</label>` +
           `<label>${t("zeus.hours")}<input type="number" min="0" step="1" data-zhours style="width:4.5rem" value="${
             ph.zeus_released && ph.zeus_until ? Math.max(1, Math.round((parseUtc(ph.zeus_until) - Date.now()) / 3600e3)) : ph.zeus_released ? "" : 48
           }"/></label>` +
@@ -2337,6 +2362,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       renderTimeline();
       renderNotesTimes();
     };
+    nTimes.querySelector("[data-prel]")?.addEventListener("change", async (e) => {
+      try {
+        const upd = await api.patchPhase(planId, ph.id, { player_released: (e.target as HTMLInputElement).checked });
+        ph.player_released = upd.player_released;
+      } catch (err) {
+        toastError(err);
+      }
+      renderNotesTimes();
+      applyPhase();
+    });
     nTimes.querySelector("[data-zrel]")?.addEventListener("change", () => void sendZeus());
     nTimes.querySelector("[data-zhours]")?.addEventListener("change", () => {
       if (nTimes.querySelector<HTMLInputElement>("[data-zrel]")!.checked) void sendZeus();
@@ -2776,6 +2811,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const applyTac = (): void => {
     void refreshMarkers();
     refreshStrokes();
+    redrawMeasure();
   };
   const saveTac = (): void => {
     try {
@@ -3431,6 +3467,32 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   makeMovable(toolbar, { plan: planId, key: "toolbar" });
   const lineStylePanel = root.querySelector<HTMLDivElement>("#lineStyle")!;
   const mvLine = makeMovable(lineStylePanel, { plan: planId, key: "linestyle", pinnable: true });
+  // Messen-Menü: Phase + taktischer Layer für neue Messlinien (Standard: aktuelle Phase)
+  const measureStylePanel = root.querySelector<HTMLDivElement>("#measureStyle")!;
+  const mvMeasure = makeMovable(measureStylePanel, { plan: planId, key: "measurestyle", pinnable: true });
+  let measurePhaseId: string | null = currentPhaseId || null;
+  let measureLayerId: string | null = null;
+  {
+    const mp = root.querySelector<HTMLSelectElement>("#mPhase")!;
+    const ml = root.querySelector<HTMLSelectElement>("#mLayer")!;
+    const fill = () => {
+      ml.innerHTML =
+        `<option value="">${t("tac.autoOpt")}</option>` +
+        tacLayers.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("");
+      if (measureLayerId && !tacLayers.some((l) => l.id === measureLayerId)) measureLayerId = null;
+      ml.value = measureLayerId ?? "";
+    };
+    fill();
+    layerListeners.push(fill);
+    mp.value = measurePhaseId ?? "";
+    mp.addEventListener("change", () => (measurePhaseId = mp.value || null));
+    ml.addEventListener("change", () => (measureLayerId = ml.value || null));
+    phaseListeners.push(() => {
+      measurePhaseId = currentPhaseId || null;
+      mp.value = measurePhaseId ?? "";
+      redrawMeasure();
+    });
+  }
   let linePts: [number, number][] = [];
   let lineCursor: [number, number] | null = null; // Mauszeiger für die Vorschau-Linie
   let linePhaseId: string | null = currentPhaseId || null;
@@ -3584,8 +3646,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           properties: { kind: "label", label: `Σ ${fmtDist(pathLen(pts))}` },
         });
     };
-    const curBuilder = isBuilderPhase(currentPhaseId);
-    for (const ml of measureLines) if (ml.builder === curBuilder) addLine(ml.id, ml.pts);
+    for (const ml of measureLines) if (measureVisible(ml)) addLine(ml.id, ml.pts);
     if (measureActive.length) {
       const live = measureCursor ? [...measureActive, measureCursor] : measureActive;
       addLine("__active", live);
@@ -3602,7 +3663,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       measureLines.push({
         id: `m${Date.now()}`,
         pts: [...measureActive],
-        builder: isBuilderPhase(currentPhaseId),
+        phase_id: measurePhaseId,
+        layer_id: measureLayerId,
       });
     measureActive = [];
     measureCursor = null;
@@ -3640,6 +3702,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (m !== "erase") eraserRing.hidden = true;
     toolbar.querySelector("#tool-marker")?.classList.toggle("active", m === "place");
     lineStylePanel.hidden = mvLine.isPinned() ? false : m !== "line";
+    if (measureStylePanel) {
+      measureStylePanel.hidden = mvMeasure.isPinned() ? false : m !== "measure";
+      if (m === "measure") {
+        measurePhaseId = currentPhaseId || null;
+        const mp = root.querySelector<HTMLSelectElement>("#mPhase");
+        if (mp) mp.value = measurePhaseId ?? "";
+      }
+    }
     if (m === "line") {
       linePhaseId = currentPhaseId || null;
       const lp = root.querySelector<HTMLSelectElement>("#lPhase");
@@ -3744,9 +3814,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         const p = map.project([m.world_x, m.world_y]);
         if (Math.hypot(p.x - px, p.y - py) <= eraserR + 8 && once(m.id)) socket.send({ type: "marker.delete", id: m.id });
       }
-    const curBuilder = isBuilderPhase(currentPhaseId);
     const hitIds = measureLines
-      .filter((ml) => ml.builder === curBuilder && polyHit(px, py, ml.pts.map((p) => map.project(p)), eraserR))
+      .filter((ml) => measureVisible(ml) && polyHit(px, py, ml.pts.map((p) => map.project(p)), eraserR))
       .map((ml) => ml.id);
     if (hitIds.length) {
       measureLines = measureLines.filter((x) => !hitIds.includes(x.id));
@@ -3906,7 +3975,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     lp.value = linePhaseId ?? "";
     const fillLayers = () => {
       ll.innerHTML =
-        `<option value="">—</option>` +
+        `<option value="">${t("tac.autoOpt")}</option>` +
         tacLayers.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("");
       if (lineLayerId && !tacLayers.some((l) => l.id === lineLayerId)) lineLayerId = null;
       ll.value = lineLayerId ?? "";
@@ -3914,6 +3983,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     fillLayers();
     layerListeners.push(fillLayers);
     lp.addEventListener("change", () => (linePhaseId = lp.value || null));
+    phaseListeners.push(() => {
+      linePhaseId = currentPhaseId || null;
+      lp.value = linePhaseId ?? "";
+    });
     ll.addEventListener("change", () => (lineLayerId = ll.value || null));
   }
   const finishLine = () => {
@@ -3953,7 +4026,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <label class="chk-lbl">${t("phase.assign")}
         <select data-sphase>
           <option value="">${t("phase.global")}</option>
-          ${phases
+          ${selectablePhases()
             .map(
               (ph) =>
                 `<option value="${esc(ph.id)}" ${ph.id === s.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`,
@@ -3961,9 +4034,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             .join("")}
         </select></label>
       ${
-        tacLayers.length
-          ? `<label class="chk-lbl">${t("wiz.layer")}${layerSelectHtml("data-slayer", tacLayers, s.layer_id)}</label>`
-          : ""
+        `<label class="chk-lbl">${t("wiz.layer")}${layerSelectHtml("data-slayer", tacLayers, s.layer_id)}</label>`
       }
       <label class="chk-lbl">${t("line.color")}
         <select data-scolor>${lineColors
@@ -4224,9 +4295,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const del = mkBtn("trash", t("common.delete"), caps.delete && !m.locked, "mk-act-del");
       const mv = mkBtn("markerMove", t("tool.markermove"), caps.move && !m.locked);
       const ed = mkBtn("edit", t("common.rename"), caps.move);
-      del.addEventListener("click", () => {
-        socket.send({ type: "marker.delete", id: m.id });
+      del.addEventListener("click", async () => {
         hideHoverNow();
+        if (!(await confirmDialog(t("marker.confirmDelete"), { danger: true, trash: true }))) return;
+        socket.send({ type: "marker.delete", id: m.id });
       });
       mv.addEventListener("mousedown", (ev) => startIconDrag(m.id, ev));
       ed.addEventListener("click", () => {
@@ -5045,13 +5117,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   function startPlaceAt(pos: [number, number]): void {
     awaitingPos = false;
     pendingPos = pos;
+    let picked = false;
     openWizard(root, (tpl) => {
+      picked = true;
       pending = tpl;
       chainGroup = tpl.is_multipoint ? Math.floor(Math.random() * 1e9) : null;
       chainIndex = 0;
       placeMarker(pendingPos ?? pos, tpl); // sofort an der geklickten Position
       if (!tpl.is_multipoint) setMode("move");
-    }, tplCtx());
+    }, {
+      ...tplCtx(),
+      onClose: () => {
+        if (!picked && mode === "place") awaitingPos = true; // Abbruch: gleich wieder Position wählen
+      },
+    });
   }
   function createAnnotAt(pos: [number, number]): void {
     const ac = cid();
@@ -5216,7 +5295,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <label>${t("phase.assign")}</label>
       <select data-phase>
         <option value="">${t("phase.global")}</option>
-        ${phases
+        ${selectablePhases()
           .map(
             (ph) =>
               `<option value="${esc(ph.id)}" ${ph.id === m.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`,
@@ -5225,7 +5304,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       </select>
       <label>${t("phase.extra")}</label>
       ${phaseMultiHtml("data-xphases", samePlanePhases(m.phase_id), m.extra_phase_ids ?? [], m.phase_id)}
-      ${tacLayers.length ? `<label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", tacLayers, m.layer_id)}` : ""}
+      <label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", tacLayers, m.layer_id)}
       <label class="chk"><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> <span>${t("marker.locked")}</span></label>
       ${
         isMB

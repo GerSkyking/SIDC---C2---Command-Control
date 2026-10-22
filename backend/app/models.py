@@ -224,6 +224,8 @@ class Phase(Base):
     # Freigabe einer Missionsbau-Phase für Zeus (optional zeitlich begrenzt; None = unbegrenzt).
     zeus_released: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     zeus_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Missionsbau-Phase für Spieler freigegeben: Inhalt erscheint wie die Base-Phase (Phase selbst bleibt verborgen).
+    player_released: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 class Layer(Base):

@@ -112,7 +112,7 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
                <label>${t("wiz.unitText")}</label><input data-unit maxlength="60" />
                <label>${t("wiz.aiText")}</label><input data-ai maxlength="120" />
                ${
-                 opts.ctx?.layers?.length
+                 opts.ctx?.layers
                    ? `<label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", opts.ctx.layers, opts.ctx.layerId)}`
                    : ""
                }
