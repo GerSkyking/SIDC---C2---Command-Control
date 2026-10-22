@@ -96,6 +96,9 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
   host.innerHTML = `
     <div class="mkb">
       <div class="mkb-fields">
+        <label>${t("wiz.sidcInput")}</label>
+        <div class="row"><input data-sidcin inputmode="numeric" maxlength="30" placeholder="10032500001101000000" style="flex:1" />
+          <button type="button" data-sidcgo>${t("wiz.sidcGo")}</button></div>
         <label>${t("wiz.catalog")}</label><div data-slot="cat"></div>
         <label>${t("marker.heading")}</label><div data-slot="marker"></div>
         <label>${t("wiz.affiliation")}</label>
@@ -229,6 +232,59 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
   host.querySelector("[data-tint-reset]")?.addEventListener("click", () => {
     tint = "";
     host.querySelector<HTMLInputElement>("[data-tint]")!.value = "#000000";
+  });
+
+  // SIDC-Nummer (ganz oder teilweise) eingeben → nächstpassenden Marker wählen und übernehmen/platzieren.
+  // Identität (Stelle 4), Status/HQ/Echelon (7–10) zählen beim Vergleichen nicht; vorhandene Stellen
+  // für Identität, Echelon und Modifikatoren werden übernommen.
+  const sidcIn = host.querySelector<HTMLInputElement>("[data-sidcin]")!;
+  const WILD = new Set([3, 6, 7, 8, 9]);
+  const applySidcInput = (): boolean => {
+    const q = sidcIn.value.replace(/\D/g, "");
+    if (q.length < 4) return false;
+    let best: CatalogEntry | null = null;
+    let bestN = -1;
+    for (const c of cats)
+      for (const e of c.entries) {
+        const cand = e.sidc.padEnd(20, "0");
+        let n = 0;
+        while (n < q.length && n < 20 && (WILD.has(n) || q[n] === cand[n])) n++;
+        if (n > bestN) {
+          best = e;
+          bestN = n;
+        }
+      }
+    if (!best) return false;
+    entry = best;
+    if (q.length > 3) aff = q[3];
+    if (q.length >= 10 && AMPLIFIERS.some((m) => m.digits === q.slice(8, 10))) echelon = q.slice(8, 10);
+    if (q.length >= 20) {
+      modSel.m4 = Number(q[6]) || undefined;
+      modSel.m3 = Number(q[7]) || undefined;
+      modSel.m1 = Number(q.slice(16, 18)) || undefined;
+      modSel.m2 = Number(q.slice(18, 20)) || undefined;
+    }
+    const cat = cats.find((c) => c.entries.includes(best!));
+    catKey = cat?.key ?? "";
+    catBox.set(catKey);
+    setMarkerItems();
+    markerBox.set(best.sidc + "|" + best.name);
+    affSel.value = aff;
+    echSel.value = echelon;
+    refresh();
+    return true;
+  };
+  const sidcGo = () => {
+    if (applySidcInput()) host.querySelector<HTMLButtonElement>("[data-submit]")!.click();
+    else sidcIn.classList.add("invalid");
+  };
+  host.querySelector("[data-sidcgo]")!.addEventListener("click", sidcGo);
+  sidcIn.addEventListener("input", () => sidcIn.classList.remove("invalid"));
+  sidcIn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      sidcGo();
+    }
   });
 
   host.querySelector("[data-submit]")!.addEventListener("click", () => {

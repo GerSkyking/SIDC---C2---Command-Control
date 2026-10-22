@@ -752,9 +752,9 @@ label.chk input { width: auto; }
 .img-popover-head .icon-btn { width: 1.6rem; height: 1.6rem; flex: none; }
 .ir-thumb[draggable="true"] { cursor: grab; }
 .ir-thumb[draggable="true"]:active { cursor: grabbing; }
-.img-rail-tab { position: absolute; top: calc(var(--topbar-h, 3.2rem) + 6rem); right: 0;
+.img-rail-tab { position: absolute; top: calc(var(--topbar-h, 3.2rem) + 0.5rem); right: 0; /* gleiche Höhe wie der Schließen-Knopf in der Leiste */
   z-index: 14; border-radius: var(--r-sm) 0 0 var(--r-sm); border-right: 0;
-  background: var(--surface); padding: 0.5rem 0.3rem; }
+  background: var(--surface); width: 1.6rem; height: 2.2rem; padding: 0; display: grid; place-items: center; }
 .img-rail-tab.hidden { display: none; }
 body.rail-open .hud, body.rail-open .mk-scale { right: calc(var(--rail-w, 300px) + 0.6rem); }
 body.rail-open .navcube { right: calc(var(--rail-w, 300px) + 14px); }
@@ -839,11 +839,14 @@ button.danger .ic { color: var(--danger); }
   padding: 0.4rem 0.6rem; border-radius: var(--r-sm); }
 .ctx-menu button:hover:not(:disabled) { background: var(--elevated); }
 
-/* ── Zeigen: Welle bei Linksklick ────────────────────────────────────── */
-.wave-host { position: absolute; inset: var(--topbar-h, 3.2rem) 0 0 0; overflow: hidden; pointer-events: none; z-index: 3; }
-.wave { position: absolute; border: 8px solid #fff; border-radius: 50%; box-sizing: border-box; opacity: 0.5;
-  background: transparent; transform: translate(-50%, -50%) scale(1); animation: wave-in 1.1s ease-in forwards; }
-@keyframes wave-in { to { transform: translate(-50%, -50%) scale(0.02); } }
+
 
 /* Topbar-Größe (Zahnrad-Menü, pro Nutzer) */
 #app > .topbar { zoom: var(--tb-scale, 1); }
+
+/* ── Marker-Hover: Aktions-Icons ─────────────────────────────────────── */
+.maplibregl-popup-content { pointer-events: auto; }
+.mk-acts { display: flex; gap: 0.3rem; margin-top: 0.35rem; }
+.mk-acts .icon-btn { width: 1.9rem; height: 1.9rem; }
+
+.mkb input.invalid { border-color: var(--danger); }

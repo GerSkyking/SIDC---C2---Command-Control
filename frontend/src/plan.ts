@@ -1020,7 +1020,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "circle-radius": ["case", ["==", ["get", "hl"], 1], 9, 6],
         "circle-color": ["get", "color"],
         "circle-stroke-color": ["case", ["==", ["get", "hl"], 1], "#ffe600", "#fff"],
-        "circle-stroke-width": ["case", ["==", ["get", "hl"], 1], 5, 2],
+        "circle-stroke-width": ["case", ["==", ["get", "hl"], 1], 15, 2],
+        "circle-stroke-opacity": ["case", ["==", ["get", "hl"], 1], 0.75, 1],
       },
     });
     map.addLayer({
@@ -1170,7 +1171,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         if (msg.uid !== me.id) {
           upsertPeer(msg.uid, names.get(msg.uid) ?? "?", msg.lng, msg.lat, !!msg.hl, (msg.arrow as [number, number] | null) ?? null);
           refreshPeers();
-          if (msg.ping) showWave(msg.lng, msg.lat, peerColor(msg.uid));
         }
         break;
       case "marker.upsert":
@@ -1330,29 +1330,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let ptrHl = false;
   let ptrArrowFrom: [number, number] | null = null;
   let ptrLast: [number, number] | null = null;
-  // Linksklick im Zeigen-Modus: Welle von außen zum Punkt ("hier bin ich"), für alle sichtbar
-  const waveHost = document.createElement("div");
-  waveHost.className = "wave-host";
-  root.appendChild(waveHost);
-  const showWave = (lng: number, lat: number, color: string) => {
-    const p = map.project([lng, lat]);
-    const mr = map.getContainer().getBoundingClientRect(); // wave-host deckt exakt die Karte ab
-    const x = p.x;
-    const y = p.y;
-    // Durchmesser: bis in die entfernteste Bildschirmecke
-    const d = 2 * Math.hypot(Math.max(p.x, mr.width - p.x), Math.max(p.y, mr.height - p.y));
-    const w = document.createElement("div");
-    w.className = "wave";
-    w.style.cssText = `left:${x}px;top:${y}px;width:${d}px;height:${d}px;border-color:${color}`;
-    waveHost.appendChild(w);
-    w.addEventListener("animationend", () => w.remove());
-  };
-  const sendPointer = (lng: number, lat: number, force = false, ping = false) => {
+  const sendPointer = (lng: number, lat: number, force = false) => {
     if (!force && Date.now() - lastCursorSent <= 60) return;
     lastCursorSent = Date.now();
     ptrLast = [lng, lat];
-    socket.send({ type: "presence.cursor", lng, lat, hl: ptrHl, arrow: ptrArrowFrom, ...(ping ? { ping: true } : {}) });
-    if (ping) showWave(lng, lat, peerColor(me.id));
+    socket.send({ type: "presence.cursor", lng, lat, hl: ptrHl, arrow: ptrArrowFrom });
     // eigener Zeiger auch bei mir anzeigen
     upsertPeer(me.id, me.display_name || me.username, lng, lat, ptrHl, ptrArrowFrom);
     refreshPeers();
@@ -1362,7 +1344,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (e.originalEvent.button === 0) ptrHl = true;
     else if (e.originalEvent.button === 2) ptrArrowFrom = [e.lngLat.lng, e.lngLat.lat];
     else return;
-    sendPointer(e.lngLat.lng, e.lngLat.lat, true, e.originalEvent.button === 0);
+    sendPointer(e.lngLat.lng, e.lngLat.lat, true);
   });
   document.addEventListener("mouseup", () => {
     if (!ptrHl && !ptrArrowFrom) return;
@@ -3929,7 +3911,48 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   // Hover: Channel / Ersteller / Phase des Markers
-  const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 });
+  const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+  let hoverHideTimer = 0;
+  // Marker per Aktions-Icon verschieben: folgt der Maus (Dokument-Listener, weil das Popup
+  // mit dem Marker wandert und unter dem Zeiger liegt), loslassen setzt ihn ab.
+  const startIconDrag = (id: string, ev: MouseEvent) => {
+    const m = markers.get(id);
+    if (!m || m.locked || !caps.move) return;
+    ev.preventDefault();
+    const fromX = m.world_x;
+    const fromY = m.world_y;
+    dragId = id;
+    map.dragPan.disable();
+    hoverPopup.remove();
+    map.getCanvas().style.cursor = "grabbing";
+    const toLL = (e: MouseEvent) => {
+      const r = map.getCanvas().getBoundingClientRect();
+      return map.unproject([e.clientX - r.left, e.clientY - r.top]);
+    };
+    const onMove = (e: MouseEvent) => {
+      const ll = toLL(e);
+      m.world_x = ll.lng;
+      m.world_y = ll.lat;
+      redrawMarkersOnly();
+    };
+    const onUp = (e: MouseEvent) => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      dragId = null;
+      suppressClick = true;
+      setTimeout(() => (suppressClick = false), 0);
+      if (mode === "move") map.dragPan.enable();
+      map.getCanvas().style.cursor = modeCursor();
+      const ll = toLL(e);
+      socket.send({ type: "marker.move", id, world_x: ll.lng, world_y: ll.lat });
+      pushCmd({
+        undo: () => socket.send({ type: "marker.move", id, world_x: fromX, world_y: fromY }),
+        redo: () => socket.send({ type: "marker.move", id, world_x: ll.lng, world_y: ll.lat }),
+      });
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
   const showHover = (e: maplibregl.MapLayerMouseEvent) => {
     if (dragId) return;
     const id = e.features?.[0]?.properties?.id as string | undefined;
@@ -3937,6 +3960,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     // Komplett ausgeblendete Marker (Opacity 0 — fremde Phase/Ebene/Channel) zeigen
     // keine Hover-Info, auch wenn ihre Trefferfläche noch da ist.
     if (!m || phaseOpacity(m) <= 0) return;
+    window.clearTimeout(hoverHideTimer);
     hoverMarkerId = m.id;
     map.getCanvas().style.cursor = "pointer";
     const info = showMarkerInfo ? markerInfoText(m.sidc) : "";
@@ -3960,12 +3984,49 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       d.textContent = info;
       tip.append(d);
     }
+    // Aktions-Icons: Löschen · Verschieben · Bearbeiten
+    if (!m.released) {
+      const acts = document.createElement("div");
+      acts.className = "mk-acts";
+      const mkBtn = (ic: string, title: string, ok: boolean, cls = ""): HTMLButtonElement => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = `icon-btn ${cls}`.trim();
+        b.title = title;
+        b.disabled = !ok;
+        b.innerHTML = icon(ic, 16);
+        return b;
+      };
+      const del = mkBtn("trash", t("common.delete"), caps.delete && !m.locked, "mk-act-del");
+      const mv = mkBtn("markerMove", t("tool.markermove"), caps.move && !m.locked);
+      const ed = mkBtn("edit", t("common.rename"), caps.move);
+      del.addEventListener("click", () => {
+        socket.send({ type: "marker.delete", id: m.id });
+        hideHoverNow();
+      });
+      mv.addEventListener("mousedown", (ev) => startIconDrag(m.id, ev));
+      ed.addEventListener("click", () => {
+        hideHoverNow();
+        void openEditPanel(m);
+      });
+      acts.append(del, mv, ed);
+      tip.append(acts);
+    }
+    tip.addEventListener("mouseenter", () => window.clearTimeout(hoverHideTimer));
+    tip.addEventListener("mouseleave", () => hideHover());
+    window.clearTimeout(hoverHideTimer);
     hoverPopup.setLngLat([m.world_x, m.world_y]).setDOMContent(tip).addTo(map);
   };
-  const hideHover = () => {
+  const hideHoverNow = () => {
+    window.clearTimeout(hoverHideTimer);
     hoverMarkerId = null;
     map.getCanvas().style.cursor = modeCursor(); // nicht hart auf Default zurück
     hoverPopup.remove();
+  };
+  // verzögert, damit der Zeiger vom Marker aufs Popup (mit den Icons) wandern kann
+  const hideHover = () => {
+    window.clearTimeout(hoverHideTimer);
+    hoverHideTimer = window.setTimeout(hideHoverNow, 350);
   };
   for (const ly of ["marker-icon", "marker-dot", "marker-textmark"]) {
     map.on("mouseenter", ly, showHover);
@@ -4022,6 +4083,24 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Mittelklick auf dem Canvas nie als Browser-Autoscroll interpretieren
   map.getCanvas().addEventListener("mousedown", (ev) => {
     if (ev.button === 1) ev.preventDefault();
+  });
+  // Mittlere Maustaste ziehen = Karte schieben, auch wenn das Werkzeug die Karte fixiert
+  // (Zeigen, Linie, Lineal, Radierer …). Im Karten-Werkzeug wird so ein Marker gezogen — dort nicht.
+  map.getCanvas().addEventListener("mousedown", (ev) => {
+    if (ev.button !== 1 || mode === "move" || dragId) return;
+    let lx = ev.clientX;
+    let ly = ev.clientY;
+    const onMove = (e: MouseEvent) => {
+      map.panBy([lx - e.clientX, ly - e.clientY], { animate: false });
+      lx = e.clientX;
+      ly = e.clientY;
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
   });
 
   map.on("dblclick", (e) => {

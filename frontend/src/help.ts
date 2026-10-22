@@ -6,7 +6,7 @@ const DE = `
 ### Linke Werkzeugleiste
 - **Karte bewegen** – Standard: Karte schieben/zoomen, Marker per **mittlerer Maustaste** ziehen.
 - **Marker verschieben** – nur auf Touch-Geräten sichtbar (am Desktop: mittlere Maustaste).
-- **Zeigen** – Karte fixiert, der Cursor wird anderen Nutzern in deren eigener Farbe angezeigt. **Linksklick** = gelbe Hervorhebung + eine Welle über die ganze Karte („hier bin ich"), **rechte Maustaste halten und ziehen** = Pfeil, solange gehalten.
+- **Zeigen** – Karte fixiert, der Cursor wird anderen Nutzern in deren eigener Farbe angezeigt. **Linksklick** = großer gelber Ring um deinen Punkt, **rechte Maustaste halten und ziehen** = Pfeil, solange gehalten. Mit der **mittleren Maustaste** lässt sich die Karte weiter schieben.
 - **Linie** – gerade Segmente klicken (Vorschau-Linie zum Cursor). Grüner Haken oder Doppelklick beendet, roter Papierkorb/**Rechtsklick**/Esc verwirft. Klick auf eine bestehende Linie wählt sie: Punkte ziehen, Zahnrad (Phase/Farbe), Papierkorb löscht.
 - **Lineal** – bedient wie Linie: Punkte klicken, je Teilstrecke die Entfernung, am Ende die Summe Σ. Messlinien bleiben (nur lokal) und lassen sich auswählen, ändern und löschen.
 - **Radierer** – Kreis um den Cursor (Größe einstellbar, Panel verschiebbar/fixierbar, Durchmesser in Metern): Klicken/Ziehen löscht Marker, Linien und Messlinien im Kreis.
@@ -56,7 +56,7 @@ const EN = `
 ### Left toolbar
 - **Pan** – default: move/zoom the map, drag markers with the **middle mouse button**.
 - **Move marker** – only shown on touch devices (desktop: middle mouse button).
-- **Point** – map locked, your cursor is shown to others in your own colour. **Left-click** = yellow highlight + a wave across the whole map ("I'm here"), **hold right button and drag** = arrow while held.
+- **Point** – map locked, your cursor is shown to others in your own colour. **Left-click** = big yellow ring around your dot, **hold right button and drag** = arrow while held. The **middle mouse button** still pans the map.
 - **Line** – click straight segments (preview line to the cursor). Green check or double-click finishes, red trash/**right-click**/Esc discards. Clicking an existing line selects it: drag points, gear (phase/colour), trash deletes.
 - **Ruler** – works like Line: click points, distance per segment, total Σ at the end. Measure lines stay (local only) and can be selected, edited and deleted.
 - **Eraser** – circle around the cursor (adjustable size, movable/pinnable panel, diameter in metres): click/drag deletes markers, lines and measure lines inside the circle.
