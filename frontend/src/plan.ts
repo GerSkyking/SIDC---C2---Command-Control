@@ -3568,7 +3568,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   strokeGearBtn.addEventListener("click", () => {
     if (editStrokeId) openStrokeSettings(editStrokeId);
   });
-  strokeDelBtn.addEventListener("click", () => {
+  strokeDelBtn.addEventListener("click", async () => {
+    const saved = !(mode === "line" && linePts.length >= 2) && !(mode === "measure" && measureActive.length >= 2);
+    if (saved && (editStrokeId || editMeasureId) && !(await confirmDialog(t("line.confirmDelete"), { danger: true, trash: true }))) return;
     if (mode === "line" && linePts.length >= 2) {
       cancelLine(); // laufende Linie verwerfen
     } else if (mode === "measure" && measureActive.length >= 2) {
