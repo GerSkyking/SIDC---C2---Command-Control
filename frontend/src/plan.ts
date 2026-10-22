@@ -32,7 +32,16 @@ import {
 } from "./enfusionLayers";
 import { icon } from "./icons";
 import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
-import { actionForKey, getKeybinds, keyLabel, openSettings, type HotAction } from "./settings";
+import {
+  actionForKey,
+  getKeybinds,
+  getMapPrefs,
+  keyLabel,
+  openSettings,
+  registerSettingsSection,
+  saveMapPrefs,
+  type HotAction,
+} from "./settings";
 import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
 import { esc } from "./esc";
@@ -459,7 +468,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Karte darunter richtet sich nach der tatsächlichen Topbar-Höhe (CSS-Variable).
   const topbarEl = root.querySelector<HTMLElement>(".topbar")!;
   const syncTopbarH = () => {
-    root.style.setProperty("--topbar-h", `${topbarEl.offsetHeight}px`);
+    root.style.setProperty("--topbar-h", `${Math.ceil(topbarEl.getBoundingClientRect().height)}px`); // inkl. Zoom (Topbar-Größe)
     map.resize();
   };
   syncTopbarH();
@@ -1161,6 +1170,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         if (msg.uid !== me.id) {
           upsertPeer(msg.uid, names.get(msg.uid) ?? "?", msg.lng, msg.lat, !!msg.hl, (msg.arrow as [number, number] | null) ?? null);
           refreshPeers();
+          if (msg.ping) showWave(msg.lng, msg.lat, peerColor(msg.uid));
         }
         break;
       case "marker.upsert":
@@ -1311,16 +1321,38 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       redrawMeasure();
     }
     if (mode === "point") sendPointer(e.lngLat.lng, e.lngLat.lat);
+    if (mode === "line" && linePts.length) {
+      lineCursor = [e.lngLat.lng, e.lngLat.lat];
+      (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts, lineCursor));
+    }
   });
   // Zeigen: Linksklick = gelbe Hervorhebung, Rechtsklick halten + ziehen = Pfeil (nur solange gehalten)
   let ptrHl = false;
   let ptrArrowFrom: [number, number] | null = null;
   let ptrLast: [number, number] | null = null;
-  const sendPointer = (lng: number, lat: number, force = false) => {
+  // Linksklick im Zeigen-Modus: Welle von außen zum Punkt ("hier bin ich"), für alle sichtbar
+  const waveHost = document.createElement("div");
+  waveHost.className = "wave-host";
+  root.appendChild(waveHost);
+  const showWave = (lng: number, lat: number, color: string) => {
+    const p = map.project([lng, lat]);
+    const mr = map.getContainer().getBoundingClientRect(); // wave-host deckt exakt die Karte ab
+    const x = p.x;
+    const y = p.y;
+    // Durchmesser: bis in die entfernteste Bildschirmecke
+    const d = 2 * Math.hypot(Math.max(p.x, mr.width - p.x), Math.max(p.y, mr.height - p.y));
+    const w = document.createElement("div");
+    w.className = "wave";
+    w.style.cssText = `left:${x}px;top:${y}px;width:${d}px;height:${d}px;border-color:${color}`;
+    waveHost.appendChild(w);
+    w.addEventListener("animationend", () => w.remove());
+  };
+  const sendPointer = (lng: number, lat: number, force = false, ping = false) => {
     if (!force && Date.now() - lastCursorSent <= 60) return;
     lastCursorSent = Date.now();
     ptrLast = [lng, lat];
-    socket.send({ type: "presence.cursor", lng, lat, hl: ptrHl, arrow: ptrArrowFrom });
+    socket.send({ type: "presence.cursor", lng, lat, hl: ptrHl, arrow: ptrArrowFrom, ...(ping ? { ping: true } : {}) });
+    if (ping) showWave(lng, lat, peerColor(me.id));
     // eigener Zeiger auch bei mir anzeigen
     upsertPeer(me.id, me.display_name || me.username, lng, lat, ptrHl, ptrArrowFrom);
     refreshPeers();
@@ -1330,7 +1362,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (e.originalEvent.button === 0) ptrHl = true;
     else if (e.originalEvent.button === 2) ptrArrowFrom = [e.lngLat.lng, e.lngLat.lat];
     else return;
-    sendPointer(e.lngLat.lng, e.lngLat.lat, true);
+    sendPointer(e.lngLat.lng, e.lngLat.lat, true, e.originalEvent.button === 0);
   });
   document.addEventListener("mouseup", () => {
     if (!ptrHl && !ptrArrowFrom) return;
@@ -2404,13 +2436,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let mapLang = "en_us";
   const groupVisible = new Map<string, boolean>();
   const baseLayerVisible: Record<string, boolean> = {
-    sat: true, satsimple: false, grid: true, contours: true, peaks: true,
+    sat: true, satsimple: false, grid: true, contours: true, peaks: true, locations: true,
     buildings: false, roads: false, water: false, powerlines: false, trees: false,
   };
   // Logische Overlay-Layer -> tatsaechliche MapLibre-Layer-IDs
   const overlayLayers: Record<string, string[]> = {
     contours: ["contours-line", "contours-label"],
     peaks: ["peaks-sym"],
+    locations: ["locations-dots", "locations-labels"],
     ...ENFUSION_MAPLIBRE_IDS,
   };
   let enfusionPresent: EnfusionKey[] = [];
@@ -2427,23 +2460,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   })();
   const opac = (name: string): number => (layerOpacity[name] ?? 1);
 
-  // Sat-Bild-Anpassung (Helligkeit/Kontrast/Sättigung, -100..100) und Strassenfarben —
-  // wie die Deckkraft pro Browser gespeichert.
-  const loadJson = <T,>(key: string, def: T): T => {
-    try {
-      return { ...def, ...JSON.parse(localStorage.getItem(key) || "{}") };
-    } catch {
-      return def;
-    }
-  };
-  const saveJson = (key: string, v: unknown): void => {
-    try {
-      localStorage.setItem(key, JSON.stringify(v));
-    } catch {
-      /* ignore */
-    }
-  };
-  const satAdj = loadJson("sidc_satadjust", { brightness: 0, contrast: 0, saturation: 0 });
+  // Pro Nutzer (Zahnrad-Menü, am Server gespeichert): Sat-Anpassung, Strassenfarben, ausgeblendete Orte-Gruppen.
+  const mapPrefs = getMapPrefs();
+  const satAdj = mapPrefs.sat;
   // Server-Default (.env) + nur die vom Nutzer geänderten Farben (localStorage).
   let roadDefaults: RoadColors = { ...ROAD_COLOR_DEFAULTS };
   try {
@@ -2451,7 +2470,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   } catch {
     /* Server ohne Endpunkt -> eingebaute Defaults */
   }
-  const roadOverrides = loadJson<Partial<RoadColors>>("sidc_roadcolors", {});
+  const roadOverrides = mapPrefs.road as Partial<RoadColors>;
   const roadColors: RoadColors = { ...roadDefaults, ...roadOverrides };
 
   function applySatAdjust(): void {
@@ -2523,7 +2542,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         mapLang =
           locData!.langs.find((l) => l.startsWith(navigator.language.slice(0, 2))) ??
           (locData!.langs.includes("en_us") ? "en_us" : locData!.langs[0]);
-        for (const g of locData!.groups) groupVisible.set(g.key, true);
+        for (const g of locData!.groups) groupVisible.set(g.key, !mapPrefs.hiddenGroups.includes(g.key));
         map.addSource("locations", { type: "geojson", data: locFC() });
         // Punkt + Beschriftung getrennt: der Punkt bleibt immer sichtbar, auch wenn
         // sich Labels bei kleinem Zoom gegenseitig verdrängen.
@@ -2564,6 +2583,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     buildLayersPanel();
     buildMapLangSelector();
   });
+  const unregisterMapSettings = registerSettingsSection("map", (host) => renderMapSettings(host));
+  window.addEventListener("hashchange", unregisterMapSettings, { once: true });
 
   // Hoehenlinien + dominante Hoehenpunkte (aus dem Mappack, pipeline/terrain_features.py).
   // Standardmaessig aus — Umschalten ueber das Ebenen-Panel.
@@ -2842,11 +2863,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const rows: string[] = [`<div class="fav-head">${t('layers.heading')}</div>`];
     // name -> (Anzeigename, Deckkraft-Regler?)
     const entries: [string, string, boolean][] = [];
-    for (const ly of ["sat", "satsimple", "grid", "terrain"])
-      if (map.getLayer(ly)) entries.push([ly, ly === "satsimple" ? t("layers.satsimple") : ly, ly !== "terrain"]);
+    for (const ly of ["sat", "grid", "terrain"])
+      if (map.getLayer(ly)) entries.push([ly, ly, ly !== "terrain"]);
     if (hasContours) entries.push(["contours", t("layers.contours"), true]);
     if (hasPeaks) entries.push(["peaks", t("layers.peaks"), true]);
     for (const k of enfusionPresent) entries.push([k, t(`layers.${k}`), true]);
+    if (locData) entries.push(["locations", t("layers.places"), true]); // Orte = eigene Ebene
 
     for (const [name, label, hasSlider] of entries) {
       const on = baseLayerVisible[name] !== false;
@@ -2856,41 +2878,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       rows.push(
         `<div class="layer-row"><label><input type="checkbox" data-base="${name}" ${on ? "checked" : ""}/> ${label}</label>${slider}</div>`,
       );
-    }
-
-    if (map.getLayer("sat")) {
-      const sl = (k: keyof typeof satAdj, label: string) =>
-        `<div class="layer-row"><label>${label}</label><input type="range" min="-100" max="100" step="5" value="${satAdj[k]}" data-sat="${k}"/></div>`;
-      rows.push(
-        `<div class="fav-head">${t("layers.satAdjust")}</div>`,
-        sl("brightness", t("layers.brightness")),
-        sl("contrast", t("layers.contrast")),
-        sl("saturation", t("layers.saturation")),
-        `<div class="layer-row"><button type="button" data-sat-reset>${t("layers.reset")}</button></div>`,
-      );
-    }
-    if (enfusionPresent.includes("roads")) {
-      const cp = (k: keyof RoadColors, label: string) =>
-        `<div class="layer-row"><label>${label}</label><input type="color" value="${roadColors[k]}" data-road="${k}"/></div>`;
-      rows.push(
-        `<div class="fav-head">${t("layers.roadColors")}</div>`,
-        cp("main", t("layers.roadMain")),
-        cp("secondary", t("layers.roadSecondary")),
-        cp("path", t("layers.roadPath")),
-        `<div class="layer-row"><button type="button" data-road-reset>${t("layers.reset")}</button></div>`,
-      );
-    }
-
-    if (locData) {
-      rows.push(`<div class="fav-head">${t('layers.places')}</div>`);
-      rows.push(
-        `<div class="layer-row"><label>${t("layers.opacity")}</label><input type="range" min="0" max="100" step="5" value="${Math.round(opac("locations") * 100)}" data-op="locations" title="${t("layers.opacityHint")}"/></div>`,
-      );
-      for (const g of locData.groups) {
-        rows.push(
-          `<label><input type="checkbox" data-group="${g.key}" checked/> ${g.label} <span class="muted">${g.items.length}</span></label>`,
-        );
-      }
     }
     layersPanel.innerHTML = rows.join("");
     layersPanel.querySelectorAll<HTMLInputElement>("[data-base]").forEach((cb) =>
@@ -2906,41 +2893,83 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     layersPanel.querySelectorAll<HTMLInputElement>("[data-op]").forEach((sl) =>
       sl.addEventListener("input", () => setLayerOpacity(sl.dataset.op!, +sl.value / 100)),
     );
-    layersPanel.querySelectorAll<HTMLInputElement>("[data-sat]").forEach((sl) =>
-      sl.addEventListener("input", () => {
-        satAdj[sl.dataset.sat as keyof typeof satAdj] = +sl.value;
-        saveJson("sidc_satadjust", satAdj);
+  }
+
+  // Zahnrad-Menü → Abschnitt "Karte": Sat-Anpassung, Strassenfarben, Orte-Gruppen (pro Nutzer)
+  function renderMapSettings(host: HTMLElement): void {
+    const box = document.createElement("div");
+    host.appendChild(box);
+    const build = () => {
+      const rows: string[] = [];
+      if (map.getLayer("sat")) {
+        const sl = (k: keyof typeof satAdj, label: string) =>
+          `<div class="layer-row"><label>${label}</label><input type="range" min="-100" max="100" step="5" value="${satAdj[k]}" data-sat="${k}"/></div>`;
+        rows.push(
+          `<div class="fav-head">${t("layers.satAdjust")}</div>`,
+          sl("brightness", t("layers.brightness")),
+          sl("contrast", t("layers.contrast")),
+          sl("saturation", t("layers.saturation")),
+          `<div class="layer-row"><button type="button" data-sat-reset>${t("layers.reset")}</button></div>`,
+        );
+      }
+      if (enfusionPresent.includes("roads")) {
+        const cp = (k: keyof RoadColors, label: string) =>
+          `<div class="layer-row"><label>${label}</label><input type="color" value="${roadColors[k]}" data-road="${k}"/></div>`;
+        rows.push(
+          `<div class="fav-head">${t("layers.roadColors")}</div>`,
+          cp("main", t("layers.roadMain")),
+          cp("secondary", t("layers.roadSecondary")),
+          cp("path", t("layers.roadPath")),
+          `<div class="layer-row"><button type="button" data-road-reset>${t("layers.reset")}</button></div>`,
+        );
+      }
+      if (locData) {
+        rows.push(`<div class="fav-head">${t("layers.places")}</div>`);
+        for (const g of locData.groups)
+          rows.push(
+            `<label class="chk"><input type="checkbox" data-group="${g.key}" ${groupVisible.get(g.key) !== false ? "checked" : ""}/> ${esc(g.label)} <span class="muted">${g.items.length}</span></label>`,
+          );
+      }
+      box.innerHTML = rows.length ? `<h4>${t("settings.map")}</h4>${rows.join("")}` : "";
+      box.querySelectorAll<HTMLInputElement>("[data-sat]").forEach((sl) =>
+        sl.addEventListener("input", () => {
+          satAdj[sl.dataset.sat as keyof typeof satAdj] = +sl.value;
+          saveMapPrefs(mapPrefs);
+          applySatAdjust();
+        }),
+      );
+      box.querySelector("[data-sat-reset]")?.addEventListener("click", () => {
+        Object.assign(satAdj, { brightness: 0, contrast: 0, saturation: 0 });
+        saveMapPrefs(mapPrefs);
         applySatAdjust();
-      }),
-    );
-    layersPanel.querySelector("[data-sat-reset]")?.addEventListener("click", () => {
-      Object.assign(satAdj, { brightness: 0, contrast: 0, saturation: 0 });
-      saveJson("sidc_satadjust", satAdj);
-      applySatAdjust();
-      buildLayersPanel();
-    });
-    layersPanel.querySelectorAll<HTMLInputElement>("[data-road]").forEach((inp) =>
-      inp.addEventListener("input", () => {
-        const k = inp.dataset.road as keyof RoadColors;
-        roadColors[k] = inp.value;
-        roadOverrides[k] = inp.value;
-        saveJson("sidc_roadcolors", roadOverrides);
+        build();
+      });
+      box.querySelectorAll<HTMLInputElement>("[data-road]").forEach((inp) =>
+        inp.addEventListener("input", () => {
+          const k = inp.dataset.road as keyof RoadColors;
+          roadColors[k] = inp.value;
+          roadOverrides[k] = inp.value;
+          saveMapPrefs(mapPrefs);
+          setRoadColors(map, roadColors);
+        }),
+      );
+      box.querySelector("[data-road-reset]")?.addEventListener("click", () => {
+        Object.assign(roadColors, roadDefaults);
+        for (const k of Object.keys(roadOverrides)) delete roadOverrides[k as keyof RoadColors];
+        saveMapPrefs(mapPrefs);
         setRoadColors(map, roadColors);
-      }),
-    );
-    layersPanel.querySelector("[data-road-reset]")?.addEventListener("click", () => {
-      Object.assign(roadColors, roadDefaults);
-      for (const k of Object.keys(roadOverrides)) delete roadOverrides[k as keyof RoadColors];
-      saveJson("sidc_roadcolors", roadOverrides);
-      setRoadColors(map, roadColors);
-      buildLayersPanel();
-    });
-    layersPanel.querySelectorAll<HTMLInputElement>("[data-group]").forEach((cb) =>
-      cb.addEventListener("change", () => {
-        groupVisible.set(cb.dataset.group!, cb.checked);
-        refreshLoc();
-      }),
-    );
+        build();
+      });
+      box.querySelectorAll<HTMLInputElement>("[data-group]").forEach((cb) =>
+        cb.addEventListener("change", () => {
+          groupVisible.set(cb.dataset.group!, cb.checked);
+          mapPrefs.hiddenGroups = [...groupVisible].filter(([, v]) => v === false).map(([k]) => k);
+          saveMapPrefs(mapPrefs);
+          refreshLoc();
+        }),
+      );
+    };
+    build();
   }
 
   function buildMapLangSelector(): void {
@@ -3203,6 +3232,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const lineStylePanel = root.querySelector<HTMLDivElement>("#lineStyle")!;
   const mvLine = makeMovable(lineStylePanel, { plan: planId, key: "linestyle", pinnable: true });
   let linePts: [number, number][] = [];
+  let lineCursor: [number, number] | null = null; // Mauszeiger für die Vorschau-Linie
   let linePhaseId: string | null = currentPhaseId || null;
   let lineChannel = myChannel;
   let chainGroup: number | null = null;
@@ -3237,7 +3267,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     // Zahnrad nur beim Bearbeiten einer bestehenden Phasenlinie, Papierkorb auch bei Messlinien
     const running = (mode === "line" && linePts.length >= 2) || (mode === "measure" && measureActive.length >= 2);
     const showGear = !!editStrokeId && !running;
-    const showDel = (!!editStrokeId || !!editMeasureId) && !running;
+    const showDel = !!editStrokeId || !!editMeasureId || running; // laufend: Löschen = verwerfen
     if (!a) {
       lineDoneBtn.hidden = true;
       strokeGearBtn.hidden = true;
@@ -3276,7 +3306,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (editStrokeId) openStrokeSettings(editStrokeId);
   });
   strokeDelBtn.addEventListener("click", () => {
-    if (editStrokeId) {
+    if (mode === "line" && linePts.length >= 2) {
+      cancelLine(); // laufende Linie verwerfen
+    } else if (mode === "measure" && measureActive.length >= 2) {
+      measureActive = [];
+      measureCursor = null;
+      redrawMeasure();
+    } else if (editStrokeId) {
       if (caps.draw) socket.send({ type: "stroke.delete", id: editStrokeId });
       setEditStroke(null);
     } else if (editMeasureId) {
@@ -3287,7 +3323,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   });
   const refreshLineDraft = () => {
-    (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts));
+    (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts, lineCursor));
     positionLineDone();
   };
 
@@ -4029,83 +4065,100 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   // ── Rechtsklick-Menü im Karten-Werkzeug: alle anderen Werkzeuge ───────
-  let ctxMenuEl: HTMLElement | null = null;
+  // Persistentes Panel: verschiebbar + fixierbar (bleibt dann offen, wie die anderen Panels).
+  // Aktionen mit Position (Marker/Text/Linie/Lineal) nutzen den letzten Rechtsklick, sonst das normale Werkzeug.
+  const ctxEl = document.createElement("div");
+  ctxEl.className = "ctx-menu";
+  ctxEl.hidden = true;
+  root.appendChild(ctxEl);
+  const mvCtx = makeMovable(ctxEl, { plan: planId, key: "ctxmenu", pinnable: true });
+  let ctxPos: [number, number] | null = null;
   const closeCtxMenu = () => {
-    ctxMenuEl?.remove();
-    ctxMenuEl = null;
+    if (!mvCtx.isPinned()) ctxEl.hidden = true;
   };
-  function openCtxMenu(cx: number, cy: number, pos: [number, number]): void {
-    closeCtxMenu();
-    const items: { ic: string; label: string; ok: boolean; run: () => void }[] = [
+  {
+    const items: { ic: string; label: string; ok: () => boolean; run: (pos: [number, number] | null) => void }[] = [
       {
         ic: "marker",
         label: t("tool.marker").split(" – ")[0],
-        ok: caps.place,
-        run: () => {
+        ok: () => caps.place,
+        run: (pos) => {
           pending = null;
           setMode("place");
-          awaitingPos = false;
-          startPlaceAt(pos);
+          if (pos) startPlaceAt(pos);
+          else awaitingPos = true;
         },
       },
       {
         ic: "line",
         label: t("tool.line").split(" (")[0],
-        ok: caps.draw,
-        run: () => {
+        ok: () => caps.draw,
+        run: (pos) => {
           setMode("line");
-          linePts.push(pos);
-          refreshLineDraft();
+          if (pos) {
+            linePts.push(pos);
+            refreshLineDraft();
+          }
         },
       },
       {
         ic: "ruler",
         label: t("tool.measure").split(" – ")[0],
-        ok: true,
-        run: () => {
+        ok: () => true,
+        run: (pos) => {
           setMode("measure");
-          measureActive.push(pos);
-          redrawMeasure();
+          if (pos) {
+            measureActive.push(pos);
+            redrawMeasure();
+          }
         },
       },
       {
         ic: "textbox",
         label: t("tool.text").split(" (")[0],
-        ok: caps.place,
-        run: () => createAnnotAt(pos),
+        ok: () => caps.place,
+        run: (pos) => (pos ? createAnnotAt(pos) : setMode("text")),
       },
-      { ic: "point", label: t("tool.point").split(" – ")[0], ok: true, run: () => setMode("point") },
-      { ic: "eraser", label: t("tool.erase").split(" – ")[0], ok: caps.delete || caps.draw, run: () => setMode("erase") },
+      { ic: "point", label: t("tool.point").split(" – ")[0], ok: () => true, run: () => setMode("point") },
+      { ic: "eraser", label: t("tool.erase").split(" – ")[0], ok: () => caps.delete || caps.draw, run: () => setMode("erase") },
     ];
-    const el = document.createElement("div");
-    el.className = "ctx-menu";
-    for (const it of items) {
+    const list = document.createElement("div");
+    list.className = "ctx-items";
+    ctxEl.appendChild(list);
+    const btns = items.map((it) => {
       const b = document.createElement("button");
       b.innerHTML = `${icon(it.ic, 16)}<span>${esc(it.label)}</span>`;
-      b.disabled = !it.ok;
       b.addEventListener("click", () => {
+        const pos = ctxPos;
+        ctxPos = null; // Position gilt nur einmal
         closeCtxMenu();
-        it.run();
+        it.run(pos);
       });
-      el.appendChild(b);
-    }
-    document.body.appendChild(el);
-    const r = el.getBoundingClientRect();
-    el.style.left = `${Math.max(4, Math.min(cx, window.innerWidth - r.width - 4))}px`;
-    el.style.top = `${Math.max(4, Math.min(cy, window.innerHeight - r.height - 4))}px`;
-    ctxMenuEl = el;
-    const off = (ev: Event) => {
-      if (ev instanceof MouseEvent && el.contains(ev.target as Node)) return;
-      if (ev instanceof KeyboardEvent && ev.key !== "Escape") return;
-      closeCtxMenu();
-      document.removeEventListener("mousedown", off, true);
-      document.removeEventListener("keydown", off, true);
-      map.off("movestart", closeCtxMenu);
-    };
-    document.addEventListener("mousedown", off, true);
-    document.addEventListener("keydown", off, true);
-    map.once("movestart", closeCtxMenu);
+      list.appendChild(b);
+      return b;
+    });
+    (ctxEl as unknown as { sync: () => void }).sync = () => btns.forEach((b, i) => (b.disabled = !items[i].ok()));
   }
+  function openCtxMenu(cx: number, cy: number, pos: [number, number]): void {
+    ctxPos = pos;
+    (ctxEl as unknown as { sync: () => void }).sync();
+    ctxEl.hidden = false;
+    // Verschobene/fixierte Position bleibt; sonst am Mauszeiger öffnen
+    if (!mvCtx.hasPos() && !mvCtx.isPinned()) {
+      const r = ctxEl.getBoundingClientRect();
+      ctxEl.style.left = `${Math.max(4, Math.min(cx, window.innerWidth - r.width - 4))}px`;
+      ctxEl.style.top = `${Math.max(4, Math.min(cy, window.innerHeight - r.height - 4))}px`;
+    }
+    else mvCtx.bringIntoView();
+  }
+  document.addEventListener("mousedown", (ev) => {
+    if (!ctxEl.hidden && !ctxEl.contains(ev.target as Node)) closeCtxMenu();
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") closeCtxMenu();
+  });
+  map.on("movestart", closeCtxMenu);
+  window.addEventListener("hashchange", () => ctxEl.remove(), { once: true });
 
   // ── Annotationen (platzierbare Markdown-Textfelder) ───────────────────
   const annotsEl = root.querySelector<HTMLDivElement>("#annots")!;
@@ -5044,14 +5097,16 @@ function emptyFC(): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features: [] };
 }
 
-function lineDraftFC(pts: [number, number][]): GeoJSON.FeatureCollection {
+function lineDraftFC(pts: [number, number][], cursor: [number, number] | null = null): GeoJSON.FeatureCollection {
   const feats: GeoJSON.Feature[] = pts.map((p) => ({
     type: "Feature",
     geometry: { type: "Point", coordinates: p },
     properties: {},
   }));
-  if (pts.length >= 2) {
-    feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: pts }, properties: {} });
+  // Vorschau-Linie vom letzten Punkt zum Mauszeiger (wie beim Lineal)
+  const trace = cursor && pts.length ? [...pts, cursor] : pts;
+  if (trace.length >= 2) {
+    feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: trace }, properties: {} });
   }
   return { type: "FeatureCollection", features: feats };
 }

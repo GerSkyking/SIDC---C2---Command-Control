@@ -5,15 +5,16 @@ import { icon } from "./icons";
 const DE = `
 ### Linke Werkzeugleiste
 - **Karte bewegen** – Standard: Karte schieben/zoomen, Marker per **mittlerer Maustaste** ziehen.
-- **Marker verschieben** – Marker anfassen und ziehen.
-- **Zeigen** – Karte fixiert, der Cursor wird anderen Nutzern angezeigt.
-- **Linie** – gerade Segmente klicken; **Rechtsklick** oder „Linie fertig" beendet.
-- **Lineal** – 2 Punkte klicken → gestrichelte Linie mit Entfernung; 3. Klick löscht.
-- **Radierer** – Klick auf Marker oder Linie löscht sofort.
+- **Marker verschieben** – nur auf Touch-Geräten sichtbar (am Desktop: mittlere Maustaste).
+- **Zeigen** – Karte fixiert, der Cursor wird anderen Nutzern in deren eigener Farbe angezeigt. **Linksklick** = gelbe Hervorhebung + eine Welle über die ganze Karte („hier bin ich"), **rechte Maustaste halten und ziehen** = Pfeil, solange gehalten.
+- **Linie** – gerade Segmente klicken (Vorschau-Linie zum Cursor). Grüner Haken oder Doppelklick beendet, roter Papierkorb/**Rechtsklick**/Esc verwirft. Klick auf eine bestehende Linie wählt sie: Punkte ziehen, Zahnrad (Phase/Farbe), Papierkorb löscht.
+- **Lineal** – bedient wie Linie: Punkte klicken, je Teilstrecke die Entfernung, am Ende die Summe Σ. Messlinien bleiben (nur lokal) und lassen sich auswählen, ändern und löschen.
+- **Radierer** – Kreis um den Cursor (Größe einstellbar, Durchmesser in Metern): Klicken/Ziehen löscht Marker, Linien und Messlinien im Kreis.
 - **Textfeld** – auf die Karte klicken → platzierbares Markdown-Notizfeld. Bearbeiten per Doppelklick, verschieben im Bewegen-Modus. Über den Bild-Button in der Notiz lässt sich ein hochgeladenes Bild als Verweis-Chip einfügen, Klick öffnet es groß.
 - **Marker** – erst Position auf der Karte klicken, dann öffnet der Auswahl-Wizard (mit „Erweitert" für Modifikatoren). Verbindungs-Marker: weiter klicken, **Rechtsklick** beendet.
-- **Favoriten** – gespeicherte Marker per Klick platzieren.
+- **Ebenen** – Sat/Grid/Orte/Höhenlinien/Peaks einzeln ein- und ausblenden, jeweils mit Deckkraft.
 - **Gruppen (ORBAT)** – Verbandsgliederung verwalten, Einheiten klonen (inkl. Untereinheiten), im Plan verwenden.
+- **Favoriten** – gespeicherte Marker per Klick platzieren.
 - **Rückgängig / Wiederholen** (Topbar) – eigene Verschiebe-/Bearbeiten-Aktionen zurücknehmen (**Strg+Z / Strg+Y**).
 
 ### Topbar
@@ -27,16 +28,22 @@ const DE = `
 - **Zeitstrahl** – Phasen wählen/anlegen/löschen; Regler = Sichtbarkeit von Markern fremder Phasen.
 - **Sprache der Kartenbeschriftung** – Sprache der Orts-/Kartenlabels.
 - **Notizen** – verschiebbares Fenster, ein Reiter je Phase, Markdown.
-- **Ebenen** – Sat/Grid/Orte/Höhenlinien/Peaks einzeln ein- und ausblenden.
 - **Bild-Sidebar** (Bild-Symbol rechts) – Bilder hochladen, benennen, einer Phase zuordnen, Notiz hinterlegen. Ein Bild lässt sich mehrfach und über mehrere Phasen hinweg auf der Karte platzieren (Ziehen aus der Liste), jede Platzierung ist einzeln verschiebbar/skalierbar/löschbar, ohne das Bild selbst zu entfernen.
 - **Versionsverlauf** – Stände sichern und wiederherstellen.
 - **Präsentationsmodus** – Vollbild, nur Karte + Phasen (‹ ›, Pfeiltasten, Esc beendet).
 
 ### Tastenkürzel
 - **Esc** – Werkzeug zurück auf „Karte bewegen" / offenes Fenster schließen.
-- **Rechtsklick** – laufende Linie oder Verbindungs-Marker-Kette beenden.
+- **Rechtsklick** (Karte bewegen) – Menü mit allen anderen Werkzeugen; verschiebbar und über die Pinnadel fixierbar. Marker, Text, Linie und Lineal starten direkt an der geklickten Stelle. Rechtsklick-Ziehen dreht die Karte (Drehen geht nur in diesem Werkzeug).
+- **Rechtsklick** (Linie/Lineal) – laufende Linie verwerfen; (Marker-Kette) beenden.
 - **Mittlere Maustaste ziehen** – Marker verschieben (im Karten-Modus).
-- **Doppelklick** – bei aktiver Linie: Linie beenden.
+- **Doppelklick** – bei aktiver Linie/Lineal: beenden.
+
+### Zahnrad-Einstellungen (pro Nutzer)
+Anzeigename, Theme, **Größe der oberen Leiste**, **Karte** (Sat-Bild: Helligkeit/Kontrast/Sättigung, Straßenfarben, Orte-Gruppen ein/aus), Tastenkürzel, API-Tokens, eigene Daten.
+
+### Notizen
+Markdown wird unterstützt; Leerzeilen erzeugen sichtbare Absätze.
 
 ### Marker bearbeiten
 Klick auf einen Marker (im Modus „Karte bewegen" oder „Marker verschieben") öffnet das Bearbeiten-Fenster: Texte, Icon-Drehung, Phase, Sperren, **Erweitert** (Modifikatoren), Klonen, als Favorit speichern, Löschen. Klick außerhalb oder **Esc** schließt.
@@ -48,15 +55,16 @@ Ein platziertes Bild zeigt beim Überfahren Name/Notiz/Ersteller/Phase als Toolt
 const EN = `
 ### Left toolbar
 - **Pan** – default: move/zoom the map, drag markers with the **middle mouse button**.
-- **Move marker** – grab a marker and drag it.
-- **Point** – map locked, your cursor is shown to other users.
-- **Line** – click straight segments; **right-click** or "Finish line" ends it.
-- **Ruler** – click 2 points → dashed line with distance; a 3rd click clears it.
-- **Eraser** – clicking a marker or line deletes it immediately.
+- **Move marker** – only shown on touch devices (desktop: middle mouse button).
+- **Point** – map locked, your cursor is shown to others in your own colour. **Left-click** = yellow highlight + a wave across the whole map ("I'm here"), **hold right button and drag** = arrow while held.
+- **Line** – click straight segments (preview line to the cursor). Green check or double-click finishes, red trash/**right-click**/Esc discards. Clicking an existing line selects it: drag points, gear (phase/colour), trash deletes.
+- **Ruler** – works like Line: click points, distance per segment, total Σ at the end. Measure lines stay (local only) and can be selected, edited and deleted.
+- **Eraser** – circle around the cursor (adjustable size, diameter in metres): click/drag deletes markers, lines and measure lines inside the circle.
 - **Text box** – click the map → a placeable Markdown note. Double-click to edit, drag in pan mode. The image button in a note inserts an uploaded image as a reference chip; clicking it opens the image full-size.
 - **Marker** – click the position on the map first, then the picker wizard opens ("Advanced" for modifiers). Multi-point markers: keep clicking, **right-click** ends.
-- **Favorites** – place a saved marker with one click.
+- **Layers** – toggle sat/grid/places/contours/peaks individually, each with opacity.
 - **Groups (ORBAT)** – manage the order of battle, clone units (including sub-units), use them in the plan.
+- **Favorites** – place a saved marker with one click.
 - **Undo / Redo** (top bar) – revert your own move/edit actions (**Ctrl+Z / Ctrl+Y**).
 
 ### Top bar
@@ -70,16 +78,22 @@ const EN = `
 - **Timeline** – pick/add/delete phases; slider = visibility of markers from other phases.
 - **Map label language** – language of place/map labels.
 - **Notes** – movable window, one tab per phase, Markdown.
-- **Layers** – toggle sat/grid/places/contours/peaks individually.
 - **Image sidebar** (image icon, right side) – upload images, name them, assign a phase, add a note. The same image can be placed on the map multiple times and across multiple phases (drag from the list); each placement can be moved/scaled/removed on its own without deleting the image itself.
 - **Version history** – save and restore states.
 - **Presentation mode** – fullscreen, map + phases only (‹ ›, arrow keys, Esc exits).
 
 ### Keyboard
 - **Esc** – tool back to "Pan" / close the open window.
-- **Right-click** – end the current line or multi-point marker chain.
+- **Right-click** (Pan) – menu with all other tools; movable and pinnable. Marker, text, line and ruler start right at the clicked spot. Right-drag rotates the map (rotation only works in this tool).
+- **Right-click** (Line/Ruler) – discard the running line; (marker chain) end it.
 - **Middle-mouse drag** – move a marker (in pan mode).
-- **Double-click** – with an active line: finish the line.
+- **Double-click** – with an active line/ruler: finish it.
+
+### Gear settings (per user)
+Display name, theme, **top bar size**, **Map** (sat image brightness/contrast/saturation, road colours, place groups on/off), keybinds, API tokens, your data.
+
+### Notes
+Markdown is supported; blank lines create visible paragraph gaps.
 
 ### Editing a marker
 Clicking a marker (in "Pan" or "Move marker" mode) opens the edit window: texts, icon rotation, phase, lock, **Advanced** (modifiers), clone, save as favorite, delete. Click outside or **Esc** closes it.

@@ -55,6 +55,8 @@ export function renderMarkdown(src: string): string {
     const line = raw.trimEnd();
     if (!line.trim()) {
       closeList();
+      // Leerzeile = sichtbarer Absatz-Abstand (sonst gingen Absätze verloren)
+      if (out.length) out.push('<div class="md-gap"></div>');
       continue;
     }
     const h = line.match(/^(#{1,6})\s+(.*)$/);
@@ -92,5 +94,6 @@ export function renderMarkdown(src: string): string {
   }
   if (inCode) out.push("</code></pre>");
   closeList();
+  while (out.length && out[out.length - 1] === '<div class="md-gap"></div>') out.pop();
   return out.join("\n");
 }

@@ -91,6 +91,8 @@ function normalizeStored(raw: unknown): Record<HotAction, string> {
 
 export function initSettings(me: Me): void {
   currentMe = me;
+  mapPrefs = null; // neu aus den Nutzer-Einstellungen laden
+  applyTopbarScale(getTopbarScale());
   const fromServer = (me.ui_settings as Record<string, unknown> | undefined)?.keybinds;
   if (fromServer) {
     binds = normalizeStored(fromServer);
@@ -106,6 +108,69 @@ export function initSettings(me: Me): void {
   } catch {
     /* ignore */
   }
+}
+
+// ── Karten-Einstellungen pro Nutzer (Sat-Anpassung, Strassenfarben, Orte-Gruppen) ──
+export interface MapPrefs {
+  sat: { brightness: number; contrast: number; saturation: number };
+  road: Record<string, string>;
+  hiddenGroups: string[];
+}
+const MAP_KEY = "sidc_mapprefs";
+let mapPrefs: MapPrefs | null = null;
+let mapSaveTimer = 0;
+
+function readJson(key: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "null");
+  } catch {
+    return null;
+  }
+}
+
+export function getMapPrefs(): MapPrefs {
+  if (mapPrefs) return mapPrefs;
+  type Raw = { sat?: object; road?: Record<string, string>; hiddenGroups?: unknown };
+  const server = (currentMe?.ui_settings as Record<string, unknown> | undefined)?.map as Raw | undefined;
+  // Fallback: Cache bzw. frühere Browser-Einstellungen
+  const raw: Raw = server ?? (readJson(MAP_KEY) as Raw | null) ?? {
+    sat: readJson("sidc_satadjust") ?? {},
+    road: (readJson("sidc_roadcolors") as Record<string, string> | null) ?? {},
+  };
+  mapPrefs = {
+    sat: { brightness: 0, contrast: 0, saturation: 0, ...(raw.sat ?? {}) },
+    road: { ...(raw.road ?? {}) },
+    hiddenGroups: Array.isArray(raw.hiddenGroups) ? (raw.hiddenGroups as string[]) : [],
+  };
+  return mapPrefs;
+}
+
+export function saveMapPrefs(p: MapPrefs): void {
+  mapPrefs = p;
+  try {
+    localStorage.setItem(MAP_KEY, JSON.stringify(p));
+  } catch {
+    /* ignore */
+  }
+  window.clearTimeout(mapSaveTimer);
+  mapSaveTimer = window.setTimeout(() => void api.saveSettings({ map: p }).catch(() => {}), 500);
+}
+
+// Plan-spezifische Abschnitte im Zahnrad-Menü (nur solange ein Plan offen ist)
+const sections = new Map<string, (host: HTMLElement) => void>();
+export function registerSettingsSection(key: string, fn: (host: HTMLElement) => void): () => void {
+  sections.set(key, fn);
+  return () => void sections.delete(key);
+}
+
+// ── Topbar-Größe (pro Nutzer) ──
+const TB_KEY = "sidc_tbscale";
+export function getTopbarScale(): number {
+  const v = Number((currentMe?.ui_settings as Record<string, unknown> | undefined)?.topbar_scale ?? localStorage.getItem(TB_KEY));
+  return v >= 0.7 && v <= 1.6 ? v : 1;
+}
+export function applyTopbarScale(v: number): void {
+  document.documentElement.style.setProperty("--tb-scale", String(v));
 }
 
 export function getKeybinds(): Record<HotAction, string> {
@@ -186,6 +251,10 @@ export function openSettings(): void {
     <p class="muted" style="font-size:.78rem;margin:.2rem 0 0">${t("settings.displayNameHint")}</p>
     <h4>${t("theme.label")}</h4>
     ${themeSwitch()}
+    <h4>${t("settings.topbarScale")}</h4>
+    <div class="row"><input type="range" id="set-tb" min="70" max="160" step="5" value="${Math.round(getTopbarScale() * 100)}" style="flex:1" />
+      <span id="set-tbv" class="muted">${Math.round(getTopbarScale() * 100)}%</span></div>
+    <div id="setExtra"></div>
     <h4>${t("settings.keybinds")}</h4>
     <p class="muted">${t("settings.keybindsHint")}</p>
     <div id="kbRows">${rows()}</div>
@@ -232,6 +301,25 @@ export function openSettings(): void {
   back.querySelector("[data-x]")!.addEventListener("click", close);
   back.querySelectorAll<HTMLAnchorElement>('a[href^="#/"]').forEach((a) => a.addEventListener("click", close));
   wireThemeSwitch(back);
+
+  const tb = back.querySelector<HTMLInputElement>("#set-tb")!;
+  tb.addEventListener("input", () => {
+    const v = Number(tb.value) / 100;
+    back.querySelector("#set-tbv")!.textContent = `${tb.value}%`;
+    applyTopbarScale(v);
+  });
+  tb.addEventListener("change", () => {
+    const v = Number(tb.value) / 100;
+    try {
+      localStorage.setItem(TB_KEY, String(v));
+    } catch {
+      /* ignore */
+    }
+    if (currentMe) (currentMe.ui_settings ??= {}).topbar_scale = v;
+    void api.saveSettings({ topbar_scale: v }).catch(() => {});
+  });
+  const extra = back.querySelector<HTMLElement>("#setExtra")!;
+  for (const fn of sections.values()) fn(extra);
 
   const dn = back.querySelector<HTMLInputElement>("#set-dname")!;
   dn.addEventListener("change", async () => {
