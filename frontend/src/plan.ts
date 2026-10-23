@@ -47,6 +47,7 @@ import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
 import { esc } from "./esc";
 import { initNavCube } from "./navcube";
+import { wireScaleBox } from "./scalebox";
 import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
 import { openLightbox } from "./lightbox";
 import { mountImageRail, IMAGE_DND_TYPE } from "./imagerail";
@@ -544,6 +545,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
     <div class="hud" id="hud">X: –  Y: –  H: –</div>
     <div class="mk-scale" id="mkScale">
+      <button type="button" class="mk-scale-head"><span>${t("scale.title")}</span><span class="chev">▾</span></button>
       <div class="mk-scale-row" title="${t("marker.scaleLocal")}">
         ${icon("marker", 13)}
         <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
@@ -1474,6 +1476,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // ── 2D/3D + Navigations-Würfel ───────────────────────────────────────
   const navcube = root.querySelector<HTMLDivElement>("#navcube")!;
+  wireScaleBox(root);
   initNavCube(map, navcube); // immer sichtbar (2D + 3D)
   navcube.hidden = false;
 

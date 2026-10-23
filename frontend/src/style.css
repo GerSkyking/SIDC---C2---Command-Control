@@ -862,3 +862,5 @@ button.danger .ic { color: var(--danger); }
 .tl-zeus { position: absolute; right: 16px; top: 1px; font-size: 0.6rem; font-weight: 700; color: #ffe600; pointer-events: none; }
 .mk-acts .mk-act-del { color: var(--danger); }
 .mk-acts .mk-act-del:disabled { opacity: 0.4; }
+.mk-scale-head { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; width: 100%; padding: 0; border: 0; background: none; color: var(--muted); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; }
+.mk-scale.collapsed .mk-scale-row { display: none; }
