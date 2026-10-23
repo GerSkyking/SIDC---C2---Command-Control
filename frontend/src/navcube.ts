@@ -46,7 +46,7 @@ export function initNavCube(
 
   const sync = () => {
     const b = map.getBearing();
-    cube.style.transform = `rotateX(${map.getPitch() - 90}deg) rotateZ(${b}deg)`;
+    cube.style.transform = `rotateX(${map.getPitch() - 90}deg) rotateY(${b}deg)`;
     ring.style.transform = `rotate(${-b}deg)`;
   };
   map.on("rotate", sync);
