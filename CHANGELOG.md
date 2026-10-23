@@ -5,13 +5,56 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
-### Neu (Layer / Zeus)
-- **Channels entfernt** (`SIDC_ChannelSettings.json`, Channel-Auswahl, Hotkeys). Stattdessen **taktische Layer**:
-  Auto-Layer BLUFOR/REDFOR/Zivil-GREENFOR/Unbekannt + eigene Layer pro Plan (`/plans/{id}/layers`, WS `layers.changed`).
-- **Zeus-Rolle** (`users/groups.is_zeus`, Migration `0024`) und **Zeus-Freigabe** je Missionsbau-Phase (Standard 48 h).
-- **Marker in mehreren Phasen** (`markers.extra_phase_ids`).
-- Marker-Hover mit Löschen/Verschieben/Bearbeiten, SIDC-Nummer-Eingabe im Baukasten, Zeigen: großer gelber Ring,
-  Mittelklick-Pan, Bilder-Tab auf Höhe des Schließen-Knopfs.
+### 2026-10-23 – Taktische Layer, Zeus, Mehrfach-Phasen, Werkzeug-Feinschliff
+
+**Taktische Layer statt Channels**
+- `SIDC_ChannelSettings.json`, Channel-Auswahl (Topbar, Wizard, Baukasten, Marker-/Linien-Editor), Channel-Hotkeys
+  und die Katalog-Route `channels` sind **entfernt**.
+- Neues Listen-Symbol neben „Ebenen": **Auto-Layer** BLUFOR / REDFOR / Zivil-GREENFOR / Unbekannt (nach SIDC-Identität)
+  plus **eigene Layer pro Plan** (anlegen/löschen durch Editoren). Haken + Deckkraft-Regler gelten nur lokal je Nutzer.
+- Auswahl **„Taktischer Layer"** (Standard **Auto**) im Wizard, Baukasten, Marker-Editor, Linien-Menü, Lineal-Menü und
+  „Linie bearbeiten". API `GET/POST /plans/{id}/layers`, `PATCH/DELETE …/layers/{layer_id}`, WS-Event `layers.changed`.
+  Der Standard-Layer „Allgemein" ist geschützt; reservierte Namen (BLUFOR, REDFOR, …) sind gesperrt.
+
+**Zeus-Rolle**
+- Neue Eigenschaft **Zeus** für Nutzer und Gruppen (Admin-Bereich), Migration `0024`.
+- Missionsbauer geben einzelne **Missionsbau-Phasen für Zeus frei** (Standard 48 h, alternativ unbegrenzt) – Schalter in
+  den Phasen-Notizen. Abgelaufene Freigaben schließen sich automatisch; WS-Event `phases.changed` lädt alle Clients nach.
+- Umschalter **Spieler / (Missionsbau) / Zeus** im Zeitstrahl: Zeus sieht die Spieler-Phase nur zum Ansehen und arbeitet in
+  den freigegebenen Missionsbau-Phasen; in Spieler-Phasen wird nichts gesetzt. Missionsbauer können die Zeus-Ansicht testen.
+- Server-seitig geprüft (Gate in `live.py`, gezielte Zustellung der Builder-Nachrichten an Zeus-Sockets).
+
+**Phasen für Spieler freigeben**
+- Neue Checkbox „Für Spieler freigeben (wirkt wie Base)" an Missionsbau-Phasen (`phases.player_released`, Migration `0025`):
+  der Inhalt erscheint bei Spielern wie die Base-Phase, die Phase selbst bleibt verborgen; Bearbeiten bleibt dem Missionsbau vorbehalten.
+
+**Mehrere Phasen & Pflicht-Phase**
+- **Marker, Linien, Lineal und Notizen** können zusätzlich in **weiteren Phasen derselben Ebene** erscheinen
+  (Mehrfachauswahl „Weitere Phasen"; Spalten `markers|strokes|annotations.extra_phase_ids`, Migrationen `0024`, `0026`, `0027`).
+- **Jedes Element gehört zu einer Phase**: die Option „global" ist überall entfernt, Standard ist die aktuelle Phase
+  (folgt dem Phasenwechsel); der Server setzt ohne Angabe die erste Spieler-Phase.
+- Briefing-PDF berücksichtigt Zusatzphasen.
+
+**Werkzeuge**
+- **Marker-Hover:** Icons Löschen (rot, mit Bestätigung) · Verschieben · Bearbeiten.
+- **Marker setzen:** Bricht man den Erstellen-Dialog ab, bleibt der Modus aktiv (neue Position anklicken).
+- **Lineal:** eigenes Menü wie „Zeichnen" (Phase, Weitere Phasen, Taktischer Layer); Messlinien nach Phase/Layer ein-/ausgeblendet.
+- **Zeichnen:** Phase/Weitere Phasen/Layer im Menü; Löschen gespeicherter Linien/Messlinien mit Bestätigung.
+- **Baukasten:** SIDC-Nummer (ganz oder teilweise) eingeben → nächstpassender Marker wird gewählt und platziert.
+- **QuickMenü:** Kategorien mit „↳" vor dem Namen (Marker ohne); Button **„Platzieren" zusätzlich oben** neben „Zurück".
+- **Zeigen:** Zuziehkreis entfernt; gelbe Hervorhebung 3× größer bei 75 % Sichtbarkeit; **Mittelklick** pannt die Karte in allen Werkzeugen.
+- **Tasten:** **S = Radierer**, **F = Lineal**; Marker-Verschieben → **M**, Favoriten → **R** (gespeicherte alte Standardbelegungen werden umgezogen).
+
+**Oberfläche**
+- **ViewCube** immer sichtbar unten rechts (2D + 3D, auch öffentliche Ansicht), Top-Fläche mit „TOP", Beschriftung N/S + O/W an den
+  sichtbaren Seiten, Kartendrehung dreht nur die Top-Fläche, Abstand zum Rand 56 px.
+- **UI Scale:** die Box mit Marker-/Textgröße trägt den Titel „UI Scale" und ist einklappbar (Zustand wird gemerkt).
+- **Doppelklick auf eine Phase** im Zeitstrahl öffnet das Phasen-Notizen-Fenster.
+- Bilder-Tab: Ausklapp-Knopf auf Höhe des Schließen-Knopfs.
+- Karten-Einstellungen (Satellit, Straßenfarben, Orte) im Zahnrad pro Nutzer, Topbar-Größe einstellbar, Absätze in Notizen.
+
+**Deploy-Hinweis:** Backend neu bauen (Migrationen `0024`–`0027` laufen beim Start), Frontend wird mitgebaut:
+`ssh root@192.168.1.115 "cd /opt/sidc-c2 && git pull && docker compose up -d --build"`.
 
 ### Neu (Nachtrag)
 - **Markerfarbe im QuickMenü/Baukasten:** Farbwähler direkt beim Platzieren.

@@ -6,7 +6,7 @@ wählen eine Karte, und setzen gemeinsam in Echtzeit Marker und Zeichnungen.
 
 > **Version 1.0** (2026-09-07) – lauffähig und deployt, Phasen 0–9 umgesetzt.
 > **Vollständiges Handbuch: [`docs/HANDBUCH.md`](docs/HANDBUCH.md).**
-> Änderungen: [`CHANGELOG.md`](CHANGELOG.md) · Stufenplan: [`PLAN.md`](PLAN.md).
+> Funktionsübersicht: [`docs/FUNKTIONEN.md`](docs/FUNKTIONEN.md) · Änderungen: [`CHANGELOG.md`](CHANGELOG.md) · Stufenplan: [`PLAN.md`](PLAN.md).
 
 ## Features
 
