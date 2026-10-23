@@ -299,6 +299,7 @@ class Annotation(Base):
     id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
     plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
     phase_id: Mapped[str | None] = mapped_column(ForeignKey("phases.id", ondelete="SET NULL"), index=True)
+    extra_phase_ids: Mapped[list | None] = mapped_column(JSON, default=list)  # weitere Phasen (gleiche Ebene)
     world_x: Mapped[float] = mapped_column(Float)
     world_y: Mapped[float] = mapped_column(Float)
     text: Mapped[str] = mapped_column(Text, default="")

@@ -113,6 +113,7 @@ const IS_MOBILE =
 interface Annot {
   id: string;
   phase_id: string | null;
+  extra_phase_ids?: string[];
   world_x: number;
   world_y: number;
   text: string;
@@ -4586,7 +4587,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let annotDragId: string | null = null;
   let annotResizingId: string | null = null;
   let pendingAnnotCid: string | null = null;
-  const annotOpacity = (a: Annot): number => phaseOpacityOf(a.phase_id);
+  const annotOpacity = (a: Annot): number => multiPhaseOpacity(a.phase_id, a.extra_phase_ids);
   const ANNOT_COLL_KEY = `sidc_annot_coll_${planId}`;
   const collapsedAnnots = new Set<string>(
     (() => {
@@ -4644,6 +4645,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           )
           .join("")}
       </select>
+      <label style="margin-top:.4rem">${t("phase.extra")}</label>
+      <div data-ax>${phaseMultiHtml("data-xphases", samePlanePhases(a.phase_id), a.extra_phase_ids ?? [], a.phase_id)}</div>
       <label class="ph-op" style="margin-top:.4rem">${t("annot.width")}
         <input type="range" min="140" max="480" step="10" value="${a.width}" data-w /></label>
       <label class="chk" style="margin-top:.3rem"><input type="checkbox" data-fix ${a.scale_fixed ? "checked" : ""}/> <span>${t("annot.scaleWithMap")}</span></label>
@@ -4660,6 +4663,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const prev = back.querySelector<HTMLDivElement>(".annot-prev")!;
     const wIn = back.querySelector<HTMLInputElement>("[data-w]")!;
     const fixIn = back.querySelector<HTMLInputElement>("[data-fix]")!;
+    {
+      const asel = back.querySelector<HTMLSelectElement>("[data-aphase]")!;
+      asel.addEventListener("change", () => {
+        back.querySelector<HTMLElement>("[data-ax]")!.innerHTML = phaseMultiHtml(
+          "data-xphases", samePlanePhases(asel.value), readPhaseMulti(back, "data-xphases"), asel.value,
+        );
+      });
+    }
     const upd = () => (prev.innerHTML = renderMarkdown(ta.value));
     ta.addEventListener("input", upd);
     upd();
@@ -4692,7 +4703,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             : Number(wIn.value),
         height:
           !wantScale && a.scale_fixed && a.height ? Math.round(a.height * sc) : a.height ?? 0,
-        phase_id: phaseSel.value || null,
+        phase_id: phaseSel.value || currentPhaseId || null,
+        extra_phase_ids: readPhaseMulti(back, "data-xphases"),
         scale_fixed: wantScale,
       };
       if (wantScale && (!a.scale_fixed || !a.ref_zoom || a.ref_zoom <= 0))

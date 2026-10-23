@@ -244,7 +244,7 @@ a { color: var(--accent); }
 .line-gear:hover:not(:disabled) { background: var(--panel); filter: brightness(1.15); }
 
 /* Navigations-Würfel / ViewCube (nur 3D) */
-.navcube { position: absolute; right: 24px; bottom: 56px; width: 54px; height: 54px;
+.navcube { position: absolute; right: 56px; bottom: 56px; width: 54px; height: 54px;
   z-index: 8; perspective: 260px; cursor: grab; opacity: 0.62; transition: opacity 0.15s; }
 .navcube:hover { opacity: 1; }
 .navcube.drag { cursor: grabbing; opacity: 1; }
@@ -757,7 +757,7 @@ label.chk input { width: auto; }
   background: var(--surface); width: 1.6rem; height: 2.2rem; padding: 0; display: grid; place-items: center; }
 .img-rail-tab.hidden { display: none; }
 body.rail-open .hud, body.rail-open .mk-scale { right: calc(var(--rail-w, 300px) + 0.6rem); }
-body.rail-open .navcube { right: calc(var(--rail-w, 300px) + 14px); }
+body.rail-open .navcube { right: calc(var(--rail-w, 300px) + 56px); }
 body.rail-open .layers-panel:not(.mv-pinned) { right: calc(var(--rail-w, 300px) + 0.6rem); }
 
 /* ── Bild-Wähler (für "Bild in Notiz einfügen") ───────────────────── */
@@ -864,3 +864,5 @@ button.danger .ic { color: var(--danger); }
 .mk-acts .mk-act-del:disabled { opacity: 0.4; }
 .mk-scale-head { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; width: 100%; padding: 0; border: 0; background: none; color: var(--muted); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; }
 .mk-scale.collapsed .mk-scale-row { display: none; }
+.wiz-quick { position: relative; }
+.wiz-quick .wiz-place-top { position: absolute; top: 0; right: 0; }

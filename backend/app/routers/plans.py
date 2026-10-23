@@ -136,13 +136,14 @@ def _snapshot(
         placements = [p for p in placements if p.phase_id not in hide]
     mdicts = [_marker_dict(m) for m in markers]
     sdicts = [_stroke_dict(s) for s in strokes]
+    adicts = [_annotation_dict(a) for a in anns]
     if not include_builder:  # verborgene Zusatz-Phasen nicht verraten
-        for d in mdicts + sdicts:
+        for d in mdicts + sdicts + adicts:
             d["extra_phase_ids"] = [x for x in d["extra_phase_ids"] if x not in hide]
     return {
         "markers": mdicts,
         "strokes": sdicts,
-        "annotations": [_annotation_dict(a) for a in anns],
+        "annotations": adicts,
         "images": [_image_dict(i) for i in imgs],
         "image_placements": [_placement_dict(p) for p in placements],
     }
@@ -190,7 +191,8 @@ def released_markers(db: Session, plan_id: str) -> list[dict]:
 
 def _annotation_dict(a: Annotation) -> dict:
     return {
-        "id": a.id, "phase_id": a.phase_id, "world_x": a.world_x, "world_y": a.world_y,
+        "id": a.id, "phase_id": a.phase_id, "extra_phase_ids": list(a.extra_phase_ids or []),
+        "world_x": a.world_x, "world_y": a.world_y,
         "text": a.text, "width": a.width, "height": a.height,
         "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom,
     }

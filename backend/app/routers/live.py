@@ -338,7 +338,7 @@ async def _handle(
     elif t in ("annotation.move", "annotation.modify"):
         fields = {
             k: v for k, v in msg.get("data", {}).items()
-            if k in ("world_x", "world_y", "text", "width", "height", "phase_id", "scale_fixed", "ref_zoom")
+            if k in ("world_x", "world_y", "text", "width", "height", "phase_id", "extra_phase_ids", "scale_fixed", "ref_zoom")
         }
         res = await run_in_threadpool(_update_annotation, plan_id, msg["id"], user.id, fields)
         if res is not None:
@@ -575,6 +575,7 @@ def _delete_stroke(plan_id: str, stroke_id: str) -> str | None:
 def _annotation_out(a: Annotation) -> dict:
     return {
         "id": a.id, "plan_id": a.plan_id, "phase_id": a.phase_id,
+        "extra_phase_ids": list(a.extra_phase_ids or []),
         "world_x": a.world_x, "world_y": a.world_y, "text": a.text,
         "width": a.width, "height": a.height,
         "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom,
@@ -586,6 +587,7 @@ def _create_annotation(plan_id: str, uid: str, data: dict) -> dict:
         a = Annotation(
             plan_id=plan_id, created_by=uid, updated_by=uid,
             phase_id=_need_phase(db, plan_id, data.get("phase_id")),
+            extra_phase_ids=_clean_ids(data.get("extra_phase_ids")),
             world_x=float(data.get("world_x", 0)), world_y=float(data.get("world_y", 0)),
             text=str(data.get("text", ""))[:8000], width=float(data.get("width", 220)),
             height=float(data.get("height", 0)),
@@ -604,6 +606,10 @@ def _update_annotation(plan_id: str, ann_id: str, uid: str, fields: dict) -> dic
             return None
         if "text" in fields:
             fields["text"] = str(fields["text"])[:8000]
+        if "extra_phase_ids" in fields:
+            fields["extra_phase_ids"] = _clean_ids(fields["extra_phase_ids"])
+        if "phase_id" in fields:
+            fields["phase_id"] = _need_phase(db, plan_id, fields["phase_id"])
         for k, v in fields.items():
             setattr(a, k, v)
         a.updated_by = uid

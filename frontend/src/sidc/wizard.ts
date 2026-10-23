@@ -238,7 +238,7 @@ export async function openWizard(
         tint = "";
         draw();
       });
-      config.querySelector(".wiz-place")!.addEventListener("click", () => {
+      const place = () => {
         const sidc = buildSidc();
         onPick({
           sidc,
@@ -254,7 +254,18 @@ export async function openWizard(
           max_line_points: entry.maxLinePoints ?? 0,
         });
         close();
-      });
+      };
+      config.querySelector(".wiz-place")!.addEventListener("click", place);
+      // gleicher Button oben neben „Zurück", damit man nicht nach unten scrollen muss
+      const qnav = body.querySelector(".wiz-quick");
+      qnav?.querySelector(".wiz-place-top")?.remove();
+      const top = document.createElement("button");
+      top.className = "primary wiz-place-top";
+      top.textContent = t("wiz.place");
+      top.addEventListener("click", place);
+      const bk = qnav?.querySelector(".wiz-back");
+      if (bk) bk.after(top);
+      else qnav?.prepend(top);
     };
     draw();
   }
@@ -324,7 +335,7 @@ function renderQuick(
         if (isMain(label) && !(btn.isGroup && btn.nestedRows.length)) continue;
         const b = document.createElement("button");
         b.className = "wiz-qbtn";
-        b.textContent = label;
+        b.textContent = btn.isGroup && btn.nestedRows.length ? "↳ " + label : label; // ↳ = Kategorie, ohne = Marker
         b.addEventListener("click", () => {
           if (btn.isGroup && btn.nestedRows.length) {
             renderButtons(btn.nestedRows, identity, () => renderButtons(rows, identity, back));
@@ -356,7 +367,7 @@ function renderQuick(
     for (const sub of eff) {
       const sb = document.createElement("button");
       sb.className = "wiz-qbtn";
-      sb.textContent = translate(sub.buttonLanguageKey || sub.subCategoryName);
+      sb.textContent = "↳ " + translate(sub.buttonLanguageKey || sub.subCategoryName);
       sb.addEventListener("click", () => renderButtons(sub.rows, ident, () => openSubs(cat, back)));
       nav.appendChild(sb);
     }
@@ -371,7 +382,7 @@ function renderQuick(
     for (const cat of categories) {
       const b = document.createElement("button");
       b.className = "wiz-qbtn wiz-qcat";
-      b.textContent = translate(cat.buttonLanguageKey || cat.categoryName);
+      b.textContent = "↳ " + translate(cat.buttonLanguageKey || cat.categoryName);
       b.addEventListener("click", () => openSubs(cat, top));
       nav.appendChild(b);
     }
