@@ -98,6 +98,7 @@ interface Stroke {
   color: number;
   width: number;
   phase_id?: string | null;
+  extra_phase_ids?: string[];
   layer_id?: string | null;
   channel?: string;
 }
@@ -386,6 +387,28 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Phasen, die ich zuordnen darf: Spieler-Phasen, für Missionsbauer alles, für Zeus die freigegebenen
   const selectablePhases = (): PhaseT[] =>
     phases.filter((p) => p.plane !== "builder" || isMB || zeusOpen(p.id));
+  // Mehrfach-Phasen-Auswahl in einem Container: folgt der gewählten Hauptphase, speichert über set()
+  const bindXPhases = (
+    host: HTMLElement,
+    getPid: () => string | null,
+    get: () => string[],
+    set: (v: string[]) => void,
+  ): (() => void) => {
+    const render = (): void => {
+      const pid = getPid();
+      const opts = samePlanePhases(pid);
+      const valid = get().filter((x) => x !== pid && opts.some((p) => p.id === x));
+      set(valid);
+      host.innerHTML = phaseMultiHtml("data-xphases", opts, valid, pid);
+      host.querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((cb) =>
+        cb.addEventListener("change", () => set(readPhaseMulti(host, "data-xphases"))),
+      );
+    };
+    render();
+    return render;
+  };
+  const multiPhaseOpacity = (pid: string | null | undefined, extras?: string[]): number =>
+    Math.max(phaseOpacityOf(pid), ...(extras ?? []).map((x) => phaseOpacityOf(x)));
   const tplCtx = (): TplCtx => ({
     layers: tacLayers.map((l) => ({ id: l.id, name: l.name })),
     layerId: null,
@@ -469,7 +492,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             iconBtn("point", { data: { mode: "point" }, title: t("tool.point") + hk("point") }) +
             iconBtn("line", { data: { mode: "line" }, title: t("tool.line") + hk("line") }) +
             iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") + hk("measure") }) +
-            iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") }) +
+            iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") + hk("erase") }) +
             iconBtn("textbox", { data: { mode: "text" }, title: t("tool.text") + hk("text") }) +
             iconBtn("marker", { id: "tool-marker", title: t("tool.marker") + hk("place") }) +
             `<span class="tb-sep"></span>`
@@ -493,11 +516,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
                .join("")}</select>
              <label>${t("phase.assign")}</label>
              <select id="lPhase">
-               <option value="">${t("phase.global")}</option>
                ${selectablePhases()
                  .map((ph) => `<option value="${esc(ph.id)}">${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`)
                  .join("")}
              </select>
+             <label>${t("phase.extra")}</label>
+             <div id="lXph"></div>
              <label>${t("wiz.layer")}</label>
              <select id="lLayer"></select>
              <button class="primary" id="lineFinish">${t("line.finish")}</button>
@@ -507,11 +531,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <div class="fav-head">${t("tool.measure").split(" – ")[0]}</div>
              <label>${t("phase.assign")}</label>
              <select id="mPhase">
-               <option value="">${t("phase.global")}</option>
                ${selectablePhases()
                  .map((ph) => `<option value="${esc(ph.id)}">${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`)
                  .join("")}
              </select>
+             <label>${t("phase.extra")}</label>
+             <div id="mXph"></div>
              <label>${t("wiz.layer")}</label>
              <select id="mLayer"></select>
            </div>`
@@ -736,7 +761,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         id: s.id,
         color: packedToHex(s.color),
         width: s.width > 0 ? s.width : 2,
-        opacity: phaseOpacityOf(s.phase_id) * tacOpacity(null, s.layer_id),
+        opacity: multiPhaseOpacity(s.phase_id, s.extra_phase_ids) * tacOpacity(null, s.layer_id),
       },
     })),
   });
@@ -1145,9 +1170,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // ── Linien nachträglich bearbeiten: Stützpunkte ziehen ───────────────
   // Lineal: mehrsegmentige, bleibende Messlinien (nur lokal, je Sitzung)
   // builder=true → nur in der Missionsbau-Ebene sichtbar, sonst nur in der Spieler-Ebene
-  let measureLines: { id: string; pts: [number, number][]; phase_id: string | null; layer_id: string | null }[] = [];
-  const measureVisible = (ml: { phase_id: string | null; layer_id: string | null }): boolean =>
-    phaseOpacityOf(ml.phase_id) * tacOpacity(null, ml.layer_id) > 0;
+  let measureLines: { id: string; pts: [number, number][]; phase_id: string | null; extra_phase_ids: string[]; layer_id: string | null }[] = [];
+  const measureVisible = (ml: { phase_id: string | null; extra_phase_ids: string[]; layer_id: string | null }): boolean =>
+    multiPhaseOpacity(ml.phase_id, ml.extra_phase_ids) * tacOpacity(null, ml.layer_id) > 0;
   let measureActive: [number, number][] = [];
   let measureCursor: [number, number] | null = null;
   let editMeasureId: string | null = null;
@@ -3477,6 +3502,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const mvMeasure = makeMovable(measureStylePanel, { plan: planId, key: "measurestyle", pinnable: true });
   let measurePhaseId: string | null = currentPhaseId || null;
   let measureLayerId: string | null = null;
+  let measureExtra: string[] = [];
+  let lineExtraPhases: string[] = [];
+  let renderMeasureX: () => void = () => {};
+  let renderLineX: () => void = () => {};
   {
     const mp = root.querySelector<HTMLSelectElement>("#mPhase")!;
     const ml = root.querySelector<HTMLSelectElement>("#mLayer")!;
@@ -3490,11 +3519,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     fill();
     layerListeners.push(fill);
     mp.value = measurePhaseId ?? "";
-    mp.addEventListener("change", () => (measurePhaseId = mp.value || null));
+    renderMeasureX = bindXPhases(root.querySelector<HTMLElement>("#mXph")!, () => measurePhaseId, () => measureExtra, (v) => (measureExtra = v));
+    mp.addEventListener("change", () => {
+      measurePhaseId = mp.value || currentPhaseId || null;
+      renderMeasureX();
+    });
     ml.addEventListener("change", () => (measureLayerId = ml.value || null));
     phaseListeners.push(() => {
       measurePhaseId = currentPhaseId || null;
       mp.value = measurePhaseId ?? "";
+      renderMeasureX();
       redrawMeasure();
     });
   }
@@ -3670,7 +3704,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       measureLines.push({
         id: `m${Date.now()}`,
         pts: [...measureActive],
-        phase_id: measurePhaseId,
+        phase_id: measurePhaseId ?? currentPhaseId ?? null,
+        extra_phase_ids: [...measureExtra],
         layer_id: measureLayerId,
       });
     measureActive = [];
@@ -3715,12 +3750,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         measurePhaseId = currentPhaseId || null;
         const mp = root.querySelector<HTMLSelectElement>("#mPhase");
         if (mp) mp.value = measurePhaseId ?? "";
+        renderMeasureX();
       }
     }
     if (m === "line") {
       linePhaseId = currentPhaseId || null;
       const lp = root.querySelector<HTMLSelectElement>("#lPhase");
       if (lp) lp.value = linePhaseId ?? "";
+      renderLineX();
     }
     if (m !== "line") {
       linePts = [];
@@ -3810,7 +3847,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     };
     if (caps.draw)
       for (const s of strokes.values()) {
-        if (phaseOpacityOf(s.phase_id) * tacOpacity(null, s.layer_id) <= 0) continue;
+        if (multiPhaseOpacity(s.phase_id, s.extra_phase_ids) * tacOpacity(null, s.layer_id) <= 0) continue;
         const r = eraserR + Math.max(2, s.width) / 2;
         if (polyHit(px, py, s.points.map((p) => map.project(p)), r) && once(s.id))
           socket.send({ type: "stroke.delete", id: s.id });
@@ -3883,6 +3920,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       case "line": if (canEdit) setModeBtn("line"); break;
       case "markermove": if (canEdit) setModeBtn("markermove"); break;
       case "measure": setModeBtn("measure"); break;
+      case "erase": setModeBtn("erase"); break;
       case "text": if (canEdit) setModeBtn("text"); break;
       case "fav": if (canEdit && tb("#tool-fav") && !tb("#tool-fav")!.disabled) tb("#tool-fav")!.click(); break;
       case "place":
@@ -3989,10 +4027,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     };
     fillLayers();
     layerListeners.push(fillLayers);
-    lp.addEventListener("change", () => (linePhaseId = lp.value || null));
+    renderLineX = bindXPhases(root.querySelector<HTMLElement>("#lXph")!, () => linePhaseId, () => lineExtraPhases, (v) => (lineExtraPhases = v));
+    lp.addEventListener("change", () => {
+      linePhaseId = lp.value || currentPhaseId || null;
+      renderLineX();
+    });
     phaseListeners.push(() => {
       linePhaseId = currentPhaseId || null;
       lp.value = linePhaseId ?? "";
+      renderLineX();
     });
     ll.addEventListener("change", () => (lineLayerId = ll.value || null));
   }
@@ -4007,7 +4050,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           points: linePts,
           color: lineColor,
           width: lineWidth,
-          phase_id: linePhaseId,
+          phase_id: linePhaseId ?? currentPhaseId ?? null,
+          extra_phase_ids: lineExtraPhases,
           layer_id: lineLayerId,
         },
       });
@@ -4032,7 +4076,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <div class="row"><h1 style="flex:1;margin:0">${t("line.edit")}</h1><button class="icon-btn" data-x>${icon("x")}</button></div>
       <label class="chk-lbl">${t("phase.assign")}
         <select data-sphase>
-          <option value="">${t("phase.global")}</option>
           ${selectablePhases()
             .map(
               (ph) =>
@@ -4040,6 +4083,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             )
             .join("")}
         </select></label>
+      <label class="chk-lbl">${t("phase.extra")}<div data-sx>${phaseMultiHtml("data-xphases", samePlanePhases(s.phase_id), s.extra_phase_ids ?? [], s.phase_id)}</div></label>
       ${
         `<label class="chk-lbl">${t("wiz.layer")}${layerSelectHtml("data-slayer", tacLayers, s.layer_id)}</label>`
       }
@@ -4057,12 +4101,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const close = () => back.remove();
     back.addEventListener("mousedown", (e) => e.target === back && close());
     back.querySelector("[data-x]")!.addEventListener("click", close);
+    {
+      const sp = back.querySelector<HTMLSelectElement>("[data-sphase]")!;
+      sp.addEventListener("change", () => {
+        const host = back.querySelector<HTMLElement>("[data-sx]")!;
+        host.innerHTML = phaseMultiHtml("data-xphases", samePlanePhases(sp.value), readPhaseMulti(back, "data-xphases"), sp.value);
+      });
+    }
     back.querySelector("[data-save]")!.addEventListener("click", () => {
       socket.send({
         type: "stroke.modify",
         id: strokeId,
         data: {
-          phase_id: back.querySelector<HTMLSelectElement>("[data-sphase]")!.value || null,
+          phase_id: back.querySelector<HTMLSelectElement>("[data-sphase]")!.value || currentPhaseId || null,
+          extra_phase_ids: readPhaseMulti(back, "data-xphases"),
           layer_id: back.querySelector<HTMLSelectElement>("[data-slayer]")
             ? back.querySelector<HTMLSelectElement>("[data-slayer]")!.value || null
             : (s.layer_id ?? null),
@@ -4582,8 +4634,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <textarea class="notes-edit annot-edit" rows="6" placeholder="${t("annot.hint")}"></textarea>
       <label style="margin-top:.4rem">${t("phase.assign")}</label>
       <select data-aphase>
-        <option value="">${t("phase.global")}</option>
-        ${phases
+        ${selectablePhases()
           .map(
             (ph) =>
               `<option value="${esc(ph.id)}" ${ph.id === a.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`,
@@ -5301,7 +5352,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         <span data-mscalev>${Math.round((m.scale ?? 1) * 100)}%</span></label>
       <label>${t("phase.assign")}</label>
       <select data-phase>
-        <option value="">${t("phase.global")}</option>
         ${selectablePhases()
           .map(
             (ph) =>
@@ -5393,7 +5443,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         unit_text: p.querySelector<HTMLInputElement>("[data-unit]")!.value,
         ai_text: p.querySelector<HTMLInputElement>("[data-ai]")!.value,
         icon_rotation: Number(p.querySelector<HTMLInputElement>("[data-rot]")!.value) || 0,
-        phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || null,
+        phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || currentPhaseId || null,
         layer_id: p.querySelector<HTMLSelectElement>("[data-layer]")
           ? p.querySelector<HTMLSelectElement>("[data-layer]")!.value || null
           : (m.layer_id ?? null),

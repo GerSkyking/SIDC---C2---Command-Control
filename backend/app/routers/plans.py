@@ -135,12 +135,13 @@ def _snapshot(
         imgs = [i for i in imgs if i.phase_id not in hide]
         placements = [p for p in placements if p.phase_id not in hide]
     mdicts = [_marker_dict(m) for m in markers]
+    sdicts = [_stroke_dict(s) for s in strokes]
     if not include_builder:  # verborgene Zusatz-Phasen nicht verraten
-        for d in mdicts:
+        for d in mdicts + sdicts:
             d["extra_phase_ids"] = [x for x in d["extra_phase_ids"] if x not in hide]
     return {
         "markers": mdicts,
-        "strokes": [_stroke_dict(s) for s in strokes],
+        "strokes": sdicts,
         "annotations": [_annotation_dict(a) for a in anns],
         "images": [_image_dict(i) for i in imgs],
         "image_placements": [_placement_dict(p) for p in placements],
@@ -229,6 +230,7 @@ def _stroke_dict(s: Stroke) -> dict:
     return {
         "id": s.id, "phase_id": s.phase_id, "layer_id": s.layer_id, "kind": s.kind,
         "channel": s.channel, "points": s.points, "color": s.color, "width": s.width,
+        "extra_phase_ids": list(s.extra_phase_ids or []),
     }
 
 
@@ -959,6 +961,7 @@ def clone_plan(
         d = _stroke_dict(s)
         d.pop("id")
         d["phase_id"] = phase_map.get(s.phase_id or "")
+        d["extra_phase_ids"] = [phase_map[x] for x in (s.extra_phase_ids or []) if x in phase_map]
         d["layer_id"] = layer_map.get(s.layer_id or "")
         db.add(Stroke(plan_id=clone.id, created_by=user.id, **d))
 

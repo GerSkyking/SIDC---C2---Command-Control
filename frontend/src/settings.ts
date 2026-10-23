@@ -15,6 +15,7 @@ export type HotAction =
   | "line"
   | "markermove"
   | "measure"
+  | "erase"
   | "text"
   | "fav"
   | "place"
@@ -32,6 +33,7 @@ export const HOT_ORDER: HotAction[] = [
   "line",
   "markermove",
   "measure",
+  "erase",
   "text",
   "fav",
   "place",
@@ -50,10 +52,11 @@ const DEFAULTS: Record<HotAction, string> = {
   mapMove: "w",
   point: "a",
   line: "d",
-  markermove: "s",
-  measure: "r",
+  markermove: "m",
+  measure: "f",
+  erase: "s",
   text: "t",
-  fav: "f",
+  fav: "r",
   place: " ",
   undo: "q",
   redo: "e",
@@ -78,6 +81,12 @@ function normalizeStored(raw: unknown): Record<HotAction, string> {
     for (const a of HOT_ORDER) {
       const v = (raw as Record<string, unknown>)[a];
       if (typeof v === "string") out[a] = v;
+    }
+    // Umzug auf die neuen Standardtasten (s = Radierer, f = Lineal), solange der Nutzer sie nicht selbst vergeben hat
+    if (typeof (raw as Record<string, unknown>).erase !== "string") {
+      if (out.markermove === "s") out.markermove = "m";
+      if (out.fav === "f") out.fav = "r";
+      if (out.measure === "r") out.measure = "f";
     }
   }
   return out;
@@ -213,6 +222,7 @@ export function openSettings(): void {
     line: t("tool.line"),
     markermove: t("tool.markermove"),
     measure: t("tool.measure"),
+    erase: t("tool.erase"),
     text: t("tool.text"),
     fav: t("tool.fav"),
     place: t("tool.marker"),

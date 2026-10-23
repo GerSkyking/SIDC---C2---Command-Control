@@ -440,8 +440,22 @@ def _sync_node(db, node_id: str | None, *, delta: int = 0) -> None:
     db.commit()
 
 
+def _need_phase(db, plan_id: str, pid: str | None) -> str | None:
+    """Jedes Element gehört zu einer Phase: ohne Angabe die erste Spieler-Phase (Base)."""
+    if pid:
+        return pid
+    return db.scalar(
+        select(Phase.id).where(Phase.plan_id == plan_id, Phase.plane == "player").order_by(Phase.ordering).limit(1)
+    )
+
+
+def _clean_ids(v) -> list[str]:
+    return [str(x) for x in v if isinstance(x, str)][:32] if isinstance(v, list) else []
+
+
 def _create_marker(plan_id: str, uid: str, data: dict) -> dict:
     with SessionLocal() as db:
+        data = {**data, "phase_id": _need_phase(db, plan_id, data.get("phase_id"))}
         m = Marker(plan_id=plan_id, created_by=uid, updated_by=uid, **_clean_marker_fields(data))
         db.add(m)
         db.commit()
@@ -459,6 +473,9 @@ def _update_marker(plan_id: str, marker_id: str, uid: str, is_owner: bool, field
             return None
         old_node = m.orbat_node_id
         old_loss = _losses(status_from_sidc(m.sidc), m.orbat_strength)
+        fields = dict(fields)
+        if "phase_id" in fields:
+            fields["phase_id"] = _need_phase(db, plan_id, fields["phase_id"])
         for k, v in _clean_marker_fields(fields).items():
             setattr(m, k, v)
         m.updated_by = uid
@@ -493,7 +510,8 @@ def _create_stroke(plan_id: str, uid: str, data: dict) -> dict:
     with SessionLocal() as db:
         s = Stroke(
             plan_id=plan_id, created_by=uid,
-            phase_id=data.get("phase_id"), layer_id=data.get("layer_id"),
+            phase_id=_need_phase(db, plan_id, data.get("phase_id")), layer_id=data.get("layer_id"),
+            extra_phase_ids=_clean_ids(data.get("extra_phase_ids")),
             kind=data.get("kind", "freehand"), points=data.get("points", []),
             channel=str(data.get("channel") or ""),
             color=data.get("color", -1), width=data.get("width", -1),
@@ -507,6 +525,7 @@ def _stroke_out(s: Stroke) -> dict:
     return {
         "id": s.id, "phase_id": s.phase_id, "layer_id": s.layer_id, "kind": s.kind,
         "channel": s.channel, "points": s.points, "color": s.color, "width": s.width,
+        "extra_phase_ids": list(s.extra_phase_ids or []),
     }
 
 
@@ -531,7 +550,9 @@ def _update_stroke(plan_id: str, stroke_id: str, data: dict) -> dict | None:
         if data.get("width") is not None:
             s.width = float(data["width"])
         if "phase_id" in data:
-            s.phase_id = data["phase_id"] or None
+            s.phase_id = _need_phase(db, plan_id, data["phase_id"])
+        if "extra_phase_ids" in data:
+            s.extra_phase_ids = _clean_ids(data["extra_phase_ids"])
         if "channel" in data:
             s.channel = str(data["channel"] or "")
         if "layer_id" in data:
@@ -564,7 +585,7 @@ def _create_annotation(plan_id: str, uid: str, data: dict) -> dict:
     with SessionLocal() as db:
         a = Annotation(
             plan_id=plan_id, created_by=uid, updated_by=uid,
-            phase_id=data.get("phase_id"),
+            phase_id=_need_phase(db, plan_id, data.get("phase_id")),
             world_x=float(data.get("world_x", 0)), world_y=float(data.get("world_y", 0)),
             text=str(data.get("text", ""))[:8000], width=float(data.get("width", 220)),
             height=float(data.get("height", 0)),

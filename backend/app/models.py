@@ -369,6 +369,7 @@ class Stroke(Base):
     plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
     phase_id: Mapped[str | None] = mapped_column(ForeignKey("phases.id", ondelete="SET NULL"), index=True)
     layer_id: Mapped[str | None] = mapped_column(ForeignKey("layers.id", ondelete="SET NULL"), index=True)
+    extra_phase_ids: Mapped[list | None] = mapped_column(JSON, default=list)  # weitere Phasen (gleiche Ebene)
     kind: Mapped[str] = mapped_column(String(16), default="freehand")  # freehand | phaseline
     channel: Mapped[str] = mapped_column(String(64), default="")
     points: Mapped[list] = mapped_column(JSON, default=list)           # [[x, y], ...]
