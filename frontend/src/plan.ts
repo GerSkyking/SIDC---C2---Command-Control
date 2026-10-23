@@ -2282,6 +2282,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   }
   renderTimeline();
+  // Doppelklick auf eine Phase öffnet das Phasen-Notizen-Fenster (die erste Klickhälfte hat die Phase gewählt)
+  timelineEl.addEventListener("dblclick", (e) => {
+    if (!(e.target as HTMLElement).closest(".tl-bar") || (e.target as HTMLElement).closest(".tl-edge, .tl-del")) return;
+    if (document.querySelector(".notes-win")?.hasAttribute("hidden")) toggleNotesWin();
+  });
 
   // ── Phasen-Notizen: frei verschiebbares Fenster mit Reiter je Phase ────
   const notesWin = document.createElement("div");

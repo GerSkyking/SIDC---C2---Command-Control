@@ -31,10 +31,10 @@ export function initNavCube(
     <div class="ncube-ring"><b>N</b></div>
     <div class="ncube">
       <button class="ncf ncf-top" data-face="top">TOP</button>
-      <button class="ncf ncf-n" data-face="n">N</button>
-      <button class="ncf ncf-s" data-face="s">S</button>
-      <button class="ncf ncf-e" data-face="e">O</button>
-      <button class="ncf ncf-w" data-face="w">W</button>
+      <button class="ncf ncf-n" data-face="n">S</button>
+      <button class="ncf ncf-s" data-face="s">N</button>
+      <button class="ncf ncf-e" data-face="e">W</button>
+      <button class="ncf ncf-w" data-face="w">O</button>
     </div>
     <button class="ncc ncc-nw" data-face="nw" title="NW"></button>
     <button class="ncc ncc-ne" data-face="ne" title="NO"></button>
