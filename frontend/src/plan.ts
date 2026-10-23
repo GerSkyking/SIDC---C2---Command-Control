@@ -1449,12 +1449,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // ── 2D/3D + Navigations-Würfel ───────────────────────────────────────
   const navcube = root.querySelector<HTMLDivElement>("#navcube")!;
-  const nav = initNavCube(map, navcube);
+  initNavCube(map, navcube); // immer sichtbar (2D + 3D)
+  navcube.hidden = false;
 
   root.querySelector("#t3d")!.addEventListener("click", () => {
     is3D = !is3D;
     root.querySelector("#t3d")!.classList.toggle("active", is3D);
-    nav.setVisible(is3D);
     const hasDem = !!map.getSource("terrain-dem");
     if (is3D) {
       if (hasDem) map.setTerrain({ source: "terrain-dem", exaggeration: 1.5 });

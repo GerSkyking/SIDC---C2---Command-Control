@@ -1,4 +1,4 @@
-// Navigations-Würfel (ViewCube) für die 3D-Ansicht. Zeigt die aktuelle
+// Navigations-Würfel (ViewCube), unten rechts (2D und 3D). Zeigt die aktuelle
 // Orientierung und schwenkt die Kamera bei Klick:
 //   Oben-Fläche  -> Top-Down (Pitch 0)
 //   N/O/S/W      -> Blick aus der Richtung, Pitch 45°
@@ -30,7 +30,7 @@ export function initNavCube(
     <button class="navcube-home" title="${t("navcube.home")}">⌂</button>
     <div class="ncube-ring"><b>N</b></div>
     <div class="ncube">
-      <button class="ncf ncf-top" data-face="top">▲</button>
+      <button class="ncf ncf-top" data-face="top">TOP</button>
       <button class="ncf ncf-n" data-face="n">N</button>
       <button class="ncf ncf-s" data-face="s">S</button>
       <button class="ncf ncf-e" data-face="e">O</button>
@@ -63,7 +63,7 @@ export function initNavCube(
       }
       const f = b.dataset.face!;
       if (f === "top") map.easeTo({ pitch: 0, duration: 500 });
-      else map.easeTo({ bearing: FACE_BEARING[f], pitch: 45, duration: 500 });
+      else map.easeTo({ bearing: FACE_BEARING[f], pitch: map.getMaxPitch() > 0 ? 45 : 0, duration: 500 });
     }),
   );
 

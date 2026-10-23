@@ -244,7 +244,7 @@ a { color: var(--accent); }
 .line-gear:hover:not(:disabled) { background: var(--panel); filter: brightness(1.15); }
 
 /* Navigations-Würfel / ViewCube (nur 3D) */
-.navcube { position: absolute; right: 14px; bottom: 108px; width: 54px; height: 54px;
+.navcube { position: absolute; right: 24px; bottom: 56px; width: 54px; height: 54px;
   z-index: 8; perspective: 260px; cursor: grab; opacity: 0.62; transition: opacity 0.15s; }
 .navcube:hover { opacity: 1; }
 .navcube.drag { cursor: grabbing; opacity: 1; }
@@ -257,7 +257,7 @@ a { color: var(--accent); }
   backface-visibility: hidden; user-select: none; }
 :root[data-theme="light"] .navcube .ncf { background: rgba(255, 255, 255, 0.85); }
 .navcube .ncf:hover { background: var(--accent-weak); color: var(--accent-fg); }
-.navcube .ncf-top { transform: rotateX(90deg) translateZ(27px); }
+.navcube .ncf-top { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; transform: rotateX(90deg) translateZ(27px); }
 .navcube .ncf-n { transform: translateZ(27px); }
 .navcube .ncf-s { transform: rotateY(180deg) translateZ(27px); }
 .navcube .ncf-e { transform: rotateY(-90deg) translateZ(27px); }
