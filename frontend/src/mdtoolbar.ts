@@ -87,7 +87,15 @@ function insertBlock(ta: HTMLTextAreaElement, text: string, selFrom = 0, selLen 
 const BULLET = /^\s*(?:[-*+]|\d+\.)\s+(?:\[[ xX]\]\s+)?/;
 const QUOTE = /^>\s?/;
 
-type Btn = { label: string; title: string; run: (ta: HTMLTextAreaElement) => void; cls?: string };
+type Btn = { id?: string; label: string; title: string; run: (ta: HTMLTextAreaElement) => void; cls?: string };
+
+// Tabelle mit gewählter Spalten-/Zeilenzahl (Zeilen ohne Kopfzeile) einfügen
+function insertTable(ta: HTMLTextAreaElement, cols: number, rows: number): void {
+  const c = t("md.col");
+  const row = (f: (k: number) => string) => "| " + Array.from({ length: cols }, (_, k) => f(k)).join(" | ") + " |";
+  const lines = [row((k) => `${c} ${k + 1}`), row(() => "---"), ...Array.from({ length: rows }, () => row(() => " "))];
+  insertBlock(ta, lines.join("\n"), 2, c.length + 2);
+}
 
 function buttons(): Btn[] {
   return [
@@ -121,13 +129,14 @@ function buttons(): Btn[] {
     { label: "&#9745;", title: t("md.task"), run: (ta) => linePrefix(ta, () => "- [ ] ", BULLET) },
     { label: "&rdquo;", title: t("md.quote"), run: (ta) => linePrefix(ta, () => "> ", QUOTE) },
     { label: "&mdash;", title: t("md.hr"), run: (ta) => insertBlock(ta, "---") },
+    { label: "&#9638;", id: "table", title: t("md.table"), run: () => {} },
     {
-      label: "&#9638;",
-      title: t("md.table"),
+      label: "&#10064;",
+      title: t("md.dupRow"),
       run: (ta) => {
-        const c = t("md.col");
-        const tbl = `| ${c} 1 | ${c} 2 | ${c} 3 |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |`;
-        insertBlock(ta, tbl, 2, c.length + 2);
+        const [a, b] = lineSpan(ta);
+        const line = ta.value.slice(a, b);
+        replaceRange(ta, b, b, "\n" + line, b + 1 + line.length, b + 1 + line.length);
       },
     },
     {
@@ -188,7 +197,8 @@ export function attachMdToolbar(ta: HTMLTextAreaElement): void {
 
   // Buttons nehmen dem Textfeld den Fokus nicht weg
   bar.addEventListener("mousedown", (e) => {
-    if ((e.target as HTMLElement).tagName !== "SELECT") e.preventDefault();
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag !== "SELECT" && tag !== "INPUT") e.preventDefault();
   });
   bar.append(heads);
   for (const b of buttons()) {
@@ -197,6 +207,24 @@ export function attachMdToolbar(ta: HTMLTextAreaElement): void {
     el.className = "mdtb-btn" + (b.cls ? " " + b.cls : "");
     el.title = b.title;
     el.innerHTML = b.label;
+    if (b.id === "table") {
+      const pop = document.createElement("span");
+      pop.className = "mdtb-pop";
+      pop.hidden = true;
+      pop.innerHTML =
+        `<label>${t("md.cols")} <input type="number" min="1" max="12" value="3" data-c/></label>` +
+        `<label>${t("md.rows")} <input type="number" min="1" max="50" value="2" data-r/></label>` +
+        `<button type="button" class="mdtb-btn" data-ok>${t("md.insert")}</button>`;
+      el.addEventListener("click", () => (pop.hidden = !pop.hidden));
+      pop.querySelector("[data-ok]")!.addEventListener("click", () => {
+        const n = (sel: string, max: number) =>
+          Math.min(max, Math.max(1, Math.floor(Number(pop.querySelector<HTMLInputElement>(sel)!.value)) || 1));
+        insertTable(ta, n("[data-c]", 12), n("[data-r]", 50));
+        pop.hidden = true;
+      });
+      bar.append(el, pop);
+      continue;
+    }
     el.addEventListener("click", () => b.run(ta));
     bar.append(el);
   }
