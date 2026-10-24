@@ -902,11 +902,18 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       type: "circle",
       source: "strokeverts",
       paint: {
-        "circle-radius": 6,
+        "circle-radius": 8,
         "circle-color": "#ff9900",
         "circle-stroke-color": "#fff",
         "circle-stroke-width": 2,
       },
+    });
+    // unsichtbare, größere Trefferfläche: Stützpunkte lassen sich leichter greifen und ziehen
+    map.addLayer({
+      id: "strokeverts-hit",
+      type: "circle",
+      source: "strokeverts",
+      paint: { "circle-radius": 18, "circle-color": "#000", "circle-opacity": 0 },
     });
 
     map.addSource("linedraft", { type: "geojson", data: emptyFC() });
@@ -4242,9 +4249,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const mid = e.features?.[0]?.properties?.mid as string | undefined;
     setEditMeasure(mid && mid !== "__active" ? mid : null);
   });
-  map.on("mouseenter", "strokeverts", () => (map.getCanvas().style.cursor = "grab"));
-  map.on("mouseleave", "strokeverts", () => (map.getCanvas().style.cursor = modeCursor()));
-  map.on("mousedown", "strokeverts", (e) => {
+  map.on("mouseenter", "strokeverts-hit", () => (map.getCanvas().style.cursor = "grab"));
+  map.on("mouseleave", "strokeverts-hit", () => (map.getCanvas().style.cursor = modeCursor()));
+  map.on("mousedown", "strokeverts-hit", (e) => {
     const idx = e.features?.[0]?.properties?.i as number;
     const pts = editPts();
     if (!pts || idx == null) return;
