@@ -132,7 +132,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     </div>
     <button class="line-done" id="lineDone" title="${t("line.finish")}" hidden>${icon("check", 18)}</button>
     <div class="mk-scale" id="mkScale">
-      <button type="button" class="mk-scale-head"><span>${t("scale.title")}</span><span class="chev">▾</span></button>
+      <button type="button" class="mk-scale-head" title="${t("scale.toggle")}"><span>${t("scale.title")}</span><span class="chev">▾</span></button>
       <div class="mk-scale-row" title="${t("marker.scaleLocal")}">
         ${icon("marker", 13)}
         <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
@@ -890,9 +890,9 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     presentBar = document.createElement("div");
     presentBar.className = "present-bar";
     presentBar.innerHTML =
-      `<button class="icon-btn" data-pb="prev">${icon("back")}</button>` +
+      `<button class="icon-btn" data-pb="prev" title="${t("common.prev")}">${icon("back")}</button>` +
       `<span class="pb-name"></span>` +
-      `<button class="icon-btn" data-pb="next">${icon("chevron")}</button>` +
+      `<button class="icon-btn" data-pb="next" title="${t("common.next")}">${icon("chevron")}</button>` +
       `<button class="icon-btn" data-pb="exit" title="${t("present.exit")}">${icon("x")}</button>`;
     root.appendChild(presentBar);
     presentBar.querySelector('[data-pb="prev"]')!.addEventListener("click", () => stepPresent(-1));

@@ -73,7 +73,7 @@ export async function openWizard(
         <button data-tab="quick" class="active">${t("wiz.quickMenu")}</button>
         <button data-tab="builder">${t("wiz.builder")}</button>
         <span class="grow"></span>
-        <button class="icon-btn" data-close>${icon("x")}</button>
+        <button class="icon-btn" data-close title="${t("common.close")}">${icon("x")}</button>
       </div>
       <div class="wiz-body"></div>
       <div class="wiz-config" hidden></div>

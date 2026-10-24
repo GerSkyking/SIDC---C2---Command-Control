@@ -45,7 +45,7 @@ export async function openAclEditor(
   const draw = () => {
     backdrop.innerHTML = `
       <div class="wiz" style="width:min(44rem,95vw)">
-        <div class="wiz-head"><strong>${t("acl.heading")} — ${planName}</strong><span class="grow"></span><button class="icon-btn" data-x>${icon("x")}</button></div>
+        <div class="wiz-head"><strong>${t("acl.heading")} — ${planName}</strong><span class="grow"></span><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
         <div class="wiz-body">
           <table class="acl-tbl"><thead><tr>
             <th>${t("acl.who")}</th><th>${t("acl.role")}</th><th>${t("acl.place")}</th><th>${t("acl.move")}</th><th>${t("acl.deletePerm")}</th><th>${t("acl.draw")}</th><th></th>
@@ -67,7 +67,7 @@ export async function openAclEditor(
                       }/></td>`,
                   )
                   .join("")}
-                <td><button class="icon-btn" data-del="${i}">${icon("x", 16)}</button></td>
+                <td><button class="icon-btn" data-del="${i}" title="${t("common.delete")}">${icon("x", 16)}</button></td>
               </tr>`,
             )
             .join("")}

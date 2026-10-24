@@ -148,7 +148,7 @@ export function renderPlanTree(
       fRow.style.paddingLeft = `${depth * 1.1}rem`;
       fRow.draggable = true;
       fRow.innerHTML =
-        `<button class="tree-tw icon-btn">${icon(isOpen ? "chevronDown" : "chevron", 16)}</button>` +
+        `<button class="tree-tw icon-btn" title="${t("common.expand")}">${icon(isOpen ? "chevronDown" : "chevron", 16)}</button>` +
         `<span class="tree-ico">${icon(isOpen ? "folderOpen" : "folder", 16)}</span><span class="tree-name">${esc(f.name)}</span>` +
         `<span class="tree-count">${(folderPlans.get(f.id) ?? []).length}</span>` +
         (canCreateFolders

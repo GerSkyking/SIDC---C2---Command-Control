@@ -25,13 +25,13 @@ export function openLightbox(items: LightboxItem[], start = 0): void {
   back.className = "lightbox";
   back.innerHTML = `
     <button class="lb-x" title="${t("lightbox.close")}">${icon("x", 20)}</button>
-    ${items.length > 1 ? `<button class="lb-nav lb-prev">${icon("back", 24)}</button>` : ""}
+    ${items.length > 1 ? `<button class="lb-nav lb-prev" title="${t("common.prev")}">${icon("back", 24)}</button>` : ""}
     <figure class="lb-fig">
       <img class="lb-img" alt="" />
       <figcaption class="lb-cap"></figcaption>
       <div class="lb-note"></div>
     </figure>
-    ${items.length > 1 ? `<button class="lb-nav lb-next">${icon("chevron", 24)}</button>` : ""}`;
+    ${items.length > 1 ? `<button class="lb-nav lb-next" title="${t("common.next")}">${icon("chevron", 24)}</button>` : ""}`;
 
   const img = back.querySelector<HTMLImageElement>(".lb-img")!;
   const cap = back.querySelector<HTMLElement>(".lb-cap")!;

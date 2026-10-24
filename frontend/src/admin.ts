@@ -117,7 +117,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
                     <td>${esc(r.filename)}</td><td>${fb(r.byte_size)}</td>
                     <td>${esc(r.plan_name)}</td><td>${esc(r.phase_name)}</td>
                     <td>${esc(r.uploader)}</td><td>${rel(r.created_at)}</td>
-                    <td><button class="icon-btn" data-img-del>${icon("trash", 14)}</button></td>
+                    <td><button class="icon-btn" data-img-del title="${t("common.delete")}">${icon("trash", 14)}</button></td>
                   </tr>`,
                 )
                 .join("")}</tbody></table>`
@@ -281,7 +281,7 @@ function userRow(u: AdminUser): string {
       </details>
     </td>
     <td>${u.is_local ? `<button data-reset>${t("admin.passwordShort")}</button>` : ""}
-        <button class="icon-btn" data-del>${icon("x", 16)}</button></td>
+        <button class="icon-btn" data-del title="${t("common.delete")}">${icon("x", 16)}</button></td>
   </tr>`;
 }
 
@@ -313,6 +313,6 @@ function groupRow(g: AdminGroup, users: AdminUser[]): string {
         </div>
       </details>
     </td>
-    <td><button class="icon-btn" data-delg>${icon("x", 16)}</button></td>
+    <td><button class="icon-btn" data-delg title="${t("common.delete")}">${icon("x", 16)}</button></td>
   </tr>`;
 }

@@ -246,7 +246,7 @@ export function openSettings(): void {
 
   back.innerHTML = `<div class="card set-card">
     <div class="row"><h1 style="flex:1">${icon("settings")} ${t("settings.title")}</h1>
-      <button class="icon-btn" data-x>${icon("x")}</button></div>
+      <button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
     <h4>${t("settings.displayName")}</h4>
     <input id="set-dname" maxlength="64" value="${esc(currentMe?.display_name ?? "")}"
       placeholder="${esc(currentMe?.username ?? "")}" style="width:100%" />

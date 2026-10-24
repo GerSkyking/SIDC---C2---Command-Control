@@ -112,7 +112,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
     return `
       <div class="orb-node" data-n="${n.id}" draggable="${canEdit}" style="margin-left:${depth * 1.2}rem">
         <div class="orb-row">
-          ${kids.length ? `<button class="orb-tw" data-tw="${n.id}">${icon(isOpen ? "chevronDown" : "chevron", 14)}</button>` : `<span class="orb-tw"></span>`}
+          ${kids.length ? `<button class="orb-tw" data-tw="${n.id}" title="${t("common.expand")}">${icon(isOpen ? "chevronDown" : "chevron", 14)}</button>` : `<span class="orb-tw"></span>`}
           <img class="orb-ico" src="${n.sidc ? iconSrc(n.sidc) : ""}" alt="" data-hide-on-error />
           <span class="orb-name">${n.name}</span>
           <span class="orb-qty" title="${t("orbat.qtyCurrent")} / ${t("orbat.maxStrength")}${kids.length ? " (+ Untergliederungen)" : ""}">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}${kids.length ? ` <span class="orb-sub-sum">+${descSum(n.id)}</span>` : ""}</span>
@@ -281,7 +281,7 @@ function editNode(
   back.className = "edit-modal";
   back.innerHTML = `<div class="card" style="width:min(30rem,96vw)">
     <div class="row"><h1 style="flex:1;margin:0">${isNew ? t("orbat.newNode") : t("orbat.editNode")}</h1>
-      <button class="icon-btn" data-x>${icon("x")}</button></div>
+      <button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
     <label class="chk-lbl">${t("common.name")}<input data-f="name" value="${n.name ?? ""}" /></label>
     <label class="chk-lbl">${t("marker.heading")}
       <span class="orb-sym-pick">
@@ -363,7 +363,7 @@ function openOrbatAcl(orbatId: string): void {
     let rows: any[] = entries.map((e) => ({ ...e }));
     const draw = () => {
       back.innerHTML = `<div class="card" style="width:min(38rem,96vw)">
-        <div class="row"><h1 style="flex:1;margin:0">${t("orbat.aclTitle")}</h1><button class="icon-btn" data-x>${icon("x")}</button></div>
+        <div class="row"><h1 style="flex:1;margin:0">${t("orbat.aclTitle")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
         <table class="acl-tbl"><thead><tr><th>${t("acl.who")}</th><th>${t("acl.role")}</th><th>${t("orbat.canPlace")}</th><th>${t("orbat.canMove")}</th><th></th></tr></thead><tbody>
         ${rows
           .map((r, i) => {
@@ -373,7 +373,7 @@ function openOrbatAcl(orbatId: string): void {
               <td><select data-i="${i}" data-f="level"><option value="viewer" ${r.level === "viewer" ? "selected" : ""}>${t("acl.role.viewer")}</option><option value="editor" ${r.level === "editor" ? "selected" : ""}>${t("acl.role.editor")}</option></select></td>
               <td><input type="checkbox" data-i="${i}" data-f="can_place" ${r.can_place ? "checked" : ""}/></td>
               <td><input type="checkbox" data-i="${i}" data-f="can_move" ${r.can_move ? "checked" : ""}/></td>
-              <td><button class="icon-btn" data-del="${i}">${icon("x", 14)}</button></td>
+              <td><button class="icon-btn" data-del="${i}" title="${t("common.delete")}">${icon("x", 14)}</button></td>
             </tr>`;
           })
           .join("")}

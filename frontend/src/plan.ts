@@ -151,7 +151,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       back.className = "edit-modal";
       back.innerHTML = `<div class="card stack" style="width:min(34rem,92vw)">
         <div class="row"><strong style="flex:1">${t("img.pickTitle")}</strong>
-          <button class="icon-btn" data-x>${icon("x", 16)}</button></div>
+          <button class="icon-btn" data-x title="${t("common.close")}">${icon("x", 16)}</button></div>
         <div class="ir-pick">${
           list.length
             ? list
@@ -547,7 +547,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
     <div class="hud" id="hud">X: –  Y: –  H: –</div>
     <div class="mk-scale" id="mkScale">
-      <button type="button" class="mk-scale-head"><span>${t("scale.title")}</span><span class="chev">▾</span></button>
+      <button type="button" class="mk-scale-head" title="${t("scale.toggle")}"><span>${t("scale.title")}</span><span class="chev">▾</span></button>
       <div class="mk-scale-row" title="${t("marker.scaleLocal")}">
         ${icon("marker", 13)}
         <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
@@ -2017,9 +2017,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     presentBar = document.createElement("div");
     presentBar.className = "present-bar";
     presentBar.innerHTML =
-      `<button class="icon-btn" data-pb="prev">${icon("back")}</button>` +
+      `<button class="icon-btn" data-pb="prev" title="${t("common.prev")}">${icon("back")}</button>` +
       `<span class="pb-name"></span>` +
-      `<button class="icon-btn" data-pb="next">${icon("chevron")}</button>` +
+      `<button class="icon-btn" data-pb="next" title="${t("common.next")}">${icon("chevron")}</button>` +
       `<button class="icon-btn" data-pb="exit" title="${t("present.exit")}">${icon("x")}</button>`;
     root.appendChild(presentBar);
     presentBar.querySelector('[data-pb="prev"]')!.addEventListener("click", () => stepPhase(-1));
@@ -2332,7 +2332,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   notesWin.innerHTML = `
     <div class="notes-head"><span>${t("notes.title")}</span><span class="grow"></span>
       ${canEdit ? `<button class="notes-img icon-btn" title="${t("notes.insertImage")}">${icon("image", 16)}</button>` : ""}
-      <button class="notes-x icon-btn">${icon("x", 16)}</button></div>
+      <button class="notes-x icon-btn" title="${t("common.close")}">${icon("x", 16)}</button></div>
     <div class="notes-tabs"></div>
     <div class="notes-times"></div>
     <div class="notes-split">
@@ -4115,7 +4115,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const back = document.createElement("div");
     back.className = "edit-modal";
     back.innerHTML = `<div class="card" style="width:min(24rem,96vw)">
-      <div class="row"><h1 style="flex:1;margin:0">${t("line.edit")}</h1><button class="icon-btn" data-x>${icon("x")}</button></div>
+      <div class="row"><h1 style="flex:1;margin:0">${t("line.edit")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
       <label class="chk-lbl">${t("phase.assign")}
         <select data-sphase>
           ${selectablePhases()
@@ -4193,7 +4193,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             .map(
               (f) => `<div class="fav" data-fav="${esc(f.id)}">
                 <img src="${esc(iconSrc(f.sidc, 28, f.tint || undefined))}" width="24" height="24" data-hide-on-error/>
-                <span>${esc(f.label)}</span><button class="icon-btn" data-delfav="${esc(f.id)}">${icon("x", 14)}</button></div>`,
+                <span>${esc(f.label)}</span><button class="icon-btn" data-delfav="${esc(f.id)}" title="${t("common.delete")}">${icon("x", 14)}</button></div>`,
             )
             .join("")
         : `<div class="muted">${t("fav.hint")}</div>`);
@@ -4685,7 +4685,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const back = document.createElement("div");
     back.className = "edit-modal";
     back.innerHTML = `<div class="card" style="width:min(34rem,96vw)">
-      <div class="row"><h1 style="flex:1;margin:0">${t("annot.title")}</h1><button class="icon-btn" data-x>${icon("x")}</button></div>
+      <div class="row"><h1 style="flex:1;margin:0">${t("annot.title")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
       <textarea class="notes-edit annot-edit" rows="6" placeholder="${t("annot.hint")}"></textarea>
       <label style="margin-top:.4rem">${t("phase.assign")}</label>
       <select data-aphase>

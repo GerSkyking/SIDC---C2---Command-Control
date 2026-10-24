@@ -152,7 +152,7 @@ export function openHelp(): void {
   const back = document.createElement("div");
   back.className = "edit-modal";
   back.innerHTML = `<div class="card help-card">
-      <div class="row"><h1 style="flex:1;margin:0">${t("help.title")}</h1><button class="help-x icon-btn">${icon("x")}</button></div>
+      <div class="row"><h1 style="flex:1;margin:0">${t("help.title")}</h1><button class="help-x icon-btn" title="${t("common.close")}">${icon("x")}</button></div>
       <div class="help-body">${mini(getLang() === "en" ? EN : DE)}</div>
     </div>`;
   document.body.appendChild(back);

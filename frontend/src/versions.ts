@@ -13,7 +13,7 @@ export function openVersionPanel(
   const back = document.createElement("div");
   back.className = "edit-modal";
   back.innerHTML = `<div class="card ver-card">
-      <div class="row"><h1 style="flex:1;margin:0">${t("versions.title")}</h1><button class="ver-x icon-btn">${icon("x")}</button></div>
+      <div class="row"><h1 style="flex:1;margin:0">${t("versions.title")}</h1><button class="ver-x icon-btn" title="${t("common.close")}">${icon("x")}</button></div>
       ${
         canSave
           ? `<div class="row">

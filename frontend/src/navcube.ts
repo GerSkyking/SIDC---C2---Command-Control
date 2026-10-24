@@ -30,11 +30,11 @@ export function initNavCube(
     <button class="navcube-home" title="${t("navcube.home")}">⌂</button>
     <div class="ncube-ring"><b>N</b></div>
     <div class="ncube">
-      <button class="ncf ncf-top" data-face="top">TOP</button>
-      <button class="ncf ncf-n" data-face="n">S</button>
-      <button class="ncf ncf-s" data-face="s">N</button>
-      <button class="ncf ncf-e" data-face="e">W</button>
-      <button class="ncf ncf-w" data-face="w">O</button>
+      <button class="ncf ncf-top" data-face="top" title="${t("navcube.top")}">TOP</button>
+      <button class="ncf ncf-n" data-face="n" title="${t("navcube.south")}">S</button>
+      <button class="ncf ncf-s" data-face="s" title="${t("navcube.north")}">N</button>
+      <button class="ncf ncf-e" data-face="e" title="${t("navcube.west")}">W</button>
+      <button class="ncf ncf-w" data-face="w" title="${t("navcube.east")}">O</button>
     </div>
     <button class="ncc ncc-nw" data-face="nw" title="NW"></button>
     <button class="ncc ncc-ne" data-face="ne" title="NO"></button>
