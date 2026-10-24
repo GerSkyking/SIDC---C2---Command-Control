@@ -462,6 +462,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <span class="badge" title="${t("plan.yourRole")}">${esc(myPlan?.level ?? "?")}</span>
       <button id="t3d" title="${t("map.threeD")}">3D</button>
       ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") + hk("north") })}
+      <label class="chk" title="${t("map.lockRotHint")}"><input type="checkbox" id="rotLock" /> ${t("map.lockRot")}</label>
       ${
         canEdit
           ? iconBtn("undo", { id: "undo", title: t("edit.undo") + hk("undo") }) +
@@ -3732,6 +3733,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         : m === "markermove"
           ? "move"
           : "";
+  // „Lock Rotation": Karte bleibt immer genordet
+  let rotLocked = localStorage.getItem("sidc_rotlock") === "1";
+  map.on("rotate", () => {
+    if (rotLocked && Math.abs(map.getBearing()) > 0.01) map.setBearing(0);
+  });
   const setMode = (m: Mode) => {
     mode = m;
     toolbar.querySelectorAll("[data-mode]").forEach((b) =>
@@ -3741,8 +3747,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     // Zeigen + Linie + Radierer + Messen + Marker-Verschieben: Karte fixieren
     if (m === "point" || m === "line" || m === "erase" || m === "measure" || m === "markermove") map.dragPan.disable();
     else map.dragPan.enable();
-    // Drehen nur im normalen Karten-Werkzeug
-    if (m === "move") {
+    // Drehen nur im normalen Karten-Werkzeug (und nicht bei „Lock Rotation")
+    if (m === "move" && !rotLocked) {
       map.dragRotate.enable();
       map.touchZoomRotate.enableRotation();
     } else {
@@ -3895,6 +3901,31 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   document.addEventListener("mouseup", () => (erasing = false));
   map.getCanvas().addEventListener("mouseleave", () => (eraserRing.hidden = true));
 
+  {
+    const cb = root.querySelector<HTMLInputElement>("#rotLock")!;
+    cb.checked = rotLocked;
+    const apply = () => {
+      if (rotLocked) {
+        map.easeTo({ bearing: 0, duration: 300 });
+        map.dragRotate.disable();
+        map.touchZoomRotate.disableRotation();
+        map.keyboard.disableRotation();
+      } else {
+        setMode(mode); // stellt Drehen je nach Werkzeug wieder her
+        map.keyboard.enableRotation();
+      }
+    };
+    cb.addEventListener("change", () => {
+      rotLocked = cb.checked;
+      try {
+        localStorage.setItem("sidc_rotlock", rotLocked ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      apply();
+    });
+    if (rotLocked) apply();
+  }
   root.querySelector("#settingsBtn")!.addEventListener("click", openSettings);
 
   // Tastenkürzel (pro Nutzer, im Einstellungs-Menü umbelegbar).
