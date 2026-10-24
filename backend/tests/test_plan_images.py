@@ -162,3 +162,45 @@ def test_public_share_phase_visibility(admin):
     assert shown["id"] in ids and hidden["id"] not in ids
     assert admin.get(f"/public/plans/{tok}/images/{shown['id']}/raw").status_code == 200
     assert admin.get(f"/public/plans/{tok}/images/{hidden['id']}/raw").status_code == 404
+
+
+def test_builder_images_hidden_from_plain_viewer(admin, client):
+    pid = _plan(admin)
+    phases = admin.get(f"/plans/{pid}/phases").json()
+    player_ph = next(p for p in phases if p["plane"] == "player")
+    # Zwischenphase 1.1 ist verborgen (anders als die für alle sichtbare Base-Spiegelphase)
+    builder_ph = admin.post(
+        f"/plans/{pid}/phases", json={"name": "1.1", "plane": "builder", "parent_id": player_ph["id"]}
+    ).json()
+    secret = _upload(admin, pid, PNG, phase_id=builder_ph["id"]).json()
+    plain = _upload(admin, pid, PNG, phase_id=player_ph["id"]).json()
+
+    admin.post("/api/admin/users", json={"username": "view", "password": "pw-1234567890", "role": "user"})
+    uid = next(u["id"] for u in admin.get("/api/admin/users").json() if u["username"] == "view")
+    admin.put(f"/plans/{pid}/acl", json=[
+        {"subject_type": "user", "subject_id": uid, "level": "viewer"},
+        {"subject_type": "user", "subject_id": admin.get("/auth/me").json()["id"], "level": "owner"},
+    ])
+    assert admin.get(f"/plans/{pid}/images/{secret['id']}/raw").status_code == 200
+
+    client.post("/auth/login", json={"username": "view", "password": "pw-1234567890"})
+    ids = {i["id"] for i in client.get(f"/plans/{pid}/images").json()}
+    assert plain["id"] in ids and secret["id"] not in ids
+    assert client.get(f"/plans/{pid}/images/{secret['id']}/raw").status_code == 404
+    assert client.get(f"/plans/{pid}/images/{plain['id']}/raw").status_code == 200
+
+
+def test_public_live_respects_share_scope(admin, client):
+    """Live-Updates außerhalb der Share-Phasen erreichen den öffentlichen Socket nicht;
+    `author` wird entfernt."""
+    pid = _plan(admin)
+    p_player = next(p for p in admin.get(f"/plans/{pid}/phases").json() if p["plane"] == "player")
+    p_other = admin.post(f"/plans/{pid}/phases", json={"name": "Verdeckt"}).json()
+    tok = admin.post(f"/plans/{pid}/shares", json={"phase_ids": [p_player["id"]]}).json()["token"]
+
+    with client.websocket_connect(f"/public/plans/{tok}/live") as pub:
+        _upload(admin, pid, PNG, phase_id=p_other["id"])  # außerhalb -> nicht zustellen
+        shown = _upload(admin, pid, PNG, phase_id=p_player["id"]).json()
+        msg = pub.receive_json()
+        assert msg["type"] == "image.upsert" and msg["image"]["id"] == shown["id"]
+        assert "author" not in msg["image"]

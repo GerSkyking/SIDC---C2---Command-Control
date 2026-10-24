@@ -17,9 +17,10 @@ from starlette.concurrency import run_in_threadpool
 from ..config import get_settings
 from ..deps import CurrentUser, DbDep, require_plan_level
 from ..models import Plan, PlanImage
-from ..permissions import effective_mission_builder
+from ..permissions import effective_mission_builder, effective_zeus
 from ..services.realtime import hub
 from .live import _author_of, _create_image, _image_out, _phase_is_builder
+from .plans import _builder_phase_ids, _released_builder_phase_ids, _zeus_released_phase_ids
 
 router = APIRouter(prefix="/plans", tags=["plan-images"])
 _settings = get_settings()
@@ -82,7 +83,16 @@ async def upload_image(
     plan: EditorPlan, request: Request, user: CurrentUser, db: DbDep,
     phase_id: str = "", caption: str = "", w: int = 0, h: int = 0,
 ) -> dict:
-    raw = await request.body()
+    limit = _settings.image_max_mb * 1024 * 1024
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > limit:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Bild zu groß")
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf += chunk
+        if len(buf) > limit:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Bild zu groß")
+    raw = bytes(buf)
     if not raw:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Leerer Upload")
     if len(raw) > _settings.image_max_mb * 1024 * 1024:
@@ -107,18 +117,30 @@ async def upload_image(
     return out
 
 
+def _hidden_phase_ids(db, user, plan_id: str) -> set[str]:
+    """Missionsbau-Phasen, die dieser Nutzer nicht sehen darf (wie get_snapshot)."""
+    if effective_mission_builder(db, user):
+        return set()
+    hide = _builder_phase_ids(db, plan_id) - _released_builder_phase_ids(db, plan_id)
+    if effective_zeus(db, user):
+        hide -= _zeus_released_phase_ids(db, plan_id)
+    return hide
+
+
 @router.get("/{plan_id}/images")
-def list_images(plan: ViewerPlan, db: DbDep) -> list[dict]:
+def list_images(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> list[dict]:
+    hide = _hidden_phase_ids(db, user, plan.id)
     return [
         _image_out(i, _author_of(db, i))
         for i in db.scalars(select(PlanImage).where(PlanImage.plan_id == plan.id).order_by(PlanImage.created_at))
+        if i.phase_id not in hide
     ]
 
 
 @router.get("/{plan_id}/images/{image_id}/raw")
-def image_raw(plan: ViewerPlan, image_id: str, db: DbDep) -> Response:
+def image_raw(plan: ViewerPlan, image_id: str, user: CurrentUser, db: DbDep) -> Response:
     i = db.get(PlanImage, image_id)
-    if i is None or i.plan_id != plan.id:
+    if i is None or i.plan_id != plan.id or i.phase_id in _hidden_phase_ids(db, user, plan.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     return Response(
         i.data, media_type=i.content_type,

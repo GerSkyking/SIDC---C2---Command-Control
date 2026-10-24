@@ -161,3 +161,28 @@ def test_ping_reports_protocol_and_user(admin):
     data = c.get("/api/client/ping").json()
     assert data["protocol"] == 2 and data["token"]["name"] == "Sky Laptop"
     assert data["token"]["scopes"] == ["maps:read"] and data["user"]["label"]
+
+
+def test_password_reset_revokes_api_tokens(admin):
+    admin.post("/api/admin/users", json={"username": "tokuser", "password": "pw-1234567890", "role": "user"})
+    uid = next(u["id"] for u in admin.get("/api/admin/users").json() if u["username"] == "tokuser")
+    u = TestClient(app)
+    assert u.post("/auth/login", json={"username": "tokuser", "password": "pw-1234567890"}).status_code == 200
+    tok = u.post("/api/tokens", json={"name": "t"}).json()["token"]
+    assert _bearer(tok).get("/api/client/ping").status_code == 200
+
+    assert admin.patch(f"/api/admin/users/{uid}", json={"password": "new-pw-1234567890"}).status_code == 200
+    assert _bearer(tok).get("/api/client/ping").status_code == 401
+
+
+def test_map_routes_reject_traversal_ids(admin):
+    for bad in ("..", "."):
+        assert admin.get(f"/api/maps/{bad}/topo.geojson").status_code in (404, 405)
+    from fastapi import HTTPException
+    import pytest
+
+    from app.services.maps_import import map_dir
+
+    with pytest.raises(HTTPException):
+        map_dir("..")
+    assert map_dir("arland").name == "arland"

@@ -3,6 +3,7 @@
 import { api, ApiError, type MapItem, type MapSource } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
+import { esc } from "./esc";
 import { confirmDialog, toastError } from "./notify";
 
 export const CATALOGS: { key: string; label: string; file: string }[] = [
@@ -31,14 +32,14 @@ export function configHtml(
       ${maps
         .map(
           (m) => `<tr>
-            <td>${m.name} <span class="muted">${m.id}</span></td>
-            <td><span class="badge">${m.status}</span></td>
-            <td class="muted">${m.error ?? ""}</td>
+            <td>${esc(m.name)} <span class="muted">${esc(m.id)}</span></td>
+            <td><span class="badge">${esc(m.status)}</span></td>
+            <td class="muted">${esc(m.error ?? "")}</td>
             <td>
-              <input type="file" accept=".zip" data-upd="${m.id}" style="display:none" />
-              <button data-updbtn="${m.id}">${t("admin.update")}</button>
-              <button data-reimport="${m.id}">${t("admin.fromLink")}</button>
-              <button class="icon-btn" data-delmap="${m.id}" title="${t("common.delete")}">${icon("trash", 16)}</button>
+              <input type="file" accept=".zip" data-upd="${esc(m.id)}" style="display:none" />
+              <button data-updbtn="${esc(m.id)}">${t("admin.update")}</button>
+              <button data-reimport="${esc(m.id)}">${t("admin.fromLink")}</button>
+              <button class="icon-btn" data-delmap="${esc(m.id)}" title="${t("common.delete")}">${icon("trash", 16)}</button>
             </td>
           </tr>`,
         )
@@ -62,12 +63,12 @@ export function configHtml(
     <div class="stack">
       ${sources
         .map(
-          (s) => `<div class="row src-row" data-src="${s.id}">
-            <span class="grow"><strong>${s.name}</strong> <span class="muted">${s.base_url}/${s.repo}${s.has_token ? " 🔑" : ""}</span></span>
-            <button data-src-files="${s.id}">${t("src.browse")}</button>
-            <button class="icon-btn" data-src-del="${s.id}" title="${t("common.delete")}">${icon("trash", 16)}</button>
+          (s) => `<div class="row src-row" data-src="${esc(s.id)}">
+            <span class="grow"><strong>${esc(s.name)}</strong> <span class="muted">${esc(s.base_url)}/${esc(s.repo)}${s.has_token ? " 🔑" : ""}</span></span>
+            <button data-src-files="${esc(s.id)}">${t("src.browse")}</button>
+            <button class="icon-btn" data-src-del="${esc(s.id)}" title="${t("common.delete")}">${icon("trash", 16)}</button>
           </div>
-          <div class="src-files" data-src-files-for="${s.id}"></div>`,
+          <div class="src-files" data-src-files-for="${esc(s.id)}"></div>`,
         )
         .join("")}
       <div class="row">
@@ -214,17 +215,17 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
                   /phaseline|phase.line/i.test(f.name) ? "phaseline-style" :
                   /allmarker|all.marker/i.test(f.name) ? "all-markers" : "";
                 return `<div class="row src-file">
-                  <span class="grow">${f.name} <span class="muted">${sz}</span></span>
+                  <span class="grow">${esc(f.name)} <span class="muted">${sz}</span></span>
                   ${
                     isZip
                       ? `<input data-sf-id="${i}" value="${guessId}" placeholder="map-id" style="width:8rem" />
                          <input data-sf-name="${i}" value="${guessId}" placeholder="Name" style="width:9rem" />
-                         <button class="primary" data-sf-map="${i}" data-path="${f.path}">${t("src.importAsMap")}</button>`
+                         <button class="primary" data-sf-map="${i}" data-path="${esc(f.path)}">${t("src.importAsMap")}</button>`
                       : `<select data-sf-cat="${i}">${catOpts.replace(
                           `value="${guessCat}"`,
                           `value="${guessCat}" selected`,
                         )}</select>
-                         <button class="primary" data-sf-catimp="${i}" data-path="${f.path}">${t("src.import")}</button>`
+                         <button class="primary" data-sf-catimp="${i}" data-path="${esc(f.path)}">${t("src.import")}</button>`
                   }
                 </div>`;
               })
@@ -259,7 +260,7 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
           }),
         );
       } catch (e) {
-        box.innerHTML = `<span class="error">${e instanceof ApiError ? e.message : "Fehler"}</span>`;
+        box.innerHTML = `<span class="error">${esc(e instanceof ApiError ? e.message : "Fehler")}</span>`;
       }
     }),
   );

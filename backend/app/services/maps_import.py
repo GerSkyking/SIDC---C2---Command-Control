@@ -17,22 +17,31 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import sqlite3
 import zipfile
 from pathlib import Path
 
 import httpx
+from fastapi import HTTPException
 
 from ..config import get_settings
 from ..db import SessionLocal
 from ..models import Map, now
 
 log = logging.getLogger("sidc.maps")
+_UNPACK_FACTOR = 4  # MBTiles sind schon komprimiert; großzügiges Limit gegen ZIP-Bomben
 _settings = get_settings()
 
 
+_MAP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+
+
 def map_dir(map_id: str) -> Path:
+    """Kartenverzeichnis; die ID kommt teils roh aus der URL -> kein "..", "." o. Ä."""
+    if not _MAP_ID_RE.match(map_id):
+        raise HTTPException(404, "Karte nicht gefunden")
     return _settings.maps_dir / map_id
 
 
@@ -215,8 +224,13 @@ def _validate_locations(dest: Path) -> dict | None:
 
 def _safe_extract(zf: zipfile.ZipFile, dest: Path) -> None:
     dest = dest.resolve()
+    total = 0
+    limit = _settings.map_import_max_mb * 1024 * 1024 * _UNPACK_FACTOR
     for member in zf.infolist():
         target = (dest / member.filename).resolve()
-        if not str(target).startswith(str(dest)):
-            raise ValueError(f"Zip-Slip abgewehrt: {member.filename}")
+        if not target.is_relative_to(dest):
+            raise ValueError("Zip-Slip abgewehrt")
+        total += member.file_size
+        if total > limit:
+            raise ValueError("Archiv entpackt zu groß")
     zf.extractall(dest)

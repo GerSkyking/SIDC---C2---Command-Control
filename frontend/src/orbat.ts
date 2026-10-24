@@ -3,6 +3,7 @@ import { api, type Me, type Orbat, type OrbatNode } from "./api";
 import { langSelect, t, wireLangSelect } from "./i18n";
 import { confirmDialog, toastError } from "./notify";
 import { icon } from "./icons";
+import { esc } from "./esc";
 import { iconSrc } from "./sidc/symbol";
 import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
@@ -39,9 +40,9 @@ export async function renderOrbatLibrary(app: HTMLElement, me: Me, selectedId?: 
         ${list
           .map(
             (o) =>
-              `<a class="orbat-li ${o.id === sel ? "active" : ""}" href="#/orbat/${o.id}">
+              `<a class="orbat-li ${o.id === sel ? "active" : ""}" href="#/orbat/${esc(o.id)}">
                  <span class="badge aff-${o.affiliation}">${t("orbat.aff." + o.affiliation)}</span>
-                 <span class="grow">${o.name}</span>
+                 <span class="grow">${esc(o.name)}</span>
                </a>`,
           )
           .join("") || `<p class="muted">${t("orbat.none")}</p>`}
@@ -110,11 +111,11 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
     const kids = byParent.get(n.id) ?? [];
     const isOpen = open.has(n.id);
     return `
-      <div class="orb-node" data-n="${n.id}" draggable="${canEdit}" style="margin-left:${depth * 1.2}rem">
+      <div class="orb-node" data-n="${esc(n.id)}" draggable="${canEdit}" style="margin-left:${depth * 1.2}rem">
         <div class="orb-row">
           ${kids.length ? `<button class="orb-tw" data-tw="${n.id}" title="${t("common.expand")}">${icon(isOpen ? "chevronDown" : "chevron", 14)}</button>` : `<span class="orb-tw"></span>`}
           <img class="orb-ico" src="${n.sidc ? iconSrc(n.sidc) : ""}" alt="" data-hide-on-error />
-          <span class="orb-name">${n.name}</span>
+          <span class="orb-name">${esc(n.name)}</span>
           <span class="orb-qty" title="${t("orbat.qtyCurrent")} / ${t("orbat.maxStrength")}${kids.length ? " (+ Untergliederungen)" : ""}">${n.qty_current ?? "?"}/${n.qty_planned ?? "?"}${kids.length ? ` <span class="orb-sub-sum">+${descSum(n.id)}</span>` : ""}</span>
           ${statusPill(n.status)}
           <span class="orb-rel">${relSummary(n)}</span>
@@ -139,7 +140,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
   const sumMax = nodes.reduce((a, n) => a + (n.qty_planned ?? 0), 0);
   host.innerHTML = `
     <div class="orb-head">
-      <input class="orb-title" value="${o.name}" ${canEdit ? "" : "disabled"} />
+      <input class="orb-title" value="${esc(o.name)}" ${canEdit ? "" : "disabled"} />
       <select class="orb-aff" ${canEdit ? "" : "disabled"}>
         ${AFFIL.map((a) => `<option value="${a}" ${a === o.affiliation ? "selected" : ""}>${t("orbat.aff." + a)}</option>`).join("")}
       </select>
@@ -282,7 +283,7 @@ function editNode(
   back.innerHTML = `<div class="card" style="width:min(30rem,96vw)">
     <div class="row"><h1 style="flex:1;margin:0">${isNew ? t("orbat.newNode") : t("orbat.editNode")}</h1>
       <button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
-    <label class="chk-lbl">${t("common.name")}<input data-f="name" value="${n.name ?? ""}" /></label>
+    <label class="chk-lbl">${t("common.name")}<input data-f="name" value="${esc(n.name ?? "")}" /></label>
     <label class="chk-lbl">${t("marker.heading")}
       <span class="orb-sym-pick">
         <img data-sym-prev width="30" height="30" src="${n.sidc ? iconSrc(n.sidc) : ""}" data-hide-on-error/>
@@ -369,7 +370,7 @@ function openOrbatAcl(orbatId: string): void {
           .map((r, i) => {
             const name = candidates.find((c: any) => c.subject_type === r.subject_type && c.subject_id === r.subject_id)?.name ?? r.subject_id.slice(0, 8);
             return `<tr>
-              <td>${name}</td>
+              <td>${esc(name)}</td>
               <td><select data-i="${i}" data-f="level"><option value="viewer" ${r.level === "viewer" ? "selected" : ""}>${t("acl.role.viewer")}</option><option value="editor" ${r.level === "editor" ? "selected" : ""}>${t("acl.role.editor")}</option></select></td>
               <td><input type="checkbox" data-i="${i}" data-f="can_place" ${r.can_place ? "checked" : ""}/></td>
               <td><input type="checkbox" data-i="${i}" data-f="can_move" ${r.can_move ? "checked" : ""}/></td>
@@ -379,7 +380,7 @@ function openOrbatAcl(orbatId: string): void {
           .join("")}
         </tbody></table>
         <div class="row" style="margin-top:.5rem"><select data-add><option value="">${t("acl.addSubject")}</option>
-          ${candidates.filter((c: any) => !rows.some((r) => r.subject_type === c.subject_type && r.subject_id === c.subject_id)).map((c: any) => `<option value="${c.subject_type}:${c.subject_id}">${c.name}</option>`).join("")}
+          ${candidates.filter((c: any) => !rows.some((r) => r.subject_type === c.subject_type && r.subject_id === c.subject_id)).map((c: any) => `<option value="${esc(c.subject_type)}:${esc(c.subject_id)}">${esc(c.name)}</option>`).join("")}
         </select></div>
         <p class="muted">${t("orbat.aclHint")}</p>
         <div class="row" style="margin-top:.6rem"><button class="primary" data-save style="flex:1">${t("common.save")}</button></div>

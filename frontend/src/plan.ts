@@ -1277,7 +1277,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const presenceEl = root.querySelector<HTMLSpanElement>("#presence")!;
   const names = new Map<string, string>();
   const renderPresence = () =>
-    (presenceEl.innerHTML = [...names.values()].map((n) => `<span class="badge">${n}</span>`).join(""));
+    (presenceEl.innerHTML = [...names.values()].map((n) => `<span class="badge">${esc(n)}</span>`).join(""));
 
   socket.on((msg: WsMessage) => {
     switch (msg.type) {
@@ -3258,7 +3258,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       sel.hidden = true;
       return;
     }
-    sel.innerHTML = locData.langs.map((l) => `<option value="${l}" ${l === mapLang ? "selected" : ""}>${l}</option>`).join("");
+    sel.innerHTML = locData.langs.map((l) => `<option value="${esc(l)}" ${l === mapLang ? "selected" : ""}>${esc(l)}</option>`).join("");
     sel.addEventListener("change", () => {
       mapLang = sel.value;
       refreshLoc();

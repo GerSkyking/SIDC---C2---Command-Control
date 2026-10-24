@@ -122,13 +122,16 @@ def me(user: CurrentUser, db: DbDep) -> MeOut:
     return _me(db, user)
 
 
+_NAME_FORBIDDEN = frozenset("<>\"'`&")  # Anzeigename landet in HTML-Kontexten anderer Nutzer
+
+
 class ProfileIn(BaseModel):
     display_name: str = ""
 
 
 @router.patch("/me", response_model=MeOut)
 def patch_my_profile(body: ProfileIn, user: CurrentUser, db: DbDep) -> MeOut:
-    name = "".join(c for c in (body.display_name or "").strip() if c.isprintable())[:64]
+    name = "".join(c for c in (body.display_name or "").strip() if c.isprintable() and c not in _NAME_FORBIDDEN)[:64]
     user.display_name = name
     db.commit()
     return _me(db, user)

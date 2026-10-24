@@ -12,7 +12,8 @@ from sqlalchemy import desc, select
 
 from .. import audit
 from ..deps import AdminUser, DbDep
-from ..models import AuditLog, Group, GroupMember, ImagePlacement, Phase, Plan, PlanImage, User
+from ..models import ApiToken, AuditLog, Group, GroupMember, ImagePlacement, Phase, Plan, PlanImage, User
+from ..models import now as _now
 from ..security import MIN_PASSWORD_LEN, hash_password
 from ..services.realtime import hub
 
@@ -115,6 +116,8 @@ def patch_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbDep) -> Us
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Passwort min. {MIN_PASSWORD_LEN} Zeichen")
         u.password_hash = hash_password(body.password)
         u.session_epoch = (u.session_epoch or 0) + 1  # bestehende Sessions ungültig machen
+        for tok in db.scalars(select(ApiToken).where(ApiToken.user_id == u.id, ApiToken.revoked_at.is_(None))):
+            tok.revoked_at = _now()  # API-Tokens überleben keinen Passwort-Reset
     if body.role is not None:
         if u.id == admin.id and body.role != "admin":
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Eigene Adminrolle nicht entziehbar")

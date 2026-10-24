@@ -1,5 +1,6 @@
 // Freigabe-Editor für einen Plan (nur Owner): Subjekte (User/Gruppe) → Rolle +
 // feingranulare Rechte (setzen / bewegen / löschen / malen).
+import { esc } from "./esc";
 import { api, ApiError, type AclEntry, type Phase, type PublicShareRow, type ShareOpts } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
@@ -53,7 +54,7 @@ export async function openAclEditor(
           ${rows
             .map(
               (r, i) => `<tr>
-                <td>${nameOf(r.subject_type, r.subject_id)}</td>
+                <td>${esc(nameOf(r.subject_type, r.subject_id))}</td>
                 <td><select data-i="${i}" data-f="level">
                   ${(["viewer", "editor", "owner"] as const)
                     .map((l) => `<option value="${l}" ${l === r.level ? "selected" : ""}>${t("acl.role." + l)}</option>`)
@@ -139,7 +140,6 @@ export async function openAclEditor(
     });
   };
 
-  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
   async function renderShares(): Promise<void> {
     const box = backdrop.querySelector<HTMLDivElement>("#shares");

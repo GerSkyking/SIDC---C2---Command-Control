@@ -192,6 +192,20 @@ async def _reject(ws: WebSocket, cid: str | None, reason: str) -> None:
     await ws.send_json({"type": "reject", "cid": cid, "reason": reason})
 
 
+def _num(v) -> float:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    return f if f == f and abs(f) < 1e9 else 0.0
+
+
+def _arrow(v) -> list[float] | None:
+    if isinstance(v, (list, tuple)) and len(v) == 2:
+        return [_num(v[0]), _num(v[1])]
+    return None
+
+
 async def _handle(
     ws: WebSocket, plan_id: str, user: User, caps: dict, is_owner: bool,
     is_builder: bool, is_zeus: bool, msg: dict,
@@ -219,7 +233,11 @@ async def _handle(
 
     # presence.cursor immer erlaubt (auch für Nur-Leser sinnvoll: "Zeigen")
     if t == "presence.cursor":
-        await hub.broadcast(plan_id, {**msg, "uid": user.id, "user": user.label})
+        await hub.broadcast(plan_id, {
+            "type": "presence.cursor", "uid": user.id, "user": user.label,
+            "lng": _num(msg.get("lng")), "lat": _num(msg.get("lat")), "hl": bool(msg.get("hl")),
+            "arrow": _arrow(msg.get("arrow")),
+        })
         return
 
     need = {
@@ -229,8 +247,6 @@ async def _handle(
         "marker.lock": "move",
         "marker.delete": "delete",
         "stroke.commit": "draw",
-        "stroke.begin": "draw",
-        "stroke.append": "draw",
         "stroke.modify": "draw",
         "stroke.delete": "draw",
         "annotation.create": "place",
@@ -266,11 +282,6 @@ async def _handle(
         if blocked(pid) or any(blocked(x) for x in extras if isinstance(x, str)):
             await _reject(ws, msg.get("cid"), "Keine Berechtigung: Missionsbau-Ebene")
             return
-
-    if t in ("stroke.begin", "stroke.append"):
-        # Freihand-Zwischenschritte: an alle (die endgültige stroke.commit filtert)
-        await hub.broadcast(plan_id, {**msg, "uid": user.id})
-        return
 
     if t == "marker.create":
         data = {k: msg["data"].get(k) for k in MARKER_FIELDS if k in msg.get("data", {})}

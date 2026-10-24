@@ -5,6 +5,14 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-10-24 – Sicherheits-Nachaudit
+
+- Bilder aus verborgenen Missionsbau-Phasen sind für normale Viewer nicht mehr per Liste/Raw abrufbar.
+- Öffentliche Share-Links erhalten Live-Updates nur noch im Umfang ihrer Freigabe (ohne interne Nutzernamen).
+- Fehlendes HTML-Escaping in ORBAT, ACL-Dialog, Presence-Leiste und Admin-Config behoben; Anzeigenamen ohne `<>"'`&`.
+- Admin-Passwort-Reset widerruft API-Tokens; Karten-ID-Validierung, strengerer ZIP-Import, Upload-Limits beim Einlesen.
+- Details: `SECURITY-AUDIT.md` (Abschnitt „Nachaudit 2026-10-24“). Neue Tests in `test_plan_images.py` und `test_client_api.py`.
+
 ### 2026-10-24 – Markdown-Toolbar
 
 - **Tastatur-Icon** über jedem Markdown-Feld (Phasen-Notizen, Textfeld auf der Karte, Bild-Notiz, Lightbox-Notiz) blendet eine

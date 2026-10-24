@@ -81,6 +81,26 @@ In-Process bleibt gültig, solange 1 uvicorn-Worker (aktuell so).
 
 ---
 
+## Nachaudit 2026-10-24 (Code seit dem Audit vom 2026-09-10)
+
+Review der neuen Flächen (Bilder, API-Tokens, Share-Live, ORBAT, Admin-Config). Alle ✅.
+
+| # | Schwere | Befund | Fix |
+|---|---|---|---|
+| N1 | MEDIUM | `GET /plans/{id}/images` und `/images/{id}/raw` lieferten Bilder aus verborgenen Missionsbau-Phasen an jeden Viewer | gleiche Sichtbarkeitsregel wie `get_snapshot` (`plan_images._hidden_phase_ids`) |
+| N2 | MEDIUM | Phasen-/Datums-beschränkte Share-Links bekamen Live-Updates (und `author`-Namen) außerhalb ihres Umfangs | Pro-Socket-Filter im `Hub`, gesetzt vom öffentlichen WebSocket |
+| N3 | MEDIUM | ORBAT-UI ohne Escaping (stored HTML-Injection, Attribut-Breakout) | `esc()` in `orbat.ts` |
+| N4 | LOW–MED | Anzeigenamen unescaped in ACL-Dialog und Presence-Leiste | `esc()` in `acl.ts`/`plan.ts`; `<>"'`&` im Anzeigenamen entfernt |
+| N5 | LOW | Admin-Config rendert Kartenname/-fehler/Repo-Dateinamen unescaped | `esc()` in `adminConfig.ts` |
+| N6 | LOW | API-Tokens überlebten Admin-Passwort-Reset | Reset widerruft alle aktiven Tokens |
+| N7 | LOW | `map_id` aus der URL ungeprüft (`..`) | `map_dir()` erzwingt `^[a-z0-9][a-z0-9_-]{1,63}$` |
+| N8 | LOW | `_safe_extract`: Präfix-Vergleich, kein Größenlimit | `is_relative_to` + Limit 4× `MAP_IMPORT_MAX_MB` |
+| N9 | LOW | Bild-/Thumbnail-Upload las den ganzen Body vor der Größenprüfung; Cursor-Broadcast spreadete Client-JSON; tote `stroke.begin/append` | Streaming mit Abbruch, Feld-Whitelist, Zweige entfernt |
+
+Hinweis: Die CSP verhinderte bei N3–N5 Skriptausführung; möglich war HTML-/CSS-Injection.
+
+---
+
 ## ✅ Bereits solide (vor dem Audit)
 
 - Argon2id (`pwdlib`), `MIN_PASSWORD_LEN=12` konsistent geprüft

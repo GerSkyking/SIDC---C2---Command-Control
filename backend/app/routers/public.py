@@ -241,7 +241,7 @@ async def public_live(websocket: WebSocket, token: str) -> None:
         return
 
     from .live import (
-        IMAGE_UPDATE_FIELDS, MARKER_FIELDS, PLACEMENT_UPDATE_FIELDS, _create_annotation, _create_marker,
+        IMAGE_UPDATE_FIELDS, MARKER_FIELDS, _num, PLACEMENT_UPDATE_FIELDS, _create_annotation, _create_marker,
         _create_placement, _create_stroke, _delete_annotation, _delete_image, _delete_marker,
         _delete_placement, _delete_stroke, _image_owner_phase, _update_annotation, _update_image,
         _update_marker, _update_placement,
@@ -264,8 +264,20 @@ async def public_live(websocket: WebSocket, token: str) -> None:
             return False
         return allow is None or pid is None or pid in allow
 
+    def visible(msg: dict) -> dict | None:
+        """Live-Updates wie der Snapshot filtern: Objekte außerhalb der Freigabe-Phasen
+        nicht ausliefern, interne Nutzernamen (author) entfernen."""
+        for key in ("marker", "stroke", "annotation", "image", "placement"):
+            obj = msg.get(key)
+            if isinstance(obj, dict):
+                if not phase_ok(obj.get("phase_id")):
+                    return None
+                if "author" in obj:
+                    return {**msg, key: {k: v for k, v in obj.items() if k != "author"}}
+        return msg
+
     await websocket.accept()
-    await hub.join(plan_id, websocket)
+    await hub.join(plan_id, websocket, visible=visible)
     uid = "pub-" + secrets.token_hex(6)
     try:
         while True:
@@ -281,7 +293,7 @@ async def public_live(websocket: WebSocket, token: str) -> None:
                 await hub.broadcast(plan_id, {
                     "type": "presence.cursor", "uid": uid,
                     "user": str(msg.get("user") or "Gast")[:24],
-                    "lng": float(msg.get("lng", 0)), "lat": float(msg.get("lat", 0)),
+                    "lng": _num(msg.get("lng")), "lat": _num(msg.get("lat")),
                 })
                 continue
 

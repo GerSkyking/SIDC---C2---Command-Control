@@ -435,9 +435,12 @@ def _thumb_path(plan_id: str):
 
 @router.put("/{plan_id}/thumbnail")
 async def put_thumbnail(plan: EditorPlan, request: Request) -> dict:
-    raw = await request.body()
-    if len(raw) > 600_000:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Vorschaubild zu groß")
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf += chunk
+        if len(buf) > 600_000:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Vorschaubild zu groß")
+    raw = bytes(buf)
     if raw[:8] != b"\x89PNG\r\n\x1a\n":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Kein PNG")
     _thumb_path(plan.id).write_bytes(raw)
