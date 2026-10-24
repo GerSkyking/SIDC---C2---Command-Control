@@ -5238,34 +5238,38 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("click", (e) => {
     if ((e as { defaultPrevented?: boolean }).defaultPrevented) return;
 
-    // Klick ins Leere beendet das Bearbeiten einer Linie/Messlinie
-    if (
-      (mode === "move" || mode === "markermove" || (mode === "line" && !linePts.length) || (mode === "measure" && !measureActive.length)) &&
-      (editStrokeId || editMeasureId)
-    ) {
-      setEditStroke(null);
-      setEditMeasure(null);
-      return;
-    }
-
-    // Zeichnen/Lineal: Klick nahe einer bestehenden Linie wählt sie (statt eine neue zu beginnen)
-    if ((mode === "line" && !linePts.length) || (mode === "measure" && !measureActive.length)) {
+    // Linie/Messlinie wählen: auch Klicks NAHE der Linie zählen (Radius ≈ Mauszeiger), nicht nur der Pixel darunter
+    const pickIdle =
+      mode === "move" || mode === "markermove" || (mode === "line" && !linePts.length) || (mode === "measure" && !measureActive.length);
+    if (pickIdle) {
+      const R = 12;
       const box: [maplibregl.PointLike, maplibregl.PointLike] = [
-        [e.point.x - 6, e.point.y - 6],
-        [e.point.x + 6, e.point.y + 6],
+        [e.point.x - R, e.point.y - R],
+        [e.point.x + R, e.point.y + R],
       ];
-      if (mode === "line") {
-        const id = map.queryRenderedFeatures(box, { layers: ["strokes"] })[0]?.properties?.id as string | undefined;
-        if (id && caps.draw) {
-          setEditStroke(id);
-          return;
-        }
-      } else {
-        const mid = map.queryRenderedFeatures(box, { layers: ["measure-line"] })[0]?.properties?.mid as string | undefined;
-        if (mid && mid !== "__active") {
-          setEditMeasure(mid);
-          return;
-        }
+      const sid =
+        mode !== "measure" && caps.draw
+          ? (map.queryRenderedFeatures(box, { layers: ["strokes"] })[0]?.properties?.id as string | undefined)
+          : undefined;
+      const mid =
+        !sid && mode !== "line"
+          ? (map.queryRenderedFeatures(box, { layers: ["measure-line"] })[0]?.properties?.mid as string | undefined)
+          : undefined;
+      if (sid) {
+        setEditMeasure(null);
+        setEditStroke(sid);
+        return;
+      }
+      if (mid && mid !== "__active") {
+        setEditStroke(null);
+        setEditMeasure(mid);
+        return;
+      }
+      // Klick ins Leere beendet das Bearbeiten einer Linie/Messlinie
+      if (editStrokeId || editMeasureId) {
+        setEditStroke(null);
+        setEditMeasure(null);
+        return;
       }
     }
 
