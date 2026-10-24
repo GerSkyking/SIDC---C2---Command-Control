@@ -12,6 +12,7 @@ import { t } from "./i18n";
 import { icon } from "./icons";
 import { esc } from "./esc";
 import { renderMarkdown } from "./md";
+import { attachMdToolbar } from "./mdtoolbar";
 
 export interface ImgPanelPhase {
   id: string;
@@ -116,6 +117,7 @@ export function renderImageSettings(host: HTMLElement, img: PlanImage, ctx: ImgP
     noteTimer = window.setTimeout(sendNote, 600);
   });
   noteEl.addEventListener("blur", sendNote);
+  attachMdToolbar(noteEl);
 
   host.querySelectorAll<HTMLButtonElement>("[data-is-place-rm]").forEach((b) => {
     b.addEventListener("click", () => {

@@ -48,6 +48,7 @@ Alle Rechte werden serverseitig je Operation geprüft.
 - **Jedes Element gehört zu mindestens einer Phase** (Standard: aktuelle); **Mehrfach-Phasen** für Marker, Linien, Lineal, Notizen.
 - Fremdphasen mit einstellbarer Transparenz; Präsentationsmodus; Phasen für Spieler oder Zeus freigeben.
 - **Phasen-Notizen** (Markdown, Bilder einbettbar), Doppelklick auf eine Phase öffnet sie.
+- **Markdown-Toolbar** (Tastatur-Icon) in allen Markdown-Feldern: Formatierung per Klick – fett/kursiv/durchgestrichen/hervorheben, Listen, Aufgaben, Tabellen, Hinweise, Code, Mathe, Kommentare, Trennlinie.
 
 ## 8. Werkzeuge
 | Werkzeug | Taste | Funktion |

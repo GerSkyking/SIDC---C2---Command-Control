@@ -5,6 +5,16 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-10-24 – Markdown-Toolbar
+
+- **Tastatur-Icon** über jedem Markdown-Feld (Phasen-Notizen, Textfeld auf der Karte, Bild-Notiz, Lightbox-Notiz) blendet eine
+  **Formatierungsleiste** ein/aus (Zustand wird gemerkt): fett, kursiv, durchgestrichen, hervorheben, Quelltext inline/Block,
+  Mathe inline/Block, Kommentar, Überschriften (Auswahl), Aufzählung, Nummerierung, Aufgaben, Zitat, Hinweise/Callouts (Auswahl),
+  Trennlinie, Tabelle, Link. Erneutes Anwenden hebt die Formatierung wieder auf; Undo (Strg+Z) funktioniert.
+- **Renderer erweitert:** `~~durch~~`, `==hervorgehoben==`, verschachtelte Listen, Aufgabenlisten `- [ ]`, Tabellen,
+  Hinweise `> [!note] Titel`, Mathe `$…$`/`$$…$$` (als Formeltext), Kommentare `%%…%%`/`<!-- -->`, zusammenhängende Zitate.
+- Nicht im Browser getestet (nur Typecheck, Build und Renderer-Probelauf).
+
 ### 2026-10-23 – Taktische Layer, Zeus, Mehrfach-Phasen, Werkzeug-Feinschliff
 
 **Taktische Layer statt Channels**

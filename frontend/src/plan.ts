@@ -45,6 +45,7 @@ import {
 } from "./settings";
 import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
+import { attachMdToolbar } from "./mdtoolbar";
 import { esc } from "./esc";
 import { initNavCube } from "./navcube";
 import { wireScaleBox } from "./scalebox";
@@ -2359,6 +2360,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const nTabs = notesWin.querySelector<HTMLDivElement>(".notes-tabs")!;
   const nTimes = notesWin.querySelector<HTMLDivElement>(".notes-times")!;
   const nEdit = notesWin.querySelector<HTMLTextAreaElement>(".notes-edit")!;
+  if (canEdit) attachMdToolbar(nEdit);
   const nView = notesWin.querySelector<HTMLDivElement>(".notes-view")!;
   let notesTabId = currentPhaseId;
   let saveTimer = 0;
@@ -4710,6 +4712,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     </div>`;
     document.body.appendChild(back);
     const ta = back.querySelector<HTMLTextAreaElement>(".annot-edit")!;
+    attachMdToolbar(ta);
     ta.value = a.text;
     const prev = back.querySelector<HTMLDivElement>(".annot-prev")!;
     const wIn = back.querySelector<HTMLInputElement>("[data-w]")!;

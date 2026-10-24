@@ -3,6 +3,7 @@
 import { icon } from "./icons";
 import { t } from "./i18n";
 import { renderMarkdown } from "./md";
+import { attachMdToolbar } from "./mdtoolbar";
 import { esc } from "./esc";
 
 export interface LightboxItem {
@@ -67,6 +68,7 @@ export function openLightbox(items: LightboxItem[], start = 0): void {
         noteTimer = window.setTimeout(flushNote, 600);
       });
       ta.addEventListener("blur", flushNote);
+      attachMdToolbar(ta);
     } else {
       noteEl.innerHTML = it.note ? renderMarkdown(it.note) : "";
       noteEl.hidden = !it.note;
