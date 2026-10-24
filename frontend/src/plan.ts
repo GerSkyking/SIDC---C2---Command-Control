@@ -4292,14 +4292,26 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       m.world_y = ll.lat;
       redrawMarkersOnly();
     };
-    const onUp = (e: MouseEvent) => {
+    // Erst der nächste Klick setzt den Marker ab (Escape bricht ab); dieser Klick selbst gehört nicht der Karte.
+    const finish = () => {
       document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("keydown", onKey, true);
       dragId = null;
-      suppressClick = true;
-      setTimeout(() => (suppressClick = false), 0);
       if (mode === "move") map.dragPan.enable();
       map.getCanvas().style.cursor = modeCursor();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      finish();
+      m.world_x = fromX;
+      m.world_y = fromY;
+      redrawMarkersOnly();
+    };
+    const onClick = (e: MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      finish();
       const ll = toLL(e);
       socket.send({ type: "marker.move", id, world_x: ll.lng, world_y: ll.lat });
       pushCmd({
@@ -4308,7 +4320,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       });
     };
     document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    document.addEventListener("keydown", onKey, true);
+    setTimeout(() => document.addEventListener("click", onClick, true), 0);
   };
   const showHover = (e: maplibregl.MapLayerMouseEvent) => {
     if (dragId) return;
@@ -4363,7 +4376,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         if (!(await confirmDialog(t("marker.confirmDelete"), { danger: true, trash: true }))) return;
         socket.send({ type: "marker.delete", id: m.id });
       });
-      mv.addEventListener("mousedown", (ev) => startIconDrag(m.id, ev));
+      mv.addEventListener("click", (ev) => startIconDrag(m.id, ev));
       ed.addEventListener("click", () => {
         hideHoverNow();
         void openEditPanel(m);
