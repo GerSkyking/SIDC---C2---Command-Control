@@ -264,3 +264,6 @@ async function renderTrash(): Promise<void> {
 }
 window.addEventListener("hashchange", route);
 route();
+
+// iOS ignoriert user-scalable=no: Seiten-Zoom per Pinch/Doppeltipp zusaetzlich unterbinden (Karte zoomt weiterhin selbst)
+for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, (e) => e.preventDefault());

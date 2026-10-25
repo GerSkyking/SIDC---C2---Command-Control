@@ -108,6 +108,24 @@ export function wireSidebar(root: ParentNode): void {
       /* ignore */
     }
   });
+  // Schmale Bildschirme: Seitenleiste ist ein Schub-Menü mit Text; Knopf in der Topbar öffnet es
+  const burger = document.createElement("button");
+  burger.type = "button";
+  burger.className = "icon-btn sb-burger";
+  burger.title = t("nav.menu");
+  burger.innerHTML = icon("menu");
+  const shut = () => document.body.classList.remove("sb-open");
+  burger.addEventListener("click", () => document.body.classList.toggle("sb-open"));
+  const bar = root.querySelector(".shell-main > .topbar");
+  if (bar) bar.prepend(burger);
+  else root.querySelector(".shell-main")?.prepend(burger);
+  const scrim = document.createElement("div");
+  scrim.className = "sb-scrim";
+  scrim.addEventListener("click", shut);
+  sb?.after(scrim);
+  sb?.addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).closest("a")) shut();
+  });
   root.querySelector("#sbLogout")?.addEventListener("click", async () => {
     await api.logout().catch(() => {});
     location.hash = "#/";
