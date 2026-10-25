@@ -77,7 +77,7 @@ export function initNavCube(
   });
 
   // ── Ziehen mit Achsensperre ────────────────────────────────────────
-  const onDown = (e: MouseEvent) => {
+  const onDown = (e: PointerEvent) => {
     if ((e.target as HTMLElement).closest(".navcube-home")) return;
     e.preventDefault();
     const sx = e.clientX;
@@ -87,7 +87,7 @@ export function initNavCube(
     dragged = false;
     let axis: "b" | "p" | null = null;
     el.classList.add("drag");
-    const mv = (ev: MouseEvent) => {
+    const mv = (ev: PointerEvent) => {
       const dx = ev.clientX - sx;
       const dy = ev.clientY - sy;
       if (!axis) {
@@ -99,14 +99,16 @@ export function initNavCube(
       else map.setPitch(Math.max(0, Math.min(85, sp - dy * 0.35)));
     };
     const up = () => {
-      document.removeEventListener("mousemove", mv);
-      document.removeEventListener("mouseup", up);
+      document.removeEventListener("pointermove", mv);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
       el.classList.remove("drag");
     };
-    document.addEventListener("mousemove", mv);
-    document.addEventListener("mouseup", up);
+    document.addEventListener("pointermove", mv);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
   };
-  el.addEventListener("mousedown", onDown);
+  el.addEventListener("pointerdown", onDown);
 
   sync();
 
@@ -118,7 +120,7 @@ export function initNavCube(
       map.off("rotate", sync);
       map.off("pitch", sync);
       map.off("load", sync);
-      el.removeEventListener("mousedown", onDown);
+      el.removeEventListener("pointerdown", onDown);
     },
   };
 }

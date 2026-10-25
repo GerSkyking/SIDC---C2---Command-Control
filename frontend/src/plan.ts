@@ -907,7 +907,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       type: "circle",
       source: "strokeverts",
       paint: {
-        "circle-radius": 8,
+        "circle-radius": IS_MOBILE ? 11 : 8,
         "circle-color": "#ff9900",
         "circle-stroke-color": "#fff",
         "circle-stroke-width": 2,
@@ -918,7 +918,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       id: "strokeverts-hit",
       type: "circle",
       source: "strokeverts",
-      paint: { "circle-radius": 18, "circle-color": "#000", "circle-opacity": 0 },
+      paint: { "circle-radius": IS_MOBILE ? 28 : 18, "circle-color": "#000", "circle-opacity": 0 },
     });
 
     map.addSource("linedraft", { type: "geojson", data: emptyFC() });
@@ -1450,15 +1450,22 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       /* keine Höhendaten */
     }
     hud.textContent = `X: ${wx.toFixed(0)}  Y: ${wy.toFixed(0)}  H: ${h}`;
+    trackCursor(e.lngLat.lng, e.lngLat.lat);
+  });
+  // Vorschau-Linie / Messlinie / Zeiger folgen dem Zeiger bzw. dem Finger
+  const trackCursor = (lng: number, lat: number) => {
     if (mode === "measure" && measureActive.length) {
-      measureCursor = [e.lngLat.lng, e.lngLat.lat];
+      measureCursor = [lng, lat];
       redrawMeasure();
     }
-    if (mode === "point") sendPointer(e.lngLat.lng, e.lngLat.lat);
+    if (mode === "point") sendPointer(lng, lat);
     if (mode === "line" && linePts.length) {
-      lineCursor = [e.lngLat.lng, e.lngLat.lat];
+      lineCursor = [lng, lat];
       (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts, lineCursor));
     }
+  };
+  map.on("touchmove", (e) => {
+    if (e.points.length === 1) trackCursor(e.lngLat.lng, e.lngLat.lat);
   });
   // Zeigen: Linksklick = gelbe Hervorhebung, Rechtsklick halten + ziehen = Pfeil (nur solange gehalten)
   let ptrHl = false;
@@ -1480,12 +1487,22 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     else return;
     sendPointer(e.lngLat.lng, e.lngLat.lat, true);
   });
-  document.addEventListener("mouseup", () => {
+  const releasePtr = () => {
     if (!ptrHl && !ptrArrowFrom) return;
     ptrHl = false;
     ptrArrowFrom = null;
     if (mode === "point" && ptrLast) sendPointer(ptrLast[0], ptrLast[1], true);
+  };
+  document.addEventListener("mouseup", releasePtr);
+  // Touch: Zeigen folgt dem Finger (ein Finger); ein zweiter Finger beendet es und navigiert die Karte
+  map.on("touchstart", (e) => {
+    if (mode !== "point") return;
+    if (e.points.length !== 1) return releasePtr();
+    ptrHl = true;
+    sendPointer(e.lngLat.lng, e.lngLat.lat, true);
   });
+  document.addEventListener("touchend", () => releasePtr());
+  document.addEventListener("touchcancel", () => releasePtr());
 
   // ── 2D/3D + Navigations-Würfel ───────────────────────────────────────
   const navcube = root.querySelector<HTMLDivElement>("#navcube")!;
@@ -3755,6 +3772,26 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("rotate", () => {
     if (rotLocked && Math.abs(map.getBearing()) > 0.01) map.setBearing(0);
   });
+  // Werkzeuge, bei denen ein Finger/die Maus nicht die Karte schiebt
+  const fixesMap = () =>
+    mode === "point" || mode === "line" || mode === "erase" || mode === "measure" || mode === "markermove";
+  const syncDragPan = () => {
+    if (fixesMap()) map.dragPan.disable();
+    else map.dragPan.enable();
+  };
+  // Zwei Finger navigieren die Karte immer (auch bei fixierenden Werkzeugen); nach dem Loslassen wieder fixieren
+  map.getCanvas().addEventListener(
+    "touchstart",
+    (e) => {
+      if (e.touches.length >= 2) map.dragPan.enable();
+    },
+    { passive: true },
+  );
+  const reFix = (e: TouchEvent) => {
+    if (e.touches.length === 0 && !vertTouchDrag) syncDragPan();
+  };
+  map.getCanvas().addEventListener("touchend", reFix, { passive: true });
+  map.getCanvas().addEventListener("touchcancel", reFix, { passive: true });
   const setMode = (m: Mode) => {
     mode = m;
     toolbar.querySelectorAll("[data-mode]").forEach((b) =>
@@ -3762,8 +3799,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     );
     map.getCanvas().style.cursor = modeCursor(m);
     // Zeigen + Linie + Radierer + Messen + Marker-Verschieben: Karte fixieren
-    if (m === "point" || m === "line" || m === "erase" || m === "measure" || m === "markermove") map.dragPan.disable();
-    else map.dragPan.enable();
+    syncDragPan();
     // Drehen nur im normalen Karten-Werkzeug (und nicht bei „Lock Rotation")
     if (m === "move" && !rotLocked) {
       map.dragRotate.enable();
@@ -3916,6 +3952,32 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (erasing) eraseAt(e.point.x, e.point.y);
   });
   document.addEventListener("mouseup", () => (erasing = false));
+  // Touch: Radierer folgt dem Finger; ein zweiter Finger bricht ab (Karte navigieren)
+  map.on("touchstart", (e) => {
+    if (mode !== "erase") return;
+    if (e.points.length !== 1) {
+      erasing = false;
+      return;
+    }
+    erasing = true;
+    eraseDownAt = Date.now();
+    eraseAt(e.point.x, e.point.y);
+  });
+  map.on("touchmove", (e) => {
+    if (mode !== "erase" || e.points.length !== 1) return;
+    const tc = e.originalEvent.touches[0];
+    const rr = root.getBoundingClientRect();
+    eraserRing.hidden = false;
+    eraserRing.style.left = `${tc.clientX - rr.left}px`;
+    eraserRing.style.top = `${tc.clientY - rr.top}px`;
+    if (erasing) eraseAt(e.point.x, e.point.y);
+  });
+  const touchEraseEnd = () => {
+    erasing = false;
+    eraserRing.hidden = true;
+  };
+  document.addEventListener("touchend", touchEraseEnd);
+  document.addEventListener("touchcancel", touchEraseEnd);
   map.getCanvas().addEventListener("mouseleave", () => (eraserRing.hidden = true));
 
   {
@@ -4265,12 +4327,21 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
 
   let suppressClick = false;
+  let vertTouchDrag = false;
+  // Touch: ein Tipp auf einen Marker zeigt nur die Hover-Info (mit den Aktions-Icons), öffnet nicht das Bearbeiten
+  let lastTouchAt = 0;
+  map.getCanvas().addEventListener("touchstart", () => (lastTouchAt = Date.now()), { passive: true });
+  const isTouchTap = () => Date.now() - lastTouchAt < 1000;
   const onMarkerClick = (e: maplibregl.MapLayerMouseEvent) => {
     if (dragId || suppressClick) return; // gerade verschoben
     e.preventDefault();
     const id = e.features?.[0]?.properties?.id as string;
     const m = markers.get(id);
     if (!m) return;
+    if (isTouchTap()) {
+      showHover(e);
+      return;
+    }
     if (m.released) return; // freigegebene Feind-Marker sind nur Anzeige
     if (mode === "move" || mode === "markermove") {
       openEditPanel(m);
@@ -4320,6 +4391,36 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     };
     map.on("mousemove", onMove);
     map.once("mouseup", onUp);
+  });
+
+  // Touch: Stützpunkt mit einem Finger ziehen (zweiter Finger = Karte navigieren)
+  map.on("touchstart", "strokeverts-hit", (e) => {
+    if (e.points.length !== 1) return;
+    const idx = e.features?.[0]?.properties?.i as number;
+    const pts = editPts();
+    if (!pts || idx == null) return;
+    e.preventDefault();
+    vertTouchDrag = true;
+    map.dragPan.disable();
+    const onMove = (ev: maplibregl.MapTouchEvent) => {
+      if (ev.points.length !== 1) return;
+      pts[idx] = [ev.lngLat.lng, ev.lngLat.lat];
+      if (editStrokeId) refreshStrokes();
+      else redrawMeasure();
+      refreshStrokeVerts();
+    };
+    map.on("touchmove", onMove);
+    map.once("touchend", () => {
+      map.off("touchmove", onMove);
+      vertTouchDrag = false;
+      syncDragPan();
+      if (editStrokeId) socket.send({ type: "stroke.modify", id: editStrokeId, data: { points: pts } });
+    });
+  });
+  // Tipp neben die Marker schließt die Touch-Hover-Info
+  map.on("click", (e) => {
+    if (!isTouchTap()) return;
+    if (!map.queryRenderedFeatures(e.point, { layers: ["marker-icon", "marker-dot", "marker-textmark"] }).length) hideHoverNow();
   });
 
   // Hover: Channel / Ersteller / Phase des Markers

@@ -979,7 +979,6 @@ li.md-task input { margin-right: 0.3rem; vertical-align: middle; }
   .list { margin: 0.8rem auto; padding: 0 0.6rem; }
   .list table, .acl-tbl { display: block; overflow-x: auto; white-space: nowrap; }
   .tree-row { flex-wrap: wrap; row-gap: 0.3rem; }
-  .tree-thumb { display: none; }
   .tree-actions { flex-wrap: wrap; }
   .lightbox .lb-nav { width: 2.6rem; height: 2.6rem; }
 }
@@ -1013,4 +1012,22 @@ li.md-task input { margin-right: 0.3rem; vertical-align: middle; }
 @media (pointer: coarse) {
   html, body { touch-action: pan-x pan-y; overscroll-behavior: none; }
   body:has(#map) { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+}
+
+.navcube { touch-action: none; }
+@media (max-width: 760px) {
+  /* Menü-Knopf bleibt in der ersten Zeile (oben rechts), damit man das Menü dort auch wieder schließt */
+  .topbar:has(#tbMore) > :not(a, strong, #undo, #redo, #tbMore, .grow) { order: 5; }
+  .topbar:has(#tbMore) > .timeline { order: 20; }
+  /* Plan-Liste: Name + Vorschau oben, Aktionen in eigener Zeile */
+  .tree-plan .tree-thumb { width: 3.6rem; height: 2.3rem; }
+  .tree-plan .tree-name { flex: 1 1 6rem; min-width: 0; overflow-wrap: anywhere; }
+  .tree-plan .tree-actions { flex: 1 1 100%; flex-wrap: wrap; gap: 0.4rem; }
+  .tree-plan .tree-actions button { padding: 0.4rem 0.7rem; font-size: 0.9rem; }
+  .tree-plan .tree-actions .icon-btn { padding: 0; }
+  .tree-move { max-width: 100%; flex: 1 1 8rem; }
+  .tree-folder .tree-name { min-width: 0; overflow-wrap: anywhere; }
+  .list > .stack > .row, .list .row:has(> input) { flex-wrap: wrap; }
+  .list .row > input, .list .row > select { flex: 1 1 100%; min-width: 0; }
+  .list .row > button { flex: 1 1 auto; }
 }
