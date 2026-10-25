@@ -32,7 +32,7 @@ import {
   type RoadColors,
 } from "./enfusionLayers";
 import { icon } from "./icons";
-import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
+import { iconBtn, themeSwitch, wireThemeSwitch, wireTopbarMenu } from "./ui";
 import {
   actionForKey,
   getKeybinds,
@@ -484,6 +484,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ${myPlan?.level === "owner" ? `<button id="acl">${t("plans.shares")}</button>` : ""}
       ${themeSwitch()}
       ${iconBtn("logout", { id: "logoutBtn", title: t("auth.logout") })}
+      ${iconBtn("menu", { id: "tbMore", title: t("topbar.more") })}
     </div>
     <div id="map"></div>
     <div id="annots" class="annots"></div>
@@ -592,10 +593,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Karte darunter richtet sich nach der tatsächlichen Topbar-Höhe (CSS-Variable).
   const topbarEl = root.querySelector<HTMLElement>(".topbar")!;
   const syncTopbarH = () => {
+    if (topbarEl.classList.contains("tb-open")) return; // aufgeklapptes Mobil-Menü überdeckt die Karte nur
     root.style.setProperty("--topbar-h", `${Math.ceil(topbarEl.getBoundingClientRect().height)}px`); // inkl. Zoom (Topbar-Größe)
     map.resize();
   };
   syncTopbarH();
+  wireTopbarMenu(topbarEl);
   const topbarRO = new ResizeObserver(syncTopbarH);
   topbarRO.observe(topbarEl);
   window.addEventListener("resize", syncTopbarH);

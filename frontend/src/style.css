@@ -904,3 +904,85 @@ li.md-task input { margin-right: 0.3rem; vertical-align: middle; }
   background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); }
 .mdtb-pop[hidden] { display: none; }
 .mdtb-pop input { width: 3.2rem; height: 1.4rem; }
+
+/* ── Mobil / Touch ───────────────────────────────────────────────────────
+   Menü-Knopf nur auf schmalen Bildschirmen; sonst bleibt alles wie am Desktop. */
+#tbMore { display: none; }
+@media (hover: none) {
+  /* Hover-only-Bedienelemente sind per Touch nicht erreichbar → dauerhaft zeigen */
+  .annot-tools, .pimg-x, .pimg-gear { display: flex; }
+  .pimg-x, .pimg-gear { display: grid; }
+  .tl-del { display: grid; }
+}
+@media (max-width: 760px) {
+  html { -webkit-text-size-adjust: 100%; }
+  /* iOS zoomt in Felder < 16px hinein */
+  button, input, select, textarea { font-size: 16px; }
+  .topbar input[type="datetime-local"] { font-size: 14px; }
+  .shell { min-height: 100dvh; }
+
+  /* Topbar: nur Zurück, Name, Undo/Redo und Menü; der Rest klappt über der Karte auf */
+  .topbar { gap: 0.35rem; padding: calc(0.35rem + env(safe-area-inset-top)) 0.5rem 0.35rem; }
+  .topbar:has(#tbMore) > :not(a, strong, #undo, #redo, #tbMore, .grow) { display: none; }
+  .topbar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
+  #tbMore { display: inline-grid; place-items: center; }
+  #app > .topbar.tb-open { max-height: 80dvh; overflow-y: auto; }
+  .topbar.tb-open:has(#tbMore) > :not(a, strong, #undo, #redo, #tbMore, .grow) { display: revert; }
+  .topbar.tb-open > .timeline { display: flex; }
+  .topbar.tb-open > .presence { display: flex; }
+  .topbar.tb-open { align-items: center; row-gap: 0.5rem; }
+  .topbar.tb-open input[type="datetime-local"] { max-width: 100%; }
+  .topbar .icon-btn { width: 2.4rem; height: 2.4rem; }
+  .shot-opts { right: auto; left: 0; max-width: 92vw; }
+
+  /* Werkzeugleiste: waagerecht am unteren Rand, seitlich scrollbar */
+  .toolbar { left: 0; right: 0; top: auto; bottom: 0; flex-direction: row; align-items: center; gap: 0.25rem;
+    overflow-x: auto; overflow-y: hidden; border-radius: var(--r-md) var(--r-md) 0 0; border-width: 1px 0 0;
+    padding: 0.3rem 0.5rem calc(0.3rem + env(safe-area-inset-bottom)); z-index: 8; }
+  .toolbar button { flex: none; width: 2.8rem; height: 2.8rem; }
+  .tb-sep { width: 1px; height: 1.6rem; align-self: center; margin: 0 0.15rem; flex: none; }
+
+  /* Karten-Bedienelemente über die Leiste heben */
+  .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { bottom: calc(3.9rem + env(safe-area-inset-bottom)); }
+  .navcube { bottom: calc(8.6rem + env(safe-area-inset-bottom)); right: 12px; }
+  body.rail-open .navcube { right: 12px; }
+  .hud { display: none; }
+  .mk-scale { right: 0.4rem; max-width: 60vw; }
+  .mk-scale input[type="range"] { width: 5rem; }
+  body.rail-open .mk-scale { right: 0.4rem; }
+  .present-bar { bottom: calc(0.8rem + env(safe-area-inset-bottom)); max-width: 96vw; }
+  .present-bar .pb-name { min-width: 0; }
+
+  /* Panels der Werkzeuge: als Blatt über der Werkzeugleiste */
+  .line-style, .fav-panel, .eraser-panel, .layers-panel, .layers-panel:not(.mv-pinned), body.rail-open .layers-panel:not(.mv-pinned) {
+    position: fixed; left: 0.4rem !important; right: 0.4rem !important; top: auto !important;
+    bottom: calc(3.9rem + env(safe-area-inset-bottom)) !important; width: auto !important;
+    min-width: 0; max-width: none; max-height: 55dvh; z-index: 12; box-shadow: var(--shadow); }
+  .mv-bar .mv-grip, .mv-bar .mv-pin, .mv-resize { display: none; }
+  .line-done { z-index: 13; }
+
+  /* Fenster */
+  .notes-win { left: 0.4rem !important; right: 0.4rem !important; top: auto !important;
+    bottom: calc(3.9rem + env(safe-area-inset-bottom)) !important; width: auto !important; max-width: none;
+    min-width: 0; max-height: 65dvh; resize: none; }
+  .notes-head { cursor: default; }
+  .edit-modal { padding: 0.4rem; align-items: end; }
+  .edit-modal .edit-panel { width: 100%; max-height: 92dvh; font-size: 1rem; }
+  .wiz { width: 100vw; max-height: 94dvh; border-radius: 12px 12px 0 0; }
+  .wiz-backdrop { align-items: end; }
+  .annot { max-width: 80vw; }
+  .ctx-menu { max-width: 92vw; }
+  .toast-host { left: 0.5rem; right: 0.5rem; top: calc(0.5rem + env(safe-area-inset-top)); max-width: none; }
+
+  /* Bilder-Leiste: fast volle Breite */
+  .img-rail { width: min(var(--rail-w, 300px), 88vw); }
+  .img-popover { max-width: 92vw; }
+
+  /* Listen / Verwaltung */
+  .list { margin: 0.8rem auto; padding: 0 0.6rem; }
+  .list table, .acl-tbl { display: block; overflow-x: auto; white-space: nowrap; }
+  .tree-row { flex-wrap: wrap; row-gap: 0.3rem; }
+  .tree-thumb { display: none; }
+  .tree-actions { flex-wrap: wrap; }
+  .lightbox .lb-nav { width: 2.6rem; height: 2.6rem; }
+}

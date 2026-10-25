@@ -5,6 +5,16 @@ import { t } from "./i18n";
 import { esc } from "./esc";
 import { api } from "./api";
 
+// Schmale Bildschirme: die Topbar zeigt nur das Wichtigste, der Menü-Knopf klappt den Rest über der Karte auf.
+// Die Karte behält dabei ihre Höhe (die sync-Funktionen überspringen die Messung, solange das Menü offen ist).
+export function wireTopbarMenu(topbar: HTMLElement): void {
+  const btn = topbar.querySelector<HTMLElement>("#tbMore");
+  if (!btn) return;
+  btn.addEventListener("click", () => topbar.classList.toggle("tb-open"));
+  // Tipp auf die Karte schließt das Menü wieder
+  document.getElementById("map")?.addEventListener("pointerdown", () => topbar.classList.remove("tb-open"));
+}
+
 export function iconBtn(
   name: string,
   opts: { title?: string; id?: string; active?: boolean; data?: Record<string, string>; cls?: string } = {},

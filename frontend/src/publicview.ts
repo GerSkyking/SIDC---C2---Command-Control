@@ -9,7 +9,7 @@ import { isTextMarker, markerLabelCategory } from "./sidc/sidc";
 import { t } from "./i18n";
 import { addEnfusionLayers, ENFUSION_MAPLIBRE_IDS, type EnfusionKey } from "./enfusionLayers";
 import { icon } from "./icons";
-import { iconBtn, themeSwitch, wireThemeSwitch } from "./ui";
+import { iconBtn, themeSwitch, wireThemeSwitch, wireTopbarMenu } from "./ui";
 import { makeMovable } from "./movable";
 import { renderMarkdown } from "./md";
 import { esc } from "./esc";
@@ -117,6 +117,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       <label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" id="lblToggle" ${showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label>
       ${iconBtn("present", { id: "present", title: t("present.start") })}
       ${themeSwitch()}
+      ${iconBtn("menu", { id: "tbMore", title: t("topbar.more") })}
     </div>
     <div id="map"></div>
     <div id="annots" class="annots"></div>
@@ -146,6 +147,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
 
   const topbarEl = root.querySelector<HTMLElement>(".topbar")!;
   const syncTopbarH = () => {
+    if (topbarEl.classList.contains("tb-open")) return;
     root.style.setProperty("--topbar-h", `${topbarEl.offsetHeight}px`);
     map.resize();
   };
@@ -163,6 +165,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
   syncTopbarH();
+  wireTopbarMenu(topbarEl);
   const ro = new ResizeObserver(syncTopbarH);
   ro.observe(topbarEl);
   window.addEventListener("resize", syncTopbarH);
