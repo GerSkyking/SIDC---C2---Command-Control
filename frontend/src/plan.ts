@@ -2147,8 +2147,19 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       );
     };
 
+    // Handy: statt Zeitstrahl nur eine Phasen-Auswahl (Zeitstrahl per CSS ausgeblendet)
+    const mobSel =
+      `<select class="tl-mobsel" id="tl-mobsel" title="${t("phase.heading")}">` +
+      [...players, ...builders]
+        .map((id) => {
+          const p = phases.find((x) => x.id === id)!;
+          return `<option value="${id}" ${id === currentPhaseId ? "selected" : ""}>${p.plane === "builder" ? "⚑ " : ""}${esc0(p.name)}</option>`;
+        })
+        .join("") +
+      `</select>`;
     const ctl =
       `<div class="tl-ctl">` +
+      mobSel +
       `<button class="icon-btn" id="ph-notes" title="${t("notes.open") + hk("notes")}">${icon("notes", 16)}</button>` +
       `<span class="tl-zoom"><button id="tl-zout" title="${t("tl.zoomOut")}">${icon("minus", 14)}</button><button id="tl-zin" title="${t("tl.zoomIn")}">${icon("plus", 14)}</button></span>` +
       (isMB || canZeus
@@ -2186,6 +2197,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         : "") +
       `</div></div></div>`;
 
+    timelineEl.querySelector<HTMLSelectElement>("#tl-mobsel")!.addEventListener("change", (e) => selectPhase((e.target as HTMLSelectElement).value));
     const scEl = timelineEl.querySelector<HTMLElement>(".tl-scroll")!;
     if (tlFirstPaint) {
       scEl.scrollLeft = Math.max(0, xOf(first) - 48);
