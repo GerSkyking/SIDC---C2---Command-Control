@@ -83,15 +83,6 @@ def test_builder_phase_requires_mission_builder(admin, client):
     assert r.status_code == 403
 
 
-def test_admin_list_and_delete(admin):
-    pid = _plan(admin)
-    img = _upload(admin, pid, PNG).json()
-    rows = admin.get("/api/admin/images").json()
-    assert any(x["id"] == img["id"] and x["plan_name"] == "Bilder" for x in rows)
-    assert admin.delete(f"/api/admin/images/{img['id']}").status_code == 200
-    assert admin.get(f"/plans/{pid}/images/{img['id']}/raw").status_code == 404
-
-
 def test_placement_multi_phase_reuse(admin):
     """Ein Bild lässt sich mehrfach (auch in mehreren Phasen) auf der Karte platzieren."""
     pid = _plan(admin)

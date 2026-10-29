@@ -1,7 +1,7 @@
 """Pydantic-Schemas für die HTTP-API."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -91,6 +91,11 @@ class PlanCreateIn(BaseModel):
     name: str
     map_id: str
     folder_id: str | None = None
+    project_id: str | None = None
+
+
+class PlanProjectIn(BaseModel):
+    project_id: str | None = None  # None = aus dem Projekt herauslösen
 
 
 class PlanPatchIn(BaseModel):
@@ -104,6 +109,7 @@ class PlanOut(BaseModel):
     name: str
     map_id: str
     folder_id: str | None = None
+    project_id: str | None = None
     ordering: int = 0
     created_at: datetime
     updated_at: datetime
@@ -118,6 +124,7 @@ class PlanMoveIn(BaseModel):
 class FolderIn(BaseModel):
     name: str
     parent_id: str | None = None
+    project_id: str | None = None
 
 
 class FolderPatchIn(BaseModel):
@@ -188,3 +195,111 @@ class StrokeOut(BaseModel):
     points: list
     color: int
     width: float
+
+
+# ─── Missionsbau-Projekte ──────────────────────────────────────────────────
+
+from typing import Literal  # noqa: E402
+
+ProjectRole = Literal["viewer", "editor", "owner"]
+DocSpace = Literal["public", "builder"]
+NoteColor = Literal["yellow", "green", "blue", "pink", "orange", "gray"]
+TaskStatus = Literal["open", "doing", "review", "done"]
+TaskPriority = Literal["low", "normal", "high"]
+
+
+class ProjectCreateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=20000)
+    folder_id: str | None = None
+
+
+class ProjectPatchIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=20000)
+    archived: bool | None = None
+    folder_id: str | None = None  # nur wirksam, wenn im Body enthalten (null = oberste Ebene)
+
+
+class ProjectFolderIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    parent_id: str | None = None
+
+
+class ProjectFolderPatchIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    parent_id: str | None = None
+    move_to_root: bool = False
+    ordering: int | None = None
+
+
+class ProjectMemberIn(BaseModel):
+    subject_type: Literal["user", "group"]
+    subject_id: str = Field(min_length=1, max_length=32)
+    role: ProjectRole
+
+
+class DocCreateIn(BaseModel):
+    space: DocSpace
+    parent_id: str | None = None
+    kind: Literal["folder", "doc"]
+    name: str = Field(min_length=1, max_length=200)
+    content: str = Field(default="", max_length=200000)
+
+
+class DocPatchIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    content: str | None = Field(default=None, max_length=200000)
+    parent_id: str | None = None  # nur mit gesetztem Feld (model_fields_set): null = Wurzel
+    ordering: int | None = None
+    expected_updated_at: datetime | None = None
+
+
+class ImagePatchIn(BaseModel):
+    caption: str | None = Field(default=None, max_length=2000)
+    note: str | None = Field(default=None, max_length=20000)
+
+
+class NoteCreateIn(BaseModel):
+    text: str = Field(default="", max_length=4000)
+    color: NoteColor = "yellow"
+    x: float = 0
+    y: float = 0
+    w: float = 220
+    h: float = 160
+
+
+class NotePatchIn(BaseModel):
+    text: str | None = Field(default=None, max_length=4000)
+    color: NoteColor | None = None
+    x: float | None = None
+    y: float | None = None
+    w: float | None = None
+    h: float | None = None
+
+
+class TaskCreateIn(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=20000)
+    status: TaskStatus = "open"
+    priority: TaskPriority = "normal"
+    assignee_id: str | None = None
+    due_date: date | None = None
+    plan_id: str | None = None
+    doc_id: str | None = None
+
+
+class TaskPatchIn(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=20000)
+    status: TaskStatus | None = None
+    priority: TaskPriority | None = None
+    assignee_id: str | None = None   # null setzt zurück (nur wenn Feld gesendet)
+    due_date: date | None = None
+    plan_id: str | None = None
+    doc_id: str | None = None
+
+
+class TaskMoveIn(BaseModel):
+    status: TaskStatus
+    ordering: int = Field(default=0, ge=0, le=100000)

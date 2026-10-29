@@ -5,6 +5,7 @@ Seiten müssen laut Gesetz jederzeit erreichbar sein.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 
 from .. import audit
 from ..config import get_settings
@@ -45,10 +46,14 @@ async def upload_legal(page: str, request: Request, admin: AdminUser, db: DbDep)
         text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Datei ist kein gültiges UTF-8") from exc
+    await run_in_threadpool(_store_legal, page, text, db, admin, request, len(raw))
+    return {"ok": True, "page": page, "bytes": len(raw)}
+
+
+def _store_legal(page: str, text: str, db, admin, request: Request, size: int) -> None:
     (_dir() / PAGES[page]).write_text(text, encoding="utf-8")
     audit.record(db, "legal.upload", user_id=admin.id, target_type="legal", target_id=page,
-                 request=request, bytes=len(raw))
-    return {"ok": True, "page": page, "bytes": len(raw)}
+                 request=request, bytes=size)
 
 
 @router.delete("/admin/legal/{page}")

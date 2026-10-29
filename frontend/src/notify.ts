@@ -37,6 +37,51 @@ export function toastError(e: unknown, fallback?: string): void {
   toast(msg, { kind: "error" });
 }
 
+/**
+ * A11y für Modal-Overlays: role=dialog + aria-modal, Tab-Fokusfalle, Fokus-Rückgabe beim
+ * Entfernen aus dem DOM. Nach dem Befüllen (innerHTML) und Anhängen aufrufen.
+ */
+export function a11yModal(back: HTMLElement, label?: string): void {
+  back.setAttribute("role", "dialog");
+  back.setAttribute("aria-modal", "true");
+  const lbl = label ?? back.querySelector("h1, strong")?.textContent?.trim();
+  if (lbl) back.setAttribute("aria-label", lbl);
+  back.querySelectorAll<HTMLElement>("button[title]:not([aria-label])").forEach((b) =>
+    b.setAttribute("aria-label", b.getAttribute("title")!),
+  );
+  const prev = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  back.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const f = [...back.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
+      (x) => !(x as HTMLButtonElement).disabled && x.offsetParent !== null,
+    );
+    if (!f.length) return;
+    const first = f[0];
+    const last = f[f.length - 1];
+    const a = document.activeElement;
+    if (e.shiftKey && (a === first || !back.contains(a))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (a === last || !back.contains(a))) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+  // Fokus ins Modal, falls noch nichts darin fokussiert ist
+  setTimeout(() => {
+    if (!back.contains(document.activeElement)) {
+      (back.querySelector<HTMLElement>("input, select, textarea, button") ?? back).focus?.();
+    }
+  }, 0);
+  const mo = new MutationObserver(() => {
+    if (!back.isConnected) {
+      mo.disconnect();
+      if (prev?.isConnected) prev.focus();
+    }
+  });
+  mo.observe(document.body, { childList: true });
+}
+
 interface ConfirmOpts {
   title?: string;
   okLabel?: string;
@@ -58,6 +103,7 @@ export function confirmDialog(message: string, opts: ConfirmOpts = {}): Promise<
       </div></div>`;
     back.querySelector(".nd-msg")!.textContent = message;
     document.body.appendChild(back);
+    a11yModal(back, opts.title ?? message);
     const done = (v: boolean) => {
       document.removeEventListener("keydown", onKey, true);
       back.remove();
@@ -96,6 +142,7 @@ export function promptDialog(message: string, opts: PromptOpts = {}): Promise<st
       </div></div>`;
     back.querySelector(".nd-msg")!.textContent = message;
     document.body.appendChild(back);
+    a11yModal(back, opts.title ?? message);
     const inp = back.querySelector<HTMLInputElement>("[data-in]")!;
     inp.value = opts.value ?? "";
     if (opts.placeholder) inp.placeholder = opts.placeholder;

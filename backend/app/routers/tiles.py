@@ -18,17 +18,46 @@ from ..services.maps_import import effective_maxzoom, map_dir
 router = APIRouter(prefix="/api/maps/{map_id}", tags=["tiles"])
 
 _LAYERS = ("sat", "terrain", "grid")
-_conn_cache: dict[str, sqlite3.Connection] = {}
+# key → (mtime_ns, Connection). Wird eine .mbtiles-Datei ersetzt (Reimport) oder gelöscht,
+# ändert sich der mtime bzw. sie fehlt → alte Verbindung wird verworfen.
+_conn_cache: dict[str, tuple[int, sqlite3.Connection]] = {}
+
+
+def _open_cached(key: str, path) -> sqlite3.Connection | None:
+    try:
+        mt = path.stat().st_mtime_ns
+    except OSError:
+        mt = None
+    hit = _conn_cache.get(key)
+    if hit is not None and hit[0] != mt:
+        _conn_cache.pop(key, None)
+        try:
+            hit[1].close()
+        except sqlite3.Error:
+            pass
+        hit = None
+    if mt is None:
+        return None
+    if hit is None:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
+        hit = _conn_cache[key] = (mt, con)
+    return hit[1]
+
+
+def invalidate_map(map_id: str) -> None:
+    """Verbindungen und abgeleitete Kachel-Caches einer Karte verwerfen (Löschen/Reimport)."""
+    for key in [k for k in _conn_cache if k.split(":", 1)[0] == map_id]:
+        _, con = _conn_cache.pop(key)
+        try:
+            con.close()
+        except sqlite3.Error:
+            pass
+    for k in [k for k in _simple_cache if k[0] == map_id]:
+        _simple_cache.pop(k, None)
 
 
 def _conn(map_id: str, layer: str) -> sqlite3.Connection | None:
-    key = f"{map_id}:{layer}"
-    if key not in _conn_cache:
-        path = map_dir(map_id) / "mbtiles" / f"{layer}.mbtiles"
-        if not path.is_file():
-            return None
-        _conn_cache[key] = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
-    return _conn_cache[key]
+    return _open_cached(f"{map_id}:{layer}", map_dir(map_id) / "mbtiles" / f"{layer}.mbtiles")
 
 
 def _meta(map_id: str, layer: str) -> dict:
@@ -39,13 +68,9 @@ def _meta(map_id: str, layer: str) -> dict:
 
 
 def _dlc_conn(map_id: str, layer: str, zoom: int) -> sqlite3.Connection | None:
-    key = f"{map_id}:{layer}:dlc{zoom}"
-    if key not in _conn_cache:
-        path = map_dir(map_id) / "mbtiles" / "dlc" / f"{layer}_z{zoom}.mbtiles"
-        if not path.is_file():
-            return None
-        _conn_cache[key] = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
-    return _conn_cache[key]
+    return _open_cached(
+        f"{map_id}:{layer}:dlc{zoom}", map_dir(map_id) / "mbtiles" / "dlc" / f"{layer}_z{zoom}.mbtiles"
+    )
 
 
 def _tile(map_id: str, layer: str, z: int, x: int, y: int, base_maxzoom: int) -> bytes | None:
@@ -65,7 +90,7 @@ def tile(map_id: str, layer: str, z: int, x: int, y: int, auth: MapsReader) -> R
     data = read_tile(map_id, layer, z, x, y)
     if data is None:
         raise HTTPException(404)
-    return Response(data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+    return Response(data, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"})
 
 
 @router.get("/topo.geojson")
@@ -74,7 +99,7 @@ def topo(map_id: str, auth: MapsReader) -> Response:
     if not p.is_file():
         raise HTTPException(404, "Kein Topo-Layer")
     return Response(p.read_bytes(), media_type="application/geo+json",
-                    headers={"Cache-Control": "public, max-age=86400"})
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 @router.get("/locations.json")
@@ -83,7 +108,7 @@ def locations(map_id: str, auth: MapsReader) -> Response:
     if not p.is_file():
         raise HTTPException(404, "Keine Map-Locations")
     return Response(p.read_bytes(), media_type="application/json",
-                    headers={"Cache-Control": "public, max-age=86400"})
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 @router.get("/contours.geojson")
@@ -92,7 +117,7 @@ def contours(map_id: str, auth: MapsReader) -> Response:
     if not p.is_file():
         raise HTTPException(404, "Keine Hoehenlinien")
     return Response(p.read_bytes(), media_type="application/geo+json",
-                    headers={"Cache-Control": "public, max-age=86400"})
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 @router.get("/peaks.geojson")
@@ -101,7 +126,7 @@ def peaks(map_id: str, auth: MapsReader) -> Response:
     if not p.is_file():
         raise HTTPException(404, "Keine Hoehenpunkte")
     return Response(p.read_bytes(), media_type="application/geo+json",
-                    headers={"Cache-Control": "public, max-age=86400"})
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 # Enfusion-TopoExport-Layer (aus dem ATAKmaps-Mappack, pipeline/enfusion_layers.py)
@@ -116,7 +141,7 @@ def enfusion_layer(map_id: str, layer: str, auth: MapsReader) -> Response:
     if not p.is_file():
         raise HTTPException(404, "Layer nicht vorhanden")
     return Response(p.read_bytes(), media_type="application/geo+json",
-                    headers={"Cache-Control": "public, max-age=86400"})
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 def build_style(map_id: str, tile_base: str) -> dict:
@@ -189,11 +214,16 @@ _SIMPLE_PALETTE: tuple[tuple[int, int, int], ...] = (
     (226, 226, 220),   # Hell/Asphalt
     (70, 120, 176),    # Wasser
 )
-_simple_cache: dict[tuple[str, int, int, int], bytes | None] = {}
+_SIMPLE_CACHE_MAX = 1000
+_simple_cache: dict[tuple[str, int, int, int, int], bytes | None] = {}
 
 
 def _simple_tile(map_id: str, z: int, x: int, y: int) -> bytes | None:
-    key = (map_id, z, x, y)
+    try:
+        sat_mt = (map_dir(map_id) / "mbtiles" / "sat.mbtiles").stat().st_mtime_ns
+    except OSError:
+        sat_mt = 0
+    key = (map_id, z, x, y, sat_mt)
     if key in _simple_cache:
         return _simple_cache[key]
     try:
@@ -215,8 +245,8 @@ def _simple_tile(map_id: str, z: int, x: int, y: int) -> bytes | None:
         buf = io.BytesIO()
         img.save(buf, "PNG", optimize=True)
         out = buf.getvalue()
-    if len(_simple_cache) > 4000:
-        _simple_cache.clear()
+    while len(_simple_cache) >= _SIMPLE_CACHE_MAX:  # älteste zuerst verwerfen
+        _simple_cache.pop(next(iter(_simple_cache)))
     _simple_cache[key] = out
     return out
 

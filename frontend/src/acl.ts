@@ -37,6 +37,9 @@ export async function openAclEditor(
   const backdrop = document.createElement("div");
   backdrop.className = "wiz-backdrop";
   document.body.appendChild(backdrop);
+  backdrop.setAttribute("role", "dialog");
+  backdrop.setAttribute("aria-modal", "true");
+  backdrop.setAttribute("aria-label", t("acl.heading"));
   const close = () => {
     backdrop.remove();
     onClose?.();

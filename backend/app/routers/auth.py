@@ -5,17 +5,19 @@ ist; unbekannte OIDC-User werden als Rolle 'user' angelegt.
 """
 from __future__ import annotations
 
-import io
 import json
 import logging
+import tempfile
 import zipfile
 from datetime import datetime
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.orm import defer
 
 from .. import audit
 from ..config import get_settings
@@ -113,6 +115,8 @@ def logout(request: Request, response: Response, db: DbDep) -> dict:
     sess = read_session(token) if token else None
     response.delete_cookie(SESSION_COOKIE, path="/")
     if sess:
+        # Nur dieses Cookie wird gelöscht. Die Session-Epoche bleibt unberührt, damit andere
+        # Geräte (z. B. Desktop-App) angemeldet bleiben; sie steigt nur bei Passwortwechsel/Admin-Reset.
         audit.record(db, "logout", user_id=sess[0], request=request)
     return {"ok": True}
 
@@ -216,11 +220,11 @@ def export_my_data(user: CurrentUser, db: DbDep) -> StreamingResponse:
          "label": s.label, "created_at": _iso(s.created_at)}
         for s in db.scalars(select(PublicShare).where(PublicShare.created_by == user.id))
     ]
-    images = list(db.scalars(select(PlanImage).where(PlanImage.created_by == user.id)))
+    images = list(db.scalars(select(PlanImage.id).where(PlanImage.created_by == user.id)))
     images_meta = [
         {"id": im.id, "plan_id": im.plan_id, "plan_name": plan_names.get(im.plan_id, "—"),
          "filename": im.filename, "byte_size": im.byte_size, "created_at": _iso(im.created_at)}
-        for im in images
+        for im in db.scalars(select(PlanImage).where(PlanImage.created_by == user.id).options(defer(PlanImage.data)))
     ]
 
     audit_log = [
@@ -229,7 +233,7 @@ def export_my_data(user: CurrentUser, db: DbDep) -> StreamingResponse:
         for a in db.scalars(select(AuditLog).where(AuditLog.user_id == user.id))
     ]
 
-    buf = io.BytesIO()
+    buf = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024)  # große Exporte landen auf Platte
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("profile.json", json.dumps(profile, ensure_ascii=False, indent=2))
         zf.writestr("favorites.json", json.dumps(favorites, ensure_ascii=False, indent=2))
@@ -247,16 +251,27 @@ def export_my_data(user: CurrentUser, db: DbDep) -> StreamingResponse:
             ),
         )
         zf.writestr("audit_log.json", json.dumps(audit_log, ensure_ascii=False, indent=2))
-        for im in images:
+        for image_id in images:  # Bilder einzeln laden und wieder freigeben
+            im = db.get(PlanImage, image_id)
+            if im is None:
+                continue
             safe_name = im.filename or f"{im.id}.bin"
             zf.writestr(f"images/{im.id}_{safe_name}", im.data)
+            db.expunge(im)
 
     buf.seek(0)
     audit.record(db, "user.export", user_id=user.id, target_type="user", target_id=user.id)
     db.commit()
     fname = f"sidc-daten-{user.username}.zip"
+    def _iter():
+        try:
+            while chunk := buf.read(1024 * 1024):
+                yield chunk
+        finally:
+            buf.close()
+
     return StreamingResponse(
-        buf,
+        _iter(),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
@@ -329,6 +344,16 @@ async def oidc_callback(request: Request, response: Response, db: DbDep):
     if not subject:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "OIDC-Token ohne 'sub'")
 
+    user = await run_in_threadpool(_oidc_get_or_create_user, db, claims, issuer, subject)
+
+    _set_session_cookie(request, response, user)
+    # Nach dem Login zurück auf die App
+    response.status_code = status.HTTP_303_SEE_OTHER
+    response.headers["location"] = "/"
+    return response
+
+
+def _oidc_get_or_create_user(db: DbDep, claims: dict, issuer: str, subject: str) -> User:
     identity = db.scalar(
         select(OidcIdentity).where(
             OidcIdentity.issuer == issuer, OidcIdentity.subject == subject
@@ -350,12 +375,7 @@ async def oidc_callback(request: Request, response: Response, db: DbDep):
 
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Konto deaktiviert")
-
-    _set_session_cookie(request, response, user)
-    # Nach dem Login zurück auf die App
-    response.status_code = status.HTTP_303_SEE_OTHER
-    response.headers["location"] = "/"
-    return response
+    return user
 
 
 def _unique_username(db: DbDep, base: str) -> str:

@@ -144,6 +144,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let imageRail: { refresh: () => void } | null = null;
   let imgResizingId: string | null = null;
   let imgClickSuppressed = false;
+  // Alle document/window-Listener dieser Plan-Ansicht hängen an diesem Signal und
+  // werden beim Verlassen (hashchange) gemeinsam abgeräumt.
+  const life = new AbortController();
+  const sig = life.signal;
   // Kleiner Bild-Wähler für "Bild in Notiz einfügen".
   const pickPlanImage = (): Promise<string | null> =>
     new Promise((resolve) => {
@@ -608,6 +612,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       topbarRO.disconnect();
       window.removeEventListener("resize", syncTopbarH);
       root.style.removeProperty("--topbar-h");
+      life.abort();
+      try {
+        map.remove(); // WebGL-Kontext freigeben
+      } catch {
+        /* schon entfernt */
+      }
     },
     { once: true },
   );
@@ -872,8 +882,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     return { type: "FeatureCollection", features: feats };
   };
 
+  // Terrain-/Enfusion-Overlays müssen UNTER "strokes" eingefügt werden → erst nach dessen Anlage starten
+  let strokesLayerDone: () => void = () => {};
+  const strokesLayerReady = new Promise<void>((r) => (strokesLayerDone = r));
   map.on("load", async () => {
-    await Promise.all([...markers.values()].map(ensureIcon));
+    await Promise.all([...markers.values()].map(ensureIcon)).catch(() => {});
 
     map.addSource("strokes", { type: "geojson", data: strokeFC() });
     map.addLayer({
@@ -887,6 +900,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       },
       layout: { "line-cap": "round", "line-join": "round" },
     });
+    strokesLayerDone();
 
     map.addSource("chains", { type: "geojson", data: chainFC() });
     map.addLayer({
@@ -1243,6 +1257,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // ── WebSocket ──────────────────────────────────────────────────────────
   const socket = new PlanSocket(planId);
+  let lastDropToast = 0;
+  socket.onDropped = () => {
+    // Nicht still verlieren: Nutzer sieht, dass die Änderung NICHT angekommen ist.
+    if (Date.now() - lastDropToast < 3000) return;
+    lastDropToast = Date.now();
+    toast(t("ws.dropped"), { kind: "error" });
+  };
 
   // ── Undo/Redo (eigene Aktionen: verschieben, bearbeiten, sperren) ─────
   interface Cmd {
@@ -1374,6 +1395,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let demZoom = 0;
   const demImg = new Map<string, ImageData | null>();
   const demBusy = new Set<string>();
+  const DEM_MAX = 48; // ~48 Kacheln (je ~256 KB) im Speicher, älteste fliegen raus
+  const demSet = (key: string, v: ImageData | null): void => {
+    demImg.delete(key);
+    demImg.set(key, v);
+    if (demImg.size > DEM_MAX) demImg.delete(demImg.keys().next().value as string);
+  };
   const sampleElevation = (lng: number, lat: number): number | null => {
     if (!demZoom) {
       const ts = (() => {
@@ -1409,14 +1436,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             c.height = im.naturalHeight;
             const cx = c.getContext("2d", { willReadFrequently: true })!;
             cx.drawImage(im, 0, 0);
-            demImg.set(key, cx.getImageData(0, 0, c.width, c.height));
+            demSet(key, cx.getImageData(0, 0, c.width, c.height));
           } catch {
-            demImg.set(key, null);
+            demSet(key, null);
           }
           demBusy.delete(key);
         };
         im.onerror = () => {
-          demImg.set(key, null);
+          demSet(key, null);
           demBusy.delete(key);
         };
         im.src = `/api/maps/${mapId}/terrain/${demZoom}/${tx}/${ty}.png`;
@@ -1493,7 +1520,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     ptrArrowFrom = null;
     if (mode === "point" && ptrLast) sendPointer(ptrLast[0], ptrLast[1], true);
   };
-  document.addEventListener("mouseup", releasePtr);
+  document.addEventListener("mouseup", releasePtr, { signal: sig });
   // Touch: Zeigen folgt dem Finger (ein Finger); ein zweiter Finger beendet es und navigiert die Karte
   map.on("touchstart", (e) => {
     if (mode !== "point") return;
@@ -1501,8 +1528,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     ptrHl = true;
     sendPointer(e.lngLat.lng, e.lngLat.lat, true);
   });
-  document.addEventListener("touchend", () => releasePtr());
-  document.addEventListener("touchcancel", () => releasePtr());
+  document.addEventListener("touchend", () => releasePtr(), { signal: sig });
+  document.addEventListener("touchcancel", () => releasePtr(), { signal: sig });
 
   // ── 2D/3D + Navigations-Würfel ───────────────────────────────────────
   const navcube = root.querySelector<HTMLDivElement>("#navcube")!;
@@ -1809,6 +1836,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   if (canEdit) {
     const onUndoKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
+      const tg = e.target as HTMLElement | null;
+      // In Eingabefeldern gehört Ctrl+Z/Y dem Browser (Text-Undo)
+      if (tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName))) return;
       const k = e.key.toLowerCase();
       if (k === "z" && !e.shiftKey) {
         e.preventDefault();
@@ -1818,20 +1848,22 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         doRedo();
       }
     };
-    document.addEventListener("keydown", onUndoKey);
-    window.addEventListener("hashchange", () => document.removeEventListener("keydown", onUndoKey), {
-      once: true,
-    });
+    document.addEventListener("keydown", onUndoKey, { signal: sig });
   }
 
   // Plan-Vorschaubild (Thumbnail) — bei Versions-Speichern + einmal kurz nach dem Laden.
   async function captureThumb(): Promise<void> {
-    if (!canEdit) return;
+    if (!canEdit || sig.aborted) return;
     try {
-      await new Promise<void>((res) => {
+      await new Promise<void>((res, rej) => {
         if (map.loaded() && !map.isMoving()) return res();
-        map.once("idle", () => res());
+        const to = window.setTimeout(() => rej(new Error("idle-timeout")), 8000);
+        map.once("idle", () => {
+          window.clearTimeout(to);
+          res();
+        });
       });
+      if (sig.aborted) return;
       map.redraw();
       const mc = map.getCanvas();
       const w = 400;
@@ -1968,11 +2000,18 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const patchPhaseTimes = (id: string, s: number | null, e: number | null): void => {
     const p = phases.find((x) => x.id === id);
     if (!p) return;
+    const oldS = p.start_at;
+    const oldE = p.end_at;
     p.start_at = s == null ? null : fmtInput(new Date(s));
     p.end_at = e == null ? null : fmtInput(new Date(e));
-    void api
-      .patchPhase(planId, id, { start_at: p.start_at, end_at: p.end_at })
-      .catch((err) => toastError(err));
+    void api.patchPhase(planId, id, { start_at: p.start_at, end_at: p.end_at }).catch((err) => {
+      // Rollback, sonst zeigt die UI Zeiten, die der Server nie bekommen hat
+      p.start_at = oldS;
+      p.end_at = oldE;
+      renderTimeline();
+      repaintNotesTimes();
+      toastError(err);
+    });
     renderTimeline();
     repaintNotesTimes();
   };
@@ -2033,6 +2072,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     else if (e.key === "ArrowRight" || e.key === "PageDown") stepPhase(1);
     else if (e.key === "ArrowLeft" || e.key === "PageUp") stepPhase(-1);
   };
+  // Plan verlassen, ohne den Präsentationsmodus zu beenden → Vollbild/Leiste aufräumen
+  sig.addEventListener("abort", () => {
+    if (presentBar) exitPresent();
+  });
   function startPresent(): void {
     root.classList.add("presenting");
     presentBar = document.createElement("div");
@@ -2046,7 +2089,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     presentBar.querySelector('[data-pb="prev"]')!.addEventListener("click", () => stepPhase(-1));
     presentBar.querySelector('[data-pb="next"]')!.addEventListener("click", () => stepPhase(1));
     presentBar.querySelector('[data-pb="exit"]')!.addEventListener("click", exitPresent);
-    document.addEventListener("keydown", onPresentKey);
+    document.addEventListener("keydown", onPresentKey, { signal: sig });
     document.documentElement.requestFullscreen?.().catch(() => {});
     updatePresentBar();
     setTimeout(() => map.resize(), 60);
@@ -2299,8 +2342,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           else if (edge === "r") patchPhaseTimes(id, sp.s, Math.max(sp.e + dMin * 60000, sp.s + 15 * 60000));
           else patchPhaseTimes(id, sp.s + dMin * 60000, sp.e + dMin * 60000);
         };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
+        document.addEventListener("mousemove", onMove, { signal: sig });
+        document.addEventListener("mouseup", onUp, { signal: sig });
       };
       el.querySelector('[data-edge="l"]')?.addEventListener("mousedown", (e) => startDrag(e as MouseEvent, "l"));
       el.querySelector('[data-edge="r"]')?.addEventListener("mousedown", (e) => startDrag(e as MouseEvent, "r"));
@@ -2395,7 +2438,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   if (canEdit) attachMdToolbar(nEdit);
   const nView = notesWin.querySelector<HTMLDivElement>(".notes-view")!;
   let notesTabId = currentPhaseId;
-  let saveTimer = 0;
+  const saveTimers = new Map<string, number>();
 
   const renderNotesTimes = () => {
     const ph = phases.find((p) => p.id === notesTabId);
@@ -2479,17 +2522,22 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (!ph || !canEdit) return;
     if (ph.notes === nEdit.value) return;
     ph.notes = nEdit.value;
-    window.clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(() => {
-      void api.updatePhaseNotes(planId, ph.id, ph.notes).catch(() => {});
-    }, 600);
+    // Timer je Phase: schneller Phasenwechsel darf die ausstehende Speicherung der vorigen nicht verwerfen
+    window.clearTimeout(saveTimers.get(ph.id));
+    saveTimers.set(
+      ph.id,
+      window.setTimeout(() => {
+        saveTimers.delete(ph.id);
+        void api.updatePhaseNotes(planId, ph.id, ph.notes).catch((err) => toastError(err));
+      }, 600),
+    );
   };
   const paintNotes = () => {
     const ph = phases.find((p) => p.id === notesTabId) ?? phases[0];
     if (!ph) return;
     notesTabId = ph.id;
     const tabBtn = (p: (typeof phases)[number]) =>
-      `<button data-nt="${p.id}" class="${p.id === notesTabId ? "active" : ""}">${p.name}</button>`;
+      `<button data-nt="${p.id}" class="${p.id === notesTabId ? "active" : ""}">${esc(p.name)}</button>`;
     const playerP = phases.filter((p) => (p.plane ?? "player") !== "builder");
     const builderP = phases.filter((p) => (p.plane ?? "player") === "builder");
     const addBtn = (attr: string, title: string) =>
@@ -2597,8 +2645,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       if ((e.target as HTMLElement).closest(".notes-x")) return;
       dx = e.clientX - notesWin.offsetLeft;
       dy = e.clientY - notesWin.offsetTop;
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("mousemove", onMove, { signal: sig });
+      document.addEventListener("mouseup", onUp, { signal: sig });
     });
   }
 
@@ -2761,7 +2809,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     } catch {
       /* keine Locations */
     }
-    await addTerrainOverlays();
+    try {
+      await Promise.race([strokesLayerReady, new Promise((r) => setTimeout(r, 5000))]);
+      await addTerrainOverlays();
+    } catch (err) {
+      console.warn("Terrain-Overlays fehlgeschlagen:", err);
+    }
     for (const n of ["sat", "satsimple", "grid", "contours", "peaks", "locations", ...enfusionPresent])
       if (layerOpacity[n] != null) setLayerOpacity(n, layerOpacity[n]);
     applySatAdjust();
@@ -2776,7 +2829,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Standardmaessig aus — Umschalten ueber das Ebenen-Panel.
   async function addTerrainOverlays(): Promise<void> {
     const beforeId = map.getLayer("strokes") ? "strokes" : undefined;
-    enfusionPresent = await addEnfusionLayers(map, (k) => `/api/maps/${mapId}/${k}.geojson`, beforeId);
+    try {
+      enfusionPresent = await addEnfusionLayers(map, (k) => `/api/maps/${mapId}/${k}.geojson`, beforeId);
+    } catch (err) {
+      console.warn("Enfusion-Layer fehlgeschlagen:", err);
+    }
     try {
       const r = await fetch(`/api/maps/${mapId}/contours.geojson`, { credentials: "include" });
       if (r.ok) {
@@ -2984,8 +3041,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     applyTac();
   };
   // Phasen-Freigaben (Zeus) oder Phasen/Inhalte haben sich geändert → alles neu holen
+  let resyncSeq = 0;
   const resync = async (): Promise<void> => {
+    const seq = ++resyncSeq;
     const sn = await api.snapshot(planId);
+    if (seq !== resyncSeq) return; // neuere Anfrage läuft/ist durch → diese (ältere) Antwort verwerfen
     const sorted = [...(sn.phases ?? [])].sort(
       (a: PhaseT, b: PhaseT) => a.ordering - b.ordering || (a.sub_ordering ?? 0) - (b.sub_ordering ?? 0),
     );
@@ -2996,15 +3056,23 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     for (const st of sn.strokes as Stroke[]) strokes.set(st.id, st);
     annots.clear();
     for (const a of (sn.annotations ?? []) as Annot[]) annots.set(a.id, a);
+    images.clear();
+    for (const i of (sn.images ?? []) as PlanImage[]) images.set(i.id, i);
+    placements.clear();
+    for (const p of (sn.image_placements ?? []) as ImagePlacement[]) placements.set(p.id, p);
     if (!phases.some((x) => x.id === currentPhaseId)) currentPhaseId = playerPhases()[0]?.id ?? "";
     if (actAs === "zeus" && !canZeus) actAs = "player";
     applyPhase();
     refreshStrokes();
     renderAnnots();
+    if (!imgResizingId) renderMapImages();
+    imageRail?.refresh();
   };
   socket.on((msg: WsMessage) => {
     if (msg.type === "layers.changed") onLayersChanged(msg.layers as TacLayer[], msg.removed as string | undefined);
     else if (msg.type === "phases.changed") void resync().catch(() => {});
+    // Reconnect (ws.ts: reconnect=true ab der 2. Verbindung): verpasste Änderungen per Snapshot nachladen
+    else if (msg.type === "_open" && msg.reconnect) void resync().catch(() => {});
   });
 
   // ── ORBAT-Panel (Kräfteübersicht im Plan) ─────────────────────────────
@@ -3185,10 +3253,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     for (const [name, label, hasSlider] of entries) {
       const on = baseLayerVisible[name] !== false;
       const slider = hasSlider
-        ? `<input type="range" min="0" max="100" step="5" value="${Math.round(opac(name) * 100)}" data-op="${name}" title="${t("layers.opacityHint")}"/>`
+        ? `<input type="range" min="0" max="100" step="5" value="${Math.round(opac(name) * 100)}" data-op="${esc(name)}" title="${t("layers.opacityHint")}"/>`
         : "";
       rows.push(
-        `<div class="layer-row"><label><input type="checkbox" data-base="${name}" ${on ? "checked" : ""}/> ${label}</label>${slider}</div>`,
+        `<div class="layer-row"><label><input type="checkbox" data-base="${esc(name)}" ${on ? "checked" : ""}/> ${label}</label>${slider}</div>`,
       );
     }
     layersPanel.innerHTML = rows.join("");
@@ -3215,7 +3283,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const rows: string[] = [];
       if (map.getLayer("sat")) {
         const sl = (k: keyof typeof satAdj, label: string) =>
-          `<div class="layer-row"><label>${label}</label><input type="range" min="-100" max="100" step="5" value="${satAdj[k]}" data-sat="${k}"/></div>`;
+          `<div class="layer-row"><label>${label}</label><input type="range" min="-100" max="100" step="5" value="${esc(String(satAdj[k]))}" data-sat="${k}"/></div>`;
         rows.push(
           `<div class="fav-head">${t("layers.satAdjust")}</div>`,
           sl("brightness", t("layers.brightness")),
@@ -3226,7 +3294,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
       if (enfusionPresent.includes("roads")) {
         const cp = (k: keyof RoadColors, label: string) =>
-          `<div class="layer-row"><label>${label}</label><input type="color" value="${roadColors[k]}" data-road="${k}"/></div>`;
+          `<div class="layer-row"><label>${label}</label><input type="color" value="${esc(String(roadColors[k]))}" data-road="${k}"/></div>`;
         rows.push(
           `<div class="fav-head">${t("layers.roadColors")}</div>`,
           cp("main", t("layers.roadMain")),
@@ -3239,7 +3307,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         rows.push(`<div class="fav-head">${t("layers.places")}</div>`);
         for (const g of locData.groups)
           rows.push(
-            `<label class="chk"><input type="checkbox" data-group="${g.key}" ${groupVisible.get(g.key) !== false ? "checked" : ""}/> ${esc(g.label)} <span class="muted">${g.items.length}</span></label>`,
+            `<label class="chk"><input type="checkbox" data-group="${esc(g.key)}" ${groupVisible.get(g.key) !== false ? "checked" : ""}/> ${esc(g.label)} <span class="muted">${g.items.length}</span></label>`,
           );
       }
       box.innerHTML = rows.length ? `<h4>${t("settings.map")}</h4>${rows.join("")}` : "";
@@ -3529,10 +3597,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     resizeGridCanvas();
     updateGrid();
   });
-  window.addEventListener("resize", () => {
-    resizeGridCanvas();
-    updateGrid();
-  });
+  window.addEventListener(
+    "resize",
+    () => {
+      resizeGridCanvas();
+      updateGrid();
+    },
+    { signal: sig },
+  );
   map.on("style.load", updateGrid);
   map.once("idle", updateGrid);
 
@@ -3951,7 +4023,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     eraserRing.style.top = `${e.originalEvent.clientY - rr.top}px`;
     if (erasing) eraseAt(e.point.x, e.point.y);
   });
-  document.addEventListener("mouseup", () => (erasing = false));
+  document.addEventListener("mouseup", () => (erasing = false), { signal: sig });
   // Touch: Radierer folgt dem Finger; ein zweiter Finger bricht ab (Karte navigieren)
   map.on("touchstart", (e) => {
     if (mode !== "erase") return;
@@ -3976,8 +4048,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     erasing = false;
     eraserRing.hidden = true;
   };
-  document.addEventListener("touchend", touchEraseEnd);
-  document.addEventListener("touchcancel", touchEraseEnd);
+  document.addEventListener("touchend", touchEraseEnd, { signal: sig });
+  document.addEventListener("touchcancel", touchEraseEnd, { signal: sig });
   map.getCanvas().addEventListener("mouseleave", () => (eraserRing.hidden = true));
 
   {
@@ -4070,10 +4142,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
     }
   };
-  document.addEventListener("keydown", onHotkey);
-  window.addEventListener("hashchange", () => document.removeEventListener("keydown", onHotkey), {
-    once: true,
-  });
+  document.addEventListener("keydown", onHotkey, { signal: sig });
 
   function placeMarker(pos: [number, number], tpl: MarkerTemplate): void {
     if (zeusBlocked()) return;
@@ -4120,7 +4189,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     (lcBox.innerHTML = lineColors
       .map(
         (c) =>
-          `<button data-pc="${c.packedColor}" title="${c.name}" style="background:rgb(${c.red},${c.green},${c.blue})" class="${
+          `<button data-pc="${c.packedColor}" title="${esc(c.name)}" style="background:rgb(${c.red},${c.green},${c.blue})" class="${
             c.packedColor === lineColor ? "active" : ""
           }"></button>`,
       )
@@ -4210,7 +4279,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
       <label class="chk-lbl">${t("line.color")}
         <select data-scolor>${lineColors
-          .map((c) => `<option value="${c.packedColor}" ${c.packedColor === s.color ? "selected" : ""}>${c.name}</option>`)
+          .map((c) => `<option value="${c.packedColor}" ${c.packedColor === s.color ? "selected" : ""}>${esc(c.name)}</option>`)
           .join("")}</select></label>
       <label class="chk-lbl">${t("line.width")}
         <select data-swidth>${lineWidths
@@ -4278,7 +4347,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         : `<div class="muted">${t("fav.hint")}</div>`);
     favPanel.querySelectorAll<HTMLElement>("[data-fav]").forEach((el) =>
       el.addEventListener("click", (ev) => {
-        if ((ev.target as HTMLElement).dataset.delfav) return;
+        if ((ev.target as HTMLElement).closest("[data-delfav]")) return; // auch Klick aufs SVG im Löschen-Knopf
         const f = favs.find((x) => x.id === el.dataset.fav)!;
         setMode("place");
         awaitingPos = false; // Favorit direkt per Klick platzieren
@@ -4299,9 +4368,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     );
     favPanel.querySelectorAll<HTMLButtonElement>("[data-delfav]").forEach((b) =>
       b.addEventListener("click", async () => {
-        await api.deleteFavorite(b.dataset.delfav!);
-        favs = await api.favorites();
-        renderFavs();
+        try {
+          await api.deleteFavorite(b.dataset.delfav!);
+          favs = await api.favorites();
+          renderFavs();
+        } catch (err) {
+          toastError(err);
+        }
       }),
     );
   };
@@ -4390,7 +4463,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       if (editStrokeId) socket.send({ type: "stroke.modify", id: editStrokeId, data: { points: pts } });
     };
     map.on("mousemove", onMove);
-    map.once("mouseup", onUp);
+    // document statt map: Loslassen außerhalb der Karte darf den Drag nicht hängen lassen
+    document.addEventListener("mouseup", onUp, { once: true, signal: sig });
   });
 
   // Touch: Stützpunkt mit einem Finger ziehen (zweiter Finger = Karte navigieren)
@@ -4410,12 +4484,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       refreshStrokeVerts();
     };
     map.on("touchmove", onMove);
-    map.once("touchend", () => {
+    const end = () => {
+      document.removeEventListener("touchend", end);
+      document.removeEventListener("touchcancel", end);
       map.off("touchmove", onMove);
       vertTouchDrag = false;
       syncDragPan();
+      // bei touchcancel (Systemgeste/Anruf) trotzdem speichern — lokal ist der Punkt schon verschoben
       if (editStrokeId) socket.send({ type: "stroke.modify", id: editStrokeId, data: { points: pts } });
-    });
+    };
+    document.addEventListener("touchend", end, { signal: sig });
+    document.addEventListener("touchcancel", end, { signal: sig });
   });
   // Tipp neben die Marker schließt die Touch-Hover-Info
   map.on("click", (e) => {
@@ -4475,9 +4554,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         redo: () => socket.send({ type: "marker.move", id, world_x: ll.lng, world_y: ll.lat }),
       });
     };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("keydown", onKey, true);
-    setTimeout(() => document.addEventListener("click", onClick, true), 0);
+    document.addEventListener("mousemove", onMove, { signal: sig });
+    document.addEventListener("keydown", onKey, { capture: true, signal: sig });
+    setTimeout(() => document.addEventListener("click", onClick, { capture: true, signal: sig }), 0);
   };
   const showHover = (e: maplibregl.MapLayerMouseEvent) => {
     if (dragId) return;
@@ -4584,7 +4663,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       mm.world_y = ev.lngLat.lat;
       redrawMarkersOnly();
     };
-    const onUp = (ev: maplibregl.MapMouseEvent) => {
+    const onUp = (ev: MouseEvent) => {
       map.off("mousemove", onMove);
       const finished = dragId;
       dragId = null;
@@ -4593,8 +4672,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       if (mode === "move") map.dragPan.enable();
       map.getCanvas().style.cursor = modeCursor();
       if (finished) {
-        const ax = ev.lngLat.lng;
-        const ay = ev.lngLat.lat;
+        const cr = map.getCanvas().getBoundingClientRect();
+        const ll = map.unproject([ev.clientX - cr.left, ev.clientY - cr.top]);
+        const ax = ll.lng;
+        const ay = ll.lat;
         socket.send({ type: "marker.move", id: finished, world_x: ax, world_y: ay });
         pushCmd({
           undo: () => socket.send({ type: "marker.move", id: finished, world_x: dragFromX, world_y: dragFromY }),
@@ -4603,7 +4684,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
     };
     map.on("mousemove", onMove);
-    map.once("mouseup", onUp);
+    // document statt map: Loslassen außerhalb der Karte darf dragId nicht hängen lassen
+    document.addEventListener("mouseup", onUp, { once: true, signal: sig });
   };
   map.on("mousedown", "marker-icon", onMarkerMouseDown);
   map.on("mousedown", "marker-dot", onMarkerMouseDown);
@@ -4627,8 +4709,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    document.addEventListener("mousemove", onMove, { signal: sig });
+    document.addEventListener("mouseup", onUp, { signal: sig });
   });
 
   map.on("dblclick", (e) => {
@@ -4746,8 +4828,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       document.removeEventListener("keydown", off, true);
       map.off("movestart", closeCtxMenu);
     };
-    document.addEventListener("mousedown", off, true);
-    document.addEventListener("keydown", off, true);
+    document.addEventListener("mousedown", off, { capture: true, signal: sig });
+    document.addEventListener("keydown", off, { capture: true, signal: sig });
     map.once("movestart", closeCtxMenu);
   }
 
@@ -4923,7 +5005,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           }
           renderAnnots();
         };
-        document.addEventListener("mouseup", finish);
+        document.addEventListener("mouseup", finish, { signal: sig });
         return; // nativen Resize laufen lassen
       }
     }
@@ -4960,8 +5042,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const ll = map.unproject([e.clientX - r.left - grabDx, e.clientY - r.top - grabDy]);
       socket.send({ type: "annotation.move", id, data: { world_x: ll.lng, world_y: ll.lat } });
     };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    document.addEventListener("mousemove", onMove, { signal: sig });
+    document.addEventListener("mouseup", onUp, { signal: sig });
   }
 
   function renderAnnots(): void {
@@ -5246,14 +5328,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         document.removeEventListener("mouseup", up);
         imgResizingId = null;
         imgClickSuppressed = true; // Ecke ziehen endet auf demselben Element -> sonst öffnet Klick die Lightbox
+        setTimeout(() => (imgClickSuppressed = false), 0); // click folgt direkt auf mouseup; sonst bliebe das Flag hängen
         socket.send({
           type: "placement.modify", id: placementId,
           data: { map_width: Math.round(cur.map_width), phase_id: cur.phase_id },
         });
         renderMapImages();
       };
-      document.addEventListener("mousemove", mv);
-      document.addEventListener("mouseup", up);
+      document.addEventListener("mousemove", mv, { signal: sig });
+      document.addEventListener("mouseup", up, { signal: sig });
       return;
     }
     ev.stopPropagation();
@@ -5288,12 +5371,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       imgDragId = null;
       if (!moved) return; // reiner Klick -> Lightbox öffnet über den click-Listener
       imgClickSuppressed = true;
+      setTimeout(() => (imgClickSuppressed = false), 0);
       const cr = canvasRect();
       const ll = map.unproject([e.clientX - cr.left - grabDx, e.clientY - cr.top - grabDy]);
       socket.send({ type: "placement.move", id: placementId, data: { world_x: ll.lng, world_y: ll.lat } });
     };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    document.addEventListener("mousemove", onMove, { signal: sig });
+    document.addEventListener("mouseup", onUp, { signal: sig });
   }
   map.on("move", () => {
     if (!imgDragId && !imgResizingId) positionImages();
@@ -5302,13 +5386,21 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     closeImgPopover();
     renderMapImages();
   });
-  document.addEventListener("mousedown", (e) => {
-    const t2 = e.target as HTMLElement;
-    if (imgPopoverEl && !imgPopoverEl.contains(t2) && !t2.closest("[data-imggear]")) closeImgPopover();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && imgPopoverEl) closeImgPopover();
-  });
+  document.addEventListener(
+    "mousedown",
+    (e) => {
+      const t2 = e.target as HTMLElement;
+      if (imgPopoverEl && !imgPopoverEl.contains(t2) && !t2.closest("[data-imggear]")) closeImgPopover();
+    },
+    { signal: sig },
+  );
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key === "Escape" && imgPopoverEl) closeImgPopover();
+    },
+    { signal: sig },
+  );
   renderMapImages();
 
   // Drag&Drop aus der Bild-Sidebar auf die Karte -> neue Platzierung anlegen
@@ -5470,25 +5562,31 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   });
 
-  document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") {
-      if (mode === "line" && linePts.length) cancelLine();
-      else if (mode === "measure" && measureActive.length) {
-        measureActive = [];
-        measureCursor = null;
-        redrawMeasure();
-        positionLineDone();
-      } else if (editStrokeId || editMeasureId) {
-        setEditStroke(null);
-        setEditMeasure(null);
-      } else setMode("move");
-    }
-  });
+  document.addEventListener(
+    "keydown",
+    (ev) => {
+      if (ev.key === "Escape") {
+        if (mode === "line" && linePts.length) cancelLine();
+        else if (mode === "measure" && measureActive.length) {
+          measureActive = [];
+          measureCursor = null;
+          redrawMeasure();
+          positionLineDone();
+        } else if (editStrokeId || editMeasureId) {
+          setEditStroke(null);
+          setEditMeasure(null);
+        } else setMode("move");
+      }
+    },
+    { signal: sig },
+  );
 
   // ── Marker-Edit-Panel (zentriertes Fenster, Klick außerhalb schließt) ──
   async function openEditPanel(m: Marker): Promise<void> {
     root.querySelector("#editModal")?.remove();
     if (isMB) await ensureOrbatCache();
+    root.querySelector("#editModal")?.remove(); // Doppelklick: zweiter Aufruf ist während des await dazugekommen
+    const m0 = { ...m }; // Stand beim Öffnen des Formulars
     const orbatNodeOpts = isMB
       ? planOrbatCache
           .flatMap((o) => (o.nodes ?? []).map((n) => ({ id: n.id, label: `${o.name} · ${n.name}` })))
@@ -5521,7 +5619,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
               const key = MOD_KEY[g];
               const cur = curMods[key] ?? 0;
               return `<label>${MOD_LBL[g]}</label><select data-mod="${key}"><option value="0">—</option>${modDefs[g]
-                .map((o) => `<option value="${o.code}" ${o.code === cur ? "selected" : ""}>${o.description}</option>`)
+                .map((o) => `<option value="${o.code}" ${o.code === cur ? "selected" : ""}>${esc(o.description)}</option>`)
                 .join("")}</select>`;
             })
             .join("") +
@@ -5616,17 +5714,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const mv = p.querySelector<HTMLSpanElement>("[data-mscalev]")!;
       ms.addEventListener("input", () => (mv.textContent = `${ms.value}%`));
     }
-    const close = () => back.remove();
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    const close = () => {
+      back.remove();
+      document.removeEventListener("keydown", onEsc); // auch beim Schließen per Übernehmen/Löschen/Klick daneben
+    };
     back.addEventListener("mousedown", (e) => {
       if (e.target === back) close();
     });
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        close();
-        document.removeEventListener("keydown", onEsc);
-      }
-    };
-    document.addEventListener("keydown", onEsc);
+    document.addEventListener("keydown", onEsc, { signal: sig });
     p.querySelector("[data-apply]")!.addEventListener("click", () => {
       const data: Record<string, unknown> = {
         unit_text: p.querySelector<HTMLInputElement>("[data-unit]")!.value,
@@ -5648,20 +5746,32 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           : {}),
       };
       const wantLock = p.querySelector<HTMLInputElement>("[data-lock]")!.checked;
-      const beforeData: Record<string, unknown> = {};
-      for (const k of Object.keys(data)) beforeData[k] = (m as unknown as Record<string, unknown>)[k];
-      const beforeLock = m.locked;
-      socket.send({ type: "marker.modify", id: m.id, data });
-      socket.send({ type: "marker.lock", id: m.id, locked: wantLock });
       const mid = m.id;
+      // Nur Felder senden, die im Formular tatsächlich geändert wurden (m0 = Stand beim Öffnen) —
+      // sonst überschreibt "Übernehmen" zwischenzeitliche Änderungen anderer Spieler mit dem alten Stand.
+      const norm = (v: unknown): string => JSON.stringify(v === "" || v === undefined ? null : v);
+      const m0r = m0 as unknown as Record<string, unknown>;
+      for (const k of Object.keys(data)) if (norm(data[k]) === norm(m0r[k])) delete data[k];
+      const lockChanged = wantLock !== !!m0.locked;
+      if (!Object.keys(data).length && !lockChanged) {
+        close();
+        return;
+      }
+      // Undo-Basis = aktueller Stand (nicht der beim Öffnen gemerkte)
+      const curM = (markers.get(mid) ?? m) as unknown as Record<string, unknown>;
+      const beforeData: Record<string, unknown> = {};
+      for (const k of Object.keys(data)) beforeData[k] = curM[k];
+      const beforeLock = !!curM.locked;
+      if (Object.keys(data).length) socket.send({ type: "marker.modify", id: mid, data });
+      if (lockChanged) socket.send({ type: "marker.lock", id: mid, locked: wantLock });
       pushCmd({
         undo: () => {
-          socket.send({ type: "marker.modify", id: mid, data: beforeData });
-          socket.send({ type: "marker.lock", id: mid, locked: beforeLock });
+          if (Object.keys(beforeData).length) socket.send({ type: "marker.modify", id: mid, data: beforeData });
+          if (lockChanged) socket.send({ type: "marker.lock", id: mid, locked: beforeLock });
         },
         redo: () => {
-          socket.send({ type: "marker.modify", id: mid, data });
-          socket.send({ type: "marker.lock", id: mid, locked: wantLock });
+          if (Object.keys(data).length) socket.send({ type: "marker.modify", id: mid, data });
+          if (lockChanged) socket.send({ type: "marker.lock", id: mid, locked: wantLock });
         },
       });
       close();
@@ -5692,20 +5802,24 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     p.querySelector("[data-fav]")!.addEventListener("click", async () => {
       const label = await promptDialog(t("fav.labelPrompt"), { value: m.unit_text || m.sidc.slice(0, 8) });
       if (!label) return;
-      await api.addFavorite({
-        label,
-        sidc: m.sidc,
-        rotation_degrees: m.rotation_degrees,
-        unit_text: m.unit_text,
-        ai_text: m.ai_text,
-        channel: m.channel,
-        tint: m.tint || "",
-        is_multipoint: m.linked_group_id != null && m.linked_group_id >= 0,
-        max_line_points: 0,
-      });
-      favs = await api.favorites();
-      renderFavs();
-      favPanel.hidden = false;
+      try {
+        await api.addFavorite({
+          label,
+          sidc: m.sidc,
+          rotation_degrees: m.rotation_degrees,
+          unit_text: m.unit_text,
+          ai_text: m.ai_text,
+          channel: m.channel,
+          tint: m.tint || "",
+          is_multipoint: m.linked_group_id != null && m.linked_group_id >= 0,
+          max_line_points: 0,
+        });
+        favs = await api.favorites();
+        renderFavs();
+        favPanel.hidden = false;
+      } catch (err) {
+        toastError(err);
+      }
     });
   }
 

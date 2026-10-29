@@ -1,10 +1,11 @@
 """ORM-Modelle. Marker-Felder spiegeln ATAKmaps (server/app.py: SidcMarkerCreate)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -84,7 +85,7 @@ class GroupMember(Base):
     __tablename__ = "group_members"
 
     group_id: Mapped[str] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 
 class ApiToken(Base):
@@ -153,6 +154,10 @@ class PlanFolder(Base):
         ForeignKey("plan_folders.id", ondelete="SET NULL"), index=True, nullable=True
     )
     ordering: Mapped[int] = mapped_column(Integer, default=0)
+    # Ordner im Bereich "Pläne" eines Missionsbau-Projekts (NULL = normale Planliste)
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=True
+    )
     created_by: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -169,6 +174,9 @@ class Plan(Base):
         ForeignKey("plan_folders.id", ondelete="SET NULL"), index=True, nullable=True
     )
     ordering: Mapped[int] = mapped_column(Integer, default=0)
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
@@ -327,6 +335,9 @@ class PlanImage(Base):
     id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
     plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), index=True)
     phase_id: Mapped[str | None] = mapped_column(ForeignKey("phases.id", ondelete="SET NULL"), index=True)
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     filename: Mapped[str] = mapped_column(String(255), default="")
     content_type: Mapped[str] = mapped_column(String(32), default="image/png")
     byte_size: Mapped[int] = mapped_column(Integer, default=0)
@@ -464,7 +475,7 @@ class OrbatNode(Base):
 
     id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
     orbat_id: Mapped[str] = mapped_column(ForeignKey("orbats.id", ondelete="CASCADE"), index=True)
-    parent_id: Mapped[str | None] = mapped_column(ForeignKey("orbat_nodes.id", ondelete="CASCADE"))
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("orbat_nodes.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(128))
     sidc: Mapped[str] = mapped_column(String(64), default="")
     qty_planned: Mapped[int] = mapped_column(Integer, default=1)
@@ -497,6 +508,107 @@ class PlanOrbat(Base):
     __tablename__ = "plan_orbats"
 
     plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), primary_key=True)
-    orbat_id: Mapped[str] = mapped_column(ForeignKey("orbats.id", ondelete="CASCADE"), primary_key=True)
+    orbat_id: Mapped[str] = mapped_column(ForeignKey("orbats.id", ondelete="CASCADE"), primary_key=True, index=True)
     added_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+# ─── Missionsbau-Projekte ───────────────────────────────────────────────────
+
+class ProjectFolder(Base):
+    """Ordner in der Projektliste (Projekte als Ordnerstruktur). parent_id NULL = oberste Ebene."""
+
+    __tablename__ = "project_folders"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    name: Mapped[str] = mapped_column(String(120))
+    parent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project_folders.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    ordering: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    folder_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project_folders.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ProjectMember(Base):
+    __tablename__ = "project_members"
+
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    subject_type: Mapped[str] = mapped_column(String(8), primary_key=True)  # 'user' | 'group'
+    subject_id: Mapped[str] = mapped_column(UuidPk, primary_key=True)
+    role: Mapped[str] = mapped_column(String(8))  # viewer | editor | owner
+
+
+class ProjectDoc(Base):
+    __tablename__ = "project_docs"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    space: Mapped[str] = mapped_column(String(8))  # public | builder
+    parent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project_docs.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    kind: Mapped[str] = mapped_column(String(8))  # folder | doc
+    name: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text, default="", server_default="")
+    ordering: Mapped[int] = mapped_column(Integer, default=0)
+    byte_size: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ProjectNote(Base):
+    __tablename__ = "project_notes"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    color: Mapped[str] = mapped_column(String(8), default="yellow")
+    x: Mapped[float] = mapped_column(Float, default=0)
+    y: Mapped[float] = mapped_column(Float, default=0)
+    w: Mapped[float] = mapped_column(Float, default=220)
+    h: Mapped[float] = mapped_column(Float, default=160)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ProjectTask(Base):
+    __tablename__ = "project_tasks"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    status: Mapped[str] = mapped_column(String(8), default="open")  # open|doing|review|done
+    priority: Mapped[str] = mapped_column(String(8), default="normal")  # low|normal|high
+    assignee_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    due_date: Mapped["date | None"] = mapped_column(Date, nullable=True)
+    ordering: Mapped[int] = mapped_column(Integer, default=0)
+    plan_id: Mapped[str | None] = mapped_column(ForeignKey("plans.id", ondelete="SET NULL"), nullable=True)
+    doc_id: Mapped[str | None] = mapped_column(ForeignKey("project_docs.id", ondelete="SET NULL"), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

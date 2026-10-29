@@ -1,6 +1,7 @@
 // Hilfe-Overlay: erklärt Werkzeuge, Topbar und Tastenkürzel.
 import { getLang, t } from "./i18n";
 import { icon } from "./icons";
+import { a11yModal } from "./notify";
 
 const DE = `
 ### Linke Werkzeugleiste
@@ -156,13 +157,15 @@ export function openHelp(): void {
       <div class="help-body">${mini(getLang() === "en" ? EN : DE)}</div>
     </div>`;
   document.body.appendChild(back);
-  const close = () => back.remove();
+  a11yModal(back);
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") close();
+  };
+  const close = () => {
+    back.remove();
+    document.removeEventListener("keydown", onKey);
+  };
   back.addEventListener("mousedown", (e) => e.target === back && close());
   back.querySelector(".help-x")!.addEventListener("click", close);
-  document.addEventListener("keydown", function esc(e) {
-    if (e.key === "Escape") {
-      close();
-      document.removeEventListener("keydown", esc);
-    }
-  });
+  document.addEventListener("keydown", onKey);
 }

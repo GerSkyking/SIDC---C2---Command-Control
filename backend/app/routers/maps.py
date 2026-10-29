@@ -7,6 +7,7 @@ from __future__ import annotations
 import shutil
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 
 from urllib.parse import urlparse
@@ -17,6 +18,7 @@ from ..deps import AdminUser, DbDep, MapsReader
 from ..models import Map, MapSource, Plan, now
 from ..schemas import MapImportFromSourceIn, MapImportIn, MapOut
 from .map_sources import _list_files
+from .tiles import invalidate_map
 from ..services.maps_import import map_dir, run_import
 
 router = APIRouter(prefix="/api/maps", tags=["maps"])
@@ -44,36 +46,7 @@ def import_map(
     return m
 
 
-@router.post("/{map_id}/upload", response_model=MapOut, status_code=status.HTTP_202_ACCEPTED)
-async def upload_map(
-    map_id: str, request: Request, bg: BackgroundTasks, admin: AdminUser, db: DbDep, name: str = ""
-) -> Map:
-    """Rohen ZIP-Body streamen (Direkt-Upload/-Update). `name` als Query-Parameter,
-    bei vorhandener Karte optional."""
-    import re
-
-    if not re.match(_ID_RE, map_id):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ungültige Karten-ID")
-    existing = db.get(Map, map_id)
-
-    dest = _settings.maps_dir / f".import_{map_id}.zip"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    limit = _settings.map_import_max_mb * 1024 * 1024
-    written = 0
-    try:
-        with dest.open("wb") as f:
-            async for chunk in request.stream():
-                written += len(chunk)
-                if written > limit:
-                    raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Datei zu groß")
-                f.write(chunk)
-    except HTTPException:
-        dest.unlink(missing_ok=True)
-        raise
-    if written == 0:
-        dest.unlink(missing_ok=True)
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Leerer Upload")
-
+def _register_upload(db, existing, map_id: str, name: str, admin, request: Request, written: int) -> Map:
     if existing is not None:
         existing.status = "importing"
         existing.error = None
@@ -86,6 +59,40 @@ async def upload_map(
     db.commit()
     audit.record(db, "map.import" if existing is None else "map.update", user_id=admin.id,
                  target_type="map", target_id=map_id, request=request, via="upload", bytes=written)
+    return m
+
+
+@router.post("/{map_id}/upload", response_model=MapOut, status_code=status.HTTP_202_ACCEPTED)
+async def upload_map(
+    map_id: str, request: Request, bg: BackgroundTasks, admin: AdminUser, db: DbDep, name: str = ""
+) -> Map:
+    """Rohen ZIP-Body streamen (Direkt-Upload/-Update). `name` als Query-Parameter,
+    bei vorhandener Karte optional."""
+    import re
+
+    if not re.match(_ID_RE, map_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ungültige Karten-ID")
+    existing = await run_in_threadpool(db.get, Map, map_id)
+
+    dest = _settings.maps_dir / f".import_{map_id}.zip"
+    await run_in_threadpool(lambda: dest.parent.mkdir(parents=True, exist_ok=True))
+    limit = _settings.map_import_max_mb * 1024 * 1024
+    written = 0
+    try:
+        with dest.open("wb") as f:
+            async for chunk in request.stream():
+                written += len(chunk)
+                if written > limit:
+                    raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Datei zu groß")
+                await run_in_threadpool(f.write, chunk)
+    except HTTPException:
+        dest.unlink(missing_ok=True)
+        raise
+    if written == 0:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Leerer Upload")
+
+    m = await run_in_threadpool(_register_upload, db, existing, map_id, name, admin, request, written)
     bg.add_task(run_import, map_id, zip_path=str(dest))
     return m
 
@@ -135,9 +142,16 @@ def reimport_map(map_id: str, bg: BackgroundTasks, admin: AdminUser, db: DbDep) 
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     if not m.source_url:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Keine Quell-URL hinterlegt (nur Upload)")
+    # Token der passenden Quelle (gleicher Host) wieder mitsenden, sonst scheitern private Repos
+    headers = None
+    host = urlparse(m.source_url).netloc
+    for s in db.scalars(select(MapSource)):
+        if s.token and urlparse(s.base_url).netloc == host:
+            headers = {"Authorization": f"token {s.token}"}
+            break
     m.status = "importing"
     db.commit()
-    bg.add_task(run_import, map_id, url=m.source_url)
+    bg.add_task(run_import, map_id, url=m.source_url, headers=headers)
     return m
 
 
@@ -146,11 +160,12 @@ def delete_map(map_id: str, request: Request, admin: AdminUser, db: DbDep) -> No
     m = db.get(Map, map_id)
     if m is None:
         return
-    in_use = db.scalar(select(Plan.id).where(Plan.map_id == map_id, Plan.deleted_at.is_(None)))
+    in_use = db.scalar(select(Plan.id).where(Plan.map_id == map_id))
     if in_use:
         raise HTTPException(status.HTTP_409_CONFLICT, "Karte wird von Plänen genutzt")
     db.delete(m)
     db.commit()
+    invalidate_map(map_id)
     audit.record(db, "map.delete", user_id=admin.id, target_type="map", target_id=map_id, request=request)
     d = map_dir(map_id)
     if d.exists():

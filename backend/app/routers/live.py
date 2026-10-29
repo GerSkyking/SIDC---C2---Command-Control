@@ -7,16 +7,18 @@ Server und werden gegen Rechte + Marker-Lock geprüft.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import time
 from datetime import timezone
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select, update
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..db import SessionLocal
-from ..models import Annotation, ImagePlacement, Marker, OrbatNode, Phase, Plan, PlanImage, Stroke, User, now
+from ..models import Annotation, ImagePlacement, Marker, OrbatNode, Phase, Plan, PlanImage, PlanOrbat, Stroke, User, now
 from ..sidc_status import status_from_sidc
 from ..permissions import (
     effective_caps,
@@ -74,6 +76,7 @@ def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str, dict,
 
 
 _BUILDER_PHASES: dict[str, set[str]] = {}
+_KNOWN_PHASES: dict[str, set[str]] = {}  # alle bekannten Phasen-IDs (Spieler + Builder) je Plan
 _RELEASED_BUILDER_PHASES: dict[str, set[str]] = {}
 
 
@@ -83,6 +86,7 @@ def _refresh_builder_phases(plan_id: str) -> set[str]:
             db.scalars(select(Phase).where(Phase.plan_id == plan_id, Phase.plane == "builder"))
         )
         ids = {p.id for p in rows}
+        _KNOWN_PHASES[plan_id] = set(db.scalars(select(Phase.id).where(Phase.plan_id == plan_id)))
         locked_ids = set(
             db.scalars(
                 select(Phase.id).where(
@@ -107,9 +111,18 @@ def _phase_is_builder(plan_id: str, phase_id: str | None) -> bool:
     if not phase_id:
         return False
     ids = _BUILDER_PHASES.get(plan_id)
-    if ids is None or phase_id not in ids:
+    # nur bei UNBEKANNTER Phase (neu angelegt) neu laden - nicht bei jeder Spieler-Phase
+    if ids is None or phase_id not in _KNOWN_PHASES.get(plan_id, ()):
         ids = _refresh_builder_phases(plan_id)
     return phase_id in ids
+
+
+async def _prime_phases(plan_id: str, phase_ids) -> None:
+    """Phasen-Cache im Threadpool auffrischen, damit die synchronen Gates im Event-Loop
+    nicht auf die DB warten."""
+    known = _KNOWN_PHASES.get(plan_id)
+    if known is None or any(isinstance(x, str) and x and x not in known for x in phase_ids):
+        await run_in_threadpool(_refresh_builder_phases, plan_id)
 
 
 def _zeus_phase_open(plan_id: str, phase_id: str | None) -> bool:
@@ -168,24 +181,75 @@ async def live_ws(websocket: WebSocket) -> None:
     user, _plan, level, caps, is_builder, is_zeus = auth
     is_owner = rank(level) >= rank("owner")
 
-    await websocket.accept()
-    await hub.join(plan_id, websocket, is_builder=is_builder, is_zeus=is_zeus)
-    await websocket.send_json(
-        {"type": "hello", "level": level, "caps": caps, "mission_builder": is_builder, "zeus": is_zeus}
-    )
-    await hub.broadcast(plan_id, {"type": "presence.join", "user": user.label, "uid": user.id})
-
+    # Rechte können sich während der Verbindung ändern (ACL, Deaktivierung, Plan gelöscht):
+    # `st` wird vom Wächter-Task regelmäßig neu ermittelt, ein Entzug schließt den Socket.
+    st = {"caps": caps, "is_owner": is_owner, "is_builder": is_builder, "is_zeus": is_zeus}
+    watcher: asyncio.Task | None = None
     try:
+        await websocket.accept()
+        await hub.join(plan_id, websocket, is_builder=is_builder, is_zeus=is_zeus)
+        await websocket.send_json(
+            {"type": "hello", "level": level, "caps": caps, "mission_builder": is_builder, "zeus": is_zeus}
+        )
+        await hub.broadcast(plan_id, {"type": "presence.join", "user": user.label, "uid": user.id})
+        watcher = asyncio.create_task(_watch_auth(websocket, plan_id, st))
+
+        last_cursor = 0.0
         while True:
-            msg = await websocket.receive_json()
-            await _handle(websocket, plan_id, user, caps, is_owner, is_builder, is_zeus, msg)
+            try:
+                msg = await websocket.receive_json()
+            except (ValueError, TypeError):  # kein gültiges JSON
+                continue
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("type") == "presence.cursor":  # Rate-Limit: max. ~25/s je Verbindung
+                tnow = time.monotonic()
+                if tnow - last_cursor < 0.04:
+                    continue
+                last_cursor = tnow
+            try:
+                await _handle(
+                    websocket, plan_id, user, st["caps"], st["is_owner"], st["is_builder"], st["is_zeus"], msg
+                )
+            except WebSocketDisconnect:
+                raise
+            except Exception as exc:  # noqa: BLE001  fehlerhafte Nachricht ≠ Verbindungsende
+                log.warning("live_ws Nachricht abgelehnt (plan=%s, type=%s): %r", plan_id, msg.get("type"), exc)
+                await _reject(websocket, msg.get("cid"), "Ungültige Nachricht")
     except WebSocketDisconnect:
         pass
     except Exception:  # noqa: BLE001
         log.exception("live_ws Fehler (plan=%s)", plan_id)
     finally:
+        if watcher is not None:
+            watcher.cancel()
         hub.leave(plan_id, websocket)
-        await hub.broadcast(plan_id, {"type": "presence.leave", "uid": user.id})
+        try:
+            await hub.broadcast(plan_id, {"type": "presence.leave", "uid": user.id})
+        except Exception:  # noqa: BLE001
+            log.exception("presence.leave fehlgeschlagen (plan=%s)", plan_id)
+
+
+AUTH_RECHECK_SECONDS = 20
+
+
+async def _watch_auth(websocket: WebSocket, plan_id: str, st: dict) -> None:
+    """Berechtigungen offener Sockets periodisch neu prüfen: Entzug → schließen,
+    Änderung (Rolle/Caps/Missionsbau/Zeus) → übernehmen."""
+    while True:
+        await asyncio.sleep(AUTH_RECHECK_SECONDS)
+        try:
+            auth = await run_in_threadpool(_auth, websocket.cookies, plan_id)
+        except Exception:  # noqa: BLE001  DB kurz weg → beim nächsten Mal erneut
+            log.exception("live_ws Rechte-Neuprüfung fehlgeschlagen (plan=%s)", plan_id)
+            continue
+        if auth is None:
+            await websocket.close(code=4403)
+            return
+        _u, _p, level, caps, is_builder, is_zeus = auth
+        if (is_builder, is_zeus) != (st["is_builder"], st["is_zeus"]):
+            hub.set_roles(websocket, is_builder=is_builder, is_zeus=is_zeus)  # Hub-Mitgliedschaft nachziehen
+        st.update(caps=caps, is_owner=rank(level) >= rank("owner"), is_builder=is_builder, is_zeus=is_zeus)
 
 
 async def _reject(ws: WebSocket, cid: str | None, reason: str) -> None:
@@ -222,14 +286,18 @@ async def _handle(
         Spieler-Phase gekoppelten "Spiegel"-Phase → die geht an alle Sockets."""
         return _phase_is_hidden_builder(plan_id, phase_id)
 
-    def bflags(phase_id: str | None) -> dict:
+    async def bflags(phase_id: str | None) -> dict:
         """Broadcast-Flags: Builder-Phasen nur an Missionsbauer — und an Zeus, solange freigegeben."""
         hidden = hb(phase_id)
-        return {"builder_only": hidden, "zeus_ok": hidden and _zeus_phase_open(plan_id, phase_id)}
+        return {"builder_only": hidden, "zeus_ok": hidden and await run_in_threadpool(_zeus_phase_open, plan_id, phase_id)}
 
-    def blocked(phase_id: str | None) -> bool:
+    async def blocked(phase_id: str | None) -> bool:
         """Nicht-Missionsbauer: Builder-Phase gesperrt — außer Zeus in einer freigegebenen Phase."""
-        return bo(phase_id) and not (is_zeus and _zeus_phase_open(plan_id, phase_id))
+        return bo(phase_id) and not (is_zeus and await run_in_threadpool(_zeus_phase_open, plan_id, phase_id))
+
+    _d = msg.get("data") if isinstance(msg.get("data"), dict) else {}
+    _ex = _d.get("extra_phase_ids")
+    await _prime_phases(plan_id, [_d.get("phase_id"), *(_ex if isinstance(_ex, list) else [])])
 
     # presence.cursor immer erlaubt (auch für Nur-Leser sinnvoll: "Zeigen")
     if t == "presence.cursor":
@@ -275,11 +343,16 @@ async def _handle(
     ):
         pid = (msg.get("data") or {}).get("phase_id")
         extras = (msg.get("data") or {}).get("extra_phase_ids") or []
-        if t == "stroke.modify":
-            if blocked(_stroke_phase(plan_id, msg.get("id"))):
-                await _reject(ws, msg.get("cid"), "Keine Berechtigung: Missionsbau-Ebene")
-                return
-        if blocked(pid) or any(blocked(x) for x in extras if isinstance(x, str)):
+        if await blocked(pid) or any([await blocked(x) for x in extras if isinstance(x, str)]):
+            await _reject(ws, msg.get("cid"), "Keine Berechtigung: Missionsbau-Ebene")
+            return
+
+    # Auch das BESTEHENDE Objekt darf nicht auf einer Builder-Phase liegen (move/lock/
+    # delete haben keine phase_id im Payload, modify kann sie weglassen).
+    if not is_builder and isinstance(msg.get("id"), str):
+        existing = await run_in_threadpool(_existing_phases, plan_id, t, msg["id"])
+        await _prime_phases(plan_id, existing)
+        if any([await blocked(x) for x in existing]):
             await _reject(ws, msg.get("cid"), "Keine Berechtigung: Missionsbau-Ebene")
             return
 
@@ -288,7 +361,7 @@ async def _handle(
         m = await run_in_threadpool(_create_marker, plan_id, user.id, data)
         await hub.broadcast(
             plan_id, {"type": "marker.upsert", "cid": msg.get("cid"), "marker": m},
-            **bflags(m.get("phase_id")),
+            **await bflags(m.get("phase_id")),
         )
 
     elif t == "marker.move":
@@ -313,7 +386,7 @@ async def _handle(
         pid = await run_in_threadpool(_delete_marker, plan_id, msg["id"], is_owner)
         if pid is not False:
             await hub.broadcast(
-                plan_id, {"type": "marker.delete", "id": msg["id"]}, **bflags(pid)
+                plan_id, {"type": "marker.delete", "id": msg["id"]}, **await bflags(pid)
             )
         else:
             await _reject(ws, msg.get("cid"), "Marker gesperrt oder nicht vorhanden")
@@ -322,7 +395,7 @@ async def _handle(
         s = await run_in_threadpool(_create_stroke, plan_id, user.id, msg.get("data", {}))
         await hub.broadcast(
             plan_id, {"type": "stroke.upsert", "cid": msg.get("cid"), "stroke": s},
-            **bflags(s.get("phase_id")),
+            **await bflags(s.get("phase_id")),
         )
 
     elif t == "stroke.modify":
@@ -330,20 +403,20 @@ async def _handle(
         if s is not None:
             await hub.broadcast(
                 plan_id, {"type": "stroke.upsert", "stroke": s},
-                **bflags(s.get("phase_id")),
+                **await bflags(s.get("phase_id")),
             )
 
     elif t == "stroke.delete":
         pid = await run_in_threadpool(_delete_stroke, plan_id, msg["id"])
         await hub.broadcast(
-            plan_id, {"type": "stroke.delete", "id": msg["id"]}, **bflags(pid)
+            plan_id, {"type": "stroke.delete", "id": msg["id"]}, **await bflags(pid)
         )
 
     elif t == "annotation.create":
         a = await run_in_threadpool(_create_annotation, plan_id, user.id, msg.get("data", {}))
         await hub.broadcast(
             plan_id, {"type": "annotation.upsert", "cid": msg.get("cid"), "annotation": a},
-            **bflags(a.get("phase_id")),
+            **await bflags(a.get("phase_id")),
         )
 
     elif t in ("annotation.move", "annotation.modify"):
@@ -355,13 +428,13 @@ async def _handle(
         if res is not None:
             await hub.broadcast(
                 plan_id, {"type": "annotation.upsert", "annotation": res},
-                **bflags(res.get("phase_id")),
+                **await bflags(res.get("phase_id")),
             )
 
     elif t == "annotation.delete":
         pid = await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
         await hub.broadcast(
-            plan_id, {"type": "annotation.delete", "id": msg["id"]}, **bflags(pid)
+            plan_id, {"type": "annotation.delete", "id": msg["id"]}, **await bflags(pid)
         )
 
     elif t == "image.modify":
@@ -370,13 +443,13 @@ async def _handle(
         if res is not None:
             await hub.broadcast(
                 plan_id, {"type": "image.upsert", "image": res},
-                **bflags(res.get("phase_id")),
+                **await bflags(res.get("phase_id")),
             )
 
     elif t == "image.delete":
         pid = await run_in_threadpool(_delete_image, plan_id, msg["id"])
         await hub.broadcast(
-            plan_id, {"type": "image.delete", "id": msg["id"]}, **bflags(pid)
+            plan_id, {"type": "image.delete", "id": msg["id"]}, **await bflags(pid)
         )
 
     elif t == "placement.create":
@@ -385,7 +458,7 @@ async def _handle(
         if p is not None:
             await hub.broadcast(
                 plan_id, {"type": "placement.upsert", "cid": msg.get("cid"), "placement": p},
-                **bflags(p.get("phase_id")),
+                **await bflags(p.get("phase_id")),
             )
         else:
             await _reject(ws, msg.get("cid"), "Bild nicht gefunden")
@@ -396,19 +469,19 @@ async def _handle(
         if res is not None:
             await hub.broadcast(
                 plan_id, {"type": "placement.upsert", "placement": res},
-                **bflags(res.get("phase_id")),
+                **await bflags(res.get("phase_id")),
             )
 
     elif t == "placement.delete":
         pid = await run_in_threadpool(_delete_placement, plan_id, msg["id"])
         await hub.broadcast(
-            plan_id, {"type": "placement.delete", "id": msg["id"]}, **bflags(pid)
+            plan_id, {"type": "placement.delete", "id": msg["id"]}, **await bflags(pid)
         )
 
 
-def _bflags(plan_id: str, phase_id: str | None) -> dict:
+async def _bflags(plan_id: str, phase_id: str | None) -> dict:
     hidden = _phase_is_hidden_builder(plan_id, phase_id)
-    return {"builder_only": hidden, "zeus_ok": hidden and _zeus_phase_open(plan_id, phase_id)}
+    return {"builder_only": hidden, "zeus_ok": hidden and await run_in_threadpool(_zeus_phase_open, plan_id, phase_id)}
 
 
 async def _emit_update(ws: WebSocket, plan_id: str, msg: dict, res: dict | None) -> None:
@@ -417,7 +490,7 @@ async def _emit_update(ws: WebSocket, plan_id: str, msg: dict, res: dict | None)
     else:
         await hub.broadcast(
             plan_id, {"type": "marker.upsert", "marker": res},
-            **_bflags(plan_id, res.get("phase_id")),
+            **await _bflags(plan_id, res.get("phase_id")),
         )
 
 
@@ -437,7 +510,13 @@ def _sync_node(db, node_id: str | None, *, delta: int = 0) -> None:
     if n is None:
         return
     if delta:
-        n.qty_current = max(0, (n.qty_current or 0) + delta)
+        # atomar in der DB (kein Read-Modify-Write -> keine Lost Updates bei parallelen Sockets)
+        new_qty = func.coalesce(OrbatNode.qty_current, 0) + delta
+        db.execute(
+            update(OrbatNode).where(OrbatNode.id == node_id)
+            .values(qty_current=case((new_qty < 0, 0), else_=new_qty))
+            .execution_options(synchronize_session="fetch")
+        )
     states = [
         status_from_sidc(m.sidc)
         for m in db.scalars(select(Marker).where(Marker.orbat_node_id == node_id))
@@ -451,10 +530,22 @@ def _sync_node(db, node_id: str | None, *, delta: int = 0) -> None:
     db.commit()
 
 
+def _check_phase(db, plan_id: str, pid: str | None) -> str | None:
+    """Angegebene Phase muss zu diesem Plan gehören (sonst ValueError -> reject)."""
+    if not pid:
+        return None
+    if not isinstance(pid, str):
+        raise ValueError("phase_id")
+    p = db.get(Phase, pid)
+    if p is None or p.plan_id != plan_id:
+        raise ValueError("Phase gehört nicht zu diesem Plan")
+    return pid
+
+
 def _need_phase(db, plan_id: str, pid: str | None) -> str | None:
     """Jedes Element gehört zu einer Phase: ohne Angabe die erste Spieler-Phase (Base)."""
     if pid:
-        return pid
+        return _check_phase(db, plan_id, pid)
     return db.scalar(
         select(Phase.id).where(Phase.plan_id == plan_id, Phase.plane == "player").order_by(Phase.ordering).limit(1)
     )
@@ -464,9 +555,21 @@ def _clean_ids(v) -> list[str]:
     return [str(x) for x in v if isinstance(x, str)][:32] if isinstance(v, list) else []
 
 
+def _plan_node(db, plan_id: str, node_id: str | None) -> str | None:
+    """ORBAT-Knoten nur akzeptieren, wenn dessen ORBAT an diesen Plan gehängt ist."""
+    if not node_id:
+        return None
+    n = db.get(OrbatNode, node_id)
+    if n is None or db.get(PlanOrbat, (plan_id, n.orbat_id)) is None:
+        return None
+    return node_id
+
+
 def _create_marker(plan_id: str, uid: str, data: dict) -> dict:
     with SessionLocal() as db:
         data = {**data, "phase_id": _need_phase(db, plan_id, data.get("phase_id"))}
+        if data.get("orbat_node_id"):
+            data["orbat_node_id"] = _plan_node(db, plan_id, data["orbat_node_id"])
         m = Marker(plan_id=plan_id, created_by=uid, updated_by=uid, **_clean_marker_fields(data))
         db.add(m)
         db.commit()
@@ -487,15 +590,17 @@ def _update_marker(plan_id: str, marker_id: str, uid: str, is_owner: bool, field
         fields = dict(fields)
         if "phase_id" in fields:
             fields["phase_id"] = _need_phase(db, plan_id, fields["phase_id"])
+        if fields.get("orbat_node_id"):
+            fields["orbat_node_id"] = _plan_node(db, plan_id, fields["orbat_node_id"])
         for k, v in _clean_marker_fields(fields).items():
             setattr(m, k, v)
         m.updated_by = uid
         m.updated_at = now()
         db.commit()
         new_loss = _losses(status_from_sidc(m.sidc), m.orbat_strength)
-        if old_node and old_node != m.orbat_node_id:
+        if old_node != m.orbat_node_id:
             _sync_node(db, old_node, delta=old_loss)          # Verlust zieht mit dem Marker weg
-            _sync_node(db, m.orbat_node_id, delta=-new_loss)  # am neuen Knoten neu ansetzen
+            _sync_node(db, m.orbat_node_id, delta=-new_loss)  # am neuen Knoten neu ansetzen (auch wenn vorher unverknüpft)
         else:
             _sync_node(db, m.orbat_node_id, delta=old_loss - new_loss)
         return _marker_out(m, _author_of(db, m))
@@ -517,15 +622,30 @@ def _delete_marker(plan_id: str, marker_id: str, is_owner: bool):
         return pid
 
 
+MAX_STROKE_POINTS = 5000
+
+
+def _clean_points(pts) -> list:
+    """Punktliste prüfen: Liste von [x, y, ...] mit endlichen Zahlen, max. MAX_STROKE_POINTS."""
+    if not isinstance(pts, list) or len(pts) > MAX_STROKE_POINTS:
+        raise ValueError("points")
+    for p in pts:
+        if not isinstance(p, (list, tuple)) or len(p) < 2 or any(
+            isinstance(c, bool) or not isinstance(c, (int, float)) or c != c or abs(c) > 1e9 for c in p
+        ):
+            raise ValueError("points")
+    return pts
+
+
 def _create_stroke(plan_id: str, uid: str, data: dict) -> dict:
     with SessionLocal() as db:
         s = Stroke(
             plan_id=plan_id, created_by=uid,
             phase_id=_need_phase(db, plan_id, data.get("phase_id")), layer_id=data.get("layer_id"),
             extra_phase_ids=_clean_ids(data.get("extra_phase_ids")),
-            kind=data.get("kind", "freehand"), points=data.get("points", []),
+            kind=str(data.get("kind", "freehand"))[:32], points=_clean_points(data.get("points", [])),
             channel=str(data.get("channel") or ""),
-            color=data.get("color", -1), width=data.get("width", -1),
+            color=int(data.get("color", -1)), width=float(data.get("width", -1)),
         )
         db.add(s)
         db.commit()
@@ -538,6 +658,27 @@ def _stroke_out(s: Stroke) -> dict:
         "channel": s.channel, "points": s.points, "color": s.color, "width": s.width,
         "extra_phase_ids": list(s.extra_phase_ids or []),
     }
+
+
+def _existing_phases(plan_id: str, msg_type: str | None, obj_id: str) -> list[str]:
+    """Alle Phasen (Haupt- + Zusatzphasen) des bestehenden Objekts, auf das sich eine
+    Mutation bezieht. Leer, wenn nicht gefunden."""
+    model = {
+        "marker": Marker, "stroke": Stroke, "annotation": Annotation,
+        "image": PlanImage, "placement": ImagePlacement,
+    }.get((msg_type or "").split(".")[0])
+    if model is None:
+        return []
+    with SessionLocal() as db:
+        o = db.get(model, obj_id)
+        if o is None or o.plan_id != plan_id:
+            return []
+        ids = [o.phase_id, *(getattr(o, "extra_phase_ids", None) or [])]
+        if isinstance(o, ImagePlacement):
+            img = db.get(PlanImage, o.image_id)
+            if img is not None:
+                ids.append(img.phase_id)
+        return [x for x in ids if x]
 
 
 def _stroke_phase(plan_id: str, stroke_id: str | None) -> str | None:
@@ -555,7 +696,7 @@ def _update_stroke(plan_id: str, stroke_id: str, data: dict) -> dict | None:
             return None
         pts = data.get("points")
         if isinstance(pts, list) and len(pts) >= 2:
-            s.points = [[float(p[0]), float(p[1])] for p in pts]
+            s.points = [[float(p[0]), float(p[1])] for p in _clean_points(pts)]
         if data.get("color") is not None:
             s.color = int(data["color"])
         if data.get("width") is not None:
@@ -658,9 +799,11 @@ def _image_out(i: PlanImage, author: str | None = None) -> dict:
 def _create_image(plan_id: str, uid: str | None, meta: dict, raw: bytes, sniff: tuple[str, int, int]) -> dict:
     ct, w, h = sniff
     with SessionLocal() as db:
+        plan = db.get(Plan, plan_id)
         i = PlanImage(
             plan_id=plan_id, created_by=uid, updated_by=uid,
-            phase_id=meta.get("phase_id") or None,
+            project_id=plan.project_id if plan is not None else None,
+            phase_id=_check_phase(db, plan_id, meta.get("phase_id")),
             filename=str(meta.get("filename", ""))[:255],
             caption=str(meta.get("caption", ""))[:2000],
             content_type=ct, byte_size=len(raw), natural_w=w, natural_h=h,
@@ -680,6 +823,8 @@ def _update_image(plan_id: str, image_id: str, uid: str | None, fields: dict) ->
             fields["caption"] = str(fields["caption"])[:2000]
         if "note" in fields:
             fields["note"] = str(fields["note"])[:20000]
+        if "phase_id" in fields:
+            fields["phase_id"] = _check_phase(db, plan_id, fields["phase_id"])
         for k, v in fields.items():
             setattr(i, k, v)
         i.updated_by = uid
@@ -733,7 +878,7 @@ def _create_placement(plan_id: str, uid: str | None, data: dict) -> dict | None:
             return None
         p = ImagePlacement(
             plan_id=plan_id, image_id=img.id, created_by=uid, updated_by=uid,
-            phase_id=data.get("phase_id"),
+            phase_id=_check_phase(db, plan_id, data.get("phase_id")),
             world_x=float(data.get("world_x", 0)), world_y=float(data.get("world_y", 0)),
             map_width=float(data.get("map_width", 240)),
             scale_fixed=bool(data.get("scale_fixed", False)),
@@ -749,6 +894,8 @@ def _update_placement(plan_id: str, placement_id: str, uid: str | None, fields: 
         p = db.get(ImagePlacement, placement_id)
         if p is None or p.plan_id != plan_id:
             return None
+        if "phase_id" in fields:
+            fields["phase_id"] = _check_phase(db, plan_id, fields["phase_id"])
         for k, v in fields.items():
             setattr(p, k, v)
         p.updated_by = uid

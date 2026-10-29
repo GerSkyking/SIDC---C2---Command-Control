@@ -2,6 +2,7 @@
 // Echelon, Richtung, Texte, Channel, Lock/Timestamp). Ergebnis = MarkerTemplate,
 // das die Plan-Ansicht per Linksklick platziert (wie ATAKmaps placeOnClick).
 
+import { esc } from "../esc";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import { toast } from "../notify";
@@ -164,7 +165,7 @@ export async function openWizard(
        <div class="wiz-cfg-main">
         <div class="wiz-cfg-title">
           <img src="${iconSrc(buildSidc())}" width="34" height="34" data-hide-on-error/>
-          <strong>${entry.name}</strong>
+          <strong>${esc(entry.name)}</strong>
         </div>
         <label>${t("wiz.affiliation")}</label>
         <div class="wiz-aff">${AFFILIATIONS.map(
@@ -292,7 +293,7 @@ export async function openWizard(
     }
 
     if (!quick) {
-      body.innerHTML = `<p class="muted">Kein QuickMenü-Katalog hochgeladen.</p>`;
+      body.innerHTML = `<p class="muted">${t("wiz.noQuick")}</p>`;
       return;
     }
     renderQuick(body, quick.categoryRows.flatMap((r) => r.categories), cats!, configure, onIdentity);
@@ -342,7 +343,7 @@ function renderQuick(
           } else {
             const e = findEntry(cats, btn.markerDescription);
             if (e) configure(e, identity, btn);
-            else toast(`Nicht im Katalog: ${btn.markerDescription}`, { kind: "warn" });
+            else toast(`${t("wiz.notInCatalog")}: ${btn.markerDescription}`, { kind: "warn" });
           }
         });
         rEl.appendChild(b);

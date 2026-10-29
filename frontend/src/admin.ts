@@ -7,7 +7,7 @@ import { confirmDialog, promptDialog, toastError } from "./notify";
 import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch, type NavSection } from "./ui";
 import { esc } from "./esc";
 
-export type AdminSection = "users" | "log" | "config" | "images";
+export type AdminSection = "users" | "log" | "config" | "storage";
 
 export async function renderAdmin(app: HTMLElement, section: AdminSection = "users"): Promise<void> {
   const me = await api.me().catch(() => null);
@@ -91,48 +91,34 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
     return;
   }
 
-  if (section === "images") {
-    const rows = await api.adminImages().catch(() => []);
-    const rel = (iso: string) => {
-      const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-      if (s < 3600) return `${Math.round(s / 60)} min`;
-      if (s < 86400) return `${Math.round(s / 3600)} h`;
-      return `${Math.round(s / 86400)} d`;
-    };
+  if (section === "storage") {
+    const rows = await api.adminProjectStorage().catch(() => []);
     const fb = (n: number) =>
-      n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+      n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(2)} GB`;
+    const max = Math.max(1, ...rows.map((r) => r.total_bytes));
     app.innerHTML = shell(
-      `<h2>${t("admin.images")}</h2>
+      `<h2>${t("admin.storage")}</h2>
+       <p class="muted">${t("admin.storage.hint")}</p>
        ${
          rows.length
            ? `<table class="acl-tbl"><thead><tr>
-                <th></th><th>${t("common.name")}</th><th>${t("admin.img.size")}</th>
-                <th>${t("admin.img.plan")}</th><th>${t("admin.img.phase")}</th>
-                <th>${t("admin.img.uploader")}</th><th>${t("admin.img.age")}</th><th></th>
+                <th>${t("proj.name")}</th><th>${t("admin.storage.images")}</th><th>${t("admin.storage.docs")}</th>
+                <th>${t("admin.storage.plans")}</th><th>${t("admin.storage.total")}</th><th></th>
               </tr></thead><tbody>${rows
                 .map(
-                  (r) => `<tr data-img="${esc(r.id)}">
-                    <td><a href="/plans/${esc(r.plan_id)}/images/${esc(r.id)}/raw" target="_blank" rel="noopener">
-                      <img src="/plans/${esc(r.plan_id)}/images/${esc(r.id)}/raw" alt="" style="width:44px;height:44px;object-fit:cover;border:1px solid var(--border);border-radius:4px" data-hide-on-error /></a></td>
-                    <td>${esc(r.filename)}</td><td>${fb(r.byte_size)}</td>
-                    <td>${esc(r.plan_name)}</td><td>${esc(r.phase_name)}</td>
-                    <td>${esc(r.uploader)}</td><td>${rel(r.created_at)}</td>
-                    <td><button class="icon-btn" data-img-del title="${t("common.delete")}">${icon("trash", 14)}</button></td>
+                  (r) => `<tr>
+                    <td style="text-align:left"><a href="#/projects/${esc(r.project_id)}">${esc(r.name)}</a></td>
+                    <td>${fb(r.images_bytes)}</td><td>${fb(r.docs_bytes)}</td><td>${r.plans_count}</td>
+                    <td><strong>${fb(r.total_bytes)}</strong></td>
+                    <td style="width:30%"><div class="stor-bar"><i style="width:${Math.max(2, Math.round((r.total_bytes / max) * 100))}%"></i></div></td>
                   </tr>`,
                 )
                 .join("")}</tbody></table>`
-           : `<p class="muted">${t("admin.img.empty")}</p>`
+           : `<p class="muted">${t("admin.storage.empty")}</p>`
        }`,
-      t("admin.images"),
+      t("admin.storage"),
     );
     postShell(app);
-    app.querySelectorAll<HTMLElement>("[data-img]").forEach((row) => {
-      row.querySelector("[data-img-del]")?.addEventListener("click", async () => {
-        if (await confirmDialog(t("admin.img.deleteConfirm"), { danger: true, trash: true })) {
-          guard(() => api.adminDeleteImage(row.dataset.img!));
-        }
-      });
-    });
     return;
   }
 

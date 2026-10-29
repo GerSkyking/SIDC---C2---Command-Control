@@ -7,15 +7,16 @@ import os
 import signal
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 
 from .. import audit
 from ..deps import AdminUser, DbDep
-from ..models import ApiToken, AuditLog, Group, GroupMember, ImagePlacement, Phase, Plan, PlanImage, User
+from ..models import ApiToken, AuditLog, Group, GroupMember, Plan, PlanImage, Project, ProjectDoc, User
 from ..models import now as _now
 from ..security import MIN_PASSWORD_LEN, hash_password
-from ..services.realtime import hub
+from ..services.realtime import broadcast_from_thread
 
 log = logging.getLogger("sidc.admin")
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -26,7 +27,7 @@ async def restart_backend(request: Request, admin: AdminUser, db: DbDep) -> dict
     """Beendet den Backend-Prozess; Docker (`restart: unless-stopped`) startet den
     Container neu. db/redis laufen weiter. ~2 s Ausfall."""
     log.warning("Neustart durch Admin '%s' ausgelöst", admin.username)
-    audit.record(db, "backend.restart", user_id=admin.id, request=request)
+    await run_in_threadpool(audit.record, db, "backend.restart", user_id=admin.id, request=request)
 
     async def _bye() -> None:
         await asyncio.sleep(0.3)
@@ -40,7 +41,7 @@ async def restart_backend(request: Request, admin: AdminUser, db: DbDep) -> dict
 
 class UserCreate(BaseModel):
     username: str = Field(min_length=1, max_length=64)
-    password: str
+    password: str = Field(max_length=256)
     display_name: str = Field(default="", max_length=64)
     role: str = Field(default="user", pattern=r"^(admin|user)$")
     can_create_plans: bool = False
@@ -54,8 +55,8 @@ class UserPatch(BaseModel):
     is_mission_builder: bool | None = None
     is_zeus: bool | None = None
     is_active: bool | None = None
-    password: str | None = None
-    display_name: str | None = None
+    password: str | None = Field(default=None, max_length=256)
+    display_name: str | None = Field(default=None, max_length=64)
 
 
 class UserRow(BaseModel):
@@ -164,8 +165,11 @@ def list_audit(
         q = q.where(AuditLog.action.like(f"{esc}%", escape="\\"))
     if user:
         uid = db.scalar(select(User.id).where(User.username == user))
+        if uid is None:
+            return {"items": [], "offset": 0, "limit": max(1, min(limit, 500))}
         q = q.where(AuditLog.user_id == uid)
     limit = max(1, min(limit, 500))
+    offset = max(0, offset)
     rows = list(db.scalars(q.limit(limit).offset(offset)))
     names = {
         u.id: u.username
@@ -187,47 +191,31 @@ def list_audit(
     }
 
 
-# ─── Plan-Bilder (globale Übersicht) ───────────────────────────────────────
+# ─── Speicherauswertung pro Projekt ────────────────────────────────────────
 
-@router.get("/images")
-def list_images(admin: AdminUser, db: DbDep) -> list[dict]:
-    rows = list(db.scalars(select(PlanImage).order_by(desc(PlanImage.created_at)).limit(1000)))
-    plan_names = {
-        p.id: p.name for p in db.scalars(select(Plan).where(Plan.id.in_({r.plan_id for r in rows})))
-    }
-    phase_names = {
-        p.id: p.name for p in db.scalars(select(Phase).where(Phase.id.in_({r.phase_id for r in rows if r.phase_id})))
-    }
-    users = {
-        u.id: u.label
-        for u in db.scalars(select(User).where(User.id.in_({r.created_by for r in rows if r.created_by})))
-    }
-    return [
-        {
-            "id": r.id, "filename": r.filename, "byte_size": r.byte_size,
-            "content_type": r.content_type,
-            "plan_id": r.plan_id, "plan_name": plan_names.get(r.plan_id, "—"),
-            "phase_id": r.phase_id, "phase_name": phase_names.get(r.phase_id or "", "—"),
-            "uploader": users.get(r.created_by or "", "—"),
-            "created_at": r.created_at.isoformat(),
-        }
-        for r in rows
-    ]
-
-
-@router.delete("/images/{image_id}")
-async def delete_image(image_id: str, request: Request, admin: AdminUser, db: DbDep) -> dict:
-    img = db.get(PlanImage, image_id)
-    if img is not None:
-        plan_id = img.plan_id
-        for p in db.scalars(select(ImagePlacement).where(ImagePlacement.image_id == image_id)):
-            db.delete(p)
-        db.delete(img)
-        db.commit()
-        audit.record(db, "image.delete", user_id=admin.id, target_type="image",
-                     target_id=image_id, request=request)
-        await hub.broadcast(plan_id, {"type": "image.delete", "id": image_id})
-    return {"ok": True}
+@router.get("/projects/storage")
+def projects_storage(admin: AdminUser, db: DbDep) -> list[dict]:
+    img = dict(db.execute(
+        select(PlanImage.project_id, func.coalesce(func.sum(PlanImage.byte_size), 0))
+        .where(PlanImage.project_id.is_not(None)).group_by(PlanImage.project_id)
+    ).all())
+    docs = dict(db.execute(
+        select(ProjectDoc.project_id, func.coalesce(func.sum(ProjectDoc.byte_size), 0))
+        .group_by(ProjectDoc.project_id)
+    ).all())
+    plans = dict(db.execute(
+        select(Plan.project_id, func.count(Plan.id))
+        .where(Plan.project_id.is_not(None), Plan.deleted_at.is_(None)).group_by(Plan.project_id)
+    ).all())
+    out = []
+    for p in db.scalars(select(Project)):
+        ib, dbytes = int(img.get(p.id, 0)), int(docs.get(p.id, 0))
+        out.append({
+            "project_id": p.id, "name": p.name, "images_bytes": ib, "docs_bytes": dbytes,
+            "plans_count": int(plans.get(p.id, 0)), "total_bytes": ib + dbytes,
+        })
+    out.sort(key=lambda r: r["total_bytes"], reverse=True)
+    return out
 
 
 # ─── Gruppen ───────────────────────────────────────────────────────────────
@@ -279,6 +267,8 @@ def patch_group(group_id: str, body: GroupIn, admin: AdminUser, db: DbDep) -> Gr
     g = db.get(Group, group_id)
     if g is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if db.scalar(select(Group.id).where(Group.name == body.name, Group.id != group_id)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Gruppenname vergeben")
     g.name = body.name
     g.can_create_plans = body.can_create_plans
     g.is_mission_builder = body.is_mission_builder

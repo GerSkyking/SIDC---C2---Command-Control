@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 // Dünne fetch-Hülle. Session läuft über das HttpOnly-Cookie, daher nur credentials:"include".
 
 export class ApiError extends Error {
@@ -70,12 +71,15 @@ export interface PlanItem {
   folder_id: string | null;
   ordering: number;
   level: "viewer" | "editor" | "owner";
+  project_id?: string | null;
 }
 export interface PlanFolder {
   id: string;
   name: string;
   parent_id: string | null;
   ordering: number;
+  /** Ersteller (fehlt bei Alt-Ordnern) – steuert, wer Umbenennen/Löschen angezeigt bekommt */
+  created_by?: string | null;
 }
 export interface Favorite {
   id: string;
@@ -156,17 +160,116 @@ export interface ImagePlacement {
   scale_fixed: boolean;
   ref_zoom: number;
 }
-export interface AdminImageRow {
+// ─── Missionsbau-Projekte (docs/PROJEKTE.md) ──────────────────────────────
+export type ProjectRole = "viewer" | "editor" | "owner";
+export type ProjectSpace = "public" | "builder";
+export type TaskStatus = "open" | "doing" | "review" | "done";
+export type TaskPriority = "low" | "normal" | "high";
+export type NoteColor = "yellow" | "green" | "blue" | "pink" | "orange" | "gray";
+export interface ProjectItem {
   id: string;
-  filename: string;
+  name: string;
+  description: string;
+  archived: boolean;
+  role: ProjectRole;
+  plan_count: number;
+  open_tasks: number;
+  my_open_tasks: number;
+  updated_at: string | null;
+  folder_id?: string | null;
+}
+export interface ProjectFolder {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  ordering?: number;
+  created_by?: string | null;
+}
+export interface ProjectDetail {
+  id: string;
+  name: string;
+  description: string;
+  archived: boolean;
+  role: ProjectRole;
+  is_builder: boolean;
+}
+export interface ProjectMember {
+  subject_type: "user" | "group";
+  subject_id: string;
+  role: ProjectRole;
+  name?: string;
+}
+export interface ProjectCandidate {
+  subject_type: "user" | "group";
+  subject_id: string;
+  name: string;
+}
+export interface ProjectDocNode {
+  id: string;
+  parent_id: string | null;
+  kind: "folder" | "doc";
+  name: string;
   byte_size: number;
-  content_type: string;
+  updated_at: string;
+  updated_by?: string | null;
+}
+export interface ProjectDoc extends ProjectDocNode {
+  content: string;
+  space?: ProjectSpace;
+}
+export interface ProjectImage {
+  id: string;
   plan_id: string;
   plan_name: string;
-  phase_id: string | null;
-  phase_name: string;
-  uploader: string;
+  filename: string;
+  caption: string;
+  byte_size: number;
+  natural_w: number;
+  natural_h: number;
   created_at: string;
+  author?: string | null;
+}
+export interface ProjectNote {
+  id: string;
+  text: string;
+  color: NoteColor;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  updated_by?: string | null;
+}
+export interface ProjectTask {
+  id: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  assignee_id: string | null;
+  assignee_label?: string | null;
+  due_date: string | null;
+  ordering: number;
+  plan_id: string | null;
+  plan_name?: string | null;
+  doc_id: string | null;
+  doc_name?: string | null;
+  done_at?: string | null;
+}
+export interface ProjectOverview {
+  open_by_assignee: { user_id: string | null; label: string; open: number; doing: number; review: number }[];
+  due_soon: ProjectTask[];
+  overdue: ProjectTask[];
+  recent_docs: { id: string; name: string; space?: ProjectSpace; kind?: string; updated_at: string; updated_by?: string | null }[];
+  recent_plans: { id: string; name: string; updated_at?: string | null }[];
+  counts: { docs: number; images: number; plans: number; tasks_open: number };
+}
+export interface ProjectStorageRow {
+  project_id: string;
+  name: string;
+  images_bytes: number;
+  docs_bytes: number;
+  plans_count: number;
+  total_bytes: number;
 }
 export interface AdminGroup {
   id: string;
@@ -258,8 +361,13 @@ function uploadZip<T>(url: string, file: File, onProgress?: (pct: number) => voi
     xhr.setRequestHeader("content-type", "application/zip");
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.((e.loaded / e.total) * 100);
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText));
-      else {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          reject(new ApiError(xhr.status, xhr.statusText || `HTTP ${xhr.status}`));
+        }
+      } else {
         let d = xhr.statusText;
         try {
           d = JSON.parse(xhr.responseText).detail ?? d;
@@ -269,7 +377,7 @@ function uploadZip<T>(url: string, file: File, onProgress?: (pct: number) => voi
         reject(new ApiError(xhr.status, d || `HTTP ${xhr.status}`));
       }
     };
-    xhr.onerror = () => reject(new ApiError(0, "Netzwerkfehler beim Upload"));
+    xhr.onerror = () => reject(new ApiError(0, t("err.uploadNetwork")));
     xhr.send(file);
   });
 }
@@ -337,9 +445,7 @@ export const api = {
         /* nicht-JSON (z.B. nginx-Fehlerseite) */
       }
       if (r.status === 413 || /request entity too large/i.test(body)) {
-        detail =
-          "Datei zu groß für den Reverse Proxy. Im Nginx Proxy Manager beim Proxy Host " +
-          "unter 'Advanced' eintragen: client_max_body_size 25m;";
+        detail = t("err.proxyTooLarge");
       }
       throw new ApiError(r.status, detail || `HTTP ${r.status}`);
     }
@@ -428,13 +534,16 @@ export const api = {
   snapshot: (planId: string) => req<any>("GET", `/plans/${planId}/snapshot`),
   renamePlan: (planId: string, name: string) => req<PlanItem>("PATCH", `/plans/${planId}`, { name }),
   deletePlan: (planId: string) => req<void>("DELETE", `/plans/${planId}`),
-  uploadThumbnail: (planId: string, png: Blob) =>
-    fetch(`/plans/${planId}/thumbnail`, {
+  uploadThumbnail: async (planId: string, png: Blob) => {
+    const res = await fetch(`/plans/${planId}/thumbnail`, {
       method: "PUT",
       credentials: "include",
       headers: { "content-type": "image/png" },
       body: png,
-    }),
+    });
+    if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+    return res;
+  },
   uploadPlanImage: async (
     planId: string,
     file: File,
@@ -457,8 +566,6 @@ export const api = {
   planImages: (planId: string) => req<PlanImage[]>("GET", `/plans/${planId}/images`),
   planImageUrl: (planId: string, id: string) => `/plans/${planId}/images/${id}/raw`,
   publicImageUrl: (token: string, id: string) => `/public/plans/${token}/images/${id}/raw`,
-  adminImages: () => req<AdminImageRow[]>("GET", "/api/admin/images"),
-  adminDeleteImage: (id: string) => req<void>("DELETE", `/api/admin/images/${id}`),
   trash: () => req<PlanItem[]>("GET", "/plans/trash"),
   undeletePlan: (planId: string) => req<PlanItem>("POST", `/plans/${planId}/undelete`),
   purgePlan: (planId: string) => req<void>("DELETE", `/plans/${planId}/purge`),
@@ -510,4 +617,74 @@ export const api = {
   moveFolder: (id: string, parent_id: string | null) =>
     req<PlanFolder>("PATCH", `/folders/${id}`, parent_id === null ? { move_to_root: true } : { parent_id }),
   deleteFolder: (id: string) => req<void>("DELETE", `/folders/${id}`),
+
+  // ─── Missionsbau-Projekte ───
+  projects: () => req<ProjectItem[]>("GET", "/projects"),
+  createProject: (name: string, description = "", folder_id: string | null = null) =>
+    req<ProjectDetail>("POST", "/projects", { name, description, folder_id }),
+  projectFolderList: () => req<ProjectFolder[]>("GET", "/project-folders"),
+  createProjectFolder: (name: string, parent_id: string | null = null) =>
+    req<ProjectFolder>("POST", "/project-folders", { name, parent_id }),
+  renameProjectFolder: (id: string, name: string) => req<ProjectFolder>("PATCH", `/project-folders/${id}`, { name }),
+  moveProjectFolder: (id: string, parent_id: string | null) =>
+    req<ProjectFolder>("PATCH", `/project-folders/${id}`, parent_id === null ? { move_to_root: true } : { parent_id }),
+  deleteProjectFolder: (id: string) => req<void>("DELETE", `/project-folders/${id}`),
+  moveProject: (id: string, folder_id: string | null) => req<ProjectDetail>("PATCH", `/projects/${id}`, { folder_id }),
+  project: (id: string) => req<ProjectDetail>("GET", `/projects/${id}`),
+  patchProject: (id: string, b: Partial<{ name: string; description: string; archived: boolean; folder_id: string | null }>) =>
+    req<ProjectDetail>("PATCH", `/projects/${id}`, b),
+  deleteProject: (id: string) => req<void>("DELETE", `/projects/${id}`),
+  projectMembers: (id: string) => req<ProjectMember[]>("GET", `/projects/${id}/members`),
+  putProjectMembers: (id: string, m: ProjectMember[]) =>
+    req<ProjectMember[]>(
+      "PUT",
+      `/projects/${id}/members`,
+      m.map(({ subject_type, subject_id, role }) => ({ subject_type, subject_id, role })),
+    ),
+  /** Nutzer mit Projektzugriff (direkt oder über Gruppe) – Auswahl für Aufgaben-Zuständige. */
+  projectAssignees: (id: string) => req<{ user_id: string; label: string }[]>("GET", `/projects/${id}/assignees`),
+  projectCandidates: (id: string) => req<ProjectCandidate[]>("GET", `/projects/${id}/members/candidates`),
+  projectOverview: (id: string) => req<ProjectOverview>("GET", `/projects/${id}/overview`),
+  projectDocs: (id: string, space: ProjectSpace) => req<ProjectDocNode[]>("GET", `/projects/${id}/docs?space=${space}`),
+  createProjectDoc: (
+    id: string,
+    b: { space: ProjectSpace; parent_id?: string | null; kind: "folder" | "doc"; name: string; content?: string },
+  ) => req<ProjectDoc>("POST", `/projects/${id}/docs`, b),
+  projectDoc: (id: string, docId: string) => req<ProjectDoc>("GET", `/projects/${id}/docs/${docId}`),
+  patchProjectDoc: (
+    id: string,
+    docId: string,
+    b: { name?: string; content?: string; parent_id?: string | null; expected_updated_at?: string },
+  ) => req<ProjectDoc>("PATCH", `/projects/${id}/docs/${docId}`, b),
+  deleteProjectDoc: (id: string, docId: string) => req<void>("DELETE", `/projects/${id}/docs/${docId}`),
+  projectImages: (id: string, space: ProjectSpace) => req<ProjectImage[]>("GET", `/projects/${id}/images?space=${space}`),
+  patchProjectImage: (id: string, imageId: string, b: { caption?: string; note?: string }) =>
+    req<ProjectImage>("PATCH", `/projects/${id}/images/${imageId}`, b),
+  deleteProjectImage: (id: string, imageId: string) => req<void>("DELETE", `/projects/${id}/images/${imageId}`),
+  projectNotes: (id: string) => req<ProjectNote[]>("GET", `/projects/${id}/notes`),
+  createProjectNote: (id: string, b: Partial<ProjectNote>) => req<ProjectNote>("POST", `/projects/${id}/notes`, b),
+  patchProjectNote: (id: string, nid: string, b: Partial<ProjectNote>) =>
+    req<ProjectNote>("PATCH", `/projects/${id}/notes/${nid}`, b),
+  deleteProjectNote: (id: string, nid: string) => req<void>("DELETE", `/projects/${id}/notes/${nid}`),
+  projectTasks: (id: string, q: { assignee?: string; status?: string } = {}) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v) p.set(k, v);
+    const qs = p.toString();
+    return req<ProjectTask[]>("GET", `/projects/${id}/tasks${qs ? "?" + qs : ""}`);
+  },
+  createProjectTask: (id: string, b: Partial<ProjectTask>) => req<ProjectTask>("POST", `/projects/${id}/tasks`, b),
+  patchProjectTask: (id: string, tid: string, b: Partial<ProjectTask>) =>
+    req<ProjectTask>("PATCH", `/projects/${id}/tasks/${tid}`, b),
+  deleteProjectTask: (id: string, tid: string) => req<void>("DELETE", `/projects/${id}/tasks/${tid}`),
+  moveProjectTask: (id: string, tid: string, status: TaskStatus, ordering: number) =>
+    req<ProjectTask>("POST", `/projects/${id}/tasks/${tid}/move`, { status, ordering }),
+  projectPlans: (id: string) => req<PlanItem[]>("GET", `/projects/${id}/plans`),
+  projectFolders: (id: string) => req<PlanFolder[]>("GET", `/folders?project_id=${id}`),
+  setPlanProject: (planId: string, project_id: string | null) =>
+    req<PlanItem>("POST", `/plans/${planId}/project`, { project_id }),
+  createPlanIn: (name: string, map_id: string, folder_id: string | null, project_id: string) =>
+    req<PlanItem>("POST", "/plans", { name, map_id, folder_id, project_id }),
+  createFolderIn: (name: string, parent_id: string | null, project_id: string) =>
+    req<PlanFolder>("POST", "/folders", { name, parent_id, project_id }),
+  adminProjectStorage: () => req<ProjectStorageRow[]>("GET", "/api/admin/projects/storage"),
 };

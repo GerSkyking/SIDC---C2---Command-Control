@@ -73,6 +73,9 @@ def _add_missing_columns() -> None:
                 conn.execute(text(clause))
 
 
+_PLACEHOLDER_PASSWORDS = {"change-me-min-12-chars", "change-me", "changeme", "password1234", "admin1234567"}
+
+
 def ensure_bootstrap_admin() -> None:
     s = get_settings()
     if not s.bootstrap_admin_password:
@@ -80,6 +83,10 @@ def ensure_bootstrap_admin() -> None:
         return
     if len(s.bootstrap_admin_password) < MIN_PASSWORD_LEN:
         log.error("BOOTSTRAP_ADMIN_PASSWORD zu kurz (min. %d Zeichen)", MIN_PASSWORD_LEN)
+        return
+
+    if s.bootstrap_admin_password.strip().lower() in _PLACEHOLDER_PASSWORDS:
+        log.error("BOOTSTRAP_ADMIN_PASSWORD ist ein bekannter Platzhalter — bitte aendern")
         return
 
     with SessionLocal() as db:

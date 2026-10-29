@@ -53,7 +53,7 @@ export function wireThemeSwitch(root: ParentNode): void {
   );
 }
 
-export type NavSection = "plans" | "trash" | "users" | "log" | "config" | "images" | "orbat";
+export type NavSection = "plans" | "trash" | "users" | "log" | "config" | "storage" | "orbat" | "projects";
 
 /** Linke Navigationsleiste für die Nicht-Karten-Ansichten. */
 export function sidebar(
@@ -70,6 +70,7 @@ export function sidebar(
     </div>
     <div class="sb-nav">
       ${item("plans", "plan", t("nav.plans"), "#/")}
+      ${item("projects", "folder", t("nav.projects"), "#/projects")}
       ${item("trash", "trash", t("nav.trash"), "#/trash")}
       ${
         opts.isMissionBuilder
@@ -82,7 +83,7 @@ export function sidebar(
           ? `<div class="sb-group">${t("nav.admin")}</div>` +
             item("users", "users", t("admin.usersGroups"), "#/admin/users", true) +
             item("log", "audit", t("admin.log"), "#/admin/log", true) +
-            item("images", "image", t("admin.images"), "#/admin/images", true) +
+            item("storage", "download", t("admin.storage"), "#/admin/storage", true) +
             item("config", "settings", t("admin.config"), "#/admin/config", true)
           : ""
       }

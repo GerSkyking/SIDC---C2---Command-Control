@@ -260,7 +260,7 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
           }),
         );
       } catch (e) {
-        box.innerHTML = `<span class="error">${esc(e instanceof ApiError ? e.message : "Fehler")}</span>`;
+        box.innerHTML = `<span class="error">${esc(e instanceof ApiError ? e.message : t("common.error"))}</span>`;
       }
     }),
   );

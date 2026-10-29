@@ -1,11 +1,16 @@
 """Öffentliche Nur-Lese-Ansicht eines Plans über einen Freigabe-Token (ohne Login)."""
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
+import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
+from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..db import SessionLocal
@@ -15,9 +20,16 @@ from ..services.maps_import import map_dir
 from ..services.realtime import hub
 from .live import _marker_out
 from .plans import _builder_phase_ids, _image_dict, _placement_dict, _stroke_dict, released_markers
+from ..ratelimit import hit_limit
 from .tiles import ENFUSION_LAYERS, build_style, read_tile
 
+log = logging.getLogger("sidc.public")
 router = APIRouter(prefix="/public/plans", tags=["public"])
+
+_WS_MAX_BYTES = 256 * 1024     # größere Nachrichten von Gästen werden verworfen
+_WS_MAX_PER_SEC = 40           # Mutationen je Verbindung und Sekunde
+_WS_CURSOR_GAP = 0.04          # min. Abstand der Cursor-Nachrichten
+_SHARE_RECHECK_SECONDS = 20
 
 
 def _resolve_share(token: str, db) -> tuple[Plan, PublicShare]:
@@ -173,8 +185,13 @@ def public_style(token: str, db: DbDep) -> JSONResponse:
 
 
 @router.get("/{token}/tiles/{layer}/{z}/{x}/{y}.png")
-def public_tile(token: str, layer: str, z: int, x: int, y: int, db: DbDep) -> Response:
+def public_tile(token: str, layer: str, z: int, x: int, y: int, request: Request, db: DbDep) -> Response:
     plan = _resolve(token, db)
+    # Pro Client-IP (nicht pro Link: sonst bremsen sich mehrere Betrachter gegenseitig aus).
+    # Kacheln kommen mit max-age=86400 aus dem Browser-Cache; das Limit stoppt nur Massenabruf.
+    ip = request.client.host if request.client else "unknown"
+    if not hit_limit(f"sharetile:{ip}:{token}", 900, 60):
+        raise HTTPException(429, "Zu viele Anfragen")
     data = read_tile(plan.map_id, layer, z, x, y)
     if data is None:
         raise HTTPException(404)
@@ -232,8 +249,6 @@ def public_enfusion_layer(token: str, layer: str, db: DbDep) -> Response:
 async def public_live(websocket: WebSocket, token: str) -> None:
     import secrets
 
-    from starlette.concurrency import run_in_threadpool
-
     from ..security import origin_allowed
 
     if not origin_allowed(websocket.headers.get("origin"), websocket.headers.get("host")):
@@ -243,21 +258,27 @@ async def public_live(websocket: WebSocket, token: str) -> None:
     from .live import (
         IMAGE_UPDATE_FIELDS, MARKER_FIELDS, _num, PLACEMENT_UPDATE_FIELDS, _create_annotation, _create_marker,
         _create_placement, _create_stroke, _delete_annotation, _delete_image, _delete_marker,
-        _delete_placement, _delete_stroke, _image_owner_phase, _update_annotation, _update_image,
+        _delete_placement, _delete_stroke, _existing_phases, _image_owner_phase, _update_annotation, _update_image,
         _update_marker, _update_placement,
     )
 
-    with SessionLocal() as db:
-        try:
-            plan, sh = _resolve_share(token, db)
-        except HTTPException:
-            await websocket.close(code=4404)
-            return
-        plan_id = plan.id
-        can_point, can_edit, can_move = sh.can_point, sh.can_edit, sh.can_move
-        incl = bool(sh.include_builder)
-        hide = set() if incl else _builder_phase_ids(db, plan.id)
-        allow = _allowed_phases(db, plan, sh)
+    def _init_share():
+        with SessionLocal() as db:
+            try:
+                plan, sh = _resolve_share(token, db)
+            except HTTPException:
+                return None
+            incl = bool(sh.include_builder)
+            return (
+                plan.id, sh.can_point, sh.can_edit, sh.can_move, incl,
+                set() if incl else _builder_phase_ids(db, plan.id), _allowed_phases(db, plan, sh),
+            )
+
+    init = await run_in_threadpool(_init_share)
+    if init is None:
+        await websocket.close(code=4404)
+        return
+    plan_id, can_point, can_edit, can_move, incl, hide, allow = init
 
     def phase_ok(pid) -> bool:
         if pid in hide:
@@ -276,102 +297,155 @@ async def public_live(websocket: WebSocket, token: str) -> None:
                     return {**msg, key: {k: v for k, v in obj.items() if k != "author"}}
         return msg
 
-    await websocket.accept()
-    await hub.join(plan_id, websocket, visible=visible)
+    async def watch_share() -> None:
+        """Ablauf/Widerruf/Rechte-Änderung des Links auch auf offenen Sockets durchsetzen."""
+        nonlocal can_point, can_edit, can_move, hide, allow
+
+        def recheck():
+            with SessionLocal() as db2:
+                plan2, sh2 = _resolve_share(token, db2)
+                hide2 = set() if sh2.include_builder else _builder_phase_ids(db2, plan2.id)
+                return sh2.can_point, sh2.can_edit, sh2.can_move, hide2, _allowed_phases(db2, plan2, sh2)
+
+        while True:
+            await asyncio.sleep(_SHARE_RECHECK_SECONDS)
+            try:
+                can_point, can_edit, can_move, hide, allow = await run_in_threadpool(recheck)
+            except HTTPException:  # widerrufen / abgelaufen / Plan weg
+                await websocket.close(code=4404)
+                return
+            except Exception:  # noqa: BLE001  DB kurz weg -> später erneut
+                log.exception("Share-Neuprüfung fehlgeschlagen (plan=%s)", plan_id)
+
     uid = "pub-" + secrets.token_hex(6)
+    watcher: asyncio.Task | None = None
     try:
+        await websocket.accept()
+        await hub.join(plan_id, websocket, visible=visible)
+        watcher = asyncio.create_task(watch_share())
+        last_cursor = 0.0
+        win_start, win_count = time.monotonic(), 0
         while True:
             try:
-                msg = await websocket.receive_json()
+                raw = await websocket.receive_text()
+                if len(raw) > _WS_MAX_BYTES:
+                    continue
+                msg = json.loads(raw)
             except (ValueError, TypeError):
                 continue
             if not isinstance(msg, dict):
                 continue
             typ = msg.get("type")
-
-            if typ == "presence.cursor" and can_point:
-                await hub.broadcast(plan_id, {
-                    "type": "presence.cursor", "uid": uid,
-                    "user": str(msg.get("user") or "Gast")[:24],
-                    "lng": _num(msg.get("lng")), "lat": _num(msg.get("lat")),
-                })
+            tnow = time.monotonic()
+            if tnow - win_start >= 1.0:
+                win_start, win_count = tnow, 0
+            win_count += 1
+            if win_count > _WS_MAX_PER_SEC:
                 continue
+            if typ == "presence.cursor":
+                if tnow - last_cursor < _WS_CURSOR_GAP:
+                    continue
+                last_cursor = tnow
 
-            data = msg.get("data") or {}
-            if typ == "marker.create" and can_edit:
-                if not phase_ok(data.get("phase_id")):
+            try:
+                if typ == "presence.cursor" and can_point:
+                    await hub.broadcast(plan_id, {
+                        "type": "presence.cursor", "uid": uid,
+                        "user": str(msg.get("user") or "Gast")[:24],
+                        "lng": _num(msg.get("lng")), "lat": _num(msg.get("lat")),
+                    })
                     continue
-                d = {k: data.get(k) for k in MARKER_FIELDS if k in data}
-                m = await run_in_threadpool(_create_marker, plan_id, None, d)
-                await hub.broadcast(plan_id, {"type": "marker.upsert", "cid": msg.get("cid"), "marker": m})
-            elif typ == "marker.move" and (can_move or can_edit):
-                res = await run_in_threadpool(
-                    _update_marker, plan_id, msg["id"], None, False,
-                    {"world_x": msg["world_x"], "world_y": msg["world_y"]},
-                )
-                if res and phase_ok(res.get("phase_id")):
-                    await hub.broadcast(plan_id, {"type": "marker.upsert", "marker": res})
-            elif typ == "marker.modify" and can_edit:
-                fields = {k: v for k, v in data.items() if k in MARKER_FIELDS}
-                res = await run_in_threadpool(_update_marker, plan_id, msg["id"], None, False, fields)
-                if res and phase_ok(res.get("phase_id")):
-                    await hub.broadcast(plan_id, {"type": "marker.upsert", "marker": res})
-            elif typ == "marker.delete" and can_edit:
-                pid = await run_in_threadpool(_delete_marker, plan_id, msg["id"], False)
-                if pid is not False:
-                    await hub.broadcast(plan_id, {"type": "marker.delete", "id": msg["id"]})
-            elif typ == "stroke.commit" and can_edit:
-                if not phase_ok(data.get("phase_id")):
-                    continue
-                s = await run_in_threadpool(_create_stroke, plan_id, None, data)
-                await hub.broadcast(plan_id, {"type": "stroke.upsert", "cid": msg.get("cid"), "stroke": s})
-            elif typ == "stroke.delete" and can_edit:
-                await run_in_threadpool(_delete_stroke, plan_id, msg["id"])
-                await hub.broadcast(plan_id, {"type": "stroke.delete", "id": msg["id"]})
-            elif typ == "annotation.create" and can_edit:
-                if not phase_ok(data.get("phase_id")):
-                    continue
-                a = await run_in_threadpool(_create_annotation, plan_id, None, data)
-                await hub.broadcast(plan_id, {"type": "annotation.upsert", "cid": msg.get("cid"), "annotation": a})
-            elif typ in ("annotation.move", "annotation.modify") and (can_edit or can_move):
-                fields = {
-                    k: v for k, v in data.items()
-                    if k in ("world_x", "world_y", "text", "width", "height", "phase_id", "scale_fixed", "ref_zoom")
-                }
-                res = await run_in_threadpool(_update_annotation, plan_id, msg["id"], None, fields)
-                if res:
-                    await hub.broadcast(plan_id, {"type": "annotation.upsert", "annotation": res})
-            elif typ == "annotation.delete" and can_edit:
-                await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
-                await hub.broadcast(plan_id, {"type": "annotation.delete", "id": msg["id"]})
-            elif typ == "image.modify" and can_edit:
-                fields = {k: v for k, v in data.items() if k in IMAGE_UPDATE_FIELDS}
-                res = await run_in_threadpool(_update_image, plan_id, msg["id"], None, fields)
-                if res and phase_ok(res.get("phase_id")):
-                    res.pop("author", None)  # interner Nutzername gehört nicht in den öffentlichen Link
-                    await hub.broadcast(plan_id, {"type": "image.upsert", "image": res})
-            elif typ == "image.delete" and can_edit:
-                await run_in_threadpool(_delete_image, plan_id, msg["id"])
-                await hub.broadcast(plan_id, {"type": "image.delete", "id": msg["id"]})
-            elif typ == "placement.create" and (can_edit or can_move):
-                image_id = data.get("image_id")
-                found, img_phase = await run_in_threadpool(_image_owner_phase, plan_id, image_id)
-                if not found or not phase_ok(img_phase) or not phase_ok(data.get("phase_id")):
-                    continue
-                pdata = {k: data.get(k) for k in (*PLACEMENT_UPDATE_FIELDS, "image_id") if k in data}
-                p = await run_in_threadpool(_create_placement, plan_id, None, pdata)
-                if p is not None:
-                    await hub.broadcast(plan_id, {"type": "placement.upsert", "cid": msg.get("cid"), "placement": p})
-            elif typ in ("placement.move", "placement.modify") and (can_edit or can_move):
-                fields = {k: v for k, v in data.items() if k in PLACEMENT_UPDATE_FIELDS}
-                res = await run_in_threadpool(_update_placement, plan_id, msg["id"], None, fields)
-                if res and phase_ok(res.get("phase_id")):
-                    await hub.broadcast(plan_id, {"type": "placement.upsert", "placement": res})
-            elif typ == "placement.delete" and can_edit:
-                await run_in_threadpool(_delete_placement, plan_id, msg["id"])
-                await hub.broadcast(plan_id, {"type": "placement.delete", "id": msg["id"]})
+
+                data = msg.get("data") or {}
+                # Bestehendes Objekt muss in einer freigegebenen Phase liegen (nicht in verborgenen
+                # Missionsbau-/nicht freigegebenen Phasen) – VOR jeder Änderung prüfen.
+                if isinstance(msg.get("id"), str) and typ and not typ.startswith("presence."):
+                    existing = await run_in_threadpool(_existing_phases, plan_id, typ, msg["id"])
+                    if not all(phase_ok(x) for x in existing):
+                        continue
+                if typ == "marker.create" and can_edit:
+                    if not phase_ok(data.get("phase_id")):
+                        continue
+                    d = {k: data.get(k) for k in MARKER_FIELDS if k in data}
+                    m = await run_in_threadpool(_create_marker, plan_id, None, d)
+                    await hub.broadcast(plan_id, {"type": "marker.upsert", "cid": msg.get("cid"), "marker": m})
+                elif typ == "marker.move" and (can_move or can_edit):
+                    res = await run_in_threadpool(
+                        _update_marker, plan_id, msg["id"], None, False,
+                        {"world_x": msg["world_x"], "world_y": msg["world_y"]},
+                    )
+                    if res and phase_ok(res.get("phase_id")):
+                        await hub.broadcast(plan_id, {"type": "marker.upsert", "marker": res})
+                elif typ == "marker.modify" and can_edit:
+                    fields = {k: v for k, v in data.items() if k in MARKER_FIELDS}
+                    res = await run_in_threadpool(_update_marker, plan_id, msg["id"], None, False, fields)
+                    if res and phase_ok(res.get("phase_id")):
+                        await hub.broadcast(plan_id, {"type": "marker.upsert", "marker": res})
+                elif typ == "marker.delete" and can_edit:
+                    pid = await run_in_threadpool(_delete_marker, plan_id, msg["id"], False)
+                    if pid is not False:
+                        await hub.broadcast(plan_id, {"type": "marker.delete", "id": msg["id"]})
+                elif typ == "stroke.commit" and can_edit:
+                    if not phase_ok(data.get("phase_id")):
+                        continue
+                    s = await run_in_threadpool(_create_stroke, plan_id, None, data)
+                    await hub.broadcast(plan_id, {"type": "stroke.upsert", "cid": msg.get("cid"), "stroke": s})
+                elif typ == "stroke.delete" and can_edit:
+                    await run_in_threadpool(_delete_stroke, plan_id, msg["id"])
+                    await hub.broadcast(plan_id, {"type": "stroke.delete", "id": msg["id"]})
+                elif typ == "annotation.create" and can_edit:
+                    if not phase_ok(data.get("phase_id")):
+                        continue
+                    a = await run_in_threadpool(_create_annotation, plan_id, None, data)
+                    await hub.broadcast(plan_id, {"type": "annotation.upsert", "cid": msg.get("cid"), "annotation": a})
+                elif typ in ("annotation.move", "annotation.modify") and (can_edit or can_move):
+                    fields = {
+                        k: v for k, v in data.items()
+                        if k in ("world_x", "world_y", "text", "width", "height", "phase_id", "scale_fixed", "ref_zoom")
+                    }
+                    res = await run_in_threadpool(_update_annotation, plan_id, msg["id"], None, fields)
+                    if res:
+                        await hub.broadcast(plan_id, {"type": "annotation.upsert", "annotation": res})
+                elif typ == "annotation.delete" and can_edit:
+                    await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
+                    await hub.broadcast(plan_id, {"type": "annotation.delete", "id": msg["id"]})
+                elif typ == "image.modify" and can_edit:
+                    fields = {k: v for k, v in data.items() if k in IMAGE_UPDATE_FIELDS}
+                    res = await run_in_threadpool(_update_image, plan_id, msg["id"], None, fields)
+                    if res and phase_ok(res.get("phase_id")):
+                        res.pop("author", None)  # interner Nutzername gehört nicht in den öffentlichen Link
+                        await hub.broadcast(plan_id, {"type": "image.upsert", "image": res})
+                elif typ == "image.delete" and can_edit:
+                    await run_in_threadpool(_delete_image, plan_id, msg["id"])
+                    await hub.broadcast(plan_id, {"type": "image.delete", "id": msg["id"]})
+                elif typ == "placement.create" and (can_edit or can_move):
+                    image_id = data.get("image_id")
+                    found, img_phase = await run_in_threadpool(_image_owner_phase, plan_id, image_id)
+                    if not found or not phase_ok(img_phase) or not phase_ok(data.get("phase_id")):
+                        continue
+                    pdata = {k: data.get(k) for k in (*PLACEMENT_UPDATE_FIELDS, "image_id") if k in data}
+                    p = await run_in_threadpool(_create_placement, plan_id, None, pdata)
+                    if p is not None:
+                        await hub.broadcast(plan_id, {"type": "placement.upsert", "cid": msg.get("cid"), "placement": p})
+                elif typ in ("placement.move", "placement.modify") and (can_edit or can_move):
+                    fields = {k: v for k, v in data.items() if k in PLACEMENT_UPDATE_FIELDS}
+                    res = await run_in_threadpool(_update_placement, plan_id, msg["id"], None, fields)
+                    if res and phase_ok(res.get("phase_id")):
+                        await hub.broadcast(plan_id, {"type": "placement.upsert", "placement": res})
+                elif typ == "placement.delete" and can_edit:
+                    await run_in_threadpool(_delete_placement, plan_id, msg["id"])
+                    await hub.broadcast(plan_id, {"type": "placement.delete", "id": msg["id"]})
+            except WebSocketDisconnect:
+                raise
+            except Exception as exc:  # noqa: BLE001  fehlerhafte Nachricht beendet die Verbindung nicht
+                log.warning("public_live Nachricht verworfen (plan=%s, type=%s): %r", plan_id, typ, exc)
     except WebSocketDisconnect:
         pass
     finally:
+        if watcher is not None:
+            watcher.cancel()
         hub.leave(plan_id, websocket)
-        await hub.broadcast(plan_id, {"type": "presence.leave", "uid": uid})
+        try:
+            await hub.broadcast(plan_id, {"type": "presence.leave", "uid": uid})
+        except Exception:  # noqa: BLE001
+            log.exception("presence.leave fehlgeschlagen (plan=%s)", plan_id)

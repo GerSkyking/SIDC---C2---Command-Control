@@ -5,11 +5,13 @@ Fällt ohne erreichbares Redis auf reine In-Process-Verteilung zurück (Single W
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 from collections import defaultdict
 from collections.abc import Callable
 
+import anyio.from_thread
 import redis.asyncio as aioredis
 from starlette.websockets import WebSocket
 
@@ -17,6 +19,7 @@ from ..config import get_settings
 
 log = logging.getLogger("sidc.realtime")
 _CHANNEL_PREFIX = "plan:"
+_SEND_TIMEOUT = 5.0  # Sekunden je Client
 
 
 class Hub:
@@ -47,14 +50,28 @@ class Hub:
             await self._redis.aclose()
 
     async def _pump(self) -> None:
+        """Redis -> lokale Sockets; bei Fehlern mit Backoff neu verbinden (statt still zu enden)."""
         assert self._redis is not None
-        pubsub = self._redis.pubsub()
-        await pubsub.psubscribe(f"{_CHANNEL_PREFIX}*")
-        async for msg in pubsub.listen():
-            if msg["type"] != "pmessage":
-                continue
-            plan_id = msg["channel"].removeprefix(_CHANNEL_PREFIX)
-            await self._local_send(plan_id, msg["data"])
+        delay = 1.0
+        while True:
+            try:
+                pubsub = self._redis.pubsub()
+                await pubsub.psubscribe(f"{_CHANNEL_PREFIX}*")
+                delay = 1.0
+                async for msg in pubsub.listen():
+                    if msg["type"] != "pmessage":
+                        continue
+                    plan_id = msg["channel"].removeprefix(_CHANNEL_PREFIX)
+                    try:
+                        await self._local_send(plan_id, msg["data"])
+                    except Exception:  # noqa: BLE001  eine kaputte Nachricht darf die Pumpe nicht beenden
+                        log.exception("Zustellung fehlgeschlagen (plan=%s)", plan_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Redis-Pump unterbrochen (%s) - neuer Versuch in %.0fs", exc, delay)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30.0)
 
     async def join(
         self, plan_id: str, ws: WebSocket, is_builder: bool = False, is_zeus: bool = False,
@@ -67,6 +84,11 @@ class Hub:
             self._builders.add(ws)
         if is_zeus:
             self._zeus.add(ws)
+
+    def set_roles(self, ws: WebSocket, *, is_builder: bool, is_zeus: bool) -> None:
+        """Builder-/Zeus-Zugehörigkeit eines bereits verbundenen Sockets ändern."""
+        (self._builders.add if is_builder else self._builders.discard)(ws)
+        (self._zeus.add if is_zeus else self._zeus.discard)(ws)
 
     def leave(self, plan_id: str, ws: WebSocket) -> None:
         self._rooms[plan_id].discard(ws)
@@ -88,9 +110,12 @@ class Hub:
                 message["_zo"] = True
         payload = json.dumps(message)
         if self._redis is not None:
-            await self._redis.publish(f"{_CHANNEL_PREFIX}{plan_id}", payload)
-        else:
-            await self._local_send(plan_id, payload)
+            try:
+                await self._redis.publish(f"{_CHANNEL_PREFIX}{plan_id}", payload)
+                return
+            except Exception as exc:  # noqa: BLE001  Redis weg -> wenigstens lokal zustellen
+                log.warning("Redis-Publish fehlgeschlagen (%s) - lokale Zustellung", exc)
+        await self._local_send(plan_id, payload)
 
     async def _local_send(self, plan_id: str, payload: str) -> None:
         builder_only = '"_bo": true' in payload or '"_bo":true' in payload
@@ -105,8 +130,8 @@ class Hub:
                 send_payload = json.dumps(obj)
             except ValueError:
                 pass
-        dead: list[WebSocket] = []
         parsed: dict | None = None
+        targets: list[tuple[WebSocket, str]] = []
         for ws in list(self._rooms.get(plan_id, ())):
             if builder_only and ws not in self._builders and not (zeus_ok and ws in self._zeus):
                 continue
@@ -122,12 +147,29 @@ class Hub:
                 if shown is None:
                     continue
                 out = json.dumps(shown)
+            targets.append((ws, out))
+
+        async def _send(ws: WebSocket, out: str) -> bool:
             try:
-                await ws.send_text(out)
-            except Exception:  # noqa: BLE001
-                dead.append(ws)
-        for ws in dead:
-            self.leave(plan_id, ws)
+                await asyncio.wait_for(ws.send_text(out), _SEND_TIMEOUT)
+                return True
+            except Exception:  # noqa: BLE001  Fehler/Timeout -> Client gilt als tot
+                return False
+
+        # parallel + mit Timeout: ein hängender Client blockiert den Raum nicht
+        results = await asyncio.gather(*(_send(ws, out) for ws, out in targets))
+        for (ws, _out), ok in zip(targets, results):
+            if not ok:
+                self.leave(plan_id, ws)
 
 
 hub = Hub()
+
+
+def broadcast_from_thread(plan_id: str, payload: dict, **kw) -> None:
+    """Broadcast aus einem Sync-Endpunkt (Threadpool-Worker): läuft auf dem Event-Loop.
+    Fehler kippen die HTTP-Antwort nicht."""
+    try:
+        anyio.from_thread.run(functools.partial(hub.broadcast, plan_id, payload, **kw))
+    except Exception:  # noqa: BLE001
+        log.exception("Broadcast aus Thread fehlgeschlagen (plan=%s)", plan_id)

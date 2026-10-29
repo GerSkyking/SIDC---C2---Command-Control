@@ -4,7 +4,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import GroupMember, Plan, PlanACL, User
+from .models import GroupMember, Plan, PlanACL, ProjectMember, User
 
 LEVELS = ("viewer", "editor", "owner")
 _RANK = {name: i for i, name in enumerate(LEVELS)}
@@ -14,8 +14,24 @@ def rank(level: str | None) -> int:
     return _RANK.get(level or "", -1)
 
 
+def project_role(db: Session, user: User, project_id: str | None) -> str | None:
+    """Rolle des Users in einem Projekt (viewer < editor < owner); Admin = owner."""
+    if not project_id:
+        return None
+    if user.is_admin:
+        return "owner"
+    group_ids = list(db.scalars(select(GroupMember.group_id).where(GroupMember.user_id == user.id)))
+    subjects = [("user", user.id)] + [("group", gid) for gid in group_ids]
+    best: str | None = None
+    for m in db.scalars(select(ProjectMember).where(ProjectMember.project_id == project_id)):
+        if (m.subject_type, m.subject_id) in subjects and rank(m.role) > rank(best):
+            best = m.role
+    return best
+
+
 def effective_level(db: Session, user: User, plan: Plan) -> str | None:
-    """Höchstes Recht des Users auf den Plan, oder None wenn kein Zugriff."""
+    """Höchstes Recht des Users auf den Plan, oder None wenn kein Zugriff.
+    Allein die Plan-ACL zählt; die Projektrolle hat KEINEN Einfluss auf Plan-Rechte."""
     if user.is_admin:
         return "owner"
 

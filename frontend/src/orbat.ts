@@ -1,7 +1,7 @@
 // ORBAT-Bibliothek (Missionsbau): globale Kräfteübersichten mit Baumstruktur.
 import { api, type Me, type Orbat, type OrbatNode } from "./api";
 import { langSelect, t, wireLangSelect } from "./i18n";
-import { confirmDialog, toastError } from "./notify";
+import { a11yModal, confirmDialog, toastError } from "./notify";
 import { icon } from "./icons";
 import { esc } from "./esc";
 import { iconSrc } from "./sidc/symbol";
@@ -311,6 +311,7 @@ function editNode(
     <div class="row" style="margin-top:.6rem"><button class="primary" data-save style="flex:1">${t("common.save")}</button></div>
   </div>`;
   document.body.appendChild(back);
+  a11yModal(back);
   const close = () => back.remove();
   back.addEventListener("mousedown", (e) => e.target === back && close());
   back.querySelector("[data-x]")!.addEventListener("click", close);
@@ -418,6 +419,7 @@ function openOrbatAcl(orbatId: string): void {
       });
     };
     document.body.appendChild(back);
+    a11yModal(back, t("orbat.aclTitle"));
     back.addEventListener("mousedown", (e) => e.target === back && back.remove());
     draw();
   });

@@ -148,8 +148,8 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
 
   function rowHtml(i: PlanImage, faded: boolean): string {
     return `<div class="ir-item${faded ? " ir-other" : ""}" data-iid="${esc(i.id)}">
-      <img class="ir-thumb" src="${esc(api.planImageUrl(ctx.planId, i.id))}" alt=""
-        loading="lazy" data-ir-open ${ctx.canEdit ? 'draggable="true" data-ir-drag' : ""}
+      <img class="ir-thumb" src="${esc(api.planImageUrl(ctx.planId, i.id))}" alt="${esc(i.caption || i.filename)}"
+        tabindex="0" role="button" loading="lazy" data-ir-open ${ctx.canEdit ? 'draggable="true" data-ir-drag' : ""}
         title="${ctx.canEdit ? esc(t("imgrail.dragHint")) : ""}" />
       <div class="ir-meta">
         <div class="ir-name-row">
@@ -168,6 +168,13 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
 
   function wireRow(row: HTMLElement): void {
     const id = row.dataset.iid!;
+    row.querySelector("[data-ir-open]")?.addEventListener("keydown", (e) => {
+      const k = (e as KeyboardEvent).key;
+      if (k === "Enter" || k === " ") {
+        e.preventDefault();
+        (e.currentTarget as HTMLElement).click();
+      }
+    });
     row.querySelector("[data-ir-open]")?.addEventListener("click", () => {
       const order = flatOrder();
       const items = order.map((x) => ({

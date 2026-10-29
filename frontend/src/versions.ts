@@ -1,8 +1,9 @@
 // Versionsverlauf eines Plans: Stände sichern + auf einen alten Stand zurück.
 import { api, ApiError } from "./api";
 import { t } from "./i18n";
+import { esc } from "./esc";
 import { icon } from "./icons";
-import { confirmDialog, toastError } from "./notify";
+import { a11yModal, confirmDialog, toastError } from "./notify";
 
 export function openVersionPanel(
   planId: string,
@@ -25,6 +26,7 @@ export function openVersionPanel(
       <div class="ver-list"><div class="muted">…</div></div>
     </div>`;
   document.body.appendChild(back);
+  a11yModal(back);
   const close = () => back.remove();
   back.addEventListener("mousedown", (e) => e.target === back && close());
   back.querySelector(".ver-x")!.addEventListener("click", close);
@@ -41,8 +43,8 @@ export function openVersionPanel(
         .map(
           (v) => `<div class="ver-row">
             <div class="ver-meta">
-              <strong>${v.label || "—"}</strong>
-              <span class="muted">${new Date(v.created_at).toLocaleString()} · ${v.author}
+              <strong>${esc(v.label || "—")}</strong>
+              <span class="muted">${new Date(v.created_at).toLocaleString()} · ${esc(v.author)}
                 · ${v.marker_count} ${t("versions.markers")}, ${v.stroke_count} ${t("versions.strokes")}</span>
             </div>
             ${canRestore ? `<button data-restore="${v.id}">${t("versions.restore")}</button>` : ""}

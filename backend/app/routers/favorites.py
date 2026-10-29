@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 
 from ..deps import CurrentUser, DbDep
@@ -14,15 +14,15 @@ router = APIRouter(prefix="/api/favorites", tags=["favorites"])
 
 
 class FavoriteIn(BaseModel):
-    label: str
-    sidc: str
-    rotation_degrees: int = -1
-    unit_text: str = ""
-    ai_text: str = ""
-    channel: str = ""
+    label: str = Field(max_length=128)
+    sidc: str = Field(max_length=64)
+    rotation_degrees: int = Field(default=-1, ge=-1, le=360)
+    unit_text: str = Field(default="", max_length=255)
+    ai_text: str = Field(default="", max_length=255)
+    channel: str = Field(default="", max_length=64)
     is_multipoint: bool = False
-    max_line_points: int = 0
-    tint: str = ""
+    max_line_points: int = Field(default=0, ge=0, le=10000)
+    tint: str = Field(default="", max_length=9)
 
     @field_validator("tint")
     @classmethod

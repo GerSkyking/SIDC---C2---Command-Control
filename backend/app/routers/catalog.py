@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from .. import audit
@@ -141,10 +142,19 @@ async def upload_catalog(name: str, request: Request, admin: AdminUser, db: DbDe
     """Roher JSON-Body (kein Multipart) — schlanker durch den Reverse Proxy."""
     if name not in CATALOGS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unbekannter Katalog")
-    raw = await request.body()
-    n = store_catalog(name, raw)
-    audit.record(db, "catalog.upload", user_id=admin.id, target_type="catalog", target_id=name,
-                 request=request, bytes=n)
+    cl = request.headers.get("content-length")
+    if cl and cl.isdigit() and int(cl) > _MAX_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Datei zu groß")
+    buf = bytearray()
+    async for chunk in request.stream():  # gestreamt mit Limit statt request.body()
+        buf += chunk
+        if len(buf) > _MAX_BYTES:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Datei zu groß")
+    # openpyxl/JSON-Parsing blockiert sonst den Event-Loop
+    n = await run_in_threadpool(store_catalog, name, bytes(buf))
+    await run_in_threadpool(
+        audit.record, db, "catalog.upload", user_id=admin.id, target_type="catalog", target_id=name,
+        request=request, bytes=n)
     return {"ok": True, "name": name, "bytes": n}
 
 

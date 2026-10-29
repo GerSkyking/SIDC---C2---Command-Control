@@ -106,6 +106,10 @@ export function openLightbox(items: LightboxItem[], start = 0): void {
     flushNote();
   };
 
+  back.setAttribute("role", "dialog");
+  back.setAttribute("aria-modal", "true");
+  back.setAttribute("aria-label", t("lightbox.close"));
+  back.querySelectorAll<HTMLElement>("button[title]").forEach((b) => b.setAttribute("aria-label", b.title));
   document.body.appendChild(back);
   open = back;
   show();

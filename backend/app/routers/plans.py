@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from ..config import get_settings
@@ -27,6 +28,7 @@ from ..models import (
     PlanACL,
     PlanFolder,
     PlanImage,
+    Project,
     PlanVersion,
     Stroke,
     User,
@@ -38,6 +40,7 @@ from ..permissions import (
     effective_level,
     effective_mission_builder,
     effective_zeus,
+    project_role,
     rank,
 )
 from ..schemas import (
@@ -51,6 +54,7 @@ from ..schemas import (
     PlanListItem,
     PlanMoveIn,
     PlanOut,
+    PlanProjectIn,
     PlanPatchIn,
     VersionCreateIn,
 )
@@ -239,9 +243,12 @@ def _stroke_dict(s: Stroke) -> dict:
 # ─── CRUD ──────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=list[PlanListItem])
-def list_plans(user: CurrentUser, db: DbDep) -> list[PlanListItem]:
+def list_plans(user: CurrentUser, db: DbDep, project_id: str | None = None) -> list[PlanListItem]:
+    """Ohne project_id nur Pläne ohne Projekt; mit project_id die Pläne dieses Projekts."""
     out: list[PlanListItem] = []
-    for plan in db.scalars(select(Plan).where(Plan.deleted_at.is_(None)).order_by(Plan.updated_at.desc())):
+    q = select(Plan).where(Plan.deleted_at.is_(None))
+    q = q.where(Plan.project_id == project_id) if project_id else q.where(Plan.project_id.is_(None))
+    for plan in db.scalars(q.order_by(Plan.updated_at.desc())):
         level = effective_level(db, user, plan)
         if level is not None:
             out.append(PlanListItem(**PlanOut.model_validate(plan).model_dump(), level=level))
@@ -291,12 +298,15 @@ def purge_plan(plan_id: str, request: Request, user: CurrentUser, db: DbDep) -> 
 
 @router.post("", response_model=PlanOut, status_code=status.HTTP_201_CREATED)
 def create_plan(body: PlanCreateIn, request: Request, user: CurrentUser, db: DbDep) -> Plan:
-    if not can_create_plans(db, user):
+    project_id = body.project_id or None
+    if project_id is not None:
+        _require_project_editor(db, user, project_id)
+    elif not can_create_plans(db, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Berechtigung, Pläne zu erstellen")
     folder_id = body.folder_id or None
-    if folder_id is not None and db.get(PlanFolder, folder_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ordner nicht gefunden")
-    plan = Plan(name=body.name, map_id=body.map_id, folder_id=folder_id, created_by=user.id)
+    _check_folder_scope(db, folder_id, project_id)
+    plan = Plan(name=body.name, map_id=body.map_id, folder_id=folder_id, project_id=project_id,
+                created_by=user.id)
     db.add(plan)
     db.flush()
     db.add(PlanACL(plan_id=plan.id, subject_type="user", subject_id=user.id, level="owner"))
@@ -330,8 +340,7 @@ def patch_plan(body: PlanPatchIn, plan: EditorPlan, db: DbDep) -> Plan:
 @router.post("/{plan_id}/move", response_model=PlanOut)
 def move_plan(body: PlanMoveIn, plan: EditorPlan, db: DbDep) -> Plan:
     """Plan in einen Ordner (oder auf die oberste Ebene, folder_id=null) verschieben."""
-    if body.folder_id is not None and db.get(PlanFolder, body.folder_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ordner nicht gefunden")
+    _check_folder_scope(db, body.folder_id, plan.project_id)
     plan.folder_id = body.folder_id
     if body.ordering is not None:
         plan.ordering = body.ordering
@@ -339,10 +348,64 @@ def move_plan(body: PlanMoveIn, plan: EditorPlan, db: DbDep) -> Plan:
     return plan
 
 
+@router.post("/{plan_id}/project", response_model=PlanOut)
+def set_plan_project(
+    body: PlanProjectIn, request: Request, plan: OwnerPlan, user: CurrentUser, db: DbDep
+) -> Plan:
+    """Plan in ein Projekt verschieben bzw. herauslösen (project_id=null).
+    Braucht Plan-owner UND (beim Hineinverschieben) Projekt-editor."""
+    target = body.project_id or None
+    if target is not None:
+        _require_project_editor(db, user, target)
+    if target != plan.project_id:
+        plan.project_id = target
+        plan.folder_id = None  # Ordner gehört zum alten Kontext
+        db.execute(update(PlanImage).where(PlanImage.plan_id == plan.id).values(project_id=target))
+        db.commit()
+        audit.record(db, "plan.project", user_id=user.id, target_type="plan", target_id=plan.id,
+                     request=request, project_id=target)
+    return plan
+
+
 # ─── Ordner (Plan-Gruppen) ─────────────────────────────────────────────────
 
+def _require_project_editor(db: Session, user, project_id: str) -> Project:
+    """404 wenn das Projekt fehlt/unsichtbar, 403 wenn nur Leserechte."""
+    proj = db.get(Project, project_id)
+    role = project_role(db, user, project_id) if proj else None
+    if proj is None or role is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Projekt nicht gefunden")
+    if rank(role) < rank("editor"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Projekt-Recht 'editor' erforderlich")
+    return proj
+
+
+def _check_folder_scope(db: Session, folder_id: str | None, project_id: str | None) -> PlanFolder | None:
+    """Ordner muss existieren und zum selben Projekt gehören (bzw. beide ohne Projekt)."""
+    if folder_id is None:
+        return None
+    f = db.get(PlanFolder, folder_id)
+    if f is None or (f.project_id or None) != (project_id or None):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ordner nicht gefunden")
+    return f
+
+
 def _folder_out(f: PlanFolder) -> dict:
-    return {"id": f.id, "name": f.name, "parent_id": f.parent_id, "ordering": f.ordering}
+    return {"id": f.id, "name": f.name, "parent_id": f.parent_id, "ordering": f.ordering,
+            "project_id": f.project_id, "created_by": f.created_by}
+
+
+def _require_folder_manage(db: Session, user, f: PlanFolder) -> None:
+    """Umbenennen/Verschieben/Löschen. Projekt-Ordner: Projekt-editor+. Normale Ordner: Admin oder
+    Ersteller; Alt-Ordner ohne Ersteller (NULL): Admin sowie jeder mit can_create_plans."""
+    if f.project_id:
+        _require_project_editor(db, user, f.project_id)
+        return
+    if user.is_admin or (f.created_by is not None and f.created_by == user.id):
+        return
+    if f.created_by is None and can_create_plans(db, user):
+        return
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur Admin oder Ersteller des Ordners")
 
 
 def _is_descendant(db: Session, folder_id: str, maybe_ancestor_id: str) -> bool:
@@ -359,19 +422,30 @@ def _is_descendant(db: Session, folder_id: str, maybe_ancestor_id: str) -> bool:
 
 
 @folders_router.get("")
-def list_folders(user: CurrentUser, db: DbDep) -> list[dict]:
-    rows = db.scalars(select(PlanFolder).order_by(PlanFolder.ordering, PlanFolder.name))
-    return [_folder_out(f) for f in rows]
+def list_folders(user: CurrentUser, db: DbDep, project_id: str | None = None) -> list[dict]:
+    q = select(PlanFolder)
+    if project_id:
+        if project_role(db, user, project_id) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Projekt nicht gefunden")
+        q = q.where(PlanFolder.project_id == project_id)
+    else:
+        q = q.where(PlanFolder.project_id.is_(None))
+    return [_folder_out(f) for f in db.scalars(q.order_by(PlanFolder.ordering, PlanFolder.name))]
 
 
 @folders_router.post("", status_code=status.HTTP_201_CREATED)
 def create_folder(body: FolderIn, user: CurrentUser, db: DbDep) -> dict:
-    if body.parent_id is not None and db.get(PlanFolder, body.parent_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Übergeordneter Ordner nicht gefunden")
+    project_id = body.project_id or None
+    if project_id is not None:
+        _require_project_editor(db, user, project_id)
+    elif not can_create_plans(db, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Berechtigung, Ordner anzulegen")
+    _check_folder_scope(db, body.parent_id, project_id)
     nxt = db.scalar(select(func.coalesce(func.max(PlanFolder.ordering), -1)))
     f = PlanFolder(
-        name=(body.name or "").strip() or "Ordner",
+        name=((body.name or "").strip() or "Ordner")[:128],
         parent_id=body.parent_id,
+        project_id=project_id,
         ordering=int(nxt) + 1,
         created_by=user.id,
     )
@@ -385,13 +459,13 @@ def patch_folder(folder_id: str, body: FolderPatchIn, user: CurrentUser, db: DbD
     f = db.get(PlanFolder, folder_id)
     if f is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    _require_folder_manage(db, user, f)
     if body.name is not None and body.name.strip():
-        f.name = body.name.strip()
+        f.name = body.name.strip()[:128]
     if body.parent_id is not None:
         if body.parent_id == folder_id or _is_descendant(db, body.parent_id, folder_id):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Zyklus im Ordnerbaum")
-        if db.get(PlanFolder, body.parent_id) is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Zielordner nicht gefunden")
+        _check_folder_scope(db, body.parent_id, f.project_id)
         f.parent_id = body.parent_id
     elif body.move_to_root:
         f.parent_id = None
@@ -406,6 +480,7 @@ def delete_folder(folder_id: str, user: CurrentUser, db: DbDep) -> dict:
     f = db.get(PlanFolder, folder_id)
     if f is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    _require_folder_manage(db, user, f)
     # Inhalt eine Ebene nach oben ziehen, dann Ordner entfernen
     db.execute(update(Plan).where(Plan.folder_id == folder_id).values(folder_id=f.parent_id))
     db.execute(
@@ -443,7 +518,7 @@ async def put_thumbnail(plan: EditorPlan, request: Request) -> dict:
     raw = bytes(buf)
     if raw[:8] != b"\x89PNG\r\n\x1a\n":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Kein PNG")
-    _thumb_path(plan.id).write_bytes(raw)
+    await run_in_threadpool(lambda: _thumb_path(plan.id).write_bytes(raw))
     return {"ok": True}
 
 
@@ -565,21 +640,21 @@ def list_layers(plan: ViewerPlan, db: DbDep) -> list[dict]:
 
 
 @router.post("/{plan_id}/layers", status_code=status.HTTP_201_CREATED)
-async def create_layer(body: LayerBody, plan: EditorPlan, db: DbDep) -> dict:
+def create_layer(body: LayerBody, plan: EditorPlan, db: DbDep) -> dict:
     name = _clean_layer_name(db, plan.id, body.name)
     nxt = db.scalar(select(func.coalesce(func.max(Layer.ordering), 0)).where(Layer.plan_id == plan.id))
     ly = Layer(plan_id=plan.id, name=name, color=body.color if body.color is not None else -1,
                ordering=int(nxt or 0) + 1)
     db.add(ly)
     db.commit()
-    from ..services.realtime import hub
+    from ..services.realtime import broadcast_from_thread
 
-    await hub.broadcast(plan.id, {"type": "layers.changed", "layers": _layers_of(db, plan.id)})
+    broadcast_from_thread(plan.id, {"type": "layers.changed", "layers": _layers_of(db, plan.id)})
     return _layer_out(ly)
 
 
 @router.patch("/{plan_id}/layers/{layer_id}")
-async def patch_layer(layer_id: str, body: LayerBody, plan: EditorPlan, db: DbDep) -> dict:
+def patch_layer(layer_id: str, body: LayerBody, plan: EditorPlan, db: DbDep) -> dict:
     ly = db.get(Layer, layer_id)
     if ly is None or ly.plan_id != plan.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -592,14 +667,14 @@ async def patch_layer(layer_id: str, body: LayerBody, plan: EditorPlan, db: DbDe
     if body.ordering is not None:
         ly.ordering = body.ordering
     db.commit()
-    from ..services.realtime import hub
+    from ..services.realtime import broadcast_from_thread
 
-    await hub.broadcast(plan.id, {"type": "layers.changed", "layers": _layers_of(db, plan.id)})
+    broadcast_from_thread(plan.id, {"type": "layers.changed", "layers": _layers_of(db, plan.id)})
     return _layer_out(ly)
 
 
 @router.delete("/{plan_id}/layers/{layer_id}")
-async def delete_layer(layer_id: str, plan: EditorPlan, db: DbDep) -> dict:
+def delete_layer(layer_id: str, plan: EditorPlan, db: DbDep) -> dict:
     ly = db.get(Layer, layer_id)
     if ly is None or ly.plan_id != plan.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -610,9 +685,9 @@ async def delete_layer(layer_id: str, plan: EditorPlan, db: DbDep) -> dict:
     db.execute(update(Stroke).where(Stroke.layer_id == ly.id).values(layer_id=None))
     db.delete(ly)
     db.commit()
-    from ..services.realtime import hub
+    from ..services.realtime import broadcast_from_thread
 
-    await hub.broadcast(plan.id, {"type": "layers.changed", "layers": _layers_of(db, plan.id), "removed": layer_id})
+    broadcast_from_thread(plan.id, {"type": "layers.changed", "layers": _layers_of(db, plan.id), "removed": layer_id})
     return {"ok": True}
 
 
@@ -708,7 +783,7 @@ def create_phase(body: PhaseBody, plan: EditorPlan, user: CurrentUser, db: DbDep
 
 
 @router.patch("/{plan_id}/phases/{phase_id}")
-async def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: CurrentUser, db: DbDep) -> dict:
+def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: CurrentUser, db: DbDep) -> dict:
     p = db.get(Phase, phase_id)
     if p is None or p.plan_id != plan.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -742,9 +817,9 @@ async def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: Cu
         from .live import _refresh_builder_phases
 
         _refresh_builder_phases(plan.id)
-        from ..services.realtime import hub
+        from ..services.realtime import broadcast_from_thread
 
-        await hub.broadcast(plan.id, {"type": "phases.changed"})
+        broadcast_from_thread(plan.id, {"type": "phases.changed"})
     return out
 
 
@@ -760,10 +835,25 @@ def delete_phase(phase_id: str, plan: EditorPlan, user: CurrentUser, db: DbDep) 
     victims = [p.id]
     if p.plane == "player":  # Spieler-Phase löschen → alle Builder-Kinder mit
         victims += list(db.scalars(select(Phase.id).where(Phase.parent_id == p.id)))
+    builder_victims = set(db.scalars(
+        select(Phase.id).where(Phase.id.in_(victims), Phase.plane == "builder")
+    ))
     for vid in victims:
-        db.execute(update(Marker).where(Marker.phase_id == vid).values(phase_id=None))
-        db.execute(update(Stroke).where(Stroke.phase_id == vid).values(phase_id=None))
-        db.execute(update(Annotation).where(Annotation.phase_id == vid).values(phase_id=None))
+        if vid in builder_victims:
+            # Missionsbau-Inhalte nicht auf NULL ("global" = für alle sichtbar) setzen,
+            # sondern mit der Phase löschen.
+            db.execute(sa_delete(ImagePlacement).where(ImagePlacement.phase_id == vid))
+            img_ids = list(db.scalars(select(PlanImage.id).where(PlanImage.phase_id == vid)))
+            if img_ids:
+                db.execute(sa_delete(ImagePlacement).where(ImagePlacement.image_id.in_(img_ids)))
+                db.execute(sa_delete(PlanImage).where(PlanImage.id.in_(img_ids)))
+            db.execute(sa_delete(Marker).where(Marker.phase_id == vid))
+            db.execute(sa_delete(Stroke).where(Stroke.phase_id == vid))
+            db.execute(sa_delete(Annotation).where(Annotation.phase_id == vid))
+        else:
+            db.execute(update(Marker).where(Marker.phase_id == vid).values(phase_id=None))
+            db.execute(update(Stroke).where(Stroke.phase_id == vid).values(phase_id=None))
+            db.execute(update(Annotation).where(Annotation.phase_id == vid).values(phase_id=None))
     db.execute(sa_delete(Phase).where(Phase.id.in_(victims)))
     db.commit()
     return {"ok": True}
@@ -924,14 +1014,27 @@ def clone_plan(
 ) -> Plan:
     if not can_create_plans(db, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Keine Berechtigung, Pläne zu erstellen")
-    if body.folder_id is not None and db.get(PlanFolder, body.folder_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ordner nicht gefunden")
-    clone = Plan(name=body.name, map_id=plan.map_id, folder_id=body.folder_id, created_by=user.id)
+    clone_project: str | None = None
+    if body.folder_id is not None:
+        tf = db.get(PlanFolder, body.folder_id)
+        if tf is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Ordner nicht gefunden")
+        clone_project = tf.project_id
+        if clone_project:
+            _require_project_editor(db, user, clone_project)
+    clone = Plan(name=body.name, map_id=plan.map_id, folder_id=body.folder_id,
+                 project_id=clone_project, created_by=user.id)
     db.add(clone)
     db.flush()
 
     phase_map: dict[str, str] = {}
     src_phases = list(db.scalars(select(Phase).where(Phase.plan_id == plan.id)))
+    # Missionsbau-Ebene nur für Missionsbauer klonen (sonst bekäme jeder Betrachter
+    # die verborgenen Inhalte in seinen eigenen Klon).
+    skip_ids: set[str] = set()
+    if not effective_mission_builder(db, user):
+        skip_ids = {p.id for p in src_phases if p.plane == "builder"}
+        src_phases = [p for p in src_phases if p.id not in skip_ids]
     # Spieler-Phasen zuerst klonen, damit die parent_id der Builder-Phasen gemappt werden kann
     for p in sorted(src_phases, key=lambda x: 0 if (x.plane or "player") == "player" else 1):
         np = Phase(
@@ -955,6 +1058,8 @@ def clone_plan(
         db.add(Layer(plan_id=clone.id, name="Allgemein", is_default=True))
 
     for m in db.scalars(select(Marker).where(Marker.plan_id == plan.id)):
+        if m.phase_id in skip_ids:
+            continue
         d = _marker_dict(m)
         d.pop("id")
         d["phase_id"] = phase_map.get(m.phase_id or "")
@@ -963,6 +1068,8 @@ def clone_plan(
         db.add(Marker(plan_id=clone.id, created_by=user.id, **d))
 
     for s in db.scalars(select(Stroke).where(Stroke.plan_id == plan.id)):
+        if s.phase_id in skip_ids:
+            continue
         d = _stroke_dict(s)
         d.pop("id")
         d["phase_id"] = phase_map.get(s.phase_id or "")
@@ -972,8 +1079,10 @@ def clone_plan(
 
     img_map: dict[str, str] = {}
     for img in db.scalars(select(PlanImage).where(PlanImage.plan_id == plan.id)):
+        if img.phase_id in skip_ids:
+            continue
         nimg = PlanImage(
-            plan_id=clone.id, created_by=user.id, updated_by=user.id,
+            plan_id=clone.id, created_by=user.id, updated_by=user.id, project_id=clone_project,
             phase_id=phase_map.get(img.phase_id or ""),
             filename=img.filename, content_type=img.content_type, byte_size=img.byte_size,
             natural_w=img.natural_w, natural_h=img.natural_h, caption=img.caption, note=img.note, data=img.data,
@@ -984,7 +1093,7 @@ def clone_plan(
 
     for pl in db.scalars(select(ImagePlacement).where(ImagePlacement.plan_id == plan.id)):
         new_image_id = img_map.get(pl.image_id)
-        if new_image_id is None:
+        if new_image_id is None or pl.phase_id in skip_ids:
             continue
         db.add(ImagePlacement(
             plan_id=clone.id, image_id=new_image_id, created_by=user.id, updated_by=user.id,
@@ -1058,11 +1167,65 @@ def restore_version(version_id: str, plan: OwnerPlan, user: CurrentUser, db: DbD
             created_by=user.id,
         )
     )
+    snap = v.snapshot or {}
+    # Verweise der Version können inzwischen gelöscht sein → bereinigen (FK / Sichtbarkeit)
+    phase_ids = set(db.scalars(select(Phase.id).where(Phase.plan_id == plan.id)))
+    layer_ids = set(db.scalars(select(Layer.id).where(Layer.plan_id == plan.id)))
+    fallback_phase = db.scalar(
+        select(Phase.id).where(Phase.plan_id == plan.id, Phase.plane == "player").order_by(Phase.ordering).limit(1)
+    )
+    # ORBAT-Verluste: zerstörte Marker der alten Menge zurückbuchen, die der Version abziehen
+    from .live import _losses, _sync_node
+    from ..sidc_status import status_from_sidc
+
+    node_delta: dict[str, int] = {}
+    for m in db.scalars(select(Marker).where(Marker.plan_id == plan.id, Marker.orbat_node_id.is_not(None))):
+        node_delta[m.orbat_node_id] = node_delta.get(m.orbat_node_id, 0) + _losses(
+            status_from_sidc(m.sidc), m.orbat_strength
+        )
     db.query(Marker).filter(Marker.plan_id == plan.id).delete()
     db.query(Stroke).filter(Stroke.plan_id == plan.id).delete()
-    for md in v.snapshot.get("markers", []):
-        db.add(Marker(plan_id=plan.id, **{k: md[k] for k in md if k != "id"}))
-    for sd in v.snapshot.get("strokes", []):
-        db.add(Stroke(plan_id=plan.id, **{k: sd[k] for k in sd if k != "id"}))
+
+    def fix(d: dict) -> dict:
+        d = {k: d[k] for k in d if k != "id"}
+        if d.get("phase_id") not in phase_ids:
+            d["phase_id"] = fallback_phase
+        if "extra_phase_ids" in d:
+            d["extra_phase_ids"] = [x for x in (d["extra_phase_ids"] or []) if x in phase_ids]
+        if "layer_id" in d and d["layer_id"] not in layer_ids:
+            d["layer_id"] = None
+        return d
+
+    for md in snap.get("markers", []):
+        md = fix(md)
+        nid = md.get("orbat_node_id")
+        if nid and db.get(OrbatNode, nid) is None:
+            md["orbat_node_id"] = nid = None
+        if nid:
+            node_delta[nid] = node_delta.get(nid, 0) - _losses(status_from_sidc(md.get("sidc")), md.get("orbat_strength"))
+        db.add(Marker(plan_id=plan.id, **md))
+    for sd in snap.get("strokes", []):
+        db.add(Stroke(plan_id=plan.id, **fix(sd)))
+    if "annotations" in snap:  # ältere Versionen enthalten keine Annotationen
+        db.query(Annotation).filter(Annotation.plan_id == plan.id).delete()
+        for ad in snap["annotations"]:
+            ad = fix(ad)
+            ad.pop("layer_id", None)
+            db.add(Annotation(plan_id=plan.id, **ad))
+    if "image_placements" in snap:  # Bilddaten selbst sind nicht in der Version → nur Platzierungen
+        db.query(ImagePlacement).filter(ImagePlacement.plan_id == plan.id).delete()
+        image_ids = set(db.scalars(select(PlanImage.id).where(PlanImage.plan_id == plan.id)))
+        for pd in snap["image_placements"]:
+            if pd.get("image_id") in image_ids:
+                pd = fix(pd)
+                pd.pop("layer_id", None)
+                db.add(ImagePlacement(plan_id=plan.id, **pd))
     plan.updated_at = now()
     db.commit()
+    for nid, delta in node_delta.items():  # qty_current + Status der Knoten neu abgleichen
+        _sync_node(db, nid, delta=delta)
+    from .live import _refresh_builder_phases
+    from ..services.realtime import broadcast_from_thread
+
+    _refresh_builder_phases(plan.id)
+    broadcast_from_thread(plan.id, {"type": "phases.changed"})  # Clients laden den Snapshot neu

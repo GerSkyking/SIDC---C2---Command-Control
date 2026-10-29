@@ -78,6 +78,10 @@ def _sniff(raw: bytes) -> tuple[str, int, int] | None:
     return None
 
 
+def _builder_phase_forbidden(db, user, plan_id: str, pid: str) -> bool:
+    return not effective_mission_builder(db, user) and _phase_is_builder(plan_id, pid)
+
+
 @router.post("/{plan_id}/images", status_code=status.HTTP_201_CREATED)
 async def upload_image(
     plan: EditorPlan, request: Request, user: CurrentUser, db: DbDep,
@@ -105,12 +109,15 @@ async def upload_image(
         sniff = (ct, max(1, min(w, 20000)), max(1, min(h, 20000)))
 
     pid = phase_id or None
-    if pid and not effective_mission_builder(db, user) and _phase_is_builder(plan.id, pid):
+    if pid and await run_in_threadpool(_builder_phase_forbidden, db, user, plan.id, pid):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Missionsbau-Ebene")
 
     fname = unquote(request.headers.get("x-filename", ""))[:255]
     meta = {"phase_id": pid, "caption": caption, "filename": fname}
-    out = await run_in_threadpool(_create_image, plan.id, user.id, meta, raw, sniff)
+    try:
+        out = await run_in_threadpool(_create_image, plan.id, user.id, meta, raw, sniff)
+    except ValueError:  # phase_id gehört nicht zu diesem Plan
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ungültige Phase")
     await hub.broadcast(
         plan.id, {"type": "image.upsert", "image": out}, builder_only=_phase_is_builder(plan.id, pid)
     )

@@ -4,6 +4,7 @@
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 import { api } from "./api";
+import { PlanSocket } from "./ws";
 import { ensureMapIcon, mapIconId, markerLabelOffsets } from "./sidc/symbol";
 import { isTextMarker, markerLabelCategory } from "./sidc/sidc";
 import { t } from "./i18n";
@@ -252,7 +253,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   const buildLayers = () => {
     const rows: string[] = [`<div class="fav-head">${t("layers.heading")}</div>`];
     const ents: [string, string][] = [];
-    for (const ly of ["sat", "grid"]) if (map.getLayer(ly)) ents.push([ly, ly]);
+    for (const ly of ["sat", "grid"]) if (map.getLayer(ly)) ents.push([ly, t(`layers.${ly}`)]);
     if (hasContours) ents.push(["contours", t("layers.contours")]);
     if (hasPeaks) ents.push(["peaks", t("layers.peaks")]);
     for (const k of enfusionPresent) ents.push([k, t(`layers.${k}`)]);
@@ -719,7 +720,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
 
   // ── Werkzeuge (zeigen / bewegen / Linie / radieren) ────────────────
   const toolbar = root.querySelector<HTMLDivElement>("#toolbar")!;
-  const wsSend = (o: unknown) => ws.readyState === 1 && ws.send(JSON.stringify(o));
+  const wsSend = (o: Record<string, any> & { type: string }) => ws.send(o);
   const MODE_BTN: Record<PMode, string> = {
     pan: "tool-pan",
     point: "tool-point",
@@ -738,7 +739,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       linePts = [];
       refreshLineDraft();
     }
-    if (m !== "point" && ws.readyState === 1) {
+    if (m !== "point" && ws.isOpen) {
       peers.delete(myUid);
       wsSend({ type: "presence.leave" });
       refreshPeers();
@@ -753,7 +754,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
 
   let lastSent = 0;
   const sendCursor = (lng: number, lat: number) => {
-    if (Date.now() - lastSent < 60 || ws.readyState !== 1) return;
+    if (Date.now() - lastSent < 60 || !ws.isOpen) return;
     lastSent = Date.now();
     wsSend({ type: "presence.cursor", lng, lat, user: t("plan.public") });
     peers.set(myUid, { name: "•", lng, lat, ts: Date.now() });
@@ -927,11 +928,30 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   });
 
   // ── Live-WebSocket ──────────────────────────────────────────────────
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  const ws = new WebSocket(`${proto}://${location.host}/public/plans/${token}/live`);
-  ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
+  const ws = new PlanSocket(token, `/public/plans/${token}/live`);
+  const resync = async () => {
+    try {
+      const fresh = await api.publicSnapshot(token);
+      markers.clear();
+      for (const m of fresh.markers as M[]) markers.set(m.id, m);
+      strokes.clear();
+      for (const s of fresh.strokes as S[]) strokes.set(s.id, s);
+      annots.splice(0, annots.length, ...(fresh.annotations ?? []));
+      images.splice(0, images.length, ...(fresh.images ?? []));
+      placements.splice(0, placements.length, ...(fresh.image_placements ?? []));
+      await refreshM();
+      refreshS();
+      renderAnnots();
+      renderMapImages();
+    } catch {
+      /* Link evtl. widerrufen – naechster Reconnect versucht es erneut */
+    }
+  };
+  ws.on((msg) => {
     switch (msg.type) {
+      case "_open":
+        if (msg.reconnect) void resync();
+        break;
       case "marker.upsert":
         markers.set(msg.marker.id, msg.marker);
         void refreshM();
@@ -998,12 +1018,14 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         refreshPeers();
         break;
     }
-  };
+  });
+  ws.connect();
   const peerTimer = window.setInterval(refreshPeers, 2000);
   window.addEventListener(
     "hashchange",
     () => {
       ws.close();
+      document.removeEventListener("keydown", onPresentKey);
       ro.disconnect();
       window.clearInterval(peerTimer);
       window.removeEventListener("resize", syncTopbarH);

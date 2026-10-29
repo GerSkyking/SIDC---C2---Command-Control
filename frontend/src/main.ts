@@ -1,10 +1,10 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./style.css";
-import { api, ApiError, type Me } from "./api";
+import { api, ApiError, type Me, type PlanFolder } from "./api";
 import { openPlanView } from "./plan";
 import { renderAdmin } from "./admin";
 import { openAclEditor } from "./acl";
-import { renderPlanTree } from "./planTree";
+import { renderPlanTree, selectedFolder } from "./planTree";
 import { renderPublicView } from "./publicview";
 import { langSelect, t, wireLangSelect } from "./i18n";
 import { confirmDialog, toastError } from "./notify";
@@ -73,15 +73,20 @@ async function route(): Promise<void> {
     }
   }
   if (location.hash === "#/trash") return renderTrash();
+  const projMatch = location.hash.match(/^#\/projects(?:\/([0-9a-f]{32})(?:\/([a-z]+))?)?$/);
+  if (projMatch) {
+    const { renderProjects } = await import("./projects");
+    return renderProjects(app, me, projMatch[1], projMatch[2]);
+  }
   const orbatMatch = location.hash.match(/^#\/orbat(?:\/([0-9a-f]{32}))?$/);
   if (orbatMatch && me.is_mission_builder_effective) {
     const { renderOrbatLibrary } = await import("./orbat");
     return renderOrbatLibrary(app, me, orbatMatch[1]);
   }
 
-  const adminMatch = location.hash.match(/^#\/admin(?:\/(users|log|config|images))?$/);
+  const adminMatch = location.hash.match(/^#\/admin(?:\/(users|log|config|storage))?$/);
   if (adminMatch && me.role === "admin") {
-    return renderAdmin(app, (adminMatch[1] as "users" | "log" | "config" | "images") || "users");
+    return renderAdmin(app, (adminMatch[1] as "users" | "log" | "config" | "storage") || "users");
   }
   return renderPlanList();
 }
@@ -135,9 +140,23 @@ async function renderPlanList(): Promise<void> {
     api.folders().catch(() => []),
   ]);
   const canCreate = me!.can_create_plans_effective && maps.some((m) => m.status === "ready");
+  const folderById = new Map(folders.map((f) => [f.id, f]));
+  const folderPath = (f: PlanFolder): string => {
+    const parts = [f.name];
+    for (let cur = f.parent_id ? folderById.get(f.parent_id) : undefined, n = 0; cur && n < 20; n++) {
+      parts.unshift(cur.name);
+      cur = cur.parent_id ? folderById.get(cur.parent_id) : undefined;
+    }
+    return parts.join(" / ");
+  };
+  const sel = selectedFolder();
   const folderOpts =
     `<option value="">${t("folder.root")}</option>` +
-    [...folders].sort((a, b) => a.name.localeCompare(b.name)).map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join("");
+    folders
+      .map((f) => ({ f, path: folderPath(f) }))
+      .sort((a, b) => a.path.localeCompare(b.path))
+      .map(({ f, path }) => `<option value="${f.id}"${f.id === sel ? " selected" : ""}>${esc(path)}</option>`)
+      .join("");
 
   app.innerHTML = `
    <div class="shell">
@@ -154,20 +173,40 @@ async function renderPlanList(): Promise<void> {
     <div class="list stack">
       ${
         canCreate
-          ? `<div class="row">
-               <input id="pn" placeholder="${t("plans.planName")}" />
-               <select id="pm">${maps
-                 .filter((m) => m.status === "ready")
-                 .map((m) => `<option value="${m.id}">${esc(m.name)}</option>`)
-                 .join("")}</select>
-               <select id="pf" title="${t("plans.moveTo")}">${folderOpts}</select>
-               <button class="primary" id="pc">${t("plans.new")}</button>
-               <button id="pcs" title="${t("plans.newWithAccess")}">${t("plans.newWithAccess")}</button>
-             </div>`
+          ? `<section class="create-card">
+               <h2>${t("plans.createTitle")}</h2>
+               <p class="muted">${t("plans.createHint")}</p>
+               <div class="create-grid">
+                 <div class="field">
+                   <label for="pn">${t("plans.nameLabel")}</label>
+                   <input id="pn" placeholder="${t("plans.planName")}" autocomplete="off" />
+                   <small class="muted">${t("plans.nameHint")}</small>
+                 </div>
+                 <div class="field">
+                   <label for="pm">${t("plans.mapLabel")}</label>
+                   <select id="pm"><option value="" selected>${t("plans.mapPh")}</option>${maps
+                     .filter((m) => m.status === "ready")
+                     .map((m) => `<option value="${m.id}">${esc(m.name)}</option>`)
+                     .join("")}</select>
+                   <small class="muted">${t("plans.mapHint")}</small>
+                 </div>
+                 <div class="field">
+                   <label for="pf">${t("plans.folderLabel")}</label>
+                   <select id="pf">${folderOpts}</select>
+                   <small class="muted">${t("plans.folderHint")}</small>
+                 </div>
+               </div>
+               <div class="create-actions">
+                 <button class="primary" id="pc" title="${t("plans.createHint2")}">${icon("plus", 14)} ${t("plans.create")}</button>
+                 <button id="pcs" title="${t("plans.createAccessHint")}">${t("plans.newWithAccess")}</button>
+                 <span class="create-msg" id="cmsg" role="status"></span>
+               </div>
+             </section>`
           : `<div class="muted">${
               me!.can_create_plans_effective ? t("plans.noMap") : t("plans.noPerm")
             }</div>`
       }
+      <h2 class="plans-title">${t("plans.listTitle")}</h2>
       <div class="plan-tree" id="planTree"></div>
     </div>
     </div>
@@ -178,8 +217,13 @@ async function renderPlanList(): Promise<void> {
   app.querySelector("#settingsBtn")!.addEventListener("click", openSettings);
 
   renderPlanTree(app.querySelector<HTMLDivElement>("#planTree")!, plans, folders, me!.can_create_plans_effective, {
+    user: { id: me!.id, isAdmin: me!.role === "admin" },
     mapName: (id) => maps.find((m) => m.id === id)?.name ?? id,
     onChanged: () => renderPlanList(),
+    onSelectFolder: (id) => {
+      const pf = app.querySelector<HTMLSelectElement>("#pf");
+      if (pf) pf.value = id ?? "";
+    },
     onDeletePlan: async (p) => {
       if (await confirmDialog(t("plans.confirmDelete"), { danger: true, trash: true })) {
         await api.deletePlan(p.id);
@@ -193,7 +237,10 @@ async function renderPlanList(): Promise<void> {
     const name = app.querySelector<HTMLInputElement>("#pn")!.value.trim();
     const mapId = app.querySelector<HTMLSelectElement>("#pm")!.value;
     const folderId = app.querySelector<HTMLSelectElement>("#pf")?.value || null;
-    if (!name) return;
+    if (!name || !mapId) {
+      showMissing(true);
+      return;
+    }
     try {
       const p = await api.createPlan(name, mapId, folderId);
       if (withAccess) {
@@ -209,6 +256,22 @@ async function renderPlanList(): Promise<void> {
       toastError(e);
     }
   };
+  // Erstellen erst möglich, wenn Name + Karte gesetzt sind; Hinweis sagt, was noch fehlt.
+  const nameEl = app.querySelector<HTMLInputElement>("#pn");
+  const mapEl = app.querySelector<HTMLSelectElement>("#pm");
+  const msgEl = app.querySelector<HTMLElement>("#cmsg");
+  function showMissing(force = false): void {
+    if (!nameEl || !mapEl || !msgEl) return;
+    const missing = !nameEl.value.trim() ? t("plans.needName") : !mapEl.value ? t("plans.needMap") : "";
+    app.querySelectorAll<HTMLButtonElement>("#pc, #pcs").forEach((b) => b.classList.toggle("is-off", !!missing));
+    msgEl.textContent = force || msgEl.dataset.touched ? missing : "";
+    nameEl.classList.toggle("invalid", force && !nameEl.value.trim());
+    mapEl.classList.toggle("invalid", force && !!nameEl.value.trim() && !mapEl.value);
+  }
+  nameEl?.addEventListener("input", () => { msgEl!.dataset.touched = "1"; showMissing(); });
+  mapEl?.addEventListener("change", () => { msgEl!.dataset.touched = "1"; showMissing(); });
+  nameEl?.addEventListener("keydown", (e) => { if (e.key === "Enter") void doCreate(false); });
+  showMissing();
   app.querySelector("#pc")?.addEventListener("click", () => doCreate(false));
   app.querySelector("#pcs")?.addEventListener("click", () => doCreate(true));
 }

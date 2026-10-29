@@ -10,7 +10,7 @@ import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 
@@ -18,7 +18,7 @@ from .. import audit
 from ..deps import CurrentUser, DbDep
 from ..models import GroupMember, Marker, Orbat, OrbatACL, OrbatNode, Plan, PlanOrbat
 from ..permissions import effective_level, effective_mission_builder, rank
-from ..services.realtime import hub
+from ..services.realtime import broadcast_from_thread
 from ..sidc_status import sidc_with_affiliation, sidc_with_status
 
 router = APIRouter(prefix="/api/orbats", tags=["orbat"])
@@ -67,40 +67,43 @@ def _is_owner(db, user, o: Orbat) -> bool:
 # ─── Schemas ───────────────────────────────────────────────────────────────
 
 class OrbatIn(BaseModel):
-    name: str
-    affiliation: str = "own"
-    notes: str = ""
+    name: str = Field(max_length=128)
+    affiliation: str = Field(default="own", max_length=12)
+    notes: str = Field(default="", max_length=20000)
 
 
 class OrbatPatch(BaseModel):
-    name: str | None = None
-    affiliation: str | None = None
-    notes: str | None = None
+    name: str | None = Field(default=None, max_length=128)
+    affiliation: str | None = Field(default=None, max_length=12)
+    notes: str | None = Field(default=None, max_length=20000)
+
+
+_QTY_MAX = 1_000_000
 
 
 class NodeIn(BaseModel):
-    name: str = "Einheit"
-    sidc: str = ""
+    name: str = Field(default="Einheit", max_length=128)
+    sidc: str = Field(default="", max_length=64)
     parent_id: str | None = None
-    qty_planned: int = 1
-    qty_current: int | None = None
-    status: str = "active"
-    ordering: int | None = None
-    notes: str = ""
+    qty_planned: int = Field(default=1, le=_QTY_MAX)
+    qty_current: int | None = Field(default=None, le=_QTY_MAX)
+    status: str = Field(default="active", max_length=12)
+    ordering: int | None = Field(default=None, ge=-_QTY_MAX, le=_QTY_MAX)
+    notes: str = Field(default="", max_length=20000)
     rel_visible: bool = False
     rel_show_type: bool = False
     rel_strength: int = 50
 
 
 class NodePatch(BaseModel):
-    name: str | None = None
-    sidc: str | None = None
+    name: str | None = Field(default=None, max_length=128)
+    sidc: str | None = Field(default=None, max_length=64)
     parent_id: str | None = None
-    qty_planned: int | None = None
-    qty_current: int | None = None
-    status: str | None = None
-    ordering: int | None = None
-    notes: str | None = None
+    qty_planned: int | None = Field(default=None, le=_QTY_MAX)
+    qty_current: int | None = Field(default=None, le=_QTY_MAX)
+    status: str | None = Field(default=None, max_length=12)
+    ordering: int | None = Field(default=None, ge=-_QTY_MAX, le=_QTY_MAX)
+    notes: str | None = Field(default=None, max_length=20000)
     rel_visible: bool | None = None
     rel_show_type: bool | None = None
     rel_strength: int | None = None
@@ -163,7 +166,7 @@ def get_orbat(orbat_id: str, user: CurrentUser, db: DbDep) -> dict:
 
 
 @router.patch("/{orbat_id}")
-async def patch_orbat(orbat_id: str, body: OrbatPatch, user: CurrentUser, db: DbDep) -> dict:
+def patch_orbat(orbat_id: str, body: OrbatPatch, user: CurrentUser, db: DbDep) -> dict:
     o = _load(orbat_id, db, user, "editor")
     if body.name is not None and body.name.strip():
         o.name = body.name.strip()
@@ -178,11 +181,11 @@ async def patch_orbat(orbat_id: str, body: OrbatPatch, user: CurrentUser, db: Db
         o.notes = body.notes
     db.commit()
     if aff_changed:
-        await _propagate_affiliation(db, o)
+        _propagate_affiliation(db, o)
     return _orbat_out(db, user, o, with_nodes=True)
 
 
-async def _propagate_affiliation(db, o: Orbat) -> None:
+def _propagate_affiliation(db, o: Orbat) -> None:
     """ORBAT-Zugehörigkeit → Identitätsstelle aller Knoten-SIDC und verknüpften Marker."""
     from .live import _author_of, _marker_out, _phase_is_builder
 
@@ -200,7 +203,7 @@ async def _propagate_affiliation(db, o: Orbat) -> None:
                 touched.append(m)
     db.commit()
     for m in touched:
-        await hub.broadcast(
+        broadcast_from_thread(
             m.plan_id, {"type": "marker.upsert", "marker": _marker_out(m, _author_of(db, m))},
             builder_only=_phase_is_builder(m.plan_id, m.phase_id),
         )
@@ -301,7 +304,7 @@ def clone_node(orbat_id: str, node_id: str, user: CurrentUser, db: DbDep) -> dic
 
 
 @router.patch("/{orbat_id}/nodes/{node_id}")
-async def patch_node(
+def patch_node(
     orbat_id: str, node_id: str, body: NodePatch, user: CurrentUser, db: DbDep
 ) -> dict:
     _load(orbat_id, db, user, "editor")
@@ -309,8 +312,27 @@ async def patch_node(
     if n is None or n.orbat_id != orbat_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     data = body.model_dump(exclude_unset=True)
-    if "parent_id" in data and data["parent_id"] == node_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Knoten kann nicht sein eigenes Elter sein")
+    # explizites null nur für parent_id erlaubt (NOT-NULL-Spalten sonst → 500)
+    for k in [k for k, v in data.items() if v is None and k != "parent_id"]:
+        data.pop(k)
+    if "name" in data:
+        data["name"] = data["name"].strip() or "Einheit"
+    for k in ("qty_planned", "qty_current"):
+        if k in data:
+            data[k] = max(0, data[k])
+    if data.get("parent_id") is not None:
+        if data["parent_id"] == node_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Knoten kann nicht sein eigenes Elter sein")
+        p = db.get(OrbatNode, data["parent_id"])
+        if p is None or p.orbat_id != orbat_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Eltern-Knoten unbekannt")
+        # Zyklus: neues Elter darf kein Nachfahre des Knotens sein
+        cur, seen = p, set()
+        while cur is not None and cur.id not in seen:
+            if cur.id == node_id:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Zyklus in der Hierarchie")
+            seen.add(cur.id)
+            cur = db.get(OrbatNode, cur.parent_id) if cur.parent_id else None
     if data.get("status") and data["status"] not in _STATUS:
         data.pop("status")
     if "rel_strength" in data and data["rel_strength"] is not None:
@@ -322,11 +344,11 @@ async def patch_node(
         setattr(n, k, v)
     db.commit()
     if status_changed:
-        await _propagate_node_status(db, n)
+        _propagate_node_status(db, n)
     return _node_out(n)
 
 
-async def _propagate_node_status(db, n: OrbatNode) -> None:
+def _propagate_node_status(db, n: OrbatNode) -> None:
     """Knoten-Status → SIDC-Statusstelle aller verknüpften Marker; live an alle
     Pläne, in denen das ORBAT hängt."""
     from .live import _phase_is_builder, _marker_out, _author_of
@@ -343,7 +365,7 @@ async def _propagate_node_status(db, n: OrbatNode) -> None:
     if touched:
         db.commit()
     for m in touched:
-        await hub.broadcast(
+        broadcast_from_thread(
             m.plan_id, {"type": "marker.upsert", "marker": _marker_out(m, _author_of(db, m))},
             builder_only=_phase_is_builder(m.plan_id, m.phase_id),
         )

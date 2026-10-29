@@ -4,7 +4,7 @@ import { api, type Me } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { themeSwitch, wireThemeSwitch } from "./ui";
-import { confirmDialog, promptDialog, toast, toastError } from "./notify";
+import { a11yModal, confirmDialog, promptDialog, toast, toastError } from "./notify";
 import { esc } from "./esc";
 
 export type HotAction =
@@ -288,10 +288,12 @@ export function openSettings(): void {
   </div>`;
 
   const close = () => {
+    cancelGrab?.();
     back.remove();
     document.removeEventListener("keydown", onEsc, true);
   };
   let capturing: string | null = null;
+  let cancelGrab: (() => void) | null = null;
   const onEsc = (e: KeyboardEvent) => {
     if (capturing) return;
     if (e.key === "Escape") close();
@@ -339,13 +341,13 @@ export function openSettings(): void {
   const wireKb = () => {
     back.querySelectorAll<HTMLButtonElement>("[data-kb]").forEach((b) =>
       b.addEventListener("click", () => {
+        cancelGrab?.();
         capturing = b.dataset.kb!;
         b.textContent = "…";
         const grab = (e: KeyboardEvent) => {
           e.preventDefault();
           e.stopPropagation();
-          document.removeEventListener("keydown", grab, true);
-          capturing = null;
+          cancelGrab?.();
           const a = b.dataset.kb as HotAction;
           if (e.key === "Escape") {
             b.textContent = keyLabel(binds[a]);
@@ -364,6 +366,12 @@ export function openSettings(): void {
           wireKb();
         };
         document.addEventListener("keydown", grab, true);
+        cancelGrab = () => {
+          document.removeEventListener("keydown", grab, true);
+          capturing = null;
+          cancelGrab = null;
+          b.textContent = keyLabel(binds[b.dataset.kb as HotAction]);
+        };
       }),
     );
   };
@@ -418,6 +426,7 @@ export function openSettings(): void {
 
   document.addEventListener("keydown", onEsc, true);
   document.body.appendChild(back);
+  a11yModal(back);
 }
 
 function wireTokens(root: HTMLElement): void {

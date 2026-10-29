@@ -78,8 +78,9 @@ services:
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
       OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL}
+      AUDIT_LOG_RETENTION_DAYS: ${AUDIT_LOG_RETENTION_DAYS:-180}
     ports:
-      - "${HTTP_PORT:-8080}:8080"
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-8080}:8080"
     volumes:
       - maps:/data/maps
       - uploads:/data/uploads
