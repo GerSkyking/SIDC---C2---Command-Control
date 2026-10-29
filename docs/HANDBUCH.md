@@ -1,6 +1,6 @@
 # SIDC – C2 – Handbuch
 
-Stand **2026-09-09**. Deckt den aktuellen Funktionsumfang von Backend + Web-Frontend ab.
+Stand **2026-10-29**. Deckt den aktuellen Funktionsumfang von Backend + Web-Frontend ab.
 Für Architektur/Stufenplan siehe [`../PLAN.md`](../PLAN.md), für Betrieb [`../README.md`](../README.md).
 
 ---
@@ -74,6 +74,42 @@ Die Plan-Liste ist ein **Ordnerbaum**:
 und Option „Freigaben mitkopieren". Kopiert Phasen (inkl. Notizen), Layer, Marker und
 Zeichnungen.
 
+## 3b. Missionsbau-Projekte
+
+Sidebar → **Missionsbau**. Ein **Projekt** bündelt alles, was für eine Mission gebraucht wird. Projekte lassen sich
+wie Pläne in **Ordnern und Unterordnern** ablegen (Drag & Drop, `+ Neuer Ordner`, Klapp-Zustand pro Browser; ein
+gewählter Ordner ist das Ziel für „Neues Projekt"). Löscht man einen Ordner, rücken seine Inhalte eine Ebene nach oben.
+
+**Rechte**
+- Projekte anlegen: Admin oder Missionsbauer. Der Ersteller ist `owner`.
+- **Mitglieder** (Nutzer oder Gruppen) haben je Projekt die Rolle `viewer` (lesen), `editor` (schreiben) oder `owner`
+  (Mitglieder, Umbenennen, Archivieren, Löschen). Archivierte Projekte sind schreibgeschützt.
+- Der Bereich **Missionsbau** ist zusätzlich nur für Missionsbauer sichtbar – für alle anderen existiert er nicht (404).
+- **Pläne behalten ihre eigene Freigabe:** Der Zugriff auf einen Plan wird wie bisher **pro Plan** über
+  „Zugriff / Freigaben" für Nutzer/Gruppen festgelegt. Die Projektrolle gibt **keine** automatischen Plan-Rechte.
+
+**Tabs**
+| Tab | Inhalt |
+|---|---|
+| **Übersicht** | offene Aufgaben je Person, bald fällige/überfällige Aufgaben, zuletzt geänderte Dateien und Pläne |
+| **Öffentlich** | Dateibaum (Ordner + Markdown-Dateien) für alle Projekt-Mitglieder; Reiter **Bilder** |
+| **Missionsbau** | wie „Öffentlich", aber nur für Missionsbauer |
+| **Pläne** | die Pläne des Projekts (gleiche Baumansicht wie die Plan-Liste); bestehende Pläne lassen sich hierher verschieben oder wieder herauslösen |
+| **Aufgaben** | Kanban (Offen · In Arbeit · Review · Erledigt) mit Zuständigen, Fälligkeit, Priorität und Bezug zu Plan/Datei; Filter „Meine" |
+| **Whiteboard** | farbige Haftnotizen, am Kopf ziehen, Größe ändern, direkt tippen |
+| **Mitglieder** | Nutzer/Gruppen und Rollen |
+
+- **Markdown-Dateien:** Editor mit Vorschau und Formatierungsleiste, `Strg+S` speichert. Ändert jemand die Datei
+  gleichzeitig, wird der Konflikt gemeldet statt überschrieben.
+- **Bilder** lädst du weiter **pro Plan** hoch; sie liegen automatisch im Projekt des Plans – Bilder aus
+  Missionsbau-Phasen im Bereich „Missionsbau", alle anderen in „Öffentlich". Dort lassen sie sich umbenennen, löschen
+  und als Markdown-Link in Dateien einbetten.
+- Aufgaben, Whiteboard und Dateiliste aktualisieren sich alle 5 Sekunden (nicht während du tippst oder ziehst).
+- **Speicher** (nur Admin): Admin-Bereich → *Speicher* zeigt je Projekt den belegten Platz für Bilder und Dateien. Der
+  frühere Admin-Reiter „Bilder" entfällt.
+
+**Plan-Ordner (normale Plan-Liste):** Ordner anlegen darf, wer Pläne erstellen darf. Umbenennen, Verschieben und Löschen
+dürfen Admin und der Ersteller des Ordners (Alt-Ordner ohne Ersteller: Admin und alle, die Pläne erstellen dürfen).
 ## 4. Kartenansicht
 
 ### 4.1 Werkzeugleiste (links, nur mit Bearbeitungsrecht)
@@ -190,8 +226,8 @@ Live-Updates über einen Empfangs-WebSocket.
 
 ## 6. Admin-Bereich
 
-Kategorisiert über die Sidebar: **Benutzer & Gruppen**, **Log**, **Config**
-(`#/admin/users` · `/log` · `/config`).
+Kategorisiert über die Sidebar: **Benutzer & Gruppen**, **Log**, **Speicher**, **Config**
+(`#/admin/users` · `/log` · `/storage` · `/config`).
 
 - **SIDC-Kataloge hochladen** (Format 1:1 wie ingame `LocalMapData`), persistent im
   `uploads`-Volume:

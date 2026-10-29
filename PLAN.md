@@ -71,6 +71,8 @@ C2 + ATAKmaps-Viewer deaktiviert), Undo/Redo pro User, Plan-JSON-Export/-Import,
 
 - **Plan-Ordner / Unterordner** mit Drag & Drop (`plan_folders`, `/folders`-CRUD,
   `POST /plans/{id}/move`); Klon-Dialog mit Zielordner.
+- **Missionsbau-Projekte** (Ordnerstruktur, Öffentlich/Missionsbau/Pläne, Markdown-Dateien, Aufgaben-Kanban,
+  Whiteboard, Projektrollen; Pläne behalten ihre ACL) – Spezifikation in docs/PROJEKTE.md.
 - **Phasen-Notizen** als eigenes, verschiebbares Fenster mit Markdown und Reiter je Phase
   (`Phase.notes`).
 - **Advanced-Modifikatoren**: `SIDC_ModifierCatalog.json` als 5. Katalog; Dropdowns im

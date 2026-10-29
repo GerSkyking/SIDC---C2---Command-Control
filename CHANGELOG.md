@@ -5,6 +5,31 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-10-29 – Missionsbau-Projekte, Pläne-Seite, Review-Fixes
+
+**Neu: Missionsbau (Projekte)** – siehe `docs/PROJEKTE.md`, Handbuch §3b
+- Projekte als Ordnerstruktur (mit Unterordnern, Drag & Drop) mit den Bereichen Öffentlich · Missionsbau · Pläne,
+  Markdown-Dateibaum, Aufgaben-Kanban, Haftnotizen-Whiteboard, Übersicht und Mitgliederverwaltung (Rollen je Projekt).
+- Bilder liegen automatisch im Projekt des Plans; Admin-Reiter „Bilder" entfällt, dafür Speicher-Übersicht je Projekt.
+- Pläne behalten ihre Freigabe pro Plan; Projektrollen geben keine automatischen Plan-Rechte.
+- Migrationen `0028_missing_indexes`, `0029_projects`, `0030_project_folders`.
+
+**Pläne-Seite:** Erstellen-Karte mit beschrifteten Schritten (Name, Karte, Ordner), „Alle Pläne" als klappbarer
+Wurzelordner, Drag & Drop mit Hervorhebung/Auto-Aufklappen, Ordnerwahl als Ziel für neue Pläne.
+Plan-Ordner: Umbenennen/Verschieben/Löschen nur Admin/Ersteller.
+
+**Review (`REVIEW-2026-10.md`) – Sicherheit & Stabilität**
+- Missionsbau-Gate prüft auch das bestehende Objekt; Builder-Inhalte werden beim Phasen-Löschen mitgelöscht und nicht
+  mehr in Klone von Nicht-Missionsbauern kopiert; öffentlicher Live-Link prüft vor jeder Änderung die Phase.
+- Offene WebSockets verlieren Rechte bei ACL-Änderung/Deaktivierung/Link-Widerruf; Redis-Pump mit Reconnect;
+  Broadcast mit Timeout; Fehler pro Nachricht statt Verbindungsabbruch; Limits für Linienpunkte/Cursor/Share-Nachrichten.
+- Stored XSS in Phasen-Tabs, Versionsverlauf, Klon-Dialog, Katalog-Wizard behoben.
+- Resync nach WebSocket-Reconnect (Plan-Ansicht + öffentliche Freigabe), Hinweis bei nicht gesendeten Änderungen,
+  Aufräumen von Karte/Listenern beim Verlassen der Plan-Ansicht, diverse Touch-/Drag-Fehler.
+- Backend: atomare ORBAT-Mengen, Restore-Broadcast, ORBAT-Hierarchie-Prüfung, Längenlimits, Tile-Cache-Invalidierung,
+  Rate-Limit für Share-Kacheln, `backup.sh` rotiert nur nach erfolgreichem Dump, Platzhalter-Passwörter werden
+  abgelehnt, neue DB-Indizes; Handler mit DB-Zugriff blockieren den Event-Loop nicht mehr.
+- Dialoge mit `role=dialog`, Fokusfalle und Fokus-Rückgabe; fehlende/fest deutsche Texte über i18n.
 ### 2026-10-24 – Sicherheits-Nachaudit
 
 - Bilder aus verborgenen Missionsbau-Phasen sind für normale Viewer nicht mehr per Liste/Raw abrufbar.
