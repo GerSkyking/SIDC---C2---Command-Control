@@ -5,6 +5,11 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-10-31 – Auf Benachrichtigungs-DMs direkt antworten
+- In Discord bei der DM des Bots „Antworten“ nutzen: Der Text landet als Chat-Nachricht bzw. Aufgaben-Kommentar bei der Quelle der
+  Benachrichtigung, der Bot bestätigt mit ✅. Nur für verknüpfte Nutzer und nur für Benachrichtigungen mit Antwortmöglichkeit.
+  Tabelle `bridge_dm_refs`, Migration `0039`.
+
 ### 2026-10-31 – Benachrichtigungen als Discord-Direktnachricht
 - Verknüpfte Nutzer (per Code **oder** vom Admin mit Discord-ID eingetragen: Admin → Nutzer → *Discord*) bekommen ihre
   Benachrichtigungen vom Bot als **DM**. Der Kanal „Discord-Direktnachricht“ entsteht automatisch; jeder Nutzer wählt in den

@@ -51,6 +51,7 @@ class Msg:
     text: str = ""
     url: str = ""
     actor: str = ""
+    notification_id: str = ""
 
     def plain(self) -> str:
         parts = [self.headline]

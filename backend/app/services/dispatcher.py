@@ -59,14 +59,16 @@ def send_one(db: Session, ch: NotificationChannel, msg: channels.Msg) -> None:
         if ident is None:
             raise channels.ChannelError("Discord-Konto nicht verknüpft")
         text = f"**{msg.headline}**" + (f"\n> {msg.text[:300]}" if msg.text else "") + (f"\n{msg.url}" if msg.url else "")
-        db.add(BridgeOutbox(provider="discord", external_id=ident.external_id, kind="dm", text=text[:1900]))
+        db.add(BridgeOutbox(provider="discord", external_id=ident.external_id, kind="dm", text=text[:1900],
+                            notification_id=msg.notification_id or None))
         return
     channels.send_to(ch.type, ch.config, msg)
 
 
 def deliver(db: Session, n: Notification, actor_label: str = "") -> int:
     """Schickt eine Benachrichtigung an alle passenden, aktiven Kanäle des Empfängers. Gibt die Zahl der Erfolge zurück."""
-    msg = channels.Msg(kind=n.kind, headline=_headline(n, actor_label), text=n.text or "", url=_link(n), actor=actor_label)
+    msg = channels.Msg(kind=n.kind, headline=_headline(n, actor_label), text=n.text or "", url=_link(n), actor=actor_label,
+                       notification_id=n.id)
     rows = list(db.scalars(select(NotificationChannel).where(
         NotificationChannel.user_id == n.user_id, NotificationChannel.enabled.is_(True))))
     ok = 0

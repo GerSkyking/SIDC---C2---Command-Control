@@ -792,6 +792,7 @@ class BridgeOutbox(Base):
     author: Mapped[str] = mapped_column(String(100), default="")
     text: Mapped[str] = mapped_column(Text)
     kind: Mapped[str] = mapped_column(String(8), default="channel", server_default="channel")  # channel | dm (external_id = Nutzer)
+    notification_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # DM gehört zu dieser Benachrichtigung
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
@@ -809,4 +810,18 @@ class BridgeChannel(Base):
     group_id: Mapped[str] = mapped_column(String(64), default="")  # z. B. Discord-Server
     group_name: Mapped[str] = mapped_column(String(120), default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class BridgeDmRef(Base):
+    """Merkt sich, welche Benachrichtigung zu welcher Direktnachricht des Bots gehört – damit sich per
+    „Antworten“ auf die DM direkt auf die Benachrichtigung antworten lässt."""
+
+    __tablename__ = "bridge_dm_refs"
+    __table_args__ = (UniqueConstraint("provider", "message_id", name="uq_bridge_dm_ref"),)
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    provider: Mapped[str] = mapped_column(String(16))
+    message_id: Mapped[str] = mapped_column(String(32))
+    notification_id: Mapped[str] = mapped_column(ForeignKey("notifications.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 

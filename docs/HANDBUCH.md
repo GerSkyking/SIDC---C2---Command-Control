@@ -123,7 +123,8 @@ gewählter Ordner ist das Ziel für „Neues Projekt"). Löscht man einen Ordner
 
 **Benachrichtigungen außerhalb der Seite** (Zahnrad → *Benachrichtigungen*): Erwähnungen, Zuweisungen und neue Zugriffe (Plan/Projekt)
 lassen sich zusätzlich an eigene Kanäle schicken – *Discord-Direktnachricht* (entsteht automatisch, sobald dein Discord-Konto verknüpft
-ist; ein Admin kann dafür auch deine Discord-ID eintragen), *Browser/Smartphone (Web-Push)*, *ntfy*,
+ist; ein Admin kann dafür auch deine Discord-ID eintragen; mit „Antworten“ auf die DM antwortest du direkt – bei Erwähnungen und
+Zuweisungen landet die Antwort im Chat bzw. als Kommentar an der Aufgabe), *Browser/Smartphone (Web-Push)*, *ntfy*,
 *Gotify*, *Matrix*, *Webhook* oder *E-Mail*. Pro Kanal wählst du, welche Arten ankommen, und kannst eine Testnachricht senden.
 Auf dem iPhone funktioniert Web-Push nur, wenn die Seite zum Home-Bildschirm hinzugefügt wurde. Im *System*-Feed kannst du
 mit *Antworten* direkt antworten – die Antwort erscheint im Chat bzw. als Kommentar an der Aufgabe.

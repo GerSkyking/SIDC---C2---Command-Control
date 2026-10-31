@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import secrets
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -13,11 +14,13 @@ from ..deps import AdminUser, CurrentUser, DbDep
 from ..models import (
     BridgeChannel,
     BridgeCode,
+    BridgeDmRef,
     BridgeIdentity,
     BridgeLink,
     BridgeOutbox,
     Conversation,
     ConversationMember,
+    Notification,
     User,
     now,
 )
@@ -227,6 +230,14 @@ class ClaimIn(BaseModel):
 
 class AckIn(BaseModel):
     ids: list[str] = Field(max_length=200)
+    refs: dict[str, str] = Field(default_factory=dict, max_length=200)  # Outbox-ID -> ID der gesendeten DM
+
+
+class DmReplyIn(BaseModel):
+    provider: str = Field(max_length=16)
+    author_id: str = Field(max_length=64)
+    reply_to: str = Field(max_length=32)
+    text: str = Field(max_length=5000)
 
 
 class ChannelIn(BaseModel):
@@ -287,9 +298,34 @@ def bot_outbox(db: DbDep, provider: str, limit: Annotated[int, Query(ge=1, le=10
 
 @router.post("/outbox/ack", dependencies=[Bot])
 def bot_ack(body: AckIn, db: DbDep) -> dict:
+    db.execute(delete(BridgeDmRef).where(BridgeDmRef.created_at < now() - timedelta(days=30)))
     for r in db.scalars(select(BridgeOutbox).where(BridgeOutbox.id.in_(body.ids or [""]))):
         r.delivered_at = now()
+        mid = body.refs.get(r.id)
+        if mid and r.kind == "dm" and r.notification_id and db.get(Notification, r.notification_id) is not None:
+            db.add(BridgeDmRef(provider=r.provider, message_id=mid[:32], notification_id=r.notification_id))
     db.commit()
+    return {"ok": True}
+
+
+@router.post("/dm-reply", dependencies=[Bot])
+def bot_dm_reply(body: DmReplyIn, db: DbDep) -> dict:
+    """Antwort eines verknüpften Nutzers auf eine Benachrichtigungs-DM des Bots."""
+    from .chat import MessageIn, reply_for
+
+    ident = db.scalar(select(BridgeIdentity).where(BridgeIdentity.provider == body.provider,
+                                                   BridgeIdentity.external_id == body.author_id))
+    user = db.get(User, ident.user_id) if ident else None
+    if user is None or not user.is_active:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Discord-Konto ist nicht mit der C2-Seite verknüpft")
+    ref = db.scalar(select(BridgeDmRef).where(BridgeDmRef.provider == body.provider, BridgeDmRef.message_id == body.reply_to))
+    n = db.get(Notification, ref.notification_id) if ref else None
+    if n is None or n.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Auf diese Nachricht kann nicht geantwortet werden")
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Text fehlt")
+    reply_for(db, user, n, MessageIn(text=text))
     return {"ok": True}
 
 

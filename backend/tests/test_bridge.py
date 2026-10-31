@@ -143,6 +143,25 @@ def test_discord_dm_channel_and_access_notifications(admin, monkeypatch):
     out = [o for o in bot.get("/bridge/outbox", headers=BOT, params={"provider": "discord"}).json() if o["kind"] == "dm"]
     assert out and out[0]["channel_id"] == "123456789012345678" and f"DMProj{k}" in out[0]["text"]
 
+    # Der Bot meldet die ID der gesendeten DM; eine Antwort darauf landet als Nachricht/Kommentar beim Absender
+    r = bot.post("/bridge/outbox/ack", headers=BOT, json={"ids": [out[0]["id"]], "refs": {out[0]["id"]: "9001"}})
+    assert r.status_code == 200
+    reply = {"provider": "discord", "author_id": "123456789012345678", "reply_to": "9001", "text": "Danke, schaue ich an"}
+    assert bot.post("/bridge/dm-reply", headers=BOT, json={**reply, "reply_to": "unbekannt"}).status_code == 404
+    assert bot.post("/bridge/dm-reply", headers=BOT, json={**reply, "author_id": "999999999999999999"}).status_code == 404
+    # Projekt-Benachrichtigung hat keine Antwortmöglichkeit -> 400; mit Aufgaben-Zuweisung klappt es
+    assert bot.post("/bridge/dm-reply", headers=BOT, json=reply).status_code == 400
+    tid = owner.post(f"/projects/{pid}/tasks", json={"title": "DM-Aufgabe"}).json()["id"]
+    owner.patch(f"/projects/{pid}/tasks/{tid}", json={"assignee_id": uid})
+    with SessionLocal() as db:
+        dispatcher.dispatch_pending(db)
+    out2 = [o for o in bot.get("/bridge/outbox", headers=BOT, params={"provider": "discord"}).json() if o["kind"] == "dm"]
+    assert out2 and "DM-Aufgabe" in out2[-1]["text"]
+    bot.post("/bridge/outbox/ack", headers=BOT, json={"ids": [out2[-1]["id"]], "refs": {out2[-1]["id"]: "9002"}})
+    assert bot.post("/bridge/dm-reply", headers=BOT, json={**reply, "reply_to": "9002"}).status_code == 200
+    comments = owner.get(f"/projects/{pid}/tasks/{tid}/comments").json()
+    assert comments[-1]["text"] == "Danke, schaue ich an"
+
     # Nutzer kann Arten abwählen; Admin entfernt die ID -> DM-Kanal verschwindet
     cid = chans[0]["id"]
     assert u.patch(f"/notify/channels/{cid}", json={"kinds": ["assigned"]}).json()["kinds"] == ["assigned"]

@@ -459,11 +459,16 @@ def read_notifications(body: ReadIn, user: CurrentUser, db: DbDep) -> dict:
 @router.post("/notifications/{nid}/reply", status_code=status.HTTP_201_CREATED)
 def reply_notification(nid: str, body: MessageIn, user: CurrentUser, db: DbDep) -> dict:
     """Direkt aus dem System-Feed antworten: je nach Quelle als Chat-Nachricht oder Aufgaben-Kommentar."""
-    from . import projects  # lokal: vermeidet einen Import-Zirkel beim Start
-
     n = db.get(Notification, nid)
     if n is None or n.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Benachrichtigung nicht gefunden")
+    return reply_for(db, user, n, body)
+
+
+def reply_for(db: Session, user: User, n: Notification, body: MessageIn) -> dict:
+    """Antwort auf eine Benachrichtigung (der Aufrufer hat geprüft, dass sie ``user`` gehört)."""
+    from . import projects  # lokal: vermeidet einen Import-Zirkel beim Start
+
     if n.conversation_id:
         res = post_message(n.conversation_id, body, user, db)
     elif n.project_id and n.task_id:
