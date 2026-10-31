@@ -287,6 +287,7 @@ export interface ChatMessage {
   user_label: string | null;
   text: string;
   mentions: { type: "user" | "group" | "project"; id: string; token: string }[];
+  origin?: string | null;
   created_at: string;
   edited_at: string | null;
   mine: boolean;
@@ -796,6 +797,13 @@ export const api = {
     req<NotifyChannel>("PATCH", `/notify/channels/${id}`, b),
   deleteNotifyChannel: (id: string) => req<void>("DELETE", `/notify/channels/${id}`),
   testNotifyChannel: (id: string) => req<void>("POST", `/notify/channels/${id}/test`),
+  bridgeMe: () => req<{ enabled: boolean; identities: { provider: string; external_id: string }[] }>("GET", "/bridge/me"),
+  bridgeCode: (b: { kind: "user" | "conv"; conversation_id?: string }) =>
+    req<{ code: string; expires_in: number }>("POST", "/bridge/code", b),
+  bridgeUnlinkIdentity: (provider: string) => req<void>("DELETE", `/bridge/identities/${provider}`),
+  bridgeLinks: (cid: string) =>
+    req<{ id: string; provider: string; external_id: string }[]>("GET", `/bridge/conversations/${cid}/links`),
+  bridgeDeleteLink: (id: string) => req<void>("DELETE", `/bridge/links/${id}`),
   webpushKey: () => req<{ key: string }>("GET", "/notify/webpush/key"),
   webpushSubscribe: (b: { endpoint: string; keys: { p256dh: string; auth: string }; name?: string }) =>
     req<NotifyChannel>("POST", "/notify/webpush", b),

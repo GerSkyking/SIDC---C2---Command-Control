@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     public_url: str = ""  # z. B. https://c2.example.org – für Links in Benachrichtigungen
     # Selbst gehostete Dienste im LAN (ntfy, Gotify, Matrix) erreichbar machen. Aus = nur öffentliche Adressen.
     notify_allow_private_hosts: bool = False
+    # Gemeinsames Geheimnis für externe Brücken (Discord-Bot …). Leer = Brücken-Schnittstelle aus.
+    bridge_token: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""

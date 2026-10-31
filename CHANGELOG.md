@@ -5,6 +5,17 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-10-31 – Discord-Brücke (Gruppenchats ⇄ Discord-Kanäle)
+- **Zwei-Wege-Sync:** Ein Gruppen-Chat lässt sich mit einem oder mehreren Discord-Kanälen verbinden (Chat-Kopf → Verbinden-Symbol).
+  Nachrichten der Seite erscheinen in Discord, Antworten dort landen im Chat und lösen @-Benachrichtigungen aus.
+- **Konto verknüpfen** (Einstellungen → Benachrichtigungen): Einmal-Code, in Discord mit `/c2 link CODE` einlösen. Verknüpfte
+  Nutzer erscheinen im Chat unter ihrem Namen, alle anderen als „Name (Discord)“. Kanäle werden auf demselben Weg verbunden.
+- **Neutrales Bridge-Protokoll** (`/bridge/*`, Token `BRIDGE_TOKEN`): der Client ruft immer die Seite an; Matrix o. Ä. braucht
+  nur einen weiteren Client mit anderem `provider`. Tabellen `bridge_links`, `bridge_identities`, `bridge_codes`, `bridge_outbox`, Migration `0036`.
+- **Bot:** eigenes Repo „SIDC - C2 - Command & Control-Bot“ mit dem Red-DiscordBot-Cog `c2bridge`. Läuft als Dienst `discord-bot`
+  im selben Compose-Stack (wird beim `docker compose up -d --build` direkt aus dem Repo gebaut); nötig sind nur `BRIDGE_TOKEN` und `DISCORD_TOKEN` in der `.env`.
+- Bearbeiten/Löschen wird nicht synchronisiert; Anhänge kommen als Link an.
+
 ### 2026-10-31 – Externe Benachrichtigungen (Discord, Push, Matrix …) & Antworten aus dem System-Feed
 - **Kanäle pro Nutzer** (Einstellungen → Benachrichtigungen): Discord-Webhook, ntfy, Gotify, Matrix, generischer Webhook
   (JSON, optional HMAC-signiert), E-Mail (SMTP) und **Web-Push** (Browser/Smartphone ohne Drittanbieter, VAPID-Schlüssel

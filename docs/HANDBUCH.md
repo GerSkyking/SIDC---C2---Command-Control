@@ -128,6 +128,12 @@ Auf dem iPhone funktioniert Web-Push nur, wenn die Seite zum Home-Bildschirm hin
 mit *Antworten* direkt antworten – die Antwort erscheint im Chat bzw. als Kommentar an der Aufgabe.
 Admin: `PUBLIC_URL` setzen (Links in Nachrichten), für E-Mail `SMTP_*`; Dienste im LAN brauchen `NOTIFY_ALLOW_PRIVATE_HOSTS=true`.
 
+**Discord-Brücke:** Ein Gruppen-Chat kann mit einem Discord-Kanal synchron laufen. Ersteller: im Chat-Kopf das
+Verbinden-Symbol → Code erzeugen → im Discord-Kanal `/c2 link CODE`. Wer sein Discord-Konto verknüpft (Einstellungen →
+Benachrichtigungen → *Discord-Konto verknüpfen*, dann `/c2 link CODE`), erscheint im Chat mit seinem Namen; andere als
+„Name (Discord)“. Voraussetzung: `BRIDGE_TOKEN` und `DISCORD_TOKEN` stehen in der `.env`; der Dienst `discord-bot` startet
+mit dem Stack (Message Content Intent im Developer Portal aktivieren).
+
 **Plan-Ordner (normale Plan-Liste):** Ordner anlegen darf, wer Pläne erstellen darf. Umbenennen, Verschieben und Löschen
 dürfen Admin und der Ersteller des Ordners (Alt-Ordner ohne Ersteller: Admin und alle, die Pläne erstellen dürfen).
 ## 4. Kartenansicht

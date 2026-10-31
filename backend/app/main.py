@@ -25,6 +25,7 @@ from .routers import (
     admin,
     api_tokens,
     auth,
+    bridge,
     client_api,
     catalog,
     chat,
@@ -133,6 +134,7 @@ app.include_router(plan_images.router)
 app.include_router(project_folders.router)
 app.include_router(projects.router)
 app.include_router(chat.router)
+app.include_router(bridge.router)
 app.include_router(notify_channels.router)
 app.include_router(orbat.router)
 app.include_router(orbat.plan_orbat_router)

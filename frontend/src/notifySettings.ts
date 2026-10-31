@@ -3,6 +3,7 @@
 import { type NotifyChannel, type NotifyKind, type NotifyType, api } from "./api";
 import { esc } from "./esc";
 import { t } from "./i18n";
+import { mountAccountLinks } from "./bridgeUi";
 import { confirmDialog, toast, toastError } from "./notify";
 
 const KINDS: NotifyKind[] = ["task_mention", "chat_mention", "assigned"];
@@ -75,7 +76,9 @@ export function mountNotifySettings(host: HTMLElement): void {
         <select id="ntf-type">${formTypes.map((x) => `<option value="${esc(x.type)}" ${x.available ? "" : "disabled"}>${esc(x.label)}${x.available ? "" : " – " + t("ntf.unavailable")}</option>`).join("")}</select>
         <button data-add>${t("ntf.add")}</button>
       </div>
-      <div id="ntf-form"></div>`;
+      <div id="ntf-form"></div>
+      <div id="ntf-links"></div>`;
+    mountAccountLinks(host.querySelector<HTMLElement>("#ntf-links")!);
     wire();
   };
 

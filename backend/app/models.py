@@ -696,6 +696,9 @@ class Message(Base):
     mentions: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Herkunft einer von außen (Discord …) eingegangenen Nachricht; NULL = von der Seite.
+    origin: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    ext_author: Mapped[str] = mapped_column(String(100), default="", server_default="")  # Absender ohne Konto
 
 
 class Notification(Base):
@@ -734,3 +737,59 @@ class NotificationChannel(Base):
     last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str] = mapped_column(String(300), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class BridgeLink(Base):
+    """Verbindet eine Unterhaltung mit einem Raum auf einem externen Dienst (Discord-Kanal, Matrix-Raum …)."""
+
+    __tablename__ = "bridge_links"
+    __table_args__ = (UniqueConstraint("provider", "external_id", name="uq_bridge_link_ext"),)
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(16))
+    external_id: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class BridgeIdentity(Base):
+    """Verknüpft ein Konto mit seiner ID auf dem externen Dienst (per Einmal-Code bestätigt)."""
+
+    __tablename__ = "bridge_identities"
+    __table_args__ = (
+        UniqueConstraint("provider", "external_id", name="uq_bridge_ident_ext"),
+        UniqueConstraint("provider", "user_id", name="uq_bridge_ident_user"),
+    )
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(16))
+    external_id: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class BridgeCode(Base):
+    """Einmal-Code, den man im externen Dienst eingibt (`/c2 link CODE`), um Konto oder Raum zu verbinden."""
+
+    __tablename__ = "bridge_codes"
+
+    code: Mapped[str] = mapped_column(String(12), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8))  # user | conv
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class BridgeOutbox(Base):
+    """Nachrichten von der Seite, die der Brücken-Client (Bot) in den externen Raum schreiben soll."""
+
+    __tablename__ = "bridge_outbox"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    provider: Mapped[str] = mapped_column(String(16), index=True)
+    external_id: Mapped[str] = mapped_column(String(64))
+    author: Mapped[str] = mapped_column(String(100), default="")
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+

@@ -11,7 +11,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.orm import Session
 
@@ -29,7 +29,7 @@ from ..models import (
 )
 from ..permissions import project_role
 from ..services import mentions as mentions_svc
-from ..services import notify
+from ..services import bridge, notify
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -142,7 +142,7 @@ def _conv_out(db: Session, user: User, conv: Conversation, mem: ConversationMemb
         other_id = next((m for m in members if m != user.id), user.id)
         name = labels.get(other_id, "?")
     last = db.scalar(select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at.desc()).limit(1))
-    q = select(func.count(Message.id)).where(Message.conversation_id == conv.id, Message.user_id != user.id)
+    q = select(func.count(Message.id)).where(Message.conversation_id == conv.id, or_(Message.user_id.is_(None), Message.user_id != user.id))
     if mem.last_read_at is not None:
         q = q.where(Message.created_at > mem.last_read_at)
     return {
@@ -157,7 +157,8 @@ def _conv_out(db: Session, user: User, conv: Conversation, mem: ConversationMemb
 
 def _msg_out(m: Message, labels: dict[str, str], user: User) -> dict:
     return {
-        "id": m.id, "user_id": m.user_id, "user_label": labels.get(m.user_id or "", None), "text": m.text,
+        "id": m.id, "user_id": m.user_id, "user_label": labels.get(m.user_id or "", None) or m.ext_author or None,
+        "origin": m.origin, "text": m.text,
         "mentions": m.mentions or [], "created_at": _iso(m.created_at), "edited_at": _iso(m.edited_at),
         "mine": m.user_id == user.id,
     }
@@ -352,6 +353,8 @@ def post_message(cid: str, body: MessageIn, user: CurrentUser, db: DbDep) -> dic
     ments = mentions_svc.resolve_mentions(db, text, pid)
     m = Message(conversation_id=cid, user_id=user.id, text=text, mentions=ments)
     db.add(m)
+    db.flush()
+    bridge.enqueue(db, conv, m, user.label)
     conv.updated_at = now()
     mem.last_read_at = now()
     if ments:
@@ -414,7 +417,7 @@ def unread(user: CurrentUser, db: DbDep) -> dict:
     """Zähler für das Badge in der Seitenleiste."""
     chats = 0
     for mem in db.scalars(select(ConversationMember).where(ConversationMember.user_id == user.id)):
-        q = select(func.count(Message.id)).where(Message.conversation_id == mem.conversation_id, Message.user_id != user.id)
+        q = select(func.count(Message.id)).where(Message.conversation_id == mem.conversation_id, or_(Message.user_id.is_(None), Message.user_id != user.id))
         if mem.last_read_at is not None:
             q = q.where(Message.created_at > mem.last_read_at)
         chats += int(db.scalar(q) or 0)

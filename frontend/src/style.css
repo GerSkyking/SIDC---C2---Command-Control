@@ -1436,3 +1436,6 @@ html:has(.wb-wrap), body:has(.wb-wrap) { overflow: hidden; height: 100%; }
 .sys-r input { flex: 1; min-width: 0; }
 .sys-r .link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: .8rem; }
 
+.brg-code { display: flex; flex-direction: column; gap: .2rem; padding: .5rem; border-radius: 8px; background: var(--bg); border: 1px dashed var(--border); }
+.brg-code code { font-size: 1.05rem; letter-spacing: .06em; user-select: all; }
+

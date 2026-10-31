@@ -8,6 +8,7 @@ import {
   type Me,
   api,
 } from "./api";
+import { openBridgeDialog } from "./bridgeUi";
 import { esc } from "./esc";
 import { icon } from "./icons";
 import { langSelect, t, wireLangSelect } from "./i18n";
@@ -150,6 +151,7 @@ function mountConversation(
   host.innerHTML = `
     <header class="chat-head"><button class="icon-btn chat-back" title="${t("nav.back")}" aria-label="${t("nav.back")}">${icon("back", 18)}</button>
       <strong class="grow">${esc(conv.name)}</strong>
+      ${conv.kind === "group" && conv.is_owner ? `<button class="icon-btn" data-bridge title="${t("brg.title")}" aria-label="${t("brg.title")}">${icon("channel", 16)}</button>` : ""}
       ${conv.kind === "group" ? `<button class="icon-btn" data-members title="${t("chat.members")}" aria-label="${t("chat.members")}">${icon("users", 16)} <span class="muted">${conv.member_count}</span></button>` : ""}
     </header>
     <div class="chat-msgs" aria-live="polite"></div>
@@ -273,6 +275,7 @@ function mountConversation(
     }
   });
 
+  host.querySelector("[data-bridge]")?.addEventListener("click", () => void openBridgeDialog(conv.id, conv.name));
   host.querySelector("[data-members]")?.addEventListener("click", () => void openMembersDialog(conv, left, changed));
 
   void api.chatMentionables(conv.id).then((c) => (cands = c)).catch(() => {});
