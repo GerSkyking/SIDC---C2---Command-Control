@@ -155,22 +155,22 @@ def _f(key: str, label: str, *, secret: bool = False, required: bool = True, pla
 
 
 @register
-class DiscordWebhook(Provider):
-    type = "discord"
-    label = "Discord (Webhook)"
-    help = "Serverkanal → Einstellungen → Integrationen → Webhooks → URL kopieren. Nachrichten erscheinen im Kanal; Erwähnungen werden nicht ausgelöst."
-    fields = [_f("url", "Webhook-URL", secret=True, placeholder="https://discord.com/api/webhooks/…")]
-    _RE = re.compile(r"^https://(?:[\w-]+\.)?(?:discord|discordapp)\.com/api(?:/v\d+)?/webhooks/\d+/[\w-]+/?$")
+class DiscordDM(Provider):
+    """Direktnachricht durch den Discord-Bot. Wird automatisch angelegt, sobald das Discord-Konto verknüpft ist;
+    die Zustellung übernimmt der Dispatcher über die Brücken-Outbox (siehe dispatcher.send_one)."""
+
+    type = "discord_dm"
+    label = "Discord (Direktnachricht)"
+    help = "Kommt als private Nachricht vom Bot. Nur nach Verknüpfung deines Discord-Kontos (Einstellungen)."
+    fields: ClassVar[list[dict]] = []
+    form = False
 
     @classmethod
-    def validate(cls, cfg: dict) -> None:
-        super().validate(cfg)
-        if not cls._RE.match(str(cfg["url"]).strip()):
-            raise ChannelError("Das ist keine Discord-Webhook-URL")
+    def available(cls) -> bool:
+        return bool(get_settings().bridge_token)
 
-    def send(self, cfg: dict, m: Msg) -> None:
-        body = f"**{m.headline}**" + (f"\n> {m.text[:300]}" if m.text else "") + (f"\n{m.url}" if m.url else "")
-        _http("POST", cfg["url"], json={"username": "SIDC C2", "content": body[:1900], "allowed_mentions": {"parse": []}})
+    def send(self, cfg: dict, m: Msg) -> None:  # pragma: no cover - läuft über dispatcher.send_one
+        raise ChannelError("Discord-DM wird über die Brücke zugestellt")
 
 
 @register

@@ -5,6 +5,13 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-10-31 – Benachrichtigungen als Discord-Direktnachricht
+- Verknüpfte Nutzer (per Code **oder** vom Admin mit Discord-ID eingetragen: Admin → Nutzer → *Discord*) bekommen ihre
+  Benachrichtigungen vom Bot als **DM**. Der Kanal „Discord-Direktnachricht“ entsteht automatisch; jeder Nutzer wählt in den
+  Einstellungen selbst, welche Arten ankommen oder schaltet ihn ab.
+- Neue Arten: *Zugriff auf einen Plan erhalten* und *Zu einem Projekt hinzugefügt* (auch im System-Feed).
+- Der Kanal-Typ „Discord (Webhook)“ entfällt für Nutzer. Migration `0038`.
+
 ### 2026-10-31 – Discord-Brücke: Kanäle im Admin-Bereich verbinden
 - Der Bot meldet alle Textkanäle, in denen er lesen/schreiben darf (alle Server), alle 2 Minuten ans C2. Admin → Config → *Discord-Brücke*:
   Gruppen-Chat und Kanal auswählen, *Verbinden* – keine Codes im Kanal nötig. Tabelle `bridge_channels`, Migration `0037`.

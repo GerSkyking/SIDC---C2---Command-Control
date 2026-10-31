@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import SessionLocal
-from ..models import Notification, NotificationChannel, User, now
+from ..models import BridgeIdentity, BridgeOutbox, Notification, NotificationChannel, User, now
 from . import channels
 
 log = logging.getLogger("sidc.dispatch")
@@ -28,6 +28,8 @@ def _link(n: Notification) -> str:
     base = get_settings().public_url.rstrip("/")
     if not base:
         return ""
+    if n.plan_id:
+        return f"{base}/#/plans/{quote(n.plan_id)}"
     if n.conversation_id:
         return f"{base}/#/chat/{quote(n.conversation_id)}"
     if n.project_id:
@@ -40,9 +42,26 @@ def _headline(n: Notification, actor: str) -> str:
     t = n.title or "…"
     if n.kind == "assigned":
         return f"{who} hat dir „{t}“ zugewiesen"
+    if n.kind == "plan_shared":
+        return f"{who} hat dir Zugriff auf den Plan „{t}“ gegeben"
+    if n.kind == "project_added":
+        return f"{who} hat dich zum Projekt „{t}“ hinzugefügt"
     if n.kind == "chat_mention":
         return f"{who} hat dich im Chat{(' „' + t + '“') if n.title else ''} erwähnt"
     return f"{who} hat dich in „{t}“ erwähnt"
+
+
+def send_one(db: Session, ch: NotificationChannel, msg: channels.Msg) -> None:
+    """Stellt eine Nachricht über einen Kanal zu. Discord-DM läuft über die Brücken-Outbox (der Bot sendet)."""
+    if ch.type == "discord_dm":
+        ident = db.scalar(select(BridgeIdentity).where(BridgeIdentity.user_id == ch.user_id,
+                                                       BridgeIdentity.provider == "discord"))
+        if ident is None:
+            raise channels.ChannelError("Discord-Konto nicht verknüpft")
+        text = f"**{msg.headline}**" + (f"\n> {msg.text[:300]}" if msg.text else "") + (f"\n{msg.url}" if msg.url else "")
+        db.add(BridgeOutbox(provider="discord", external_id=ident.external_id, kind="dm", text=text[:1900]))
+        return
+    channels.send_to(ch.type, ch.config, msg)
 
 
 def deliver(db: Session, n: Notification, actor_label: str = "") -> int:
@@ -55,7 +74,7 @@ def deliver(db: Session, n: Notification, actor_label: str = "") -> int:
         if ch.kinds and n.kind not in ch.kinds:
             continue
         try:
-            channels.send_to(ch.type, ch.config, msg)
+            send_one(db, ch, msg)
             ch.last_ok_at, ch.last_error = now(), ""
             ok += 1
         except channels.ChannelGone:

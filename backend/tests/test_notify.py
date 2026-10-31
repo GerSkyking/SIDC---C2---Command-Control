@@ -24,22 +24,24 @@ def _user(admin, name):
 def test_channel_crud_and_secret_masking(admin):
     c, _ = _user(admin, f"nt{next(_n)}a")
     types = {t["type"] for t in c.get("/notify/types").json()["types"]}
-    assert {"discord", "ntfy", "gotify", "matrix", "webhook", "email", "webpush"} <= types
+    assert {"discord_dm", "ntfy", "gotify", "matrix", "webhook", "email", "webpush"} <= types
+    assert "discord" not in types
 
-    assert c.post("/notify/channels", json={"type": "discord", "config": {"url": "https://example.org/x"}}).status_code == 400
-    r = c.post("/notify/channels", json={"type": "discord", "name": "Team", "config": {"url": HOOK}, "kinds": ["assigned"]})
+    assert c.post("/notify/channels", json={"type": "discord", "config": {"url": HOOK}}).status_code == 400  # Webhook-Typ entfällt
+    assert c.post("/notify/channels", json={"type": "discord_dm"}).status_code == 400  # entsteht nur durch Verknüpfung
+    r = c.post("/notify/channels", json={"type": "webhook", "name": "Team", "config": {"url": HOOK, "secret": "s3"}, "kinds": ["assigned"]})
     assert r.status_code == 201, r.text
     out = r.json()
-    assert out["config"]["url"] == "" and out["config"]["_set"] == ["url"]  # Geheimnis nie zurück
-    assert HOOK not in str(c.get("/notify/channels").json())
+    assert out["config"]["secret"] == "" and out["config"]["_set"] == ["secret"]  # Geheimnis nie zurück
+    assert "s3" not in str(c.get("/notify/channels").json())
     # in der DB verschlüsselt
     from app.models import NotificationChannel
     with SessionLocal() as db:
-        raw = db.get(NotificationChannel, out["id"]).config["url"]
-    assert raw.startswith("enc:") and HOOK not in raw
+        raw = db.get(NotificationChannel, out["id"]).config["secret"]
+    assert raw.startswith("enc:") and "s3" not in raw
 
     # Patch ohne neues Geheimnis behält das alte
-    assert c.patch(f"/notify/channels/{out['id']}", json={"config": {"url": ""}, "enabled": False}).json()["enabled"] is False
+    assert c.patch(f"/notify/channels/{out['id']}", json={"config": {"url": HOOK, "secret": ""}, "enabled": False}).json()["enabled"] is False
     assert c.delete(f"/notify/channels/{out['id']}").status_code == 200
     assert c.get("/notify/channels").json() == []
 

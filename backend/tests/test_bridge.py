@@ -107,3 +107,44 @@ def test_admin_links_channel_from_snapshot(admin, monkeypatch):
     assert f"c{k}2" not in {c["external_id"] for c in admin.get("/bridge/admin/overview").json()["channels"]}
     lid = admin.get("/bridge/admin/overview").json()["links"][0]["id"]
     assert admin.delete(f"/bridge/admin/links/{lid}").status_code == 200
+
+
+def test_discord_dm_channel_and_access_notifications(admin, monkeypatch):
+    monkeypatch.setattr(get_settings(), "bridge_token", "bridge-test-token")
+    k = next(_n)
+    (u, uid) = _user(admin, f"br{k}e")
+    owner, ownid = _user(admin, f"br{k}f")
+    assert [c["type"] for c in u.get("/notify/channels").json()] == []  # ohne Verknüpfung kein DM-Kanal
+
+    # Admin trägt die Discord-ID ein -> DM-Kanal entsteht von selbst
+    assert u.put(f"/bridge/admin/identities/{uid}", json={"external_id": "123456789012345678"}).status_code == 403
+    assert admin.put(f"/bridge/admin/identities/{uid}", json={"external_id": "abc"}).status_code == 422
+    assert admin.put(f"/bridge/admin/identities/{uid}", json={"external_id": "123456789012345678"}).status_code == 200
+    assert admin.get("/bridge/admin/identities").json()[uid] == "123456789012345678"
+    chans = u.get("/notify/channels").json()
+    assert [c["type"] for c in chans] == ["discord_dm"]
+    # Eine Discord-ID gehört nur einem Nutzer
+    other, oid = _user(admin, f"br{k}g")
+    assert admin.put(f"/bridge/admin/identities/{oid}", json={"external_id": "123456789012345678"}).status_code == 409
+
+    # Projekt-Mitglied wird hinzugefügt -> Benachrichtigung -> DM in der Outbox
+    pid = admin.post("/projects", json={"name": f"DMProj{k}"}).json()["id"]
+    r = admin.put(f"/projects/{pid}/members", json=[
+        {"subject_type": "user", "subject_id": ownid, "role": "owner"},
+        {"subject_type": "user", "subject_id": uid, "role": "viewer"}])
+    assert r.status_code == 200, r.text
+    note = u.get("/chat/notifications").json()[0]
+    assert note["kind"] == "project_added"
+    from app.db import SessionLocal
+    from app.services import dispatcher
+    with SessionLocal() as db:
+        dispatcher.dispatch_pending(db)
+    bot = TestClient(app)
+    out = [o for o in bot.get("/bridge/outbox", headers=BOT, params={"provider": "discord"}).json() if o["kind"] == "dm"]
+    assert out and out[0]["channel_id"] == "123456789012345678" and f"DMProj{k}" in out[0]["text"]
+
+    # Nutzer kann Arten abwählen; Admin entfernt die ID -> DM-Kanal verschwindet
+    cid = chans[0]["id"]
+    assert u.patch(f"/notify/channels/{cid}", json={"kinds": ["assigned"]}).json()["kinds"] == ["assigned"]
+    assert admin.delete(f"/bridge/admin/identities/{uid}").status_code == 200
+    assert u.get("/notify/channels").json() == []

@@ -73,6 +73,8 @@ def make_code(body: CodeIn, user: CurrentUser, db: DbDep) -> dict:
 @router.delete("/identities/{provider}")
 def unlink_identity(provider: str, user: CurrentUser, db: DbDep) -> dict:
     db.execute(delete(BridgeIdentity).where(BridgeIdentity.user_id == user.id, BridgeIdentity.provider == provider))
+    db.flush()
+    svc.ensure_dm_channel(db, user.id)
     db.commit()
     return {"ok": True}
 
@@ -130,6 +132,42 @@ def admin_overview(admin: AdminUser, db: DbDep) -> dict:
                    "group_name": by_ext[(link.provider, link.external_id)].group_name if (link.provider, link.external_id) in by_ext else ""}
                   for link in links],
     }
+
+
+class AdminIdentIn(BaseModel):
+    external_id: str = Field(pattern=r"^\d{15,25}$")
+
+
+@router.get("/admin/identities")
+def admin_identities(admin: AdminUser, db: DbDep, provider: str = "discord") -> dict[str, str]:
+    """Nutzer-ID -> externe ID (Discord) für die Nutzerliste."""
+    return {i.user_id: i.external_id for i in db.scalars(select(BridgeIdentity).where(BridgeIdentity.provider == provider))}
+
+
+@router.put("/admin/identities/{user_id}")
+def admin_set_identity(user_id: str, body: AdminIdentIn, admin: AdminUser, db: DbDep) -> dict:
+    """Discord-ID eines Nutzers festlegen (spart ihm die Verknüpfung per Code)."""
+    if db.get(User, user_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nutzer nicht gefunden")
+    taken = db.scalar(select(BridgeIdentity).where(BridgeIdentity.provider == "discord",
+                                                   BridgeIdentity.external_id == body.external_id))
+    if taken is not None and taken.user_id != user_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Diese Discord-ID gehört schon einem anderen Nutzer")
+    db.execute(delete(BridgeIdentity).where(BridgeIdentity.user_id == user_id, BridgeIdentity.provider == "discord"))
+    db.add(BridgeIdentity(user_id=user_id, provider="discord", external_id=body.external_id))
+    db.flush()
+    svc.ensure_dm_channel(db, user_id)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/admin/identities/{user_id}")
+def admin_clear_identity(user_id: str, admin: AdminUser, db: DbDep) -> dict:
+    db.execute(delete(BridgeIdentity).where(BridgeIdentity.user_id == user_id, BridgeIdentity.provider == "discord"))
+    db.flush()
+    svc.ensure_dm_channel(db, user_id)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/admin/links", status_code=status.HTTP_201_CREATED)
@@ -242,7 +280,7 @@ def bot_outbox(db: DbDep, provider: str, limit: Annotated[int, Query(ge=1, le=10
     db.execute(delete(BridgeOutbox).where(BridgeOutbox.delivered_at.is_not(None)))  # Altlasten
     rows = db.scalars(select(BridgeOutbox).where(BridgeOutbox.provider == provider, BridgeOutbox.delivered_at.is_(None))
                       .order_by(BridgeOutbox.created_at).limit(limit))
-    out = [{"id": r.id, "channel_id": r.external_id, "author": r.author, "text": r.text} for r in rows]
+    out = [{"id": r.id, "kind": r.kind, "channel_id": r.external_id, "author": r.author, "text": r.text} for r in rows]
     db.commit()
     return out
 
@@ -269,6 +307,8 @@ def bot_claim(body: ClaimIn, db: DbDep) -> dict:
         db.execute(delete(BridgeIdentity).where(BridgeIdentity.user_id == code.user_id,
                                                 BridgeIdentity.provider == body.provider))
         db.add(BridgeIdentity(user_id=code.user_id, provider=body.provider, external_id=body.author_id))
+        db.flush()
+        svc.ensure_dm_channel(db, code.user_id)
         user = db.get(User, code.user_id)
         result = {"kind": "user", "label": user.label if user else ""}
     else:

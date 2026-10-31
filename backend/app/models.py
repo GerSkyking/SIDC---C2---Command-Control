@@ -708,13 +708,14 @@ class Notification(Base):
 
     id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    kind: Mapped[str] = mapped_column(String(16))  # task_mention | chat_mention | assigned
+    kind: Mapped[str] = mapped_column(String(16))  # task_mention | chat_mention | assigned | plan_shared | project_added
     actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="", server_default="")
     text: Mapped[str] = mapped_column(String(300), default="", server_default="")
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
     task_id: Mapped[str | None] = mapped_column(ForeignKey("project_tasks.id", ondelete="CASCADE"), nullable=True)
     conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True)
+    plan_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # kein FK: der Eintrag überlebt den Plan
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Wann an die externen Kanäle (Discord, Push …) ausgeliefert wurde; NULL = noch offen.
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
@@ -790,6 +791,7 @@ class BridgeOutbox(Base):
     external_id: Mapped[str] = mapped_column(String(64))
     author: Mapped[str] = mapped_column(String(100), default="")
     text: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(8), default="channel", server_default="channel")  # channel | dm (external_id = Nutzer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 

@@ -440,7 +440,7 @@ def list_notifications(
     return [{
         "id": n.id, "kind": n.kind, "actor_id": n.actor_id, "actor_label": labels.get(n.actor_id or "", None),
         "title": n.title, "text": n.text, "project_id": n.project_id, "project_name": pnames.get(n.project_id or "", None),
-        "task_id": n.task_id, "conversation_id": n.conversation_id,
+        "task_id": n.task_id, "conversation_id": n.conversation_id, "plan_id": n.plan_id,
         "read": n.read_at is not None, "created_at": _iso(n.created_at),
     } for n in rows]
 

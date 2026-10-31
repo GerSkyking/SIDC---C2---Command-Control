@@ -303,11 +303,13 @@ function mountSystem(host: HTMLElement, changed: () => void, back: () => void): 
   host.querySelector(".chat-back")!.addEventListener("click", back);
 
   const href = (n: ChatNotification): string =>
-    n.conversation_id ? `#/chat/${n.conversation_id}` : n.project_id ? `#/projects/${n.project_id}/tasks` : "#/chat";
+    n.plan_id ? `#/plans/${n.plan_id}` : n.conversation_id ? `#/chat/${n.conversation_id}` : n.project_id ? `#/projects/${n.project_id}/tasks` : "#/chat";
   const text = (n: ChatNotification): string => {
     const who = `<strong>${esc(n.actor_label || t("act.unknown"))}</strong>`;
     const where = `<em>${esc(n.title)}</em>${n.project_name ? ` <span class="muted">· ${esc(n.project_name)}</span>` : ""}`;
     if (n.kind === "assigned") return t("sys.assigned").replace("{u}", who).replace("{t}", where);
+    if (n.kind === "plan_shared") return t("sys.planShared").replace("{u}", who).replace("{t}", where);
+    if (n.kind === "project_added") return t("sys.projectAdded").replace("{u}", who).replace("{t}", where);
     if (n.kind === "chat_mention") return t("sys.chatMention").replace("{u}", who).replace("{t}", where || "");
     return t("sys.taskMention").replace("{u}", who).replace("{t}", where);
   };

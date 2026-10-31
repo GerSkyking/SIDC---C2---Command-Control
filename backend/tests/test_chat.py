@@ -91,6 +91,10 @@ def test_group_source_and_task_notifications(admin):
         {"subject_type": "user", "subject_id": bid, "role": "viewer"},
         {"subject_type": "user", "subject_id": cid, "role": "viewer"},
     ])
+    for cl in (a, b, c):  # "zum Projekt hinzugefügt" ist eine eigene Benachrichtigung – hier nicht Thema
+        assert [n["kind"] for n in cl.get("/chat/notifications").json()] == ["project_added"]
+        cl.post("/chat/notifications/read", json={"all": True})
+        cl.delete("/chat/notifications")
     tid = a.post(f"/projects/{pid}/tasks", json={"title": "Aufgabe", "assignee_id": cid}).json()["id"]
     assert [n["kind"] for n in c.get("/chat/notifications").json()] == []  # Anlegen mit Zuständigem ist keine Zuweisung
     a.patch(f"/projects/{pid}/tasks/{tid}", json={"assignee_id": bid})

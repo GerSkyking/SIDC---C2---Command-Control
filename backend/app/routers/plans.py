@@ -14,6 +14,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .. import audit
+from ..services import notify
 
 from ..deps import CurrentUser, DbDep, load_plan, require_plan_level
 from ..ratelimit import hit_limit
@@ -912,6 +913,7 @@ def put_acl(
 ) -> list[PlanACL]:
     if not any(e.level == "owner" for e in entries):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Mindestens ein 'owner' erforderlich")
+    before = notify.subject_user_ids(db, [(a.subject_type, a.subject_id) for a in db.scalars(select(PlanACL).where(PlanACL.plan_id == plan.id))])
     db.query(PlanACL).filter(PlanACL.plan_id == plan.id).delete()
     rows = [
         PlanACL(
@@ -921,6 +923,8 @@ def put_acl(
         for e in entries
     ]
     db.add_all(rows)
+    after = notify.subject_user_ids(db, [(e.subject_type, e.subject_id) for e in entries])
+    notify.send(db, after - before, "plan_shared", actor=user, title=plan.name, plan_id=plan.id)
     db.commit()
     audit.record(db, "plan.acl", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request, entries=len(rows))

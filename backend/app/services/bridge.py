@@ -20,6 +20,7 @@ from ..models import (
     Conversation,
     ConversationMember,
     Message,
+    NotificationChannel,
     User,
     now,
 )
@@ -88,3 +89,14 @@ def _chat_recipients(db: Session, ments: list[dict]) -> set[str]:
     from ..routers.chat import _chat_recipients as rec  # gleiche Auflösung wie im Web-Chat
 
     return rec(db, ments, "")
+
+
+def ensure_dm_channel(db: Session, user_id: str) -> None:
+    """Hat der Nutzer ein verknüpftes Discord-Konto, existiert dazu ein (abschaltbarer) DM-Kanal; sonst wird er entfernt."""
+    ident = db.scalar(select(BridgeIdentity).where(BridgeIdentity.user_id == user_id, BridgeIdentity.provider == "discord"))
+    ch = db.scalar(select(NotificationChannel).where(NotificationChannel.user_id == user_id,
+                                                     NotificationChannel.type == "discord_dm"))
+    if ident is None and ch is not None:
+        db.delete(ch)
+    elif ident is not None and ch is None:
+        db.add(NotificationChannel(user_id=user_id, type="discord_dm", name="Discord-Direktnachricht", config={}, kinds=[]))

@@ -9,25 +9,28 @@ from sqlalchemy import func, select
 
 from ..deps import CurrentUser, DbDep
 from ..models import NotificationChannel, now
+from ..services import bridge as bridge_svc
 from ..services import channels as ch
+from ..services import dispatcher
 
 router = APIRouter(prefix="/notify", tags=["notify"])
 
 _MAX_CHANNELS = 10
-KINDS = ("task_mention", "chat_mention", "assigned")
+Kind = Literal["task_mention", "chat_mention", "assigned", "plan_shared", "project_added"]
+KINDS = ("task_mention", "chat_mention", "assigned", "plan_shared", "project_added")
 
 
 class ChannelIn(BaseModel):
     type: str = Field(max_length=16)
     name: str = Field(default="", max_length=80)
     config: dict = Field(default_factory=dict)
-    kinds: list[Literal["task_mention", "chat_mention", "assigned"]] = Field(default_factory=list)
+    kinds: list[Kind] = Field(default_factory=list)
 
 
 class ChannelPatch(BaseModel):
     name: str | None = Field(default=None, max_length=80)
     config: dict | None = None
-    kinds: list[Literal["task_mention", "chat_mention", "assigned"]] | None = None
+    kinds: list[Kind] | None = None
     enabled: bool | None = None
 
 
@@ -69,6 +72,8 @@ def types(user: CurrentUser) -> dict:
 
 @router.get("/channels")
 def list_channels(user: CurrentUser, db: DbDep) -> list[dict]:
+    bridge_svc.ensure_dm_channel(db, user.id)  # auch für schon früher verknüpfte Konten
+    db.commit()
     rows = db.scalars(select(NotificationChannel).where(NotificationChannel.user_id == user.id)
                       .order_by(NotificationChannel.created_at))
     return [_out(c) for c in rows]
@@ -124,7 +129,7 @@ def test_channel(cid: str, user: CurrentUser, db: DbDep) -> dict:
     msg = ch.Msg(kind="test", headline="SIDC C2: Testnachricht", text=f"Hallo {user.label}, dieser Kanal funktioniert.",
                  actor=user.label)
     try:
-        ch.send_to(c.type, c.config, msg)
+        dispatcher.send_one(db, c, msg)
     except ch.ChannelError as exc:
         c.last_error = str(exc)[:300]
         db.commit()

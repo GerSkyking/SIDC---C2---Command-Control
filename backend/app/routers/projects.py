@@ -320,10 +320,14 @@ def put_members(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unbekannter Nutzer/Gruppe")
     if not any(m.role == "owner" for m in body):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Mindestens ein Eigentümer (owner) nötig")
+    before = notify.subject_user_ids(db, [(m.subject_type, m.subject_id) for m in db.scalars(select(ProjectMember).where(ProjectMember.project_id == pid))])
     db.execute(sa_delete(ProjectMember).where(ProjectMember.project_id == pid))
     for m in body:
         db.add(ProjectMember(project_id=pid, subject_type=m.subject_type, subject_id=m.subject_id, role=m.role))
     _act(db, user, pid, "project.members", "project", pid, "", count=len(body))
+    added = notify.subject_user_ids(db, [(m.subject_type, m.subject_id) for m in body]) - before
+    proj = db.get(Project, pid)
+    notify.send(db, added, "project_added", actor=user, title=proj.name if proj else "", project_id=pid)
     db.commit()
     _audit(db, request, user, "project.members", "project", pid, count=len(body))
     return _member_rows(db, pid)

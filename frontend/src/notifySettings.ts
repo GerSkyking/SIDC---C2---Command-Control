@@ -6,7 +6,7 @@ import { t } from "./i18n";
 import { mountAccountLinks } from "./bridgeUi";
 import { confirmDialog, toast, toastError } from "./notify";
 
-const KINDS: NotifyKind[] = ["task_mention", "chat_mention", "assigned"];
+const KINDS: NotifyKind[] = ["task_mention", "chat_mention", "assigned", "plan_shared", "project_added"];
 
 function b64urlToBytes(s: string): Uint8Array {
   const pad = "=".repeat((4 - (s.length % 4)) % 4);

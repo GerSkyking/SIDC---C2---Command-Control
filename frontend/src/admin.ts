@@ -128,10 +128,14 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   }
 
   // section === "users"
-  const [users, groups] = await Promise.all([api.adminUsers(), api.adminGroups()]);
+  const [users, groups, discordIds] = await Promise.all([
+    api.adminUsers(),
+    api.adminGroups(),
+    api.bridgeAdminIdentities().catch(() => ({}) as Record<string, string>),
+  ]);
   app.innerHTML = shell(
     `<h2>${t("admin.users")}</h2>
-     <table><tbody>${users.map(userRow).join("")}</tbody></table>
+     <table><tbody>${users.map((u) => userRow(u, discordIds[u.id])).join("")}</tbody></table>
      <div class="row">
        <input id="nu-name" placeholder="${t("auth.username")}" />
        <input id="nu-pw" type="password" placeholder="${t("auth.password")} (min. 12)" />
@@ -188,6 +192,14 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
     );
     el.querySelector<HTMLInputElement>("[data-uname]")?.addEventListener("change", (e) => {
       guard(() => api.patchUser(id, { display_name: (e.target as HTMLInputElement).value.trim() }));
+    });
+    el.querySelector("[data-dc]")?.addEventListener("click", async () => {
+      const cur = discordIds[id] ?? "";
+      const v = await promptDialog(t("admin.discordId"), { value: cur });
+      if (v === null) return;
+      const clean = v.trim();
+      if (!clean && cur) guard(() => api.bridgeAdminClearIdentity(id));
+      else if (clean) guard(() => api.bridgeAdminSetIdentity(id, clean));
     });
     el.querySelector("[data-reset]")?.addEventListener("click", async () => {
       const pw = await promptDialog(t("admin.newPassword"));
@@ -253,7 +265,7 @@ function postShell(app: HTMLElement): void {
   wireSidebar(app);
 }
 
-function userRow(u: AdminUser): string {
+function userRow(u: AdminUser, discordId?: string): string {
   return `<tr data-u="${u.id}">
     <td><strong>${esc(u.username)}</strong> ${u.is_local ? "" : '<span class="badge">OIDC</span>'}
         <span class="badge">${esc(u.role)}</span> ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}
@@ -271,7 +283,8 @@ function userRow(u: AdminUser): string {
         </div>
       </details>
     </td>
-    <td>${u.is_local ? `<button data-reset>${t("admin.passwordShort")}</button>` : ""}
+    <td><button data-dc title="${esc(discordId ?? "")}">Discord${discordId ? " ✓" : ""}</button>
+        ${u.is_local ? `<button data-reset>${t("admin.passwordShort")}</button>` : ""}
         <button class="icon-btn" data-del title="${t("common.delete")}">${icon("x", 16)}</button></td>
   </tr>`;
 }

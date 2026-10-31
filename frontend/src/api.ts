@@ -313,7 +313,7 @@ export interface NotifyType {
   form: boolean;
   available: boolean;
 }
-export type NotifyKind = "task_mention" | "chat_mention" | "assigned";
+export type NotifyKind = "task_mention" | "chat_mention" | "assigned" | "plan_shared" | "project_added";
 export interface NotifyChannel {
   id: string;
   type: string;
@@ -326,7 +326,8 @@ export interface NotifyChannel {
 }
 export interface ChatNotification {
   id: string;
-  kind: "task_mention" | "chat_mention" | "assigned";
+  kind: NotifyKind;
+  plan_id?: string | null;
   actor_id: string | null;
   actor_label: string | null;
   title: string;
@@ -811,6 +812,10 @@ export const api = {
     req<{ id: string; provider: string; external_id: string; channel_name: string; group_name: string }[]>("GET", `/bridge/conversations/${cid}/links`),
   bridgeAdminOverview: () => req<BridgeOverview>("GET", "/bridge/admin/overview"),
   bridgeAdminLink: (b: { conversation_id: string; provider: string; external_id: string }) => req<{ id: string }>("POST", "/bridge/admin/links", b),
+  bridgeAdminIdentities: () => req<Record<string, string>>("GET", "/bridge/admin/identities"),
+  bridgeAdminSetIdentity: (userId: string, external_id: string) =>
+    req<void>("PUT", `/bridge/admin/identities/${userId}`, { external_id }),
+  bridgeAdminClearIdentity: (userId: string) => req<void>("DELETE", `/bridge/admin/identities/${userId}`),
   bridgeAdminUnlink: (id: string) => req<void>("DELETE", `/bridge/admin/links/${id}`),
   bridgeDeleteLink: (id: string) => req<void>("DELETE", `/bridge/links/${id}`),
   webpushKey: () => req<{ key: string }>("GET", "/notify/webpush/key"),
