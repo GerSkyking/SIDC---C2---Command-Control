@@ -1,6 +1,6 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./style.css";
-import { api, ApiError, type Me, type PlanFolder } from "./api";
+import { api, ApiError, type Me, type PlanFolder, type ProjectPlanItem } from "./api";
 import { openPlanView } from "./plan";
 import { renderAdmin } from "./admin";
 import { openAclEditor } from "./acl";
@@ -13,7 +13,7 @@ import { renderLegal } from "./legal";
 import { esc } from "./esc";
 import { icon } from "./icons";
 import { initTheme } from "./theme";
-import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
+import { setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
 initTheme();
 
@@ -58,6 +58,7 @@ async function route(): Promise<void> {
 
   if (!me) return renderLogin();
   initSettings(me);
+  setLastProject(me.ui_settings?.last_project);
 
   const planMatch = location.hash.match(/^#\/plans\/([0-9a-f]{32})$/);
   if (planMatch) {
@@ -134,10 +135,11 @@ async function renderLogin(): Promise<void> {
 // ─── Plan-Liste ───────────────────────────────────────────────────────────
 
 async function renderPlanList(): Promise<void> {
-  const [plans, maps, folders] = await Promise.all([
+  const [plans, maps, folders, projectPlans] = await Promise.all([
     api.plans(),
     api.maps().catch(() => []),
     api.folders().catch(() => []),
+    api.plansInProjects().catch((): ProjectPlanItem[] => []),
   ]);
   const canCreate = me!.can_create_plans_effective && maps.some((m) => m.status === "ready");
   const folderById = new Map(folders.map((f) => [f.id, f]));
@@ -218,6 +220,7 @@ async function renderPlanList(): Promise<void> {
 
   renderPlanTree(app.querySelector<HTMLDivElement>("#planTree")!, plans, folders, me!.can_create_plans_effective, {
     user: { id: me!.id, isAdmin: me!.role === "admin" },
+    projectPlans,
     mapName: (id) => maps.find((m) => m.id === id)?.name ?? id,
     onChanged: () => renderPlanList(),
     onSelectFolder: (id) => {

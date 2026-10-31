@@ -364,6 +364,27 @@ def test_project_editor_with_plan_acl_via_group(world):
     assert prid in [p["id"] for p in w["ed"].get(f"/projects/{pid}/plans").json()]
 
 
+def test_plans_in_projects_listing_follows_plan_acl(world):
+    """Projekt-Pläne erscheinen unter „Projekte" nur mit Plan-Freigabe – auch für Nicht-Projektmitglieder."""
+    w = world
+    _map(w["admin"])
+    plan = w["builder"].post("/plans", json={"name": "PP", "map_id": "m1", "project_id": w["pid"]}).json()
+    prid = plan["id"]
+    assert prid not in [p["id"] for p in w["out"].get("/plans/in-projects").json()]
+    acl = [{"subject_type": "user", "subject_id": w["bid"], "level": "owner"},
+           {"subject_type": "user", "subject_id": w["oid"], "level": "viewer"}]
+    assert w["builder"].put(f"/plans/{prid}/acl", json=acl).status_code == 200
+    rows = [p for p in w["out"].get("/plans/in-projects").json() if p["id"] == prid]
+    assert len(rows) == 1 and rows[0]["project_name"] == "Op Test" and rows[0]["level"] == "viewer"
+    assert prid not in [p["id"] for p in w["out"].get("/plans").json()]  # normale Liste bleibt projektfrei
+
+
+def test_last_project_setting(world):
+    w = world
+    r = w["builder"].patch("/auth/me/settings", json={"last_project": w["pid"]})
+    assert r.status_code == 200 and r.json()["ui_settings"]["last_project"] == w["pid"]
+
+
 def _builder(admin, name):
     return _user(admin, name, is_mission_builder=True)
 

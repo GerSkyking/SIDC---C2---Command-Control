@@ -138,6 +138,10 @@ class PlanListItem(PlanOut):
     level: str  # effektives Recht des Anfragenden
 
 
+class PlanProjectListItem(PlanListItem):
+    project_name: str = ""
+
+
 class ACLEntryIn(BaseModel):
     subject_type: str = Field(pattern=r"^(user|group)$")
     subject_id: str

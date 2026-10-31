@@ -9,7 +9,7 @@ import { renderPlanTree } from "./planTree";
 import { projectFolderPath, renderProjectTree, selectedProjectFolder } from "./projectTree";
 import { type ProjCtx, fmtBytes } from "./projectUtil";
 import { openSettings } from "./settings";
-import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
+import { getLastProject, setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
 type Tab = "overview" | "public" | "builder" | "plans" | "tasks" | "whiteboard" | "members";
 const TABS: { id: Tab; ic: string; key: string }[] = [
@@ -43,6 +43,13 @@ function wireShell(app: HTMLElement): void {
   wireThemeSwitch(app);
   wireSidebar(app);
   app.querySelector("#settingsBtn")?.addEventListener("click", openSettings);
+}
+
+/** Zuletzt geöffnetes Projekt beim Nutzer merken (Sidebar-Link „Missionsbau" öffnet es direkt). */
+function rememberProject(id: string): void {
+  if (getLastProject() === id) return;
+  setLastProject(id);
+  void api.saveSettings({ last_project: id || null }).catch(() => {});
 }
 
 export async function renderProjects(app: HTMLElement, me: Me, id?: string, tab?: string): Promise<void> {
@@ -204,6 +211,7 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
   try {
     project = await api.project(id);
   } catch (e) {
+    if (getLastProject() === id) rememberProject(""); // Projekt nicht mehr erreichbar: nicht wieder dorthin springen
     app.innerHTML = shell(
       me,
       t("proj.heading"),
@@ -213,6 +221,7 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
     wireShell(app);
     return;
   }
+  rememberProject(id);
   const isAdmin = me.role === "admin";
   const ctx: ProjCtx = {
     id,

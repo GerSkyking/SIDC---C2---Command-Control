@@ -111,7 +111,10 @@ export function confirmDialog(message: string, opts: ConfirmOpts = {}): Promise<
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") done(false);
-      if (e.key === "Enter") done(true);
+      if (e.key === "Enter") {
+        e.preventDefault(); // sonst löst der Enter-Tastendruck den Knopf aus, der nach dem Schließen den Fokus erhält
+        done(true);
+      }
     };
     document.addEventListener("keydown", onKey, true);
     back.addEventListener("mousedown", (e) => e.target === back && done(false));
@@ -154,7 +157,10 @@ export function promptDialog(message: string, opts: PromptOpts = {}): Promise<st
     back.querySelector("[data-c]")!.addEventListener("click", () => done(null));
     back.querySelector("[data-ok]")!.addEventListener("click", () => done(inp.value));
     inp.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") done(inp.value);
+      if (e.key === "Enter") {
+        e.preventDefault(); // verhindert, dass der Fokus-Rückgabe-Knopf (z. B. „Neu") denselben Tastendruck erhält und den Dialog neu öffnet
+        done(inp.value);
+      }
       if (e.key === "Escape") done(null);
     });
     setTimeout(() => {

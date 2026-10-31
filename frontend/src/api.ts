@@ -73,6 +73,9 @@ export interface PlanItem {
   level: "viewer" | "editor" | "owner";
   project_id?: string | null;
 }
+export interface ProjectPlanItem extends PlanItem {
+  project_name: string;
+}
 export interface PlanFolder {
   id: string;
   name: string;
@@ -529,6 +532,7 @@ export const api = {
   },
 
   plans: () => req<PlanItem[]>("GET", "/plans"),
+  plansInProjects: () => req<ProjectPlanItem[]>("GET", "/plans/in-projects"),
   createPlan: (name: string, map_id: string, folder_id: string | null = null) =>
     req<PlanItem>("POST", "/plans", { name, map_id, folder_id }),
   snapshot: (planId: string) => req<any>("GET", `/plans/${planId}/snapshot`),

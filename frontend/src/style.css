@@ -1181,7 +1181,13 @@ i.b-open { background: #6aa6ff; } i.b-doing { background: var(--accent); } i.b-r
 .wb-sw.on { border-color: var(--fg); }
 .wb-scroll { flex: 1; min-height: 22rem; height: calc(100dvh - 17rem); overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2);
   background-image: radial-gradient(var(--border) 1px, transparent 1px); background-size: 24px 24px; -webkit-overflow-scrolling: touch; }
-.wb-area { position: relative; }
+.wb-area { position: relative; cursor: grab; touch-action: none; }
+.wb-scroll.panning .wb-area { cursor: grabbing; }
+.wb-note { cursor: auto; }
+.wb-pan { display: inline-grid; grid-template-areas: ". u ." "l . r" ". d ."; gap: 2px; }
+.wb-pan .icon-btn { width: 1.5rem; height: 1.5rem; }
+.wb-pan-up { grid-area: u; transform: rotate(-90deg); } .wb-pan-down { grid-area: d; transform: rotate(90deg); }
+.wb-pan-left { grid-area: l; transform: rotate(180deg); } .wb-pan-right { grid-area: r; }
 .wb-note { position: absolute; display: flex; flex-direction: column; border-radius: 3px; box-shadow: 0 3px 10px rgba(0,0,0,.35); color: #222; }
 .wb-note.dragging { box-shadow: 0 10px 24px rgba(0,0,0,.5); z-index: 5; }
 .wb-head { display: flex; align-items: center; gap: .15rem; height: 1.7rem; padding: 0 .2rem; background: rgba(0,0,0,.12); cursor: grab; touch-action: none; flex: none; }

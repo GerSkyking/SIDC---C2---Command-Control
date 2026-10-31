@@ -5,6 +5,12 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-10-31 – Kleinigkeiten aus dem Test
+- Dialoge (Ordner anlegen/umbenennen): Enter schließt jetzt wirklich, der Dialog öffnet nicht mehr neu.
+- Pläne-Seite: neuer Knoten „Projekte → Projektname → Plan" für alle Projekt-Pläne mit eigener Plan-Freigabe (auch ohne Projektmitgliedschaft). Neuer Endpunkt `GET /plans/in-projects`.
+- Whiteboard: Pfeil-Knöpfe und Ziehen auf freier Fläche zum Verschieben der Ansicht (Trackpad/Touch).
+- Missionsbau-Link in der Seitenleiste öffnet das zuletzt gewählte Projekt (pro Nutzer gespeichert, `ui_settings.last_project`).
+
 ### 2026-10-29 – Missionsbau-Projekte, Pläne-Seite, Review-Fixes
 
 **Neu: Missionsbau (Projekte)** – siehe `docs/PROJEKTE.md`, Handbuch §3b

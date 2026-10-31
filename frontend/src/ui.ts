@@ -53,6 +53,15 @@ export function wireThemeSwitch(root: ParentNode): void {
   );
 }
 
+// Zuletzt geöffnetes Projekt (pro Nutzer im Server gespeichert, me.ui_settings.last_project)
+let lastProject = "";
+export function setLastProject(id: unknown): void {
+  lastProject = typeof id === "string" && /^[0-9a-f]{32}$/.test(id) ? id : "";
+}
+export function getLastProject(): string {
+  return lastProject;
+}
+
 export type NavSection = "plans" | "trash" | "users" | "log" | "config" | "storage" | "orbat" | "projects";
 
 /** Linke Navigationsleiste für die Nicht-Karten-Ansichten. */
@@ -70,7 +79,7 @@ export function sidebar(
     </div>
     <div class="sb-nav">
       ${item("plans", "plan", t("nav.plans"), "#/")}
-      ${item("projects", "folder", t("nav.projects"), "#/projects")}
+      ${item("projects", "folder", t("nav.projects"), lastProject ? `#/projects/${lastProject}` : "#/projects")}
       ${item("trash", "trash", t("nav.trash"), "#/trash")}
       ${
         opts.isMissionBuilder

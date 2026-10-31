@@ -39,12 +39,63 @@ export function mountWhiteboard(host: HTMLElement, ctx: ProjCtx): void {
                ).join("")}</span>`
             : ""
         }
+        <span class="wb-pan" role="group" aria-label="${t("proj.wb.pan")}">${(["up", "left", "right", "down"] as const)
+          .map((d) => `<button type="button" class="icon-btn wb-pan-${d}" data-pan="${d}" title="${t("proj.wb.pan." + d)}" aria-label="${t("proj.wb.pan." + d)}">${icon("chevron", 16)}</button>`)
+          .join("")}</span>
         <span class="muted wb-hint">${ctx.canEdit ? t("proj.wb.hint") : t("proj.wb.hintRo")}</span>
       </div>
       <div class="wb-scroll" id="wbScroll"><div class="wb-area" id="wbArea" style="width:${AREA_W}px;height:${AREA_H}px"></div></div>
     </div>`;
   const scroll = host.querySelector<HTMLElement>("#wbScroll")!;
   const area = host.querySelector<HTMLElement>("#wbArea")!;
+
+  // Verschieben ohne Maus-Mausrad/Scrollbalken (Trackpad, Touch): Pfeil-Knöpfe (gedrückt halten = weiter) und Ziehen auf freier Fläche
+  host.querySelectorAll<HTMLElement>("[data-pan]").forEach((b) => {
+    const dir = b.dataset.pan!;
+    const step = () => {
+      const s = Math.round(Math.min(scroll.clientWidth, scroll.clientHeight) * 0.6);
+      scroll.scrollBy({
+        left: dir === "left" ? -s : dir === "right" ? s : 0,
+        top: dir === "up" ? -s : dir === "down" ? s : 0,
+        behavior: "smooth",
+      });
+    };
+    let rep = 0;
+    let delay = 0;
+    const stop = () => {
+      window.clearTimeout(delay);
+      window.clearInterval(rep);
+    };
+    b.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      step();
+      stop();
+      delay = window.setTimeout(() => (rep = window.setInterval(step, 260)), 450);
+    });
+    for (const ev of ["pointerup", "pointerleave", "pointercancel", "blur"]) b.addEventListener(ev, stop);
+    b.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        step();
+      }
+    });
+  });
+  area.addEventListener("pointerdown", (e) => {
+    if (e.target !== area || e.button !== 0) return;
+    e.preventDefault();
+    const x0 = e.clientX + scroll.scrollLeft;
+    const y0 = e.clientY + scroll.scrollTop;
+    scroll.classList.add("panning");
+    dragWith(
+      area,
+      e,
+      (ev) => {
+        scroll.scrollLeft = x0 - ev.clientX;
+        scroll.scrollTop = y0 - ev.clientY;
+      },
+      () => scroll.classList.remove("panning"),
+    );
+  });
 
   const paintSwatches = () =>
     host.querySelectorAll<HTMLElement>(".wb-sw").forEach((b) => {

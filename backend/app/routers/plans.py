@@ -55,6 +55,7 @@ from ..schemas import (
     PlanMoveIn,
     PlanOut,
     PlanProjectIn,
+    PlanProjectListItem,
     PlanPatchIn,
     VersionCreateIn,
 )
@@ -252,6 +253,25 @@ def list_plans(user: CurrentUser, db: DbDep, project_id: str | None = None) -> l
         level = effective_level(db, user, plan)
         if level is not None:
             out.append(PlanListItem(**PlanOut.model_validate(plan).model_dump(), level=level))
+    return out
+
+
+@router.get("/in-projects", response_model=list[PlanProjectListItem])
+def list_plans_in_projects(user: CurrentUser, db: DbDep) -> list[PlanProjectListItem]:
+    """Alle Projekt-Pläne, auf die der Anfragende per Plan-ACL Zugriff hat – unabhängig von der
+    Projektmitgliedschaft (Freigabe gilt global, auch für Nicht-Missionsbauer)."""
+    out: list[PlanProjectListItem] = []
+    q = (
+        select(Plan, Project.name)
+        .join(Project, Project.id == Plan.project_id)
+        .where(Plan.deleted_at.is_(None))
+        .order_by(Plan.updated_at.desc())
+    )
+    for plan, pname in db.execute(q).all():
+        level = effective_level(db, user, plan)
+        if level is not None:
+            out.append(PlanProjectListItem(
+                **PlanOut.model_validate(plan).model_dump(), level=level, project_name=pname))
     return out
 
 

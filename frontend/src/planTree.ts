@@ -1,6 +1,6 @@
 // Baumansicht der Pläne: Ordner + Unterordner, Drag & Drop zum Verschieben,
 // Klonen (mit Zielordner). Reines Vanilla-DOM.
-import { api, type PlanFolder, type PlanItem } from "./api";
+import { api, type PlanFolder, type PlanItem, type ProjectPlanItem } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { confirmDialog, promptDialog, toastError } from "./notify";
@@ -11,6 +11,8 @@ interface TreeOpts {
   onDeletePlan: (p: PlanItem) => void;
   onOpenShares: (p: PlanItem) => void;
   onSelectFolder?: (id: string | null) => void; // gewählter Ordner = Ziel für „Neuer Plan"
+  /** Projekt-Pläne, auf die der Nutzer per Plan-Freigabe Zugriff hat (schreibgeschützt unter „Projekte") */
+  projectPlans?: ProjectPlanItem[];
   mapName?: (id: string) => string;
   /** Projekt-Ansicht: neue Ordner entstehen im Projekt, die Auswahl wird getrennt gemerkt */
   projectId?: string;
@@ -47,6 +49,21 @@ function rootOpen(): boolean {
 function setRootOpen(v: boolean): void {
   try {
     localStorage.setItem(ROOT_KEY, v ? "1" : "0");
+  } catch {
+    /* egal */
+  }
+}
+const PGRP_KEY = "sidc_pgroups_open"; // aufgeklappte Knoten unter „Projekte" („" = Projekte-Knoten, sonst Projekt-ID)
+function pgroupOpen(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(PGRP_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+function savePgroupOpen(s: Set<string>): void {
+  try {
+    localStorage.setItem(PGRP_KEY, JSON.stringify([...s]));
   } catch {
     /* egal */
   }
@@ -248,6 +265,72 @@ export function renderPlanTree(
     return row;
   };
 
+  /** Virtueller Ordner „Projekte → Projektname → Pläne": nur Lesen/Öffnen, Rechte regelt die Plan-Freigabe. */
+  const renderProjectPlans = (box: HTMLElement) => {
+    const pp = opts.projectPlans ?? [];
+    if (!pp.length || pid) return;
+    const po = pgroupOpen();
+    const groups = new Map<string, { name: string; plans: ProjectPlanItem[] }>();
+    for (const p of pp) {
+      const g = groups.get(p.project_id ?? "") ?? { name: p.project_name, plans: [] };
+      g.plans.push(p);
+      groups.set(p.project_id ?? "", g);
+    }
+    const sorted = [...groups.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const folderRow = (key: string, label: string, count: number, depth: number, isOpen: boolean): HTMLElement => {
+      const r = document.createElement("div");
+      r.className = "tree-row tree-folder";
+      r.style.paddingLeft = `${0.6 + depth * 1.4}rem`;
+      const tw = isOpen ? t("common.collapse") : t("common.expand");
+      r.innerHTML =
+        `<span class="tree-grip tree-grip-off"></span>` +
+        `<button class="tree-tw icon-btn" title="${tw}" aria-label="${tw}">${icon(isOpen ? "chevronDown" : "chevron", 16)}</button>` +
+        `<span class="tree-ico">${icon(isOpen ? "folderOpen" : "folder", 16)}</span><span class="tree-name">${esc(label)}</span>` +
+        `<span class="tree-count" title="${t("folder.count")}">${count}</span>`;
+      r.addEventListener("click", () => {
+        if (isOpen) po.delete(key);
+        else po.add(key);
+        savePgroupOpen(po);
+        paint();
+      });
+      return r;
+    };
+    const readRow = (p: ProjectPlanItem, depth: number): HTMLElement => {
+      const row = document.createElement("div");
+      row.className = "tree-row tree-plan";
+      row.style.paddingLeft = `${0.6 + depth * 1.4}rem`;
+      row.innerHTML =
+        `<span class="tree-grip tree-grip-off"></span>` +
+        `<img class="tree-thumb" src="/plans/${p.id}/thumbnail" alt="" data-hide-on-error="none" />` +
+        `<a href="#/plans/${p.id}" class="tree-name" title="${t("plans.open")}">${esc(p.name)}</a>` +
+        `<span class="badge">${p.level}</span>` +
+        (opts.mapName ? `<span class="tree-map" title="${t("plans.map")}">${icon("map", 12)} ${esc(opts.mapName(p.map_id))}</span>` : "") +
+        `<span class="tree-actions">` +
+        (p.level === "owner"
+          ? `<button data-shares title="${t("plans.sharesHint")}">${t("plans.shares")}</button>`
+          : "") +
+        `</span>`;
+      row.querySelector("[data-shares]")?.addEventListener("click", () => opts.onOpenShares(p));
+      return row;
+    };
+    const topOpen = po.has("");
+    box.appendChild(folderRow("", t("folder.projects"), pp.length, 1, topOpen));
+    if (!topOpen) return;
+    const kids = document.createElement("div");
+    kids.className = "tree-kids";
+    for (const [projId, g] of sorted) {
+      const o = po.has(projId);
+      kids.appendChild(folderRow(projId, g.name, g.plans.length, 2, o));
+      if (o) {
+        const inner = document.createElement("div");
+        inner.className = "tree-kids";
+        for (const p of g.plans.sort((a, b) => a.name.localeCompare(b.name))) inner.appendChild(readRow(p, 3));
+        kids.appendChild(inner);
+      }
+    }
+    box.appendChild(kids);
+  };
+
   const select = (id: string | null) => {
     setSelectedFolder(id, pid);
     opts.onSelectFolder?.(id);
@@ -368,9 +451,11 @@ export function renderPlanTree(
       pr.style.paddingLeft = `${0.6 + 1.4}rem`;
       body.appendChild(pr);
     }
+    const hadOwn = body.childElementCount > 0;
+    renderProjectPlans(body);
     if (!body.childElementCount) {
       body.innerHTML = `<div class="tree-empty">${t("folder.emptyRoot")}</div>`;
-    } else {
+    } else if (hadOwn) {
       const hint = document.createElement("div");
       hint.className = "tree-hint";
       hint.textContent = t("folder.dropHint");

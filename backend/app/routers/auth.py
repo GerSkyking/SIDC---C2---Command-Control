@@ -141,7 +141,7 @@ def patch_my_profile(body: ProfileIn, user: CurrentUser, db: DbDep) -> MeOut:
     return _me(db, user)
 
 
-_UI_SETTINGS_KEYS = {"keybinds", "theme", "lang", "map", "topbar_scale"}
+_UI_SETTINGS_KEYS = {"keybinds", "theme", "lang", "map", "topbar_scale", "last_project"}
 _UI_SETTINGS_MAX_BYTES = 8192
 
 
