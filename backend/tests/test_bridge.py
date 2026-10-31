@@ -74,3 +74,36 @@ def test_bridge_roundtrip(admin, monkeypatch):
     # Verbindung lösen
     link = a.get(f"/bridge/conversations/{g['id']}/links").json()[0]
     assert a.delete(f"/bridge/links/{link['id']}").status_code == 200
+
+
+def test_admin_links_channel_from_snapshot(admin, monkeypatch):
+    monkeypatch.setattr(get_settings(), "bridge_token", "bridge-test-token")
+    k = next(_n)
+    (a, aid), (b, bid) = _user(admin, f"br{k}c"), _user(admin, f"br{k}d")
+    g = a.post("/chat/conversations", json={"kind": "group", "name": f"AdminLink{k}", "member_ids": [bid]}).json()
+    bot = TestClient(app)
+    snap = {"provider": "discord", "channels": [
+        {"id": f"c{k}1", "name": "allgemein", "group_id": "s1", "group_name": "MDC"},
+        {"id": f"c{k}2", "name": "ops", "group_id": "s1", "group_name": "MDC"}]}
+    assert bot.post("/bridge/channels", json=snap).status_code == 401
+    assert bot.post("/bridge/channels", headers=BOT, json=snap).json()["count"] == 2
+
+    assert b.get("/bridge/admin/overview").status_code == 403  # nur Admin
+    ov = admin.get("/bridge/admin/overview").json()
+    assert {c["external_id"] for c in ov["channels"]} >= {f"c{k}1", f"c{k}2"}
+    assert any(c["id"] == g["id"] for c in ov["conversations"])
+
+    r = admin.post("/bridge/admin/links", json={"conversation_id": g["id"], "provider": "discord", "external_id": f"c{k}1"})
+    assert r.status_code == 201, r.text
+    assert admin.post("/bridge/admin/links", json={"conversation_id": g["id"], "provider": "discord",
+                                                   "external_id": f"c{k}1"}).status_code == 409
+    assert admin.post("/bridge/admin/links", json={"conversation_id": g["id"], "provider": "discord",
+                                                   "external_id": "unbekannt"}).status_code == 400
+    # Verbindung wirkt wie eine per Code erzeugte; Kanalname erscheint im Chat
+    assert bot.get("/bridge/links", headers=BOT, params={"provider": "discord"}).json().count(f"c{k}1") == 1
+    assert a.get(f"/bridge/conversations/{g['id']}/links").json()[0]["channel_name"] == "allgemein"
+    # Kanal verschwindet aus der Momentaufnahme -> nicht mehr wählbar
+    bot.post("/bridge/channels", headers=BOT, json={"provider": "discord", "channels": snap["channels"][:1]})
+    assert f"c{k}2" not in {c["external_id"] for c in admin.get("/bridge/admin/overview").json()["channels"]}
+    lid = admin.get("/bridge/admin/overview").json()["links"][0]["id"]
+    assert admin.delete(f"/bridge/admin/links/{lid}").status_code == 200

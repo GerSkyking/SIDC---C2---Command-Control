@@ -5,6 +5,11 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-10-31 – Discord-Brücke: Kanäle im Admin-Bereich verbinden
+- Der Bot meldet alle Textkanäle, in denen er lesen/schreiben darf (alle Server), alle 2 Minuten ans C2. Admin → Config → *Discord-Brücke*:
+  Gruppen-Chat und Kanal auswählen, *Verbinden* – keine Codes im Kanal nötig. Tabelle `bridge_channels`, Migration `0037`.
+- Konto-Code wird jetzt nur zum Kopieren angezeigt (mit Anleitung: `/c2 link` wählen, Code ins Feld einfügen), da sich der Befehl nicht komplett einfügen lässt.
+
 ### 2026-10-31 – Discord-Brücke (Gruppenchats ⇄ Discord-Kanäle)
 - **Zwei-Wege-Sync:** Ein Gruppen-Chat lässt sich mit einem oder mehreren Discord-Kanälen verbinden (Chat-Kopf → Verbinden-Symbol).
   Nachrichten der Seite erscheinen in Discord, Antworten dort landen im Chat und lösen @-Benachrichtigungen aus.

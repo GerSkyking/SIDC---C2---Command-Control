@@ -793,3 +793,18 @@ class BridgeOutbox(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
+
+class BridgeChannel(Base):
+    """Momentaufnahme der Räume, die der Brücken-Client sieht (z. B. alle Discord-Textkanäle des Bots) – für die Auswahl im Admin-Bereich."""
+
+    __tablename__ = "bridge_channels"
+    __table_args__ = (UniqueConstraint("provider", "external_id", name="uq_bridge_channel_ext"),)
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    provider: Mapped[str] = mapped_column(String(16))
+    external_id: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(120), default="")
+    group_id: Mapped[str] = mapped_column(String(64), default="")  # z. B. Discord-Server
+    group_name: Mapped[str] = mapped_column(String(120), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+

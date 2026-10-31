@@ -128,8 +128,9 @@ Auf dem iPhone funktioniert Web-Push nur, wenn die Seite zum Home-Bildschirm hin
 mit *Antworten* direkt antworten – die Antwort erscheint im Chat bzw. als Kommentar an der Aufgabe.
 Admin: `PUBLIC_URL` setzen (Links in Nachrichten), für E-Mail `SMTP_*`; Dienste im LAN brauchen `NOTIFY_ALLOW_PRIVATE_HOSTS=true`.
 
-**Discord-Brücke:** Ein Gruppen-Chat kann mit einem Discord-Kanal synchron laufen. Ersteller: im Chat-Kopf das
-Verbinden-Symbol → Code erzeugen → im Discord-Kanal `/c2 link CODE`. Wer sein Discord-Konto verknüpft (Einstellungen →
+**Discord-Brücke:** Ein Gruppen-Chat kann mit einem Discord-Kanal synchron laufen. Admin: *Admin → Config → Discord-Brücke*, Chat und
+Kanal (aus allen Servern des Bots) wählen und *Verbinden*. Alternativ erzeugt der Chat-Ersteller im Chat-Kopf einen Code und gibt in
+Discord `/c2 link` ein (Befehl aus der Liste wählen, Code in das Feld einfügen – der Befehl lässt sich nicht komplett einfügen). Wer sein Discord-Konto verknüpft (Einstellungen →
 Benachrichtigungen → *Discord-Konto verknüpfen*, dann `/c2 link CODE`), erscheint im Chat mit seinem Namen; andere als
 „Name (Discord)“. Voraussetzung: `BRIDGE_TOKEN` und `DISCORD_TOKEN` stehen in der `.env`; der Dienst `discord-bot` startet
 mit dem Stack (Message Content Intent im Developer Portal aktivieren).

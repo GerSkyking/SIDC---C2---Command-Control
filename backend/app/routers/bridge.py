@@ -9,8 +9,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from ..config import get_settings
-from ..deps import CurrentUser, DbDep
+from ..deps import AdminUser, CurrentUser, DbDep
 from ..models import (
+    BridgeChannel,
     BridgeCode,
     BridgeIdentity,
     BridgeLink,
@@ -80,8 +81,9 @@ def unlink_identity(provider: str, user: CurrentUser, db: DbDep) -> dict:
 def conversation_links(cid: str, user: CurrentUser, db: DbDep) -> list[dict]:
     if db.get(ConversationMember, (cid, user.id)) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unterhaltung nicht gefunden")
-    rows = db.scalars(select(BridgeLink).where(BridgeLink.conversation_id == cid))
-    return [{"id": r.id, "provider": r.provider, "external_id": r.external_id} for r in rows]
+    rows = list(db.scalars(select(BridgeLink).where(BridgeLink.conversation_id == cid)))
+    return [{"id": r.id, "provider": r.provider, "external_id": r.external_id, **_chan_label(db, r.provider, r.external_id)}
+            for r in rows]
 
 
 @router.delete("/links/{lid}")
@@ -90,6 +92,69 @@ def delete_link(lid: str, user: CurrentUser, db: DbDep) -> dict:
     if link is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Verbindung nicht gefunden")
     _can_link(db, user, link.conversation_id)
+    db.delete(link)
+    db.commit()
+    return {"ok": True}
+
+
+def _chan_label(db, provider: str, external_id: str) -> dict:
+    ch = db.scalar(select(BridgeChannel).where(BridgeChannel.provider == provider,
+                                               BridgeChannel.external_id == external_id))
+    return {"channel_name": ch.name if ch else "", "group_name": ch.group_name if ch else ""}
+
+
+# ─── Admin: Chats mit Kanälen verbinden ──────────────────────────────────────
+
+class AdminLinkIn(BaseModel):
+    conversation_id: str = Field(max_length=32)
+    provider: str = Field(max_length=16)
+    external_id: str = Field(max_length=64)
+
+
+@router.get("/admin/overview")
+def admin_overview(admin: AdminUser, db: DbDep) -> dict:
+    chans = list(db.scalars(select(BridgeChannel).order_by(BridgeChannel.group_name, BridgeChannel.name)))
+    convs = list(db.scalars(select(Conversation).where(Conversation.kind == "group").order_by(Conversation.name).limit(500)))
+    names = {c.id: c.name for c in convs}
+    links = list(db.scalars(select(BridgeLink)))
+    by_ext = {(c.provider, c.external_id): c for c in chans}
+    return {
+        "enabled": bool(get_settings().bridge_token),
+        "channels": [{"provider": c.provider, "external_id": c.external_id, "name": c.name, "group_name": c.group_name,
+                      "updated_at": _iso(c.updated_at)} for c in chans],
+        "conversations": [{"id": c.id, "name": c.name or "?"} for c in convs],
+        "links": [{"id": link.id, "conversation_id": link.conversation_id,
+                   "conversation_name": names.get(link.conversation_id) or db.get(Conversation, link.conversation_id).name,
+                   "provider": link.provider, "external_id": link.external_id,
+                   "channel_name": by_ext[(link.provider, link.external_id)].name if (link.provider, link.external_id) in by_ext else "",
+                   "group_name": by_ext[(link.provider, link.external_id)].group_name if (link.provider, link.external_id) in by_ext else ""}
+                  for link in links],
+    }
+
+
+@router.post("/admin/links", status_code=status.HTTP_201_CREATED)
+def admin_link(body: AdminLinkIn, admin: AdminUser, db: DbDep) -> dict:
+    conv = db.get(Conversation, body.conversation_id)
+    if conv is None or conv.kind != "group":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nur Gruppen-Chats lassen sich verbinden")
+    known = db.scalar(select(BridgeChannel).where(BridgeChannel.provider == body.provider,
+                                                  BridgeChannel.external_id == body.external_id))
+    if known is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Kanal ist dem Bot nicht bekannt")
+    if db.scalar(select(BridgeLink).where(BridgeLink.provider == body.provider,
+                                          BridgeLink.external_id == body.external_id)) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Dieser Kanal ist schon verbunden")
+    link = BridgeLink(conversation_id=conv.id, provider=body.provider, external_id=body.external_id)
+    db.add(link)
+    db.commit()
+    return {"id": link.id}
+
+
+@router.delete("/admin/links/{lid}")
+def admin_unlink(lid: str, admin: AdminUser, db: DbDep) -> dict:
+    link = db.get(BridgeLink, lid)
+    if link is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Verbindung nicht gefunden")
     db.delete(link)
     db.commit()
     return {"ok": True}
@@ -124,6 +189,37 @@ class ClaimIn(BaseModel):
 
 class AckIn(BaseModel):
     ids: list[str] = Field(max_length=200)
+
+
+class ChannelIn(BaseModel):
+    id: str = Field(max_length=64)
+    name: str = Field(default="", max_length=120)
+    group_id: str = Field(default="", max_length=64)
+    group_name: str = Field(default="", max_length=120)
+
+
+class ChannelsIn(BaseModel):
+    provider: str = Field(max_length=16)
+    channels: list[ChannelIn] = Field(max_length=5000)
+
+
+@router.post("/channels", dependencies=[Bot])
+def bot_channels(body: ChannelsIn, db: DbDep) -> dict:
+    """Der Client meldet alle Räume, die er sieht; die Momentaufnahme ersetzt die bisherige."""
+    have = {c.external_id: c for c in db.scalars(select(BridgeChannel).where(BridgeChannel.provider == body.provider))}
+    seen = set()
+    for ch in body.channels:
+        seen.add(ch.id)
+        row = have.get(ch.id)
+        if row is None:
+            row = BridgeChannel(provider=body.provider, external_id=ch.id)
+            db.add(row)
+        row.name, row.group_id, row.group_name, row.updated_at = ch.name, ch.group_id, ch.group_name, now()
+    for ext, row in have.items():
+        if ext not in seen:
+            db.delete(row)
+    db.commit()
+    return {"ok": True, "count": len(seen)}
 
 
 @router.get("/links", dependencies=[Bot])

@@ -1,6 +1,7 @@
 // Admin-Bereich, kategorisiert: Benutzer & Gruppen / Log / Config (Karten + Kataloge).
 import { api, type AdminGroup, type AdminUser } from "./api";
 import { configHtml, wireConfig } from "./adminConfig";
+import { mountBridgeAdmin } from "./bridgeUi";
 import { langSelect, t, wireLangSelect } from "./i18n";
 import { icon } from "./icons";
 import { confirmDialog, promptDialog, toastError } from "./notify";
@@ -42,6 +43,10 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
     app.innerHTML = shell(configHtml(maps, sources, catStatus, legalStatus), t("admin.config"));
     postShell(app);
     wireConfig(app.querySelector<HTMLElement>(".list")!, reload);
+    const brg = document.createElement("div");
+    brg.className = "stack";
+    app.querySelector<HTMLElement>(".list")!.appendChild(brg);
+    mountBridgeAdmin(brg);
     return;
   }
 

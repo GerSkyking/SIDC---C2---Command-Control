@@ -292,6 +292,12 @@ export interface ChatMessage {
   edited_at: string | null;
   mine: boolean;
 }
+export interface BridgeOverview {
+  enabled: boolean;
+  channels: { provider: string; external_id: string; name: string; group_name: string; updated_at: string | null }[];
+  conversations: { id: string; name: string }[];
+  links: { id: string; conversation_id: string; conversation_name: string; provider: string; external_id: string; channel_name: string; group_name: string }[];
+}
 export interface NotifyField {
   key: string;
   label: string;
@@ -802,7 +808,10 @@ export const api = {
     req<{ code: string; expires_in: number }>("POST", "/bridge/code", b),
   bridgeUnlinkIdentity: (provider: string) => req<void>("DELETE", `/bridge/identities/${provider}`),
   bridgeLinks: (cid: string) =>
-    req<{ id: string; provider: string; external_id: string }[]>("GET", `/bridge/conversations/${cid}/links`),
+    req<{ id: string; provider: string; external_id: string; channel_name: string; group_name: string }[]>("GET", `/bridge/conversations/${cid}/links`),
+  bridgeAdminOverview: () => req<BridgeOverview>("GET", "/bridge/admin/overview"),
+  bridgeAdminLink: (b: { conversation_id: string; provider: string; external_id: string }) => req<{ id: string }>("POST", "/bridge/admin/links", b),
+  bridgeAdminUnlink: (id: string) => req<void>("DELETE", `/bridge/admin/links/${id}`),
   bridgeDeleteLink: (id: string) => req<void>("DELETE", `/bridge/links/${id}`),
   webpushKey: () => req<{ key: string }>("GET", "/notify/webpush/key"),
   webpushSubscribe: (b: { endpoint: string; keys: { p256dh: string; auth: string }; name?: string }) =>
