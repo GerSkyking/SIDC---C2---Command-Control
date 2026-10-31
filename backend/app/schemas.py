@@ -271,6 +271,8 @@ class NoteCreateIn(BaseModel):
     y: float = 0
     w: float = 220
     h: float = 160
+    task_id: str | None = None
+    user_id: str | None = None
 
 
 class NotePatchIn(BaseModel):
@@ -280,6 +282,13 @@ class NotePatchIn(BaseModel):
     y: float | None = None
     w: float | None = None
     h: float | None = None
+    task_id: str | None = None  # "" = Verknüpfung entfernen
+    user_id: str | None = None  # "" = Verknüpfung entfernen
+
+
+class NoteLinkIn(BaseModel):
+    from_id: str
+    to_id: str
 
 
 class TaskCreateIn(BaseModel):
@@ -302,6 +311,10 @@ class TaskPatchIn(BaseModel):
     due_date: date | None = None
     plan_id: str | None = None
     doc_id: str | None = None
+
+
+class CommentIn(BaseModel):
+    text: str = Field(min_length=1, max_length=5000)
 
 
 class TaskMoveIn(BaseModel):

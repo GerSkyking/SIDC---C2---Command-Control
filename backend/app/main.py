@@ -27,6 +27,7 @@ from .routers import (
     auth,
     client_api,
     catalog,
+    chat,
     favorites,
     legal,
     live,
@@ -127,6 +128,7 @@ app.include_router(plans.folders_router)
 app.include_router(plan_images.router)
 app.include_router(project_folders.router)
 app.include_router(projects.router)
+app.include_router(chat.router)
 app.include_router(orbat.router)
 app.include_router(orbat.plan_orbat_router)
 app.include_router(admin.router)

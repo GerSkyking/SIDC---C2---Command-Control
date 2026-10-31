@@ -2,6 +2,7 @@
 import { getLang, t } from "./i18n";
 import { icon } from "./icons";
 import { a11yModal } from "./notify";
+import { hotkeyRows } from "./settings";
 
 const DE = `
 ### Linke Werkzeugleiste
@@ -149,12 +150,24 @@ function mini(md: string): string {
   return out.join("");
 }
 
+// Aktuelle Tastenbelegung (inkl. persönlicher Anpassungen aus den Einstellungen)
+function keybindSection(): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const en = getLang() === "en";
+  const rows = hotkeyRows()
+    .map((r) => `<li><kbd>${esc(r.key)}</kbd> – ${esc(r.label)}</li>`)
+    .join("");
+  return `<h4>${en ? "Your keybinds (tools)" : "Deine Tastenbelegung (Werkzeuge)"}</h4>
+    <ul class="help-keys">${rows}</ul>
+    <p class="muted" style="font-size:.78rem">${en ? "Ctrl+Z / Ctrl+Y also undo/redo. Change the keys under the gear icon." : "Strg+Z / Strg+Y machen ebenfalls rückgängig/wiederholen. Änderbar unter dem Zahnrad."}</p>`;
+}
+
 export function openHelp(): void {
   const back = document.createElement("div");
   back.className = "edit-modal";
   back.innerHTML = `<div class="card help-card">
       <div class="row"><h1 style="flex:1;margin:0">${t("help.title")}</h1><button class="help-x icon-btn" title="${t("common.close")}">${icon("x")}</button></div>
-      <div class="help-body">${mini(getLang() === "en" ? EN : DE)}</div>
+      <div class="help-body">${mini(getLang() === "en" ? EN : DE)}${keybindSection()}</div>
     </div>`;
   document.body.appendChild(back);
   a11yModal(back);

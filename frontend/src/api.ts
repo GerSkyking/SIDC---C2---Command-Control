@@ -241,6 +241,16 @@ export interface ProjectNote {
   w: number;
   h: number;
   updated_by?: string | null;
+  /** Verknüpfte Aufgabe / verknüpfter Nutzer ("" beim Senden = Verknüpfung entfernen) */
+  task_id?: string | null;
+  task_title?: string | null;
+  user_id?: string | null;
+  user_label?: string | null;
+}
+export interface NoteLink {
+  id: string;
+  from_id: string;
+  to_id: string;
 }
 export interface ProjectTask {
   id: string;
@@ -257,6 +267,83 @@ export interface ProjectTask {
   doc_id: string | null;
   doc_name?: string | null;
   done_at?: string | null;
+}
+export interface ChatConversation {
+  id: string;
+  kind: "dm" | "group";
+  name: string;
+  source_type: "group" | "project" | null;
+  source_id: string | null;
+  other_user_id: string | null;
+  member_count: number;
+  is_owner: boolean;
+  unread: number;
+  updated_at: string | null;
+  last: { text: string; user_label: string | null; created_at: string } | null;
+}
+export interface ChatMessage {
+  id: string;
+  user_id: string | null;
+  user_label: string | null;
+  text: string;
+  mentions: { type: "user" | "group" | "project"; id: string; token: string }[];
+  created_at: string;
+  edited_at: string | null;
+  mine: boolean;
+}
+export interface ChatNotification {
+  id: string;
+  kind: "task_mention" | "chat_mention" | "assigned";
+  actor_id: string | null;
+  actor_label: string | null;
+  title: string;
+  text: string;
+  project_id: string | null;
+  project_name: string | null;
+  task_id: string | null;
+  conversation_id: string | null;
+  read: boolean;
+  created_at: string;
+}
+export interface ChatPeople {
+  users: { id: string; label: string; username: string }[];
+  groups: { id: string; name: string }[];
+  projects: { id: string; name: string }[];
+}
+export interface Mentionable {
+  type: "user" | "group" | "project";
+  id: string;
+  handle: string;
+  label: string;
+}
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  user_id: string | null;
+  user_label: string | null;
+  text: string;
+  mentions: { type: "user" | "group" | "project"; id: string; token: string }[];
+  created_at: string;
+  edited_at: string | null;
+  can_edit: boolean;
+  can_delete: boolean;
+}
+export interface ActivityEntry {
+  id: string;
+  kind: string;
+  target_type: "task" | "doc" | "note" | "project";
+  target_id: string | null;
+  target_title: string;
+  user_id: string | null;
+  user_label: string | null;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+export interface ActivitySummaryRow {
+  user_id: string | null;
+  label: string | null;
+  count: number;
+  last: string | null;
 }
 export interface ProjectOverview {
   open_by_assignee: { user_id: string | null; label: string; open: number; doing: number; review: number }[];
@@ -648,6 +735,43 @@ export const api = {
   /** Nutzer mit Projektzugriff (direkt oder über Gruppe) – Auswahl für Aufgaben-Zuständige. */
   projectAssignees: (id: string) => req<{ user_id: string; label: string }[]>("GET", `/projects/${id}/assignees`),
   projectCandidates: (id: string) => req<ProjectCandidate[]>("GET", `/projects/${id}/members/candidates`),
+  projectActivity: (id: string, q: { task_id?: string; limit?: number; before?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (q.task_id) qs.set("task_id", q.task_id);
+    if (q.limit) qs.set("limit", String(q.limit));
+    if (q.before) qs.set("before", q.before);
+    const s = qs.toString();
+    return req<ActivityEntry[]>("GET", `/projects/${id}/activity${s ? "?" + s : ""}`);
+  },
+  chatConversations: () => req<ChatConversation[]>("GET", "/chat/conversations"),
+  chatUnread: () => req<{ chats: number; notifications: number; total: number }>("GET", "/chat/unread"),
+  chatUsers: () => req<ChatPeople>("GET", "/chat/users"),
+  createChat: (b: { kind: "dm" | "group"; user_id?: string; name?: string; member_ids?: string[]; source_type?: "group" | "project"; source_id?: string }) =>
+    req<ChatConversation>("POST", "/chat/conversations", b),
+  chatRename: (id: string, name: string) => req<ChatConversation>("PATCH", `/chat/conversations/${id}`, { name }),
+  chatMembers: (id: string) => req<{ user_id: string; label: string; is_owner: boolean }[]>("GET", `/chat/conversations/${id}/members`),
+  chatPutMembers: (id: string, b: { add?: string[]; remove?: string[] }) => req<unknown>("PUT", `/chat/conversations/${id}/members`, b),
+  chatLeave: (id: string) => req<void>("POST", `/chat/conversations/${id}/leave`),
+  chatRead: (id: string) => req<void>("POST", `/chat/conversations/${id}/read`),
+  chatMentionables: (id: string) => req<Mentionable[]>("GET", `/chat/conversations/${id}/mentionables`),
+  chatMessages: (id: string) => req<ChatMessage[]>("GET", `/chat/conversations/${id}/messages`),
+  postChatMessage: (id: string, text: string) => req<ChatMessage>("POST", `/chat/conversations/${id}/messages`, { text }),
+  patchChatMessage: (id: string, mid: string, text: string) =>
+    req<ChatMessage>("PATCH", `/chat/conversations/${id}/messages/${mid}`, { text }),
+  deleteChatMessage: (id: string, mid: string) => req<void>("DELETE", `/chat/conversations/${id}/messages/${mid}`),
+  chatNotifications: () => req<ChatNotification[]>("GET", "/chat/notifications"),
+  chatReadNotifications: (b: { ids?: string[]; all?: boolean }) => req<void>("POST", "/chat/notifications/read", b),
+  chatClearNotifications: () => req<void>("DELETE", "/chat/notifications"),
+  projectMentionables: (id: string) => req<Mentionable[]>("GET", `/projects/${id}/mentionables`),
+  taskComments: (id: string, tid: string) => req<TaskComment[]>("GET", `/projects/${id}/tasks/${tid}/comments`),
+  createTaskComment: (id: string, tid: string, text: string) =>
+    req<TaskComment>("POST", `/projects/${id}/tasks/${tid}/comments`, { text }),
+  patchTaskComment: (id: string, tid: string, cid: string, text: string) =>
+    req<TaskComment>("PATCH", `/projects/${id}/tasks/${tid}/comments/${cid}`, { text }),
+  deleteTaskComment: (id: string, tid: string, cid: string) =>
+    req<void>("DELETE", `/projects/${id}/tasks/${tid}/comments/${cid}`),
+  projectActivitySummary: (id: string, days = 7) =>
+    req<ActivitySummaryRow[]>("GET", `/projects/${id}/activity/summary?days=${days}`),
   projectOverview: (id: string) => req<ProjectOverview>("GET", `/projects/${id}/overview`),
   projectDocs: (id: string, space: ProjectSpace) => req<ProjectDocNode[]>("GET", `/projects/${id}/docs?space=${space}`),
   createProjectDoc: (
@@ -670,6 +794,10 @@ export const api = {
   patchProjectNote: (id: string, nid: string, b: Partial<ProjectNote>) =>
     req<ProjectNote>("PATCH", `/projects/${id}/notes/${nid}`, b),
   deleteProjectNote: (id: string, nid: string) => req<void>("DELETE", `/projects/${id}/notes/${nid}`),
+  noteLinks: (id: string) => req<NoteLink[]>("GET", `/projects/${id}/note-links`),
+  createNoteLink: (id: string, from_id: string, to_id: string) =>
+    req<NoteLink>("POST", `/projects/${id}/note-links`, { from_id, to_id }),
+  deleteNoteLink: (id: string, lid: string) => req<void>("DELETE", `/projects/${id}/note-links/${lid}`),
   projectTasks: (id: string, q: { assignee?: string; status?: string } = {}) => {
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(q)) if (v) p.set(k, v);

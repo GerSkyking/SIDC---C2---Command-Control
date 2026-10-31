@@ -385,6 +385,35 @@ def test_last_project_setting(world):
     assert r.status_code == 200 and r.json()["ui_settings"]["last_project"] == w["pid"]
 
 
+def test_whiteboard_links_and_refs(world):
+    w = world
+    pid = w["pid"]
+    b = w["builder"]
+    n1 = b.post(f"/projects/{pid}/notes", json={"text": "A"}).json()
+    n2 = b.post(f"/projects/{pid}/notes", json={"text": "B", "x": 300}).json()
+    # Pfeil anlegen (idempotent), Selbstverweis abgelehnt, Viewer darf nicht
+    r = b.post(f"/projects/{pid}/note-links", json={"from_id": n1["id"], "to_id": n2["id"]})
+    assert r.status_code == 201, r.text
+    lid = r.json()["id"]
+    assert b.post(f"/projects/{pid}/note-links", json={"from_id": n1["id"], "to_id": n2["id"]}).json()["id"] == lid
+    assert b.post(f"/projects/{pid}/note-links", json={"from_id": n1["id"], "to_id": n1["id"]}).status_code == 400
+    assert w["vw"].post(f"/projects/{pid}/note-links", json={"from_id": n2["id"], "to_id": n1["id"]}).status_code == 403
+    assert [x["id"] for x in w["vw"].get(f"/projects/{pid}/note-links").json()] == [lid]
+    assert w["out"].get(f"/projects/{pid}/note-links").status_code == 404
+    # Aufgabe + Nutzer verknüpfen
+    task = b.post(f"/projects/{pid}/tasks", json={"title": "Fliegen"}).json()
+    r = b.patch(f"/projects/{pid}/notes/{n1['id']}", json={"task_id": task["id"], "user_id": w["eid"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["task_title"] == "Fliegen" and r.json()["user_id"] == w["eid"] and r.json()["user_label"]
+    assert b.patch(f"/projects/{pid}/notes/{n1['id']}", json={"user_id": w["oid"]}).status_code == 400  # kein Projektzugriff
+    assert b.patch(f"/projects/{pid}/notes/{n1['id']}", json={"task_id": "x" * 32}).status_code == 400
+    r = b.patch(f"/projects/{pid}/notes/{n1['id']}", json={"task_id": ""})  # entfernen
+    assert r.json()["task_id"] is None and r.json()["user_id"] == w["eid"]
+    # Notiz löschen entfernt ihre Pfeile
+    assert b.delete(f"/projects/{pid}/notes/{n2['id']}").status_code == 200
+    assert b.get(f"/projects/{pid}/note-links").json() == []
+
+
 def _builder(admin, name):
     return _user(admin, name, is_mission_builder=True)
 
@@ -476,3 +505,99 @@ def test_plan_folder_rights(admin):
     assert nope.delete(f"/folders/{oid}").status_code == 403
     assert u2.patch(f"/folders/{oid}", json={"name": "z"}).status_code == 200
     assert u1.delete(f"/folders/{oid}").status_code == 200
+
+
+def test_activity_feed(world):
+    w = world
+    pid = w["pid"]
+    tid = w["ed"].post(f"/projects/{pid}/tasks", json={"title": "Briefing"}).json()["id"]
+    assert w["ed"].patch(f"/projects/{pid}/tasks/{tid}", json={"status": "doing", "assignee_id": w["bid"]}).status_code == 200
+    assert w["ed"].patch(f"/projects/{pid}/tasks/{tid}", json={"priority": "high"}).status_code == 200
+    w["ed"].post(f"/projects/{pid}/tasks/{tid}/move", json={"status": "review", "ordering": 0})
+
+    feed = w["vw"].get(f"/projects/{pid}/activity", params={"task_id": tid}).json()
+    kinds = [e["kind"] for e in feed]
+    assert kinds.count("task.create") == 1
+    for k in ("task.status", "task.assignee", "task.priority"):
+        assert k in kinds
+    assign = next(e for e in feed if e["kind"] == "task.assignee")
+    assert assign["detail"]["new"] and assign["user_id"] == w["eid"]
+    # neueste zuerst
+    assert feed[0]["kind"] == "task.status" and feed[0]["detail"] == {"old": "doing", "new": "review"}
+
+    summ = w["vw"].get(f"/projects/{pid}/activity/summary").json()
+    me = next(r for r in summ if r["user_id"] == w["eid"])
+    assert me["count"] >= 4
+
+    # Außenstehende sehen nichts
+    assert w["out"].get(f"/projects/{pid}/activity").status_code == 404
+
+    # Löschen bleibt im Feed sichtbar
+    w["ed"].delete(f"/projects/{pid}/tasks/{tid}")
+    top = w["vw"].get(f"/projects/{pid}/activity").json()[0]
+    assert top["kind"] == "task.delete" and top["target_title"] == "Briefing"
+
+
+def test_activity_builder_space_hidden(world):
+    w = world
+    pid = w["pid"]
+    r = w["builder"].post(f"/projects/{pid}/docs", json={"space": "builder", "kind": "doc", "name": "Geheim", "content": "x"})
+    assert r.status_code == 201, r.text
+    did = r.json()["id"]
+    w["builder"].patch(f"/projects/{pid}/docs/{did}", json={"content": "y"})
+    w["builder"].patch(f"/projects/{pid}/docs/{did}", json={"content": "z"})  # wird zusammengefasst
+    own = w["builder"].get(f"/projects/{pid}/activity").json()
+    assert [e["kind"] for e in own].count("doc.update") == 1
+    assert any(e["target_title"] == "Geheim" for e in own)
+    other = w["ed"].get(f"/projects/{pid}/activity").json()
+    assert not any(e["target_title"] == "Geheim" for e in other)
+    assert all(r["count"] >= 0 for r in w["ed"].get(f"/projects/{pid}/activity/summary").json())
+
+
+def test_task_thread_and_mentions(world, admin):
+    w = world
+    pid = w["pid"]
+    tid = w["ed"].post(f"/projects/{pid}/tasks", json={"title": "Frage"}).json()["id"]
+    base = f"/projects/{pid}/tasks/{tid}/comments"
+
+    cands = w["vw"].get(f"/projects/{pid}/mentionables").json()
+    types = {c["type"] for c in cands}
+    assert {"user", "project"} <= types
+    bh = next(c["handle"] for c in cands if c["id"] == w["bid"])
+    assert all(c["id"] != w["oid"] for c in cands)  # Außenstehende nicht vorschlagen
+
+    # Betrachter dürfen kommentieren
+    r = w["vw"].post(base, json={"text": f"Hallo @{bh} und @projekt, siehe @gibtsnicht"})
+    assert r.status_code == 201, r.text
+    c = r.json()
+    assert {(m["type"], m["id"]) for m in c["mentions"]} == {("user", w["bid"]), ("project", pid)}
+    assert c["can_edit"] and c["user_label"]
+
+    # Außenstehende kommen nicht heran
+    assert w["out"].get(base).status_code == 404
+    assert w["out"].post(base, json={"text": "x"}).status_code == 404
+
+    # Bearbeiten nur eigene; Löschen: eigene oder Projekt-Eigentümer
+    assert w["ed"].patch(f"{base}/{c['id']}", json={"text": "fremd"}).status_code == 403
+    assert w["ed"].delete(f"{base}/{c['id']}").status_code == 403
+    r = w["vw"].patch(f"{base}/{c['id']}", json={"text": "nur noch @projekt"})
+    assert r.status_code == 200 and r.json()["edited_at"] and len(r.json()["mentions"]) == 1
+    listed = w["builder"].get(base).json()
+    assert len(listed) == 1 and listed[0]["can_delete"] and not listed[0]["can_edit"]
+
+    # Eintrag im Aufgaben-Verlauf
+    assert "task.comment" in [e["kind"] for e in w["ed"].get(f"/projects/{pid}/activity", params={"task_id": tid}).json()]
+
+    assert w["builder"].delete(f"{base}/{c['id']}").status_code == 200
+    assert w["ed"].get(base).json() == []
+
+
+def test_mention_recipients(world):
+    from app.db import SessionLocal
+    from app.services.mentions import mention_recipients, resolve_mentions
+
+    w = world
+    with SessionLocal() as db:
+        ms = resolve_mentions(db, "@projekt bitte", w["pid"])
+        got = mention_recipients(db, w["pid"], ms, exclude=w["eid"])
+        assert got == {w["bid"], w["vid"]}  # ohne Autor, ohne Außenstehende

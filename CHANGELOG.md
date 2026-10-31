@@ -5,6 +5,21 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-10-31 – Aktivitätsfeeds, Aufgaben-Threads, Chat & System-Feed
+- **Aktivität (Projekt-Reiter):** wer war wie aktiv (24 h / 7 / 30 Tage / 1 Jahr) und ein Feed, wer wann was getan hat
+  (Aufgaben: erstellt, Status, Zuständige, Priorität, Frist, Umbenennen, Löschen; Dateien; Notizen; Mitglieder).
+  Häufiges Speichern derselben Datei/Notiz wird zusammengefasst; Missionsbau-Einträge sehen nur Missionsbauer.
+  Neue Tabelle `project_activity`, Endpunkte `GET /projects/{id}/activity` (`?task_id=`, `?before=`) und `/activity/summary`.
+- **Aufgaben-Thread:** im Aufgaben-Dialog „Diskussion" (auch für Betrachter) mit `@name`, `@gruppe`, `@projekt` und
+  Autovervollständigung; aufklappbarer „Verlauf" je Aufgabe. Neue Tabelle `task_comments`.
+- **Chat (neuer Reiter):** Direktnachrichten, freie Gruppen sowie Chats zu bestehenden Admin-Gruppen oder Projekten
+  (Mitglieder folgen automatisch der Quelle); Erwähnungen mit Autovervollständigung, Ungelesen-Badge in der Seitenleiste.
+  Tabellen `conversations`, `conversation_members`, `messages`; Zustellung per Polling (3 s offener Chat, 10 s Badge).
+- **System-Feed:** Benachrichtigungen für Erwähnungen (Aufgaben-Thread, Chat) und Zuweisungen, als „System"-Unterhaltung im
+  Chat (gelesen/alle gelesen/aufräumen). Tabelle `notifications`. Antworten direkt aus dem Feed und E-Mail/Push folgen später.
+- Hilfe-Overlay zeigt die aktuelle (anpassbare) Tastenbelegung der Werkzeuge.
+- Migrationen `0031_note_links` (Whiteboard-Pfeile, Notiz-Verknüpfung), `0032`–`0034`.
+
 ### 2026-10-31 – Kleinigkeiten aus dem Test
 - Dialoge (Ordner anlegen/umbenennen): Enter schließt jetzt wirklich, der Dialog öffnet nicht mehr neu.
 - Pläne-Seite: neuer Knoten „Projekte → Projektname → Plan" für alle Projekt-Pläne mit eigener Plan-Freigabe (auch ohne Projektmitgliedschaft). Neuer Endpunkt `GET /plans/in-projects`.

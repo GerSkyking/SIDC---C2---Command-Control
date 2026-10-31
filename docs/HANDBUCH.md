@@ -108,6 +108,19 @@ gewählter Ordner ist das Ziel für „Neues Projekt"). Löscht man einen Ordner
 - **Speicher** (nur Admin): Admin-Bereich → *Speicher* zeigt je Projekt den belegten Platz für Bilder und Dateien. Der
   frühere Admin-Reiter „Bilder" entfällt.
 
+**Aktivität, Threads & Chat**
+- **Aktivität** (Projekt-Reiter): oben wer wie aktiv war (Zeitraum wählbar), darunter der Feed „wer hat wann was gemacht".
+  Missionsbau-Einträge sind nur für Missionsbauer sichtbar.
+- **Aufgaben-Thread:** In der Aufgabe unter *Diskussion* Fragen stellen (auch als Betrachter). `@` öffnet die Vorschläge:
+  `@name` (Projektmitglied), `@gruppe`, `@projekt` (alle im Projekt). Erwähnte bekommen eine Benachrichtigung. Der
+  aufklappbare *Verlauf* zeigt alles, was an dieser Aufgabe passiert ist. Eigene Kommentare lassen sich bearbeiten/löschen,
+  Projekt-Eigentümer dürfen jeden löschen.
+- **Chat** (Seitenleiste): Direktnachrichten, freie Gruppen (Ersteller verwaltet Mitglieder) und Chats zu einer bestehenden
+  Gruppe oder einem Projekt (Mitglieder folgen automatisch; in Projekt-Chats spricht `@projekt` alle an). Enter sendet,
+  Umschalt+Enter = neue Zeile. Die Seitenleiste zeigt einen Zähler für Ungelesenes.
+- **System:** feste Unterhaltung oben im Chat mit allen Benachrichtigungen (Erwähnungen, Zuweisungen); ein Klick springt zur
+  Stelle und markiert als gelesen.
+
 **Plan-Ordner (normale Plan-Liste):** Ordner anlegen darf, wer Pläne erstellen darf. Umbenennen, Verschieben und Löschen
 dürfen Admin und der Ersteller des Ordners (Alt-Ordner ohne Ersteller: Admin und alle, die Pläne erstellen dürfen).
 ## 4. Kartenansicht

@@ -27,19 +27,24 @@ from ..models import (
     PlanFolder,
     PlanImage,
     Project,
+    ProjectActivity,
     ProjectDoc,
     ProjectMember,
     ProjectNote,
+    ProjectNoteLink,
     ProjectTask,
+    TaskComment,
     User,
     now,
 )
 from ..permissions import effective_level, effective_mission_builder, project_role, rank
 from ..schemas import (
+    CommentIn,
     DocCreateIn,
     DocPatchIn,
     ImagePatchIn,
     NoteCreateIn,
+    NoteLinkIn,
     NotePatchIn,
     PlanListItem,
     PlanOut,
@@ -50,6 +55,8 @@ from ..schemas import (
     TaskMoveIn,
     TaskPatchIn,
 )
+from ..services import mentions as mentions_svc
+from ..services import notify
 from ..services.realtime import broadcast_from_thread
 from .live import _author_of, _image_out
 from .project_folders import can_use_folder
@@ -60,6 +67,7 @@ _MAX_DOCS = 5000
 _MAX_NOTES = 500
 _MAX_TASKS = 5000
 _MAX_MEMBERS = 500
+_MAX_COMMENTS = 1000
 _SPACE_Q = Annotated[str, Query(pattern=r"^(public|builder)$")]
 
 
@@ -113,6 +121,29 @@ def _get_doc(db: Session, user: User, pid: str, doc_id: str) -> ProjectDoc:
 
 def _audit(db, request, user, action, ttype, tid, **detail):
     audit.record(db, action, user_id=user.id, target_type=ttype, target_id=tid, request=request, **detail)
+
+
+_COALESCE_KINDS = {"doc.update", "note.update"}
+_COALESCE_WINDOW = timedelta(minutes=10)
+
+
+def _act(db: Session, user: User, pid: str, kind: str, ttype: str, tid: str | None, title: str,
+         space: str | None = None, **detail) -> None:
+    """Eintrag im Projekt-Aktivitätsfeed (ohne commit – läuft in der Transaktion der Aktion).
+    Häufige Speicherungen derselben Person am selben Ziel werden zusammengefasst."""
+    title = (title or "")[:200]
+    detail = {k: v for k, v in detail.items() if v is not None}
+    if kind in _COALESCE_KINDS:
+        last = db.scalar(select(ProjectActivity).where(
+            ProjectActivity.project_id == pid, ProjectActivity.target_id == tid,
+            ProjectActivity.kind == kind, ProjectActivity.user_id == user.id,
+        ).order_by(ProjectActivity.created_at.desc()).limit(1))
+        if last is not None and _naive(now()) - _naive(last.created_at) < _COALESCE_WINDOW:
+            last.created_at = now()
+            last.target_title = title
+            return
+    db.add(ProjectActivity(project_id=pid, user_id=user.id, kind=kind, target_type=ttype, target_id=tid,
+                           target_title=title, space=space, detail=detail))
 
 
 def _project_out(db: Session, p: Project, role: str, user: User) -> dict:
@@ -219,6 +250,7 @@ def delete_project(pid: str, request: Request, user: CurrentUser, db: DbDep) -> 
     db.execute(update(PlanImage).where(PlanImage.project_id == pid).values(project_id=None))
     db.execute(sa_delete(PlanFolder).where(PlanFolder.project_id == pid))
     db.execute(sa_delete(ProjectTask).where(ProjectTask.project_id == pid))
+    db.execute(sa_delete(ProjectNoteLink).where(ProjectNoteLink.project_id == pid))
     db.execute(sa_delete(ProjectNote).where(ProjectNote.project_id == pid))
     db.execute(sa_delete(ProjectDoc).where(ProjectDoc.project_id == pid))
     db.execute(sa_delete(ProjectMember).where(ProjectMember.project_id == pid))
@@ -291,6 +323,7 @@ def put_members(
     db.execute(sa_delete(ProjectMember).where(ProjectMember.project_id == pid))
     for m in body:
         db.add(ProjectMember(project_id=pid, subject_type=m.subject_type, subject_id=m.subject_id, role=m.role))
+    _act(db, user, pid, "project.members", "project", pid, "", count=len(body))
     db.commit()
     _audit(db, request, user, "project.members", "project", pid, count=len(body))
     return _member_rows(db, pid)
@@ -365,6 +398,8 @@ def create_doc(pid: str, body: DocCreateIn, request: Request, user: CurrentUser,
         created_by=user.id, updated_by=user.id,
     )
     db.add(d)
+    db.flush()
+    _act(db, user, pid, "doc.create", "doc", d.id, d.name, space=d.space, folder=(d.kind == "folder"))
     db.commit()
     _audit(db, request, user, "project.doc.create", "project_doc", d.id, project_id=pid, space=d.space)
     return _doc_out(d, _labels(db, [user.id]), content=True)
@@ -386,6 +421,7 @@ def patch_doc(
     if body.expected_updated_at is not None and d.updated_at is not None:
         if _naive(body.expected_updated_at) != _naive(d.updated_at):
             raise HTTPException(status.HTTP_409_CONFLICT, "Dokument wurde zwischenzeitlich geändert")
+    old_name, old_content = d.name, d.content
     if body.name is not None:
         if not body.name.strip():
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Name fehlt")
@@ -414,6 +450,10 @@ def patch_doc(
         d.ordering = body.ordering
     d.updated_by = user.id
     d.updated_at = now()
+    if d.name != old_name:
+        _act(db, user, pid, "doc.rename", "doc", d.id, d.name, space=d.space, old=old_name)
+    if d.content != old_content:
+        _act(db, user, pid, "doc.update", "doc", d.id, d.name, space=d.space)
     db.commit()
     _audit(db, request, user, "project.doc.update", "project_doc", d.id, project_id=pid)
     return _doc_out(d, _labels(db, [user.id]), content=True)
@@ -423,6 +463,7 @@ def patch_doc(
 def delete_doc(pid: str, doc_id: str, request: Request, user: CurrentUser, db: DbDep) -> dict:
     _ctx(db, user, pid, "editor", write=True)
     d = _get_doc(db, user, pid, doc_id)
+    _act(db, user, pid, "doc.delete", "doc", d.id, d.name, space=d.space)
     ids, frontier = {d.id}, [d.id]
     while frontier:
         kids = list(db.scalars(select(ProjectDoc.id).where(
@@ -518,11 +559,35 @@ def _fin(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 
 
-def _note_out(n: ProjectNote) -> dict:
-    return {
-        "id": n.id, "text": n.text, "color": n.color, "x": n.x, "y": n.y, "w": n.w, "h": n.h,
-        "updated_at": _iso(n.updated_at), "created_by": n.created_by, "updated_by": n.updated_by,
-    }
+def _notes_out(db: Session, notes: list[ProjectNote]) -> list[dict]:
+    labels = _labels(db, [n.user_id for n in notes])
+    tids = {n.task_id for n in notes if n.task_id}
+    titles = {t.id: t.title for t in db.scalars(select(ProjectTask).where(ProjectTask.id.in_(tids)))} if tids else {}
+    return [
+        {
+            "id": n.id, "text": n.text, "color": n.color, "x": n.x, "y": n.y, "w": n.w, "h": n.h,
+            "task_id": n.task_id, "task_title": titles.get(n.task_id or "", None),
+            "user_id": n.user_id, "user_label": labels.get(n.user_id or "", None),
+            "updated_at": _iso(n.updated_at), "created_by": n.created_by, "updated_by": n.updated_by,
+        }
+        for n in notes
+    ]
+
+
+def _note_out(db: Session, n: ProjectNote) -> dict:
+    return _notes_out(db, [n])[0]
+
+
+def _check_note_refs(db: Session, pid: str, task_id: str | None, user_id: str | None) -> None:
+    """Verknüpfte Aufgabe muss zum Projekt gehören, verknüpfter Nutzer Zugriff auf das Projekt haben."""
+    if task_id:
+        t = db.get(ProjectTask, task_id)
+        if t is None or t.project_id != pid:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Aufgabe gehört nicht zum Projekt")
+    if user_id:
+        u = db.get(User, user_id)
+        if u is None or project_role(db, u, pid) is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nutzer hat keinen Zugriff auf das Projekt")
 
 
 def _get_note(db: Session, pid: str, nid: str) -> ProjectNote:
@@ -535,8 +600,44 @@ def _get_note(db: Session, pid: str, nid: str) -> ProjectNote:
 @router.get("/{pid}/notes")
 def list_notes(pid: str, user: CurrentUser, db: DbDep) -> list[dict]:
     _ctx(db, user, pid)
-    return [_note_out(n) for n in db.scalars(
-        select(ProjectNote).where(ProjectNote.project_id == pid).order_by(ProjectNote.created_at))]
+    return _notes_out(db, list(db.scalars(
+        select(ProjectNote).where(ProjectNote.project_id == pid).order_by(ProjectNote.created_at))))
+
+
+@router.get("/{pid}/note-links")
+def list_note_links(pid: str, user: CurrentUser, db: DbDep) -> list[dict]:
+    _ctx(db, user, pid)
+    return [{"id": k.id, "from_id": k.from_id, "to_id": k.to_id}
+            for k in db.scalars(select(ProjectNoteLink).where(ProjectNoteLink.project_id == pid))]
+
+
+@router.post("/{pid}/note-links", status_code=status.HTTP_201_CREATED)
+def create_note_link(pid: str, body: NoteLinkIn, user: CurrentUser, db: DbDep) -> dict:
+    _ctx(db, user, pid, "editor", write=True)
+    if body.from_id == body.to_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Notiz kann nicht auf sich selbst zeigen")
+    _get_note(db, pid, body.from_id)
+    _get_note(db, pid, body.to_id)
+    ex = db.scalar(select(ProjectNoteLink).where(
+        ProjectNoteLink.from_id == body.from_id, ProjectNoteLink.to_id == body.to_id))
+    if ex is None:
+        if db.scalar(select(func.count(ProjectNoteLink.id)).where(ProjectNoteLink.project_id == pid)) >= _MAX_NOTES * 4:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Zu viele Pfeile")
+        ex = ProjectNoteLink(project_id=pid, from_id=body.from_id, to_id=body.to_id, created_by=user.id)
+        db.add(ex)
+        db.commit()
+    return {"id": ex.id, "from_id": ex.from_id, "to_id": ex.to_id}
+
+
+@router.delete("/{pid}/note-links/{lid}")
+def delete_note_link(pid: str, lid: str, user: CurrentUser, db: DbDep) -> dict:
+    _ctx(db, user, pid, "editor", write=True)
+    lk = db.get(ProjectNoteLink, lid)
+    if lk is None or lk.project_id != pid:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pfeil nicht gefunden")
+    db.delete(lk)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/{pid}/notes", status_code=status.HTTP_201_CREATED)
@@ -544,21 +645,26 @@ def create_note(pid: str, body: NoteCreateIn, user: CurrentUser, db: DbDep) -> d
     _ctx(db, user, pid, "editor", write=True)
     if db.scalar(select(func.count(ProjectNote.id)).where(ProjectNote.project_id == pid)) >= _MAX_NOTES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Zu viele Notizen")
+    _check_note_refs(db, pid, body.task_id, body.user_id)
     n = ProjectNote(
         project_id=pid, text=body.text, color=body.color,
+        task_id=body.task_id or None, user_id=body.user_id or None,
         x=_fin(body.x, -100000, 100000), y=_fin(body.y, -100000, 100000),
         w=_fin(body.w, 80, 2000), h=_fin(body.h, 60, 2000),
         created_by=user.id, updated_by=user.id,
     )
     db.add(n)
+    db.flush()
+    _act(db, user, pid, "note.create", "note", n.id, n.text.strip().split("\n")[0][:80])
     db.commit()
-    return _note_out(n)
+    return _note_out(db, n)
 
 
 @router.patch("/{pid}/notes/{nid}")
 def patch_note(pid: str, nid: str, body: NotePatchIn, user: CurrentUser, db: DbDep) -> dict:
     _ctx(db, user, pid, "editor", write=True)
     n = _get_note(db, pid, nid)
+    old_text = n.text
     if body.text is not None:
         n.text = body.text
     if body.color is not None:
@@ -571,16 +677,30 @@ def patch_note(pid: str, nid: str, body: NotePatchIn, user: CurrentUser, db: DbD
         n.w = _fin(body.w, 80, 2000)
     if body.h is not None:
         n.h = _fin(body.h, 60, 2000)
+    sent = body.model_fields_set
+    if "task_id" in sent or "user_id" in sent:
+        _check_note_refs(db, pid, body.task_id if "task_id" in sent else None,
+                         body.user_id if "user_id" in sent else None)
+        if "task_id" in sent:
+            n.task_id = body.task_id or None
+        if "user_id" in sent:
+            n.user_id = body.user_id or None
     n.updated_by = user.id
     n.updated_at = now()
+    if n.text != old_text:
+        _act(db, user, pid, "note.update", "note", n.id, n.text.strip().split("\n")[0][:80])
     db.commit()
-    return _note_out(n)
+    return _note_out(db, n)
 
 
 @router.delete("/{pid}/notes/{nid}")
 def delete_note(pid: str, nid: str, user: CurrentUser, db: DbDep) -> dict:
     _ctx(db, user, pid, "editor", write=True)
-    db.delete(_get_note(db, pid, nid))
+    n = _get_note(db, pid, nid)
+    _act(db, user, pid, "note.delete", "note", n.id, n.text.strip().split("\n")[0][:80])
+    db.execute(sa_delete(ProjectNoteLink).where(
+        (ProjectNoteLink.from_id == nid) | (ProjectNoteLink.to_id == nid)))
+    db.delete(n)
     db.commit()
     return {"ok": True}
 
@@ -685,6 +805,8 @@ def create_task(pid: str, body: TaskCreateIn, request: Request, user: CurrentUse
     )
     _set_status(t, body.status)
     db.add(t)
+    db.flush()
+    _act(db, user, pid, "task.create", "task", t.id, t.title, status=t.status, assignee_id=t.assignee_id)
     db.commit()
     _audit(db, request, user, "project.task.create", "project_task", t.id, project_id=pid)
     return _tasks_out(db, user, [t])[0]
@@ -699,6 +821,8 @@ def patch_task(
     sent = body.model_fields_set
     refs = {k: getattr(body, k) for k in ("assignee_id", "plan_id", "doc_id") if k in sent}
     _validate_task_refs(db, user, pid, refs)
+    before = {"title": t.title, "description": t.description, "priority": t.priority, "status": t.status,
+              "assignee_id": t.assignee_id, "due_date": t.due_date, "plan_id": t.plan_id, "doc_id": t.doc_id}
     if body.title is not None:
         if not body.title.strip():
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Titel fehlt")
@@ -717,6 +841,7 @@ def patch_task(
         t.ordering = last + 1
     t.updated_by = user.id
     t.updated_at = now()
+    _task_changes(db, user, pid, t, before)
     db.commit()
     _audit(db, request, user, "project.task.update", "project_task", t.id, project_id=pid)
     return _tasks_out(db, user, [t])[0]
@@ -729,6 +854,7 @@ def move_task(pid: str, tid: str, body: TaskMoveIn, user: CurrentUser, db: DbDep
     t = _get_task(db, pid, tid)
     col = _column(db, pid, body.status, exclude=t.id)
     if t.status != body.status:
+        _act(db, user, pid, "task.status", "task", t.id, t.title, old=t.status, new=body.status)
         _set_status(t, body.status)
     col.insert(min(body.ordering, len(col)), t)
     for idx, x in enumerate(col):
@@ -742,10 +868,179 @@ def move_task(pid: str, tid: str, body: TaskMoveIn, user: CurrentUser, db: DbDep
 @router.delete("/{pid}/tasks/{tid}")
 def delete_task(pid: str, tid: str, request: Request, user: CurrentUser, db: DbDep) -> dict:
     _ctx(db, user, pid, "editor", write=True)
-    db.delete(_get_task(db, pid, tid))
+    t = _get_task(db, pid, tid)
+    _act(db, user, pid, "task.delete", "task", t.id, t.title)
+    db.delete(t)
     db.commit()
     _audit(db, request, user, "project.task.delete", "project_task", tid, project_id=pid)
     return {"ok": True}
+
+
+def _task_changes(db: Session, user: User, pid: str, t: ProjectTask, before: dict) -> None:
+    """Schreibt je geänderter Eigenschaft einen Feed-Eintrag (Status/Zuständige/Priorität/Fälligkeit/…)."""
+    for f, kind in (("status", "task.status"), ("assignee_id", "task.assignee"),
+                    ("priority", "task.priority"), ("due_date", "task.due")):
+        old, new = before[f], getattr(t, f)
+        if old != new:
+            if f == "due_date":
+                old, new = (old.isoformat() if old else None), (new.isoformat() if new else None)
+            _act(db, user, pid, kind, "task", t.id, t.title, old=old, new=new)
+            if f == "assignee_id" and new:
+                notify.send(db, [new], "assigned", actor=user, title=t.title, project_id=pid, task_id=t.id)
+    if before["title"] != t.title:
+        _act(db, user, pid, "task.rename", "task", t.id, t.title, old=before["title"])
+    if before["description"] != t.description:
+        _act(db, user, pid, "task.description", "task", t.id, t.title)
+    if before["plan_id"] != t.plan_id or before["doc_id"] != t.doc_id:
+        _act(db, user, pid, "task.link", "task", t.id, t.title)
+
+
+# ─── Aufgaben-Threads ──────────────────────────────────────────────────────
+
+@router.get("/{pid}/mentionables")
+def mentionables(pid: str, user: CurrentUser, db: DbDep) -> list[dict]:
+    """Vorschläge für @-Autovervollständigung: Projektmitglieder, Gruppen, @projekt."""
+    _ctx(db, user, pid)
+    return mentions_svc.mention_candidates(db, pid)
+
+
+def _comment_out(c: TaskComment, labels: dict[str, str], user: User, role: str) -> dict:
+    return {
+        "id": c.id, "task_id": c.task_id, "user_id": c.user_id, "user_label": labels.get(c.user_id or "", None),
+        "text": c.text, "mentions": c.mentions or [], "created_at": _iso(c.created_at), "edited_at": _iso(c.edited_at),
+        "can_edit": c.user_id == user.id, "can_delete": c.user_id == user.id or rank(role) >= rank("owner"),
+    }
+
+
+def _comments_out(db: Session, cs: list[TaskComment], user: User, role: str) -> list[dict]:
+    labels = _labels(db, [c.user_id for c in cs])
+    return [_comment_out(c, labels, user, role) for c in cs]
+
+
+@router.get("/{pid}/tasks/{tid}/comments")
+def list_comments(pid: str, tid: str, user: CurrentUser, db: DbDep) -> list[dict]:
+    _, role = _ctx(db, user, pid)
+    _get_task(db, pid, tid)
+    cs = list(db.scalars(select(TaskComment).where(TaskComment.task_id == tid).order_by(TaskComment.created_at)))
+    return _comments_out(db, cs, user, role)
+
+
+@router.post("/{pid}/tasks/{tid}/comments", status_code=status.HTTP_201_CREATED)
+def create_comment(pid: str, tid: str, body: CommentIn, user: CurrentUser, db: DbDep) -> dict:
+    _, role = _ctx(db, user, pid, "viewer", write=True)  # auch Betrachter dürfen Fragen stellen
+    t = _get_task(db, pid, tid)
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Text fehlt")
+    if db.scalar(select(func.count(TaskComment.id)).where(TaskComment.task_id == tid)) >= _MAX_COMMENTS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Zu viele Kommentare")
+    c = TaskComment(project_id=pid, task_id=tid, user_id=user.id, text=text,
+                    mentions=mentions_svc.resolve_mentions(db, text, pid))
+    db.add(c)
+    db.flush()
+    _act(db, user, pid, "task.comment", "task", t.id, t.title, snippet=text[:80])
+    notify.send(db, mentions_svc.mention_recipients(db, pid, c.mentions, exclude=user.id), "task_mention",
+                actor=user, title=t.title, text=text, project_id=pid, task_id=t.id)
+    db.commit()
+    return _comments_out(db, [c], user, role)[0]
+
+
+def _get_comment(db: Session, pid: str, tid: str, cid: str) -> TaskComment:
+    c = db.get(TaskComment, cid)
+    if c is None or c.project_id != pid or c.task_id != tid:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kommentar nicht gefunden")
+    return c
+
+
+@router.patch("/{pid}/tasks/{tid}/comments/{cid}")
+def patch_comment(pid: str, tid: str, cid: str, body: CommentIn, user: CurrentUser, db: DbDep) -> dict:
+    _, role = _ctx(db, user, pid, "viewer", write=True)
+    c = _get_comment(db, pid, tid, cid)
+    if c.user_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur eigene Kommentare bearbeitbar")
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Text fehlt")
+    if text != c.text:
+        old = {(m["type"], m["id"]) for m in (c.mentions or [])}
+        c.text = text
+        c.mentions = mentions_svc.resolve_mentions(db, text, pid)
+        c.edited_at = now()
+        added = [m for m in c.mentions if (m["type"], m["id"]) not in old]  # nur neu Erwähnte benachrichtigen
+        t = db.get(ProjectTask, tid)
+        notify.send(db, mentions_svc.mention_recipients(db, pid, added, exclude=user.id), "task_mention",
+                    actor=user, title=t.title if t else "", text=text, project_id=pid, task_id=tid)
+    db.commit()
+    return _comments_out(db, [c], user, role)[0]
+
+
+@router.delete("/{pid}/tasks/{tid}/comments/{cid}")
+def delete_comment(pid: str, tid: str, cid: str, user: CurrentUser, db: DbDep) -> dict:
+    _, role = _ctx(db, user, pid, "viewer", write=True)
+    c = _get_comment(db, pid, tid, cid)
+    if c.user_id != user.id and rank(role) < rank("owner"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur eigene Kommentare löschbar")
+    db.delete(c)
+    db.commit()
+    return {"ok": True}
+
+
+# ─── Aktivitätsfeed ────────────────────────────────────────────────────────
+
+def _visible_activity(db: Session, user: User, pid: str):
+    q = select(ProjectActivity).where(ProjectActivity.project_id == pid)
+    if not effective_mission_builder(db, user):
+        q = q.where(ProjectActivity.space.is_(None) | (ProjectActivity.space != "builder"))
+    return q
+
+
+@router.get("/{pid}/activity")
+def list_activity(
+    pid: str, user: CurrentUser, db: DbDep, task_id: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50, before: datetime | None = None,
+) -> list[dict]:
+    """Feed des Projekts (neueste zuerst); mit task_id nur die Historie einer Aufgabe.
+    Paging: `before` = created_at des letzten bekannten Eintrags."""
+    _ctx(db, user, pid)
+    q = _visible_activity(db, user, pid)
+    if task_id:
+        q = q.where(ProjectActivity.target_type == "task", ProjectActivity.target_id == task_id)
+    if before is not None:
+        q = q.where(ProjectActivity.created_at < before)
+    rows = list(db.scalars(q.order_by(ProjectActivity.created_at.desc()).limit(limit)))
+    ids = {r.user_id for r in rows}
+    for r in rows:  # Zuständige in Zuweisungs-Einträgen als Namen auflösen
+        if r.kind == "task.assignee":
+            ids.update((r.detail.get("old"), r.detail.get("new")))
+    labels = _labels(db, ids)
+    out = []
+    for r in rows:
+        d = dict(r.detail or {})
+        if r.kind == "task.assignee":
+            d = {"old": labels.get(d.get("old") or "", None), "new": labels.get(d.get("new") or "", None)}
+        out.append({
+            "id": r.id, "kind": r.kind, "target_type": r.target_type, "target_id": r.target_id,
+            "target_title": r.target_title, "user_id": r.user_id, "user_label": labels.get(r.user_id or "", None),
+            "detail": d, "created_at": _iso(r.created_at),
+        })
+    return out
+
+
+@router.get("/{pid}/activity/summary")
+def activity_summary(
+    pid: str, user: CurrentUser, db: DbDep, days: Annotated[int, Query(ge=1, le=365)] = 7
+) -> list[dict]:
+    """Wer war wie aktiv: Aktionen im Zeitraum + letzte Aktivität je Person."""
+    _ctx(db, user, pid)
+    since = now() - timedelta(days=days)
+    sub = _visible_activity(db, user, pid).where(ProjectActivity.created_at >= since).subquery()
+    rows = db.execute(
+        select(sub.c.user_id, func.count(), func.max(sub.c.created_at)).group_by(sub.c.user_id)
+        .order_by(func.count().desc())
+    ).all()
+    labels = _labels(db, [r[0] for r in rows])
+    return [{"user_id": uid, "label": labels.get(uid or "", None), "count": int(n), "last": _iso(last)}
+            for uid, n, last in rows]
 
 
 # ─── Pläne & Übersicht ─────────────────────────────────────────────────────

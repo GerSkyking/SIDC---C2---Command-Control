@@ -11,9 +11,10 @@ import { type ProjCtx, fmtBytes } from "./projectUtil";
 import { openSettings } from "./settings";
 import { getLastProject, setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
-type Tab = "overview" | "public" | "builder" | "plans" | "tasks" | "whiteboard" | "members";
+type Tab = "overview" | "activity" | "public" | "builder" | "plans" | "tasks" | "whiteboard" | "members";
 const TABS: { id: Tab; ic: string; key: string }[] = [
   { id: "overview", ic: "compass", key: "proj.tab.overview" },
+  { id: "activity", ic: "audit", key: "proj.tab.activity" },
   { id: "public", ic: "notes", key: "proj.tab.public" },
   { id: "builder", ic: "lock", key: "proj.tab.builder" },
   { id: "plans", ic: "map", key: "proj.tab.plans" },
@@ -297,6 +298,7 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
 
   try {
     if (tab === "overview") (await import("./projectOverview")).mountOverview(body, ctx);
+    else if (tab === "activity") (await import("./projectActivity")).mountActivity(body, ctx);
     else if (tab === "public" || tab === "builder") (await import("./projectDocs")).mountDocs(body, ctx, tab);
     else if (tab === "plans") await mountPlans(body, ctx);
     else if (tab === "tasks") (await import("./projectBoard")).mountBoard(body, ctx);

@@ -79,6 +79,11 @@ async function route(): Promise<void> {
     const { renderProjects } = await import("./projects");
     return renderProjects(app, me, projMatch[1], projMatch[2]);
   }
+  const chatMatch = location.hash.match(/^#\/chat(?:\/([0-9a-f]{32}|system))?$/);
+  if (chatMatch) {
+    const { renderChat } = await import("./chat");
+    return renderChat(app, me, chatMatch[1]);
+  }
   const orbatMatch = location.hash.match(/^#\/orbat(?:\/([0-9a-f]{32}))?$/);
   if (orbatMatch && me.is_mission_builder_effective) {
     const { renderOrbatLibrary } = await import("./orbat");

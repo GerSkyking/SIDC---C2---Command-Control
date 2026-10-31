@@ -293,6 +293,9 @@ async function openTaskDialog(
           .map((d) => `<option value="${esc(d.id)}" ${d.id === task.doc_id ? "selected" : ""}>${esc(d.name)}</option>`)
           .join("")}</select></div>
     </div>
+    <h4 class="th-title">${t("thread.title")}</h4>
+    <div id="tk-thread" class="th"></div>
+    <details class="kb-hist"><summary>${t("act.history")}</summary><div id="tk-hist"></div></details>
     <div class="row" style="justify-content:space-between">
       ${ctx.canEdit ? `<button class="danger" data-del title="${t("common.delete")}">${icon("trash", 14)} ${t("common.delete")}</button>` : "<span></span>"}
       <span class="row"><button data-c>${ro ? t("common.close") : t("common.cancel")}</button>
@@ -304,6 +307,15 @@ async function openTaskDialog(
   back.addEventListener("mousedown", (e) => e.target === back && close());
   back.addEventListener("keydown", (e) => e.key === "Escape" && close());
   back.querySelector("[data-c]")!.addEventListener("click", close);
+  void import("./projectThread").then((m) => m.mountThread(back.querySelector<HTMLElement>("#tk-thread")!, ctx, task.id));
+  back.querySelector(".kb-hist")!.addEventListener(
+    "toggle",
+    async (ev) => {
+      if (!(ev.target as HTMLDetailsElement).open) return;
+      (await import("./projectActivity")).mountTaskHistory(back.querySelector<HTMLElement>("#tk-hist")!, ctx.id, task.id);
+    },
+    { once: true },
+  );
   const v = (id: string) => back.querySelector<HTMLInputElement>(id)!.value;
   back.querySelector("[data-ok]")?.addEventListener("click", async () => {
     const title = v("#tk-t").trim();

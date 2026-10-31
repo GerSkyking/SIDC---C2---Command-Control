@@ -212,11 +212,8 @@ export function actionForKey(ev: KeyboardEvent): HotAction | null {
   return null;
 }
 
-export function openSettings(): void {
-  const back = document.createElement("div");
-  back.className = "edit-modal";
-
-  const LABEL: Record<HotAction, string> = {
+function hotLabels(): Record<HotAction, string> {
+  return {
     mapMove: t("tool.move"),
     point: t("tool.point"),
     line: t("tool.line"),
@@ -236,6 +233,19 @@ export function openSettings(): void {
     notes: t("hot.notes"),
     north: t("hot.north"),
   };
+}
+
+/** Aktuelle (ggf. angepasste) Tastenbelegung als Liste für das Hilfe-Overlay. */
+export function hotkeyRows(): { label: string; key: string }[] {
+  const L = hotLabels();
+  return HOT_ORDER.map((a) => ({ label: L[a], key: keyLabel(binds[a]) }));
+}
+
+export function openSettings(): void {
+  const back = document.createElement("div");
+  back.className = "edit-modal";
+
+  const LABEL = hotLabels();
   const rows = () =>
     HOT_ORDER.map(
       (a) => `<div class="set-row">

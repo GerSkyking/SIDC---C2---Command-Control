@@ -585,10 +585,26 @@ class ProjectNote(Base):
     y: Mapped[float] = mapped_column(Float, default=0)
     w: Mapped[float] = mapped_column(Float, default=220)
     h: Mapped[float] = mapped_column(Float, default=160)
+    # Verknüpfungen: Aufgabe / Nutzer, auf die die Notiz verweist
+    task_id: Mapped[str | None] = mapped_column(ForeignKey("project_tasks.id", ondelete="SET NULL"), nullable=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ProjectNoteLink(Base):
+    """Pfeil zwischen zwei Haftnotizen (Whiteboard): from -> to."""
+    __tablename__ = "project_note_links"
+    __table_args__ = (UniqueConstraint("from_id", "to_id", name="uq_note_link"),)
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    from_id: Mapped[str] = mapped_column(ForeignKey("project_notes.id", ondelete="CASCADE"), index=True)
+    to_id: Mapped[str] = mapped_column(ForeignKey("project_notes.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class ProjectTask(Base):
@@ -612,3 +628,89 @@ class ProjectTask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProjectActivity(Base):
+    """Aktivitäts-Feed eines Projekts: wer hat wann was gemacht (Aufgaben, Dateien, Notizen, Mitglieder)."""
+
+    __tablename__ = "project_activity"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))  # z. B. task.create, task.status, doc.update
+    target_type: Mapped[str] = mapped_column(String(16))  # task | doc | note | project
+    target_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    target_title: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    space: Mapped[str | None] = mapped_column(String(8), nullable=True)  # 'builder' = nur für Missionsbauer sichtbar
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+class TaskComment(Base):
+    """Diskussions-Thread einer Aufgabe. `mentions` = beim Speichern aufgelöste @-Erwähnungen."""
+
+    __tablename__ = "task_comments"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("project_tasks.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    text: Mapped[str] = mapped_column(Text)
+    mentions: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Conversation(Base):
+    """Chat-Unterhaltung: Direkt (dm), freie Gruppe oder an eine Admin-Gruppe/ein Projekt gebundene Gruppe."""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    kind: Mapped[str] = mapped_column(String(8))  # dm | group
+    name: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    dm_key: Mapped[str | None] = mapped_column(String(70), unique=True, nullable=True)  # "idA:idB" (sortiert)
+    source_type: Mapped[str | None] = mapped_column(String(8), nullable=True)  # group | project
+    source_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+class ConversationMember(Base):
+    __tablename__ = "conversation_members"
+
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    text: Mapped[str] = mapped_column(Text)
+    mentions: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Notification(Base):
+    """System-Feed: Erwähnungen, Zuweisungen … (Empfänger = user_id). `reply`-Funktion folgt später."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # task_mention | chat_mention | assigned
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    title: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    text: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
+    task_id: Mapped[str | None] = mapped_column(ForeignKey("project_tasks.id", ondelete="CASCADE"), nullable=True)
+    conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)

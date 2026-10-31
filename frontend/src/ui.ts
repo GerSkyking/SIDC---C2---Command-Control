@@ -62,7 +62,7 @@ export function getLastProject(): string {
   return lastProject;
 }
 
-export type NavSection = "plans" | "trash" | "users" | "log" | "config" | "storage" | "orbat" | "projects";
+export type NavSection = "plans" | "trash" | "users" | "log" | "config" | "storage" | "orbat" | "projects" | "chat";
 
 /** Linke Navigationsleiste für die Nicht-Karten-Ansichten. */
 export function sidebar(
@@ -80,6 +80,7 @@ export function sidebar(
     <div class="sb-nav">
       ${item("plans", "plan", t("nav.plans"), "#/")}
       ${item("projects", "folder", t("nav.projects"), lastProject ? `#/projects/${lastProject}` : "#/projects")}
+      <a class="sb-item ${active === "chat" ? "active" : ""}" href="#/chat" title="${t("nav.chat")}">${icon("channel")}<span>${t("nav.chat")}</span><i class="sb-badge" id="sbBadge" hidden></i></a>
       ${item("trash", "trash", t("nav.trash"), "#/trash")}
       ${
         opts.isMissionBuilder
@@ -136,6 +137,28 @@ export function wireSidebar(root: ParentNode): void {
   sb?.addEventListener("click", (e) => {
     if ((e.target as HTMLElement).closest("a")) shut();
   });
+  // Ungelesen-Zähler (Chat + System-Feed)
+  const badge = root.querySelector<HTMLElement>("#sbBadge");
+  if (badge) {
+    const tick = async () => {
+      if (!badge.isConnected) {
+        window.clearInterval(timer);
+        window.removeEventListener("chat-unread-changed", tick);
+        return;
+      }
+      if (document.hidden) return;
+      try {
+        const u = await api.chatUnread();
+        badge.textContent = u.total > 99 ? "99+" : String(u.total);
+        badge.hidden = u.total === 0;
+      } catch {
+        /* ignore */
+      }
+    };
+    const timer = window.setInterval(tick, 10000);
+    window.addEventListener("chat-unread-changed", tick);
+    void tick();
+  }
   root.querySelector("#sbLogout")?.addEventListener("click", async () => {
     await api.logout().catch(() => {});
     location.hash = "#/";
