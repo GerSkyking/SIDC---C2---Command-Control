@@ -121,6 +121,13 @@ gewählter Ordner ist das Ziel für „Neues Projekt"). Löscht man einen Ordner
 - **System:** feste Unterhaltung oben im Chat mit allen Benachrichtigungen (Erwähnungen, Zuweisungen); ein Klick springt zur
   Stelle und markiert als gelesen.
 
+**Benachrichtigungen außerhalb der Seite** (Zahnrad → *Benachrichtigungen*): Erwähnungen und Zuweisungen lassen sich
+zusätzlich an eigene Kanäle schicken – *Browser/Smartphone (Web-Push)*, *Discord* (Webhook-URL eines Serverkanals), *ntfy*,
+*Gotify*, *Matrix*, *Webhook* oder *E-Mail*. Pro Kanal wählst du, welche Arten ankommen, und kannst eine Testnachricht senden.
+Auf dem iPhone funktioniert Web-Push nur, wenn die Seite zum Home-Bildschirm hinzugefügt wurde. Im *System*-Feed kannst du
+mit *Antworten* direkt antworten – die Antwort erscheint im Chat bzw. als Kommentar an der Aufgabe.
+Admin: `PUBLIC_URL` setzen (Links in Nachrichten), für E-Mail `SMTP_*`; Dienste im LAN brauchen `NOTIFY_ALLOW_PRIVATE_HOSTS=true`.
+
 **Plan-Ordner (normale Plan-Liste):** Ordner anlegen darf, wer Pläne erstellen darf. Umbenennen, Verschieben und Löschen
 dürfen Admin und der Ersteller des Ordners (Alt-Ordner ohne Ersteller: Admin und alle, die Pläne erstellen dürfen).
 ## 4. Kartenansicht

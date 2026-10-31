@@ -291,6 +291,32 @@ export interface ChatMessage {
   edited_at: string | null;
   mine: boolean;
 }
+export interface NotifyField {
+  key: string;
+  label: string;
+  secret: boolean;
+  required: boolean;
+  placeholder: string;
+}
+export interface NotifyType {
+  type: string;
+  label: string;
+  help: string;
+  fields: NotifyField[];
+  form: boolean;
+  available: boolean;
+}
+export type NotifyKind = "task_mention" | "chat_mention" | "assigned";
+export interface NotifyChannel {
+  id: string;
+  type: string;
+  name: string;
+  kinds: NotifyKind[];
+  enabled: boolean;
+  config: Record<string, unknown> & { _set?: string[] };
+  last_ok_at: string | null;
+  last_error: string;
+}
 export interface ChatNotification {
   id: string;
   kind: "task_mention" | "chat_mention" | "assigned";
@@ -761,6 +787,18 @@ export const api = {
   deleteChatMessage: (id: string, mid: string) => req<void>("DELETE", `/chat/conversations/${id}/messages/${mid}`),
   chatNotifications: () => req<ChatNotification[]>("GET", "/chat/notifications"),
   chatReadNotifications: (b: { ids?: string[]; all?: boolean }) => req<void>("POST", "/chat/notifications/read", b),
+  replyNotification: (id: string, text: string) => req<unknown>("POST", `/chat/notifications/${id}/reply`, { text }),
+  notifyTypes: () => req<{ types: NotifyType[]; kinds: NotifyKind[] }>("GET", "/notify/types"),
+  notifyChannels: () => req<NotifyChannel[]>("GET", "/notify/channels"),
+  createNotifyChannel: (b: { type: string; name?: string; config: Record<string, string>; kinds: NotifyKind[] }) =>
+    req<NotifyChannel>("POST", "/notify/channels", b),
+  patchNotifyChannel: (id: string, b: { name?: string; config?: Record<string, string>; kinds?: NotifyKind[]; enabled?: boolean }) =>
+    req<NotifyChannel>("PATCH", `/notify/channels/${id}`, b),
+  deleteNotifyChannel: (id: string) => req<void>("DELETE", `/notify/channels/${id}`),
+  testNotifyChannel: (id: string) => req<void>("POST", `/notify/channels/${id}/test`),
+  webpushKey: () => req<{ key: string }>("GET", "/notify/webpush/key"),
+  webpushSubscribe: (b: { endpoint: string; keys: { p256dh: string; auth: string }; name?: string }) =>
+    req<NotifyChannel>("POST", "/notify/webpush", b),
   chatClearNotifications: () => req<void>("DELETE", "/chat/notifications"),
   projectMentionables: (id: string) => req<Mentionable[]>("GET", `/projects/${id}/mentionables`),
   taskComments: (id: string, tid: string) => req<TaskComment[]>("GET", `/projects/${id}/tasks/${tid}/comments`),

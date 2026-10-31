@@ -1,6 +1,7 @@
 // Einstellungs-Menü: Theme + Tastenkürzel. Keybinds werden PRO NUTZER auf dem
 // Server gespeichert (me.ui_settings.keybinds); localStorage dient nur als Cache.
 import { api, type Me } from "./api";
+import { mountNotifySettings } from "./notifySettings";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { themeSwitch, wireThemeSwitch } from "./ui";
@@ -273,6 +274,8 @@ export function openSettings(): void {
     <div class="row" style="margin-top:.8rem">
       <button data-reset>${t("settings.reset")}</button>
     </div>
+    <h4>${t("ntf.title")}</h4>
+    <div id="notifyBox"></div>
     <h4>${t("tok.title")}</h4>
     <p class="muted" style="font-size:.78rem;margin:.2rem 0">${t("tok.hint")}</p>
     <div id="tokBox"></div>
@@ -433,6 +436,7 @@ export function openSettings(): void {
   });
 
   wireTokens(back);
+  mountNotifySettings(back.querySelector<HTMLElement>("#notifyBox")!);
 
   document.addEventListener("keydown", onEsc, true);
   document.body.appendChild(back);

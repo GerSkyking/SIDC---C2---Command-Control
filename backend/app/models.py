@@ -713,4 +713,24 @@ class Notification(Base):
     task_id: Mapped[str | None] = mapped_column(ForeignKey("project_tasks.id", ondelete="CASCADE"), nullable=True)
     conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Wann an die externen Kanäle (Discord, Push …) ausgeliefert wurde; NULL = noch offen.
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+class NotificationChannel(Base):
+    """Externer Zustellkanal eines Nutzers (Discord-Webhook, ntfy, Matrix, Web-Push …).
+    `config` enthält die Zugangsdaten; Geheimnisse sind verschlüsselt (siehe services/channels.py)."""
+
+    __tablename__ = "notification_channels"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    type: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    kinds: Mapped[list] = mapped_column(JSON, default=list)  # leer = alle Benachrichtigungsarten
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

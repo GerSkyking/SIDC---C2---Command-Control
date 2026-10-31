@@ -308,14 +308,26 @@ function mountSystem(host: HTMLElement, changed: () => void, back: () => void): 
     if (n.kind === "chat_mention") return t("sys.chatMention").replace("{u}", who).replace("{t}", where || "");
     return t("sys.taskMention").replace("{u}", who).replace("{t}", where);
   };
+  const open = new Set<string>(); // Einträge mit geöffnetem Antwortfeld
+  const drafts = new Map<string, string>();
   const paint = () => {
     list.innerHTML = rows.length
       ? rows
           .map(
-            (n) => `<a class="sys-i${n.read ? "" : " unread"}" href="${esc(href(n))}" data-id="${esc(n.id)}">
+            (n) => `<div class="sys-w">
+              <a class="sys-i${n.read ? "" : " unread"}" href="${esc(href(n))}" data-id="${esc(n.id)}">
               <span class="chat-ic">${icon(n.kind === "assigned" ? "check" : "audit", 16)}</span>
               <span class="sys-b"><span>${text(n)}</span>${n.text ? `<span class="sys-q muted">${esc(n.text)}</span>` : ""}</span>
-              <span class="muted chat-time">${esc(relTime(n.created_at))}</span></a>`,
+              <span class="muted chat-time">${esc(relTime(n.created_at))}</span></a>
+              ${
+                n.conversation_id || n.task_id
+                  ? `<div class="sys-r" data-rid="${esc(n.id)}">${
+                      open.has(n.id)
+                        ? `<input maxlength="5000" placeholder="${esc(t("sys.replyPh"))}" value="${esc(drafts.get(n.id) ?? "")}" /><button class="primary" data-rs>${t("thread.send")}</button>`
+                        : `<button class="link" data-rt>${t("sys.reply")}</button>`
+                    }</div>`
+                  : ""
+              }</div>`,
           )
           .join("")
       : `<p class="muted chat-empty">${t("chat.sysEmpty")}</p>`;
@@ -323,10 +335,51 @@ function mountSystem(host: HTMLElement, changed: () => void, back: () => void): 
   const load = async () => {
     if (!alive) return;
     rows = await api.chatNotifications();
+    if (list.contains(document.activeElement) && document.activeElement instanceof HTMLInputElement) return; // nicht beim Tippen überschreiben
     paint();
   };
+  const sendReply = async (rid: string, input: HTMLInputElement) => {
+    const txt = input.value.trim();
+    if (!txt) return;
+    input.disabled = true;
+    try {
+      await api.replyNotification(rid, txt);
+      open.delete(rid);
+      drafts.delete(rid);
+      await load();
+      changed();
+    } catch (err) {
+      input.disabled = false;
+      toastError(err);
+    }
+  };
+  list.addEventListener("input", (e) => {
+    const inp = e.target as HTMLInputElement;
+    const rid = inp.closest<HTMLElement>("[data-rid]")?.dataset.rid;
+    if (rid) drafts.set(rid, inp.value);
+  });
+  list.addEventListener("keydown", (e) => {
+    const inp = e.target as HTMLInputElement;
+    const rid = inp.closest<HTMLElement>("[data-rid]")?.dataset.rid;
+    if (rid && e.key === "Enter" && inp.tagName === "INPUT") {
+      e.preventDefault();
+      void sendReply(rid, inp);
+    }
+  });
   list.addEventListener("click", (e) => {
-    const a = (e.target as HTMLElement).closest<HTMLElement>("[data-id]");
+    const tgt = e.target as HTMLElement;
+    const rid = tgt.closest<HTMLElement>("[data-rid]")?.dataset.rid;
+    if (rid && tgt.closest("[data-rt]")) {
+      open.add(rid);
+      paint();
+      list.querySelector<HTMLInputElement>(`[data-rid="${CSS.escape(rid)}"] input`)?.focus();
+      return;
+    }
+    if (rid && tgt.closest("[data-rs]")) {
+      void sendReply(rid, list.querySelector<HTMLInputElement>(`[data-rid="${CSS.escape(rid)}"] input`)!);
+      return;
+    }
+    const a = tgt.closest<HTMLElement>("[data-id]");
     if (a) void api.chatReadNotifications({ ids: [a.dataset.id!] }).then(changed).catch(() => {}); // Navigation läuft über den Link
   });
   host.querySelector("[data-all]")!.addEventListener("click", async () => {

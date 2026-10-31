@@ -42,6 +42,17 @@ class Settings(BaseSettings):
     # Audit-Log-Aufbewahrung (Tage). 0 = deaktiviert (Log wächst unbegrenzt).
     audit_log_retention_days: int = 180
 
+    # Externe Benachrichtigungen (Discord, ntfy, Matrix, Web-Push, E-Mail …) – siehe services/channels.py
+    public_url: str = ""  # z. B. https://c2.example.org – für Links in Benachrichtigungen
+    # Selbst gehostete Dienste im LAN (ntfy, Gotify, Matrix) erreichbar machen. Aus = nur öffentliche Adressen.
+    notify_allow_private_hosts: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_starttls: bool = True
+
     oidc_enabled: bool = False
     oidc_issuer: str = ""
     oidc_client_id: str = ""

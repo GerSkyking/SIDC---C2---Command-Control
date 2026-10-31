@@ -1424,3 +1424,15 @@ html:has(.wb-wrap), body:has(.wb-wrap) { overflow: hidden; height: 100%; }
   .chat.chat-open .chat-main { display: flex; }
   .chat-back { display: inline-flex; }
 }
+
+/* Benachrichtigungskanäle (Einstellungen) + Antwort im System-Feed */
+.ntf-i { display: flex; flex-direction: column; gap: .35rem; padding: .55rem; margin: .4rem 0; border: 1px solid var(--border); border-radius: 8px; background: var(--elevated); }
+.ntf-h { display: flex; align-items: center; gap: .5rem; }
+.ntf-kinds { display: flex; flex-wrap: wrap; gap: .2rem .8rem; }
+.ntf-k { display: inline-flex; align-items: center; gap: .3rem; font-size: .82rem; }
+.sys-w { border-bottom: 1px solid var(--border); }
+.sys-w .sys-i { border-bottom: 0; }
+.sys-r { display: flex; gap: .4rem; padding: 0 .4rem .5rem 2.5rem; }
+.sys-r input { flex: 1; min-width: 0; }
+.sys-r .link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: .8rem; }
+

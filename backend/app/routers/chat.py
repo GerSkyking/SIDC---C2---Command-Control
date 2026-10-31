@@ -453,6 +453,25 @@ def read_notifications(body: ReadIn, user: CurrentUser, db: DbDep) -> dict:
     return {"ok": True}
 
 
+@router.post("/notifications/{nid}/reply", status_code=status.HTTP_201_CREATED)
+def reply_notification(nid: str, body: MessageIn, user: CurrentUser, db: DbDep) -> dict:
+    """Direkt aus dem System-Feed antworten: je nach Quelle als Chat-Nachricht oder Aufgaben-Kommentar."""
+    from . import projects  # lokal: vermeidet einen Import-Zirkel beim Start
+
+    n = db.get(Notification, nid)
+    if n is None or n.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Benachrichtigung nicht gefunden")
+    if n.conversation_id:
+        res = post_message(n.conversation_id, body, user, db)
+    elif n.project_id and n.task_id:
+        res = projects.create_comment(n.project_id, n.task_id, projects.CommentIn(text=body.text), user, db)
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Hier ist keine Antwort möglich")
+    n.read_at = n.read_at or now()
+    db.commit()
+    return res
+
+
 @router.delete("/notifications")
 def clear_read_notifications(user: CurrentUser, db: DbDep) -> dict:
     """Gelesene Benachrichtigungen entfernen."""

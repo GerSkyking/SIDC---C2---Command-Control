@@ -5,6 +5,18 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-10-31 – Externe Benachrichtigungen (Discord, Push, Matrix …) & Antworten aus dem System-Feed
+- **Kanäle pro Nutzer** (Einstellungen → Benachrichtigungen): Discord-Webhook, ntfy, Gotify, Matrix, generischer Webhook
+  (JSON, optional HMAC-signiert), E-Mail (SMTP) und **Web-Push** (Browser/Smartphone ohne Drittanbieter, VAPID-Schlüssel
+  werden automatisch erzeugt). Je Kanal einstellbar, welche Arten (Erwähnung in Aufgabe/Chat, Zuweisung) ankommen; Testknopf.
+- Als Plugin-Registry gebaut (`services/channels.py`): ein neuer Dienst ist eine Klasse, das Formular entsteht aus der
+  Feldbeschreibung. Geheimnisse (Tokens, Webhook-URLs) sind verschlüsselt gespeichert und gehen nie zurück an den Browser.
+- SSRF-Schutz: interne Adressen sind als Ziel gesperrt (`NOTIFY_ALLOW_PRIVATE_HOSTS=true` erlaubt LAN-Dienste), keine Redirects.
+- Zustellung durch einen Hintergrund-Task (`dispatched_at` in `notifications`); bereits gelesene Einträge werden nicht gepusht.
+- **Antworten im System-Feed:** je Eintrag „Antworten" – landet im Chat bzw. als Aufgaben-Kommentar und markiert gelesen.
+- Neue Umgebungsvariablen `PUBLIC_URL`, `NOTIFY_ALLOW_PRIVATE_HOSTS`, `SMTP_*`; Migration `0035`; Abhängigkeit `pywebpush`.
+- Noch offen: Gruppenchats mit Discord/Matrix-Räumen synchronisieren (Antworten von dort), Telegram/Slack-Kanäle.
+
 ### 2026-10-31 – Aktivitätsfeeds, Aufgaben-Threads, Chat & System-Feed
 - **Aktivität (Projekt-Reiter):** wer war wie aktiv (24 h / 7 / 30 Tage / 1 Jahr) und ein Feed, wer wann was getan hat
   (Aufgaben: erstellt, Status, Zuständige, Priorität, Frist, Umbenennen, Löschen; Dateien; Notizen; Mitglieder).

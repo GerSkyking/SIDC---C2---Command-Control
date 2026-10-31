@@ -33,6 +33,7 @@ from .routers import (
     live,
     map_sources,
     maps,
+    notify_channels,
     orbat,
     plan_images,
     plans,
@@ -41,6 +42,7 @@ from .routers import (
     public,
     tiles,
 )
+from .services import dispatcher
 from .services.realtime import hub
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -74,11 +76,13 @@ async def lifespan(app: FastAPI):
     ensure_bootstrap_admin()
     await hub.start()
     retention_task = asyncio.create_task(_audit_retention_loop())
+    dispatch_task = asyncio.create_task(dispatcher.run())
     log.info("SIDC-C2 %s bereit", __version__)
     yield
-    retention_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await retention_task
+    for task in (retention_task, dispatch_task):
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
     await hub.stop()
 
 
@@ -129,6 +133,7 @@ app.include_router(plan_images.router)
 app.include_router(project_folders.router)
 app.include_router(projects.router)
 app.include_router(chat.router)
+app.include_router(notify_channels.router)
 app.include_router(orbat.router)
 app.include_router(orbat.plan_orbat_router)
 app.include_router(admin.router)
