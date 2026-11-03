@@ -12,7 +12,7 @@ import { type ProjCtx, fmtBytes, modalOpen } from "./projectUtil";
 import { openSettings } from "./settings";
 import { getLastProject, setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
-type Tab = "overview" | "activity" | "public" | "builder" | "directory" | "timeline" | "plans" | "tasks" | "whiteboard" | "members";
+type Tab = "overview" | "activity" | "public" | "builder" | "directory" | "timeline" | "plans" | "tasks" | "feedback" | "whiteboard" | "members";
 const TABS: { id: Tab; ic: string; key: string }[] = [
   { id: "overview", ic: "compass", key: "proj.tab.overview" },
   { id: "activity", ic: "audit", key: "proj.tab.activity" },
@@ -22,6 +22,7 @@ const TABS: { id: Tab; ic: string; key: string }[] = [
   { id: "timeline", ic: "clock", key: "proj.tab.timeline" },
   { id: "plans", ic: "map", key: "proj.tab.plans" },
   { id: "tasks", ic: "check", key: "proj.tab.tasks" },
+  { id: "feedback", ic: "star", key: "proj.tab.feedback" },
   { id: "whiteboard", ic: "textbox", key: "proj.tab.whiteboard" },
   { id: "members", ic: "users", key: "proj.tab.members" },
 ];
@@ -268,7 +269,7 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
        <nav class="proj-tabs" role="tablist" aria-label="${esc(project.name)}">${tabs
          .map(
            (x) =>
-             `<a role="tab" class="proj-tab ${x.id === tab ? "active" : ""}" aria-selected="${x.id === tab}" href="#/projects/${id}/${x.id}" title="${t(x.key + "Hint")}">${icon(x.ic, 15)}<span>${t(x.key)}</span></a>`,
+             `<a role="tab" class="proj-tab ${x.id === tab ? "active" : ""}" aria-selected="${x.id === tab}" href="#/projects/${id}/${x.id}" title="${t(x.key + "Hint")}">${icon(x.ic, 15)}<span>${t(x.key)}</span>${x.id === "feedback" ? '<span class="proj-tab-badge" hidden></span>' : ""}</a>`,
          )
          .join("")}</nav>
        <div class="proj-body" id="projBody"></div>
@@ -280,6 +281,11 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
   body.dataset.tab = tab;
   // aktiven Reiter in der Leiste sichtbar halten (schmale Bildschirme scrollen seitlich)
   app.querySelector(".proj-tab.active")?.scrollIntoView?.({ block: "nearest", inline: "center" });
+
+  // Zähler „neu" am Tab Feedback (im Feedback-Tab pflegt ihn der Tab selbst)
+  if (tab !== "feedback") {
+    void import("./projectFeedbackApi").then((m) => m.feedbackApi.newCount(id).then(m.setFeedbackBadge)).catch(() => {});
+  }
 
   // Projektsuche (Fenster der Einfügen-Auswahl), Tastenkürzel „/" wenn nichts fokussiert ist
   const openSearch = async () => {
@@ -331,6 +337,7 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
     else if (tab === "timeline") (await import("./projectTimeline")).mountTimeline(body, ctx);
     else if (tab === "plans") await mountPlans(body, ctx);
     else if (tab === "tasks") (await import("./projectBoard")).mountBoard(body, ctx);
+    else if (tab === "feedback") (await import("./projectFeedback")).mountFeedback(body, ctx);
     else if (tab === "whiteboard") (await import("./projectWhiteboard")).mountWhiteboard(body, ctx);
     else if (tab === "members") (await import("./projectMembers")).mountMembers(body, ctx);
   } catch (e) {

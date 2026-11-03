@@ -46,6 +46,13 @@ async function route(): Promise<void> {
   const pub = location.hash.match(/^#\/p\/([A-Za-z0-9_-]{10,})(?:~[a-z0-9-]*)?$/i);
   if (pub) return renderPublicView(app, pub[1]);
 
+  // #/feedback/<token> — öffentliches Feedback-Formular (ohne Login, einbettbar)
+  const fbPub = location.hash.match(/^#\/feedback\/([A-Za-z0-9_-]{10,})$/);
+  if (fbPub) {
+    const { renderFeedbackPublic } = await import("./feedbackPublic");
+    return renderFeedbackPublic(app, fbPub[1]);
+  }
+
   // Impressum/Datenschutz müssen ohne Login erreichbar sein.
   if (location.hash === "#/impressum") return renderLegal(app, "imprint");
   if (location.hash === "#/datenschutz") return renderLegal(app, "privacy");

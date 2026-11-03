@@ -7,7 +7,21 @@ import { attachMentions, renderMentionText } from "./mentionInput";
 import { confirmDialog, toastError } from "./notify";
 import { type ProjCtx, relTime } from "./projectUtil";
 
-export async function mountThread(host: HTMLElement, ctx: ProjCtx, taskId: string): Promise<void> {
+/** Austauschbare Server-Aufrufe: Standard = Aufgaben-Kommentare, Dateien reichen eigene hinein. */
+export interface ThreadIO {
+  list(): Promise<TaskComment[]>;
+  create(text: string): Promise<unknown>;
+  patch(id: string, text: string): Promise<unknown>;
+  remove(id: string): Promise<unknown>;
+}
+
+export async function mountThread(host: HTMLElement, ctx: ProjCtx, taskId: string, ioIn?: ThreadIO): Promise<void> {
+  const io: ThreadIO = ioIn ?? {
+    list: () => api.taskComments(ctx.id, taskId),
+    create: (text) => api.createTaskComment(ctx.id, taskId, text),
+    patch: (id, text) => api.patchTaskComment(ctx.id, taskId, id, text),
+    remove: (id) => api.deleteTaskComment(ctx.id, taskId, id),
+  };
   let comments: TaskComment[] = [];
   let cands: Mentionable[] = [];
   let editing: string | null = null;
@@ -45,7 +59,7 @@ export async function mountThread(host: HTMLElement, ctx: ProjCtx, taskId: strin
   };
 
   const load = async () => {
-    comments = await api.taskComments(ctx.id, taskId);
+    comments = await io.list();
     paint();
   };
 
@@ -69,12 +83,12 @@ export async function mountThread(host: HTMLElement, ctx: ProjCtx, taskId: strin
       } else if (el.closest("[data-save]")) {
         const text = row.querySelector<HTMLTextAreaElement>(".th-edit")!.value.trim();
         if (!text) return;
-        await api.patchTaskComment(ctx.id, taskId, id, text);
+        await io.patch(id, text);
         editing = null;
         await load();
       } else if (el.closest("[data-del]")) {
         if (!(await confirmDialog(t("thread.deleteConfirm"), { danger: true, trash: true }))) return;
-        await api.deleteTaskComment(ctx.id, taskId, id);
+        await io.remove(id);
         await load();
       }
     } catch (err) {
@@ -86,7 +100,7 @@ export async function mountThread(host: HTMLElement, ctx: ProjCtx, taskId: strin
     const text = ta?.value.trim();
     if (!ta || !text) return;
     try {
-      await api.createTaskComment(ctx.id, taskId, text);
+      await io.create(text);
       ta.value = "";
       await load();
       list.scrollTop = list.scrollHeight;
@@ -104,7 +118,7 @@ export async function mountThread(host: HTMLElement, ctx: ProjCtx, taskId: strin
 
   try {
     [comments, cands] = await Promise.all([
-      api.taskComments(ctx.id, taskId),
+      io.list(),
       api.projectMentionables(ctx.id).catch((): Mentionable[] => []),
     ]);
     paint();

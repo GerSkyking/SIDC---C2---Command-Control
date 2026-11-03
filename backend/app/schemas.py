@@ -223,6 +223,7 @@ class ProjectPatchIn(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=20000)
     archived: bool | None = None
+    stage: Literal["draft", "review", "test", "release"] | None = None
     folder_id: str | None = None  # nur wirksam, wenn im Body enthalten (null = oberste Ebene)
 
 

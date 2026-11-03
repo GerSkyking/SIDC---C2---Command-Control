@@ -137,6 +137,23 @@ Benachrichtigungen → *Discord-Konto verknüpfen*, dann `/c2 link CODE`), ersch
 „Name (Discord)“. Voraussetzung: `BRIDGE_TOKEN` und `DISCORD_TOKEN` stehen in der `.env`; der Dienst `discord-bot` startet
 mit dem Stack (Message Content Intent im Developer Portal aktivieren).
 
+**Feedback von außen (ohne Login):** Der Projekt-Owner schaltet im Reiter *Feedback* die Schnittstelle ein (*Token erzeugen*). Das
+Projekt bekommt dann einen geheimen Link/Token; wer ihn kennt, kann Rückmeldungen einsenden, sonst nichts sehen (nur der Projektname
+wird angezeigt). *Neu erzeugen* macht das alte Token sofort ungültig, *Abschalten* schließt die Schnittstelle. Ein archiviertes
+Projekt nimmt nichts mehr an. Rückmeldungen erscheinen im Reiter *Feedback* (Quelle „extern“) und lassen sich dort bearbeiten oder
+zu einer Aufgabe machen. Grenzen: Titel 200, Text 5000, Name 80 Zeichen; höchstens 10 Einsendungen je IP und 10 Minuten, 60 je
+Projekt und Stunde; höchstens 5000 Rückmeldungen je Projekt. Das Feld `website` ist eine Bot-Falle und muss leer bleiben.
+
+```bash
+# Projektname und erlaubte Arten abfragen
+curl https://c2.example.org/api/public/feedback/<TOKEN>
+# -> {"project":"Op Beispiel","kinds":["bug","idea","praise","other"]}
+
+# Rückmeldung senden (kind: bug | idea | praise | other; name und text optional)
+curl -X POST https://c2.example.org/api/public/feedback/<TOKEN>   -H "Content-Type: application/json"   -d '{"title":"Brücke bei 040/040 fehlt","text":"Im Briefing erwähnt, auf der Karte nicht.","kind":"bug","name":"Max"}'
+# -> 201 {"ok":true}     (404 unbekanntes Token, 410 Projekt archiviert, 429 zu viele Anfragen)
+```
+
 **Plan-Ordner (normale Plan-Liste):** Ordner anlegen darf, wer Pläne erstellen darf. Umbenennen, Verschieben und Löschen
 dürfen Admin und der Ersteller des Ordners (Alt-Ordner ohne Ersteller: Admin und alle, die Pläne erstellen dürfen).
 ## 4. Kartenansicht

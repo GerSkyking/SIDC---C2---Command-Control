@@ -38,6 +38,7 @@ from .routers import (
     orbat,
     plan_images,
     plans,
+    project_feedback,
     project_folders,
     project_tools,
     projects,
@@ -135,6 +136,8 @@ app.include_router(plan_images.router)
 app.include_router(project_folders.router)
 app.include_router(projects.router)
 app.include_router(project_tools.router)
+app.include_router(project_feedback.router)
+app.include_router(project_feedback.public_router)
 app.include_router(chat.router)
 app.include_router(bridge.router)
 app.include_router(notify_channels.router)

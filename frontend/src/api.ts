@@ -195,6 +195,8 @@ export interface ProjectDetail {
   archived: boolean;
   role: ProjectRole;
   is_builder: boolean;
+  /** Projektstatus (Phase 2): draft | review | test | release; fehlt bei älteren Backends */
+  stage?: string;
 }
 export interface ProjectMember {
   subject_type: "user" | "group";

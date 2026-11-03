@@ -7,8 +7,8 @@ ohne zusätzliche Tools für Mod-Listen und Slotlisten (kommen aus anderen Werkz
 
 | Phase | Inhalt | Status |
 |---|---|---|
-| 1 | Verknüpfungen (`{{typ:id}}`), Einfügen-Fenster, Suche (Titel + Inhalt), Vorlagen, Verzeichnisse, Zeitleiste | offen |
-| 2 | Feedback-Schnittstelle (intern + extern per API), Status/Meilensteine, Kommentare/Versionen/Export für Dokumente | offen |
+| 1 | Verknüpfungen (`{{typ:id}}`), Einfügen-Fenster, Suche (Titel + Inhalt), Vorlagen, Verzeichnisse, Zeitleiste | umgesetzt |
+| 2 | Feedback-Schnittstelle (intern + extern per API), Status/Meilensteine, Kommentare/Versionen/Export für Dokumente | Backend umgesetzt |
 | 3 | Referenz-Marker im Plan (Aufgaben/Dokumente/Orte auf der Karte platzieren) | offen |
 
 ## Phase 1
@@ -78,13 +78,44 @@ Rechte-gefiltert wie die Auflösung. `space` beschränkt nur Dateien und Bilder;
   Missionsbau-Einträge nur für Missionsbauer.
 * Tab **Zeitleiste**: vertikaler Zeitstrahl, Klick öffnet die Datei an der Überschrift.
 
-## Phase 2 (Skizze)
-* **Feedback**: `project_feedback` (Titel, Text, Art bug/idee/lob, Status neu/in Arbeit/erledigt/abgelehnt, Quelle, Absendername, optional Plan/Datei, Zeitstempel).
-  Oberfläche im Projekt (Tab „Feedback“, Filter, Status ändern, zu Aufgabe machen).
-  Extern: pro Projekt ein **Feedback-Token** (rotierbar) → `POST /api/public/feedback/{token}` (rate-limitiert, ohne Login) plus
-  einbettbares Formular; angemeldet über API-Token (`feedback:write`).
-* **Status/Meilensteine**: Missionsstatus Entwurf → Review → Test → Freigabe, Meilensteine mit Termin, Anzeige in der Übersicht.
-* **Dokumente**: Kommentare (Thread je Datei, wie Aufgaben), Versionsverlauf (letzte 50, Wiederherstellen), Export als Markdown/PDF.
+## Phase 2
+
+### Feedback
+* Tabelle `project_feedback`: `id, project_id, title(200), text(Text, max 5000), kind (bug|idea|praise|other), status (new|doing|done|rejected), source (internal|external), author_name(80), author_user_id?, plan_id?, doc_id?, task_id?, created_at, updated_at, handled_by?`.
+* Intern (`/api/projects/{pid}/feedback`): `GET` (Filter `status`, `kind`, `q`), `POST` (auch Betrachter), `PATCH` Status/Notiz (Editor), `DELETE` (Owner),
+  `POST …/{id}/to-task` erzeugt eine Aufgabe (verknüpft, `task_id` gesetzt). Missionsbau-Dateien/Pläne als Bezug nur wählbar, wenn sichtbar.
+* **Externe Schnittstelle** (ohne Login): pro Projekt ein **Feedback-Token** (`projects.feedback_token`, 40 Zeichen, nullable = aus).
+  Owner: `GET/POST/DELETE /api/projects/{pid}/feedback-token` (anzeigen / neu erzeugen / abschalten).
+  Öffentlich: `GET /api/public/feedback/{token}` → `{"project":"Name","kinds":[…]}`; `POST /api/public/feedback/{token}`
+  Body `{title,text,kind,name,website}` (`website` ist ein Honeypot-Feld: gefüllt → still verwerfen). Rate-Limit je IP und je Token,
+  Textgrenzen, Projekt archiviert → 410, Token unbekannt → 404. Quelle = `external`.
+  Frontend-Route `#/feedback/<token>` (öffentliches Formular, einbettbar per `<iframe>`), Doku mit `curl`-Beispiel im Handbuch.
+* Tab **Feedback**: Liste mit Filter/Suche, Status ändern, „zu Aufgabe machen“, Token-Verwaltung für Owner (Link kopieren, neu erzeugen, abschalten).
+
+### Status & Meilensteine
+* `projects.stage` (`draft|review|test|release`, Standard `draft`), per `PATCH /projects/{pid}` (Editor).
+* Tabelle `project_milestones(id, project_id, title(120), due_date?, done, ordering)`; `GET/POST/PATCH/DELETE /api/projects/{pid}/milestones` (Schreiben: Editor).
+* Übersicht: Stufen-Anzeige (Stepper) und Meilenstein-Liste mit Fortschritt, überfällige hervorgehoben; Feedback-Zähler „neu“.
+
+### Dokumente
+* **Kommentare**: Tabelle `doc_comments` (wie `task_comments`, mit Erwähnungen), Endpunkte `…/docs/{doc_id}/comments` (GET/POST/PATCH/DELETE), Rechte wie die Datei (Missionsbau nur Builder), Betrachter dürfen kommentieren.
+* **Versionen**: Tabelle `project_doc_versions(id, doc_id, project_id, name, content, saved_by, created_at)`. Beim Speichern von geändertem Inhalt wird der **vorherige** Stand
+  gesichert, außer der letzte Eintrag ist von demselben Nutzer und jünger als 5 Minuten; höchstens 50 pro Datei (älteste fallen weg).
+  `GET …/docs/{id}/versions`, `GET …/versions/{vid}` (mit Inhalt), `POST …/versions/{vid}/restore` (Editor; sichert den aktuellen Stand vorher).
+* **Export**: im Frontend – „Als Markdown herunterladen“ und „Drucken / PDF“ (Druck-Stylesheet, nur die gerenderte Datei).
+
+### Umsetzung Backend: Abweichungen und Ergänzungen
+* **Pfade:** intern wie alle Projekt-Endpunkte ohne `/api` (`/projects/{pid}/feedback` …); nur die öffentliche Schnittstelle liegt unter `/api/public/feedback/{token}`.
+* `project_feedback` hat zusätzlich `note` (interne Notiz, per `PATCH` setzbar). `PATCH` ändert `status`, `kind`, `note`; `handled_by` = wer zuletzt den Status gesetzt hat (bei „new“ leer).
+* `to-task` antwortet `201 {"feedback":…,"task":…}`, setzt ein neues Feedback auf `doing`, übernimmt Plan/Datei nur, wenn für den Nutzer sichtbar; hat das Feedback schon eine (noch vorhandene) Aufgabe → 409. Löschen der Aufgabe/Datei leert `task_id`/`doc_id`.
+* Feedback-Token: `GET/POST/DELETE …/feedback-token` liefert `{"enabled","token","path"}`; nur Owner. 40 Zeichen (`secrets.token_urlsafe(30)`), eindeutiger Index.
+* Öffentlich: Rate-Limit 10 POST je IP/10 min, 60 POST je Projekt/Stunde, 120 GET je IP/min (→ 429); Honeypot antwortet `201 {"ok":true}`, speichert aber nichts; Postfach voll (5000) → 429; intern → 400.
+* `PATCH /projects/{pid}`: `stage` darf der Editor setzen; sobald ein anderes Feld im Body steht (Name, Beschreibung, `archived`, `folder_id`), bleibt es Owner-Recht. Stufe steht in Projektobjekt, Projektliste und Übersicht.
+* Übersicht: `stage`, `milestones {open, done, overdue, next{id,title,due_date}|null}` (nächster offener Termin ab heute), `feedback_new`.
+* Meilensteine: höchstens 200 je Projekt; `due_date: null` im `PATCH` entfernt den Termin.
+* Dokument-Versionen: leere Stände werden nicht gesichert; Wiederherstellen setzt nur den Inhalt (Name bleibt) und zählt wie ein Speichern (Verweise/Zeitleiste neu). Lesen darf jeder mit Zugriff auf die Datei.
+* Dokument-Kommentare und Feedback lösen **keine** Benachrichtigung aus (die Benachrichtigungsarten sind fest an Frontend/Kanäle gebunden); Erwähnungen werden aber aufgelöst und gespeichert. Aktivitätsfeed: kein Eintrag für Feedback, Meilensteine, Kommentare.
+* Der öffentliche Teil setzt keine eigenen CORS-/Frame-Header; die CSP der App verbietet das Einbetten per `<iframe>` (`frame-ancestors 'none'`, `X-Frame-Options: DENY`) – für das einbettbare Formular braucht die Route `#/feedback/<token>` im Frontend/Proxy eine Ausnahme.
 
 ## Phase 3 (Skizze)
 Referenz-Marker im Missionsbau-Layer eines Plans: Aufgabe, Datei oder Ort wird als Pin auf der Karte platziert; Klick öffnet

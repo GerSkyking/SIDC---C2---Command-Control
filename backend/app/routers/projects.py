@@ -21,6 +21,7 @@ from ..deps import CurrentUser, DbDep
 from ..models import (
     Group,
     GroupMember,
+    DocComment,
     ImagePlacement,
     Phase,
     Plan,
@@ -29,7 +30,10 @@ from ..models import (
     Project,
     ProjectActivity,
     ProjectDoc,
+    ProjectDocVersion,
+    ProjectFeedback,
     ProjectMember,
+    ProjectMilestone,
     ProjectNote,
     ProjectNoteLink,
     ProjectRef,
@@ -57,6 +61,7 @@ from ..schemas import (
     TaskMoveIn,
     TaskPatchIn,
 )
+from ..services import doc_versions as versions_svc
 from ..services import mentions as mentions_svc
 from ..services import notify
 from ..services import refs as refs_svc
@@ -154,7 +159,8 @@ def _act(db: Session, user: User, pid: str, kind: str, ttype: str, tid: str | No
 def _project_out(db: Session, p: Project, role: str, user: User) -> dict:
     return {
         "id": p.id, "name": p.name, "description": p.description, "archived": bool(p.archived),
-        "role": role, "is_builder": effective_mission_builder(db, user), "folder_id": p.folder_id,
+        "role": role, "stage": p.stage or "draft", "is_builder": effective_mission_builder(db, user),
+        "folder_id": p.folder_id,
         "created_by": p.created_by, "created_at": _iso(p.created_at), "updated_at": _iso(p.updated_at),
     }
 
@@ -190,7 +196,7 @@ def list_projects(user: CurrentUser, db: DbDep) -> list[dict]:
     return [
         {
             "id": p.id, "name": p.name, "description": p.description, "archived": bool(p.archived),
-            "role": roles[p.id], "folder_id": p.folder_id, "plan_count": int(plan_cnt.get(p.id, 0)),
+            "role": roles[p.id], "stage": p.stage or "draft", "folder_id": p.folder_id, "plan_count": int(plan_cnt.get(p.id, 0)),
             "open_tasks": int(open_cnt.get(p.id, 0)), "my_open_tasks": int(mine_cnt.get(p.id, 0)),
             "updated_at": _iso(p.updated_at),
         }
@@ -224,7 +230,12 @@ def get_project(pid: str, user: CurrentUser, db: DbDep) -> dict:
 
 @router.patch("/{pid}")
 def patch_project(pid: str, body: ProjectPatchIn, request: Request, user: CurrentUser, db: DbDep) -> dict:
-    p, role = _ctx(db, user, pid, "owner")
+    # Missionsstatus (stage) darf schon der Editor setzen; alles andere bleibt dem Owner vorbehalten.
+    others = (body.name is not None or body.description is not None or body.archived is not None
+              or "folder_id" in body.model_fields_set)
+    p, role = _ctx(db, user, pid, "owner" if others else "editor", write=not others)
+    if body.stage is not None:
+        p.stage = body.stage
     if body.name is not None:
         if not body.name.strip():
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Name fehlt")
@@ -259,6 +270,10 @@ def delete_project(pid: str, request: Request, user: CurrentUser, db: DbDep) -> 
     db.execute(sa_delete(ProjectNote).where(ProjectNote.project_id == pid))
     db.execute(sa_delete(ProjectRef).where(ProjectRef.project_id == pid))
     db.execute(sa_delete(ProjectTimelineEntry).where(ProjectTimelineEntry.project_id == pid))
+    db.execute(sa_delete(ProjectFeedback).where(ProjectFeedback.project_id == pid))
+    db.execute(sa_delete(ProjectMilestone).where(ProjectMilestone.project_id == pid))
+    db.execute(sa_delete(DocComment).where(DocComment.project_id == pid))
+    db.execute(sa_delete(ProjectDocVersion).where(ProjectDocVersion.project_id == pid))
     db.execute(sa_delete(ProjectDoc).where(ProjectDoc.project_id == pid))
     db.execute(sa_delete(ProjectMember).where(ProjectMember.project_id == pid))
     db.delete(p)
@@ -447,6 +462,8 @@ def patch_doc(
     if body.content is not None:
         if d.kind != "doc":
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ordner haben keinen Inhalt")
+        if body.content != old_content:
+            versions_svc.snapshot(db, d, old_name, old_content, user.id)
         d.content = body.content
         d.byte_size = len(body.content.encode("utf-8"))
     if body.doc_type is not None:
@@ -497,6 +514,9 @@ def delete_doc(pid: str, doc_id: str, request: Request, user: CurrentUser, db: D
     db.execute(update(ProjectTask).where(ProjectTask.doc_id.in_(ids)).values(doc_id=None))
     refs_svc.drop(db, "doc", ids)
     timeline_svc.drop(db, ids)
+    db.execute(update(ProjectFeedback).where(ProjectFeedback.doc_id.in_(ids)).values(doc_id=None))
+    db.execute(sa_delete(DocComment).where(DocComment.doc_id.in_(ids)))
+    db.execute(sa_delete(ProjectDocVersion).where(ProjectDocVersion.doc_id.in_(ids)))
     db.execute(sa_delete(ProjectDoc).where(ProjectDoc.id.in_(ids)))
     db.commit()
     _audit(db, request, user, "project.doc.delete", "project_doc", doc_id, project_id=pid, count=len(ids))
@@ -903,6 +923,7 @@ def delete_task(pid: str, tid: str, request: Request, user: CurrentUser, db: DbD
     t = _get_task(db, pid, tid)
     _act(db, user, pid, "task.delete", "task", t.id, t.title)
     refs_svc.drop(db, "task", [tid])
+    db.execute(update(ProjectFeedback).where(ProjectFeedback.task_id == tid).values(task_id=None))
     db.delete(t)
     db.commit()
     _audit(db, request, user, "project.task.delete", "project_task", tid, project_id=pid)
@@ -1092,7 +1113,7 @@ def project_plans(pid: str, user: CurrentUser, db: DbDep) -> list[PlanListItem]:
 
 @router.get("/{pid}/overview")
 def overview(pid: str, user: CurrentUser, db: DbDep) -> dict:
-    _ctx(db, user, pid)
+    p, _ = _ctx(db, user, pid)
     is_b = effective_mission_builder(db, user)
     tasks = list(db.scalars(select(ProjectTask).where(ProjectTask.project_id == pid)))
     open_t = [t for t in tasks if t.status != "done"]
@@ -1127,7 +1148,20 @@ def overview(pid: str, user: CurrentUser, db: DbDep) -> dict:
         sp = _image_spaces(db, imgs)
         imgs = [i for i in imgs if sp[i.id] == "public"]
 
+    ms = list(db.scalars(select(ProjectMilestone).where(ProjectMilestone.project_id == pid)))
+    ms_open = sorted((m for m in ms if not m.done and m.due_date), key=lambda m: m.due_date)
+    nxt = next((m for m in ms_open if m.due_date >= today), None)
+    feedback_new = db.scalar(select(func.count(ProjectFeedback.id)).where(
+        ProjectFeedback.project_id == pid, ProjectFeedback.status == "new"))
+
     return {
+        "stage": p.stage or "draft",
+        "milestones": {
+            "open": sum(1 for m in ms if not m.done), "done": sum(1 for m in ms if m.done),
+            "overdue": sum(1 for m in ms_open if m.due_date < today),
+            "next": ({"id": nxt.id, "title": nxt.title, "due_date": nxt.due_date.isoformat()} if nxt else None),
+        },
+        "feedback_new": int(feedback_new or 0),
         "open_by_assignee": open_by,
         "due_soon": _tasks_out(db, user, due_soon),
         "overdue": _tasks_out(db, user, overdue),

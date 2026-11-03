@@ -541,6 +541,10 @@ class Project(Base):
     folder_id: Mapped[str | None] = mapped_column(
         ForeignKey("project_folders.id", ondelete="SET NULL"), index=True, nullable=True
     )
+    # Missionsstatus: draft | review | test | release
+    stage: Mapped[str] = mapped_column(String(8), default="draft", server_default="draft")
+    # Token der öffentlichen Feedback-Schnittstelle (secrets.token_urlsafe(30), 40 Zeichen); NULL = aus
+    feedback_token: Mapped[str | None] = mapped_column(String(40), unique=True, index=True, nullable=True)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
@@ -700,6 +704,70 @@ class TaskComment(Base):
     mentions: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProjectFeedback(Base):
+    """Rückmeldung zum Projekt: intern (Mitglieder) oder extern (öffentliches Formular / API)."""
+
+    __tablename__ = "project_feedback"
+    __table_args__ = (Index("ix_project_feedback_status", "project_id", "status"),)
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    kind: Mapped[str] = mapped_column(String(8), default="other", server_default="other")  # bug|idea|praise|other
+    status: Mapped[str] = mapped_column(String(8), default="new", server_default="new")  # new|doing|done|rejected
+    source: Mapped[str] = mapped_column(String(8), default="internal", server_default="internal")  # internal|external
+    author_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    author_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    plan_id: Mapped[str | None] = mapped_column(ForeignKey("plans.id", ondelete="SET NULL"), nullable=True)
+    doc_id: Mapped[str | None] = mapped_column(ForeignKey("project_docs.id", ondelete="SET NULL"), nullable=True)
+    task_id: Mapped[str | None] = mapped_column(ForeignKey("project_tasks.id", ondelete="SET NULL"), nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="", server_default="")  # interne Notiz der Bearbeiter
+    handled_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ProjectMilestone(Base):
+    __tablename__ = "project_milestones"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(120))
+    due_date: Mapped["date | None"] = mapped_column(Date, nullable=True)
+    done: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    ordering: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class DocComment(Base):
+    """Diskussions-Thread einer Datei (wie TaskComment). `mentions` = beim Speichern aufgelöste @-Erwähnungen."""
+
+    __tablename__ = "doc_comments"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    doc_id: Mapped[str] = mapped_column(ForeignKey("project_docs.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    text: Mapped[str] = mapped_column(Text)
+    mentions: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProjectDocVersion(Base):
+    """Früherer Stand einer Datei (services/doc_versions.py): Name und Inhalt vor einer Änderung."""
+
+    __tablename__ = "project_doc_versions"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    doc_id: Mapped[str] = mapped_column(ForeignKey("project_docs.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text, default="", server_default="")
+    saved_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
 
 class Conversation(Base):

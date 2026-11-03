@@ -5,6 +5,7 @@ import { icon } from "./icons";
 import { t } from "./i18n";
 import { openLightbox } from "./lightbox";
 import { renderMarkdown } from "./md";
+import { type DocSideHooks, type SideTab, mountSideTab } from "./projectDocExtras";
 import { attachMdToolbar } from "./mdtoolbar";
 import { confirmDialog, promptDialog, toast, toastError } from "./notify";
 import { clearRefCache, copyBtn, mountBacklinks, onDeepLink, takeDeepLink, wireCopyButtons, wireRefChips } from "./projectRefs";
@@ -112,6 +113,8 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
     let dragId = "";
     let conflict = false;
     let saving = false;
+    let sideTab: SideTab | null = null; // geöffneter Reiter der Seitenleiste (Kommentare / Verlauf / Export)
+    let sideRefresh: (() => void) | undefined;
 
     main.innerHTML = `
       <div class="pd-split">
@@ -409,6 +412,15 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
                   .map((ty) => `<option value="${ty}" ${(doc!.doc_type ?? "") === ty ? "selected" : ""}>${ty ? t("dt." + ty) : t("dt.none")}</option>`)
                   .join("")}</select>`
           }
+          <div class="segmented pd-sidebtns" role="group" aria-label="${t("dx.panel")}">${(["comments", "history", "export"] as const)
+            .map(
+              (k) =>
+                `<button type="button" class="seg-btn" data-side="${k}" aria-pressed="false" aria-controls="pdSide" title="${t("dx." + k + "Hint")}" aria-label="${t("dx." + k)}">${icon(
+                  k === "comments" ? "textbox" : k === "history" ? "versions" : "download",
+                  14,
+                )}<span class="pd-lbl"> ${t("dx." + k)}</span></button>`,
+            )
+            .join("")}</div>
           ${ro ? "" : `<select id="pdFolder" class="pd-folder" title="${t("proj.docs.moveTo")}" aria-label="${t("proj.docs.moveTo")}">${folderOptions()}</select>`}
           ${
             ro
@@ -427,7 +439,34 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
           <div class="pd-preview md-preview" id="pdPrev"></div>
         </div>
         <div class="pd-ed-foot muted" id="pdFoot"></div>
-        <div class="pd-backlinks" id="pdBl"></div>`;
+        <div class="pd-backlinks" id="pdBl"></div>
+        <aside class="pd-side" id="pdSide" hidden aria-label="${t("dx.panel")}">
+          <div class="pd-side-head"><strong id="pdSideT"></strong><span class="grow"></span>
+            <button type="button" class="icon-btn" data-sideclose title="${t("common.close")}" aria-label="${t("common.close")}">${icon("x", 16)}</button></div>
+          <div class="pd-side-body" id="pdSideBody"></div>
+        </aside>`;
+      const sideEl = edEl.querySelector<HTMLElement>("#pdSide")!;
+      const showSide = (tab: SideTab | null) => {
+        sideTab = tab;
+        sideRefresh = undefined;
+        edEl.querySelectorAll<HTMLElement>("[data-side]").forEach((b) => {
+          b.classList.toggle("active", b.dataset.side === tab);
+          b.setAttribute("aria-pressed", String(b.dataset.side === tab));
+        });
+        sideEl.hidden = !tab;
+        const body = sideEl.querySelector<HTMLElement>("#pdSideBody")!;
+        body.innerHTML = "";
+        if (!tab || !doc) return;
+        sideEl.querySelector("#pdSideT")!.textContent = t("dx." + tab);
+        sideRefresh = mountSideTab(body, tab, ctx, doc, sideHooks);
+      };
+      edEl.querySelectorAll<HTMLElement>("[data-side]").forEach((b) =>
+        b.addEventListener("click", () => showSide(sideTab === b.dataset.side ? null : (b.dataset.side as SideTab))),
+      );
+      sideEl.querySelector("[data-sideclose]")!.addEventListener("click", () => {
+        showSide(null);
+        edEl.querySelector<HTMLElement>(`[data-side]`)?.focus();
+      });
       void mountBacklinks(edEl.querySelector<HTMLElement>("#pdBl")!, ctx.id, "doc", doc.id);
       edEl.querySelector<HTMLSelectElement>("#pdType")?.addEventListener("change", async (e) => {
         const sel = e.target as HTMLSelectElement;
@@ -500,6 +539,7 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
             setDirty(false);
             paintFoot();
             toast(t("proj.docs.savedToast"), { kind: "success", timeout: 1800 });
+            sideRefresh?.();
             void refresh();
           } catch (e) {
             if (e instanceof ApiError && e.status === 409) {
@@ -545,7 +585,22 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
       }
       setMode(mode);
       paintFoot();
+      showSide(sideTab);
     }
+    /** Editor-Zustand für die Seitenleiste (Verlauf/Export) */
+    const sideHooks: DocSideHooks = {
+      render: renderDoc,
+      content: () => edEl.querySelector<HTMLTextAreaElement>("#pdText")?.value ?? doc?.content ?? "",
+      dirty: () => dirty,
+      reload: async () => {
+        if (!doc) return;
+        doc = await api.projectDoc(ctx.id, doc.id); // Entwurf und Konflikt-Zustand gelten nach dem Wiederherstellen nicht mehr
+        dirty = false;
+        conflict = false;
+        paintEditor();
+        void refresh().catch(() => {});
+      },
+    };
     let saveFn: ((force?: boolean) => Promise<void>) | null = null;
     let showConflictFn: ((v: boolean) => void) | null = null;
     const onKey = (e: KeyboardEvent) => {
