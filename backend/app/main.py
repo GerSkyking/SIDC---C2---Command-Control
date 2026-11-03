@@ -39,6 +39,7 @@ from .routers import (
     plan_images,
     plans,
     project_folders,
+    project_tools,
     projects,
     public,
     tiles,
@@ -133,6 +134,7 @@ app.include_router(plans.folders_router)
 app.include_router(plan_images.router)
 app.include_router(project_folders.router)
 app.include_router(projects.router)
+app.include_router(project_tools.router)
 app.include_router(chat.router)
 app.include_router(bridge.router)
 app.include_router(notify_channels.router)

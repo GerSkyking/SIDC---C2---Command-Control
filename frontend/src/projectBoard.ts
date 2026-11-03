@@ -3,7 +3,10 @@ import { api, type PlanItem, type ProjectMember, type ProjectTask, type TaskPrio
 import { esc } from "./esc";
 import { icon } from "./icons";
 import { t } from "./i18n";
-import { a11yModal, confirmDialog, toastError } from "./notify";
+import { renderMarkdown } from "./md";
+import { attachMdToolbar } from "./mdtoolbar";
+import { a11yModal, confirmDialog, toast, toastError } from "./notify";
+import { copyBtn, mountBacklinks, onDeepLink, takeDeepLink, wireCopyButtons, wireRefChips } from "./projectRefs";
 import { type ProjCtx, dragWith, fmtDate, modalOpen, startPolling, todayStr } from "./projectUtil";
 
 const COLS: TaskStatus[] = ["open", "doing", "review", "done"];
@@ -33,6 +36,22 @@ export function mountBoard(host: HTMLElement, ctx: ProjCtx): void {
       <div class="kb-cols" id="kbCols"></div>
     </div>`;
   const cols = host.querySelector<HTMLElement>("#kbCols")!;
+  wireCopyButtons(cols);
+
+  // Deep-Link ?task=<id> (aus Verweis-Chips/Suche): Aufgabe im Detaildialog öffnen
+  let wantTask = takeDeepLink().get("task") ?? "";
+  const openById = async (id: string) => {
+    let task = tasks.find((x) => x.id === id);
+    if (!task) task = (await api.projectTasks(ctx.id).catch((): ProjectTask[] => [])).find((x) => x.id === id); // Filter „Meine" ausgeblendet?
+    if (task) void openTaskDialog(ctx, task, members, plans, reload);
+    else toast(t("ref.unavailable"), { kind: "warn" });
+  };
+  onDeepLink(host, ctx.id, ["tasks"], (p) => {
+    const id = p.get("task");
+    if (!id) return false;
+    void openById(id);
+    return true;
+  });
 
   const assigneeName = (x: ProjectTask): string =>
     x.assignee_label || members.find((m) => m.subject_type === "user" && m.subject_id === x.assignee_id)?.name || "";
@@ -46,6 +65,7 @@ export function mountBoard(host: HTMLElement, ctx: ProjCtx): void {
     const who = assigneeName(x);
     return `<div class="kb-card prio-${x.priority}" data-id="${esc(x.id)}" tabindex="0" role="button" title="${t("proj.task.open")}">
       ${ctx.canEdit ? `<span class="kb-grip" title="${t("proj.task.drag")}">${icon("drag", 14)}</span>` : ""}
+      ${copyBtn("task", x.id, "icon-btn kb-copy", 13)}
       <div class="kb-title">${esc(x.title)}</div>
       <div class="kb-meta">
         ${x.priority !== "normal" ? `<span class="kb-prio p-${x.priority}">${t("proj.prio." + x.priority)}</span>` : ""}
@@ -236,6 +256,11 @@ export function mountBoard(host: HTMLElement, ctx: ProjCtx): void {
     members = m;
     plans = p;
     return reload();
+  }).then(() => {
+    if (!wantTask) return;
+    const w = wantTask;
+    wantTask = "";
+    return openById(w);
   }).catch((e) => {
     cols.innerHTML = `<p class="error">${esc(e instanceof Error ? e.message : String(e))}</p>`;
   });
@@ -264,11 +289,14 @@ async function openTaskDialog(
   const back = document.createElement("div");
   back.className = "edit-modal";
   back.innerHTML = `<div class="card stack kb-dlg" style="width:min(34rem,94vw);max-height:92vh;overflow:auto">
-    <h1 style="margin:0;font-size:1.05rem">${t("proj.task.edit")}</h1>
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <h1 style="margin:0;font-size:1.05rem">${t("proj.task.edit")}</h1>${copyBtn("task", task.id, "icon-btn", 15)}
+    </div>
     <label class="muted" for="tk-t">${t("proj.task.title")}</label>
     <input id="tk-t" maxlength="200" value="${esc(task.title)}" placeholder="${t("proj.task.titlePh")}" ${dis} />
     <label class="muted" for="tk-d">${t("proj.task.desc")}</label>
     <textarea id="tk-d" rows="5" maxlength="20000" placeholder="${t("proj.task.descPh")}" ${dis}>${esc(task.description)}</textarea>
+    <div class="md-preview kb-prev" id="tk-prev" hidden></div>
     <div class="kb-dlg-grid">
       <div class="field"><label class="muted" for="tk-s">${t("proj.task.status")}</label>
         <select id="tk-s" ${dis}>${COLS.map((s) => `<option value="${s}" ${s === task.status ? "selected" : ""}>${t("proj.col." + s)}</option>`).join("")}</select></div>
@@ -295,6 +323,7 @@ async function openTaskDialog(
     </div>
     <h4 class="th-title">${t("thread.title")}</h4>
     <div id="tk-thread" class="th"></div>
+    <div id="tk-bl"></div>
     <details class="kb-hist"><summary>${t("act.history")}</summary><div id="tk-hist"></div></details>
     <div class="row" style="justify-content:space-between">
       ${ctx.canEdit ? `<button class="danger" data-del title="${t("common.delete")}">${icon("trash", 14)} ${t("common.delete")}</button>` : "<span></span>"}
@@ -304,6 +333,24 @@ async function openTaskDialog(
   document.body.appendChild(back);
   a11yModal(back, t("proj.task.edit"));
   const close = () => back.remove();
+  wireCopyButtons(back);
+  void mountBacklinks(back.querySelector<HTMLElement>("#tk-bl")!, ctx.id, "task", task.id);
+  // Beschreibung: Markdown-Leiste mit „Einfügen" + Vorschau mit Verweis-Chips (nur wenn Codes vorkommen)
+  const desc = back.querySelector<HTMLTextAreaElement>("#tk-d")!;
+  const prev = back.querySelector<HTMLElement>("#tk-prev")!;
+  const paintPrev = () => {
+    prev.hidden = !desc.value.includes("{{");
+    if (prev.hidden) return;
+    prev.innerHTML = renderMarkdown(desc.value);
+    void wireRefChips(prev, ctx.id);
+  };
+  if (!ro) attachMdToolbar(desc, { projectId: ctx.id, isBuilder: ctx.isBuilder });
+  let prevTimer = 0;
+  desc.addEventListener("input", () => {
+    window.clearTimeout(prevTimer);
+    prevTimer = window.setTimeout(paintPrev, 200);
+  });
+  paintPrev();
   back.addEventListener("mousedown", (e) => e.target === back && close());
   back.addEventListener("keydown", (e) => e.key === "Escape" && close());
   back.querySelector("[data-c]")!.addEventListener("click", close);

@@ -7,16 +7,19 @@ import { langSelect, t, wireLangSelect } from "./i18n";
 import { a11yModal, confirmDialog, toast, toastError } from "./notify";
 import { renderPlanTree } from "./planTree";
 import { projectFolderPath, renderProjectTree, selectedProjectFolder } from "./projectTree";
-import { type ProjCtx, fmtBytes } from "./projectUtil";
+import { wireCopyButtons } from "./projectRefs";
+import { type ProjCtx, fmtBytes, modalOpen } from "./projectUtil";
 import { openSettings } from "./settings";
 import { getLastProject, setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
-type Tab = "overview" | "activity" | "public" | "builder" | "plans" | "tasks" | "whiteboard" | "members";
+type Tab = "overview" | "activity" | "public" | "builder" | "directory" | "timeline" | "plans" | "tasks" | "whiteboard" | "members";
 const TABS: { id: Tab; ic: string; key: string }[] = [
   { id: "overview", ic: "compass", key: "proj.tab.overview" },
   { id: "activity", ic: "audit", key: "proj.tab.activity" },
   { id: "public", ic: "notes", key: "proj.tab.public" },
   { id: "builder", ic: "lock", key: "proj.tab.builder" },
+  { id: "directory", ic: "tactical", key: "proj.tab.directory" },
+  { id: "timeline", ic: "clock", key: "proj.tab.timeline" },
   { id: "plans", ic: "map", key: "proj.tab.plans" },
   { id: "tasks", ic: "check", key: "proj.tab.tasks" },
   { id: "whiteboard", ic: "textbox", key: "proj.tab.whiteboard" },
@@ -207,6 +210,8 @@ async function renderList(app: HTMLElement, me: Me): Promise<void> {
 
 // ─── Projektrahmen ────────────────────────────────────────────────────────
 
+let searchKey: ((e: KeyboardEvent) => void) | null = null;
+
 async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: string): Promise<void> {
   let project: ProjectDetail;
   try {
@@ -249,15 +254,16 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
        ${project.archived ? `<div class="proj-banner">${icon("lock", 14)} ${t("proj.archivedBanner")}</div>` : ""}
        <div class="proj-head">
          <p class="proj-desc">${project.description ? esc(project.description) : `<span class="muted">${t("proj.noDesc")}</span>`}</p>
-         ${
-           ctx.isOwner
-             ? `<span class="proj-head-actions">
-                 <button class="icon-btn" id="pjEdit" title="${t("proj.edit")}" aria-label="${t("proj.edit")}">${icon("edit", 16)}</button>
+         <span class="proj-head-actions">
+           <button id="pjFind" class="pj-find" title="${t("rp.searchHint")}" aria-label="${t("rp.searchHint")}" aria-keyshortcuts="/" aria-haspopup="dialog">${icon("search", 15)} <span class="pj-find-lbl">${t("rp.searchBtn")}</span> <kbd>/</kbd></button>
+           ${
+             ctx.isOwner
+               ? `<button class="icon-btn" id="pjEdit" title="${t("proj.edit")}" aria-label="${t("proj.edit")}">${icon("edit", 16)}</button>
                  <button id="pjArch" title="${project.archived ? t("proj.unarchiveHint") : t("proj.archiveHint")}">${project.archived ? t("proj.unarchive") : t("proj.archive")}</button>
-                 <button class="icon-btn" id="pjDel" title="${t("proj.delete")}" aria-label="${t("proj.delete")}">${icon("trash", 16)}</button>
-               </span>`
-             : ""
-         }
+                 <button class="icon-btn" id="pjDel" title="${t("proj.delete")}" aria-label="${t("proj.delete")}">${icon("trash", 16)}</button>`
+               : ""
+           }
+         </span>
        </div>
        <nav class="proj-tabs" role="tablist" aria-label="${esc(project.name)}">${tabs
          .map(
@@ -274,6 +280,27 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
   body.dataset.tab = tab;
   // aktiven Reiter in der Leiste sichtbar halten (schmale Bildschirme scrollen seitlich)
   app.querySelector(".proj-tab.active")?.scrollIntoView?.({ block: "nearest", inline: "center" });
+
+  // Projektsuche (Fenster der Einfügen-Auswahl), Tastenkürzel „/" wenn nichts fokussiert ist
+  const openSearch = async () => {
+    if (modalOpen()) return;
+    const { openRefPicker } = await import("./refPicker");
+    void openRefPicker({ projectId: id, mode: "search", isBuilder: ctx.isBuilder });
+  };
+  app.querySelector("#pjFind")?.addEventListener("click", () => void openSearch());
+  if (searchKey) document.removeEventListener("keydown", searchKey);
+  searchKey = (e: KeyboardEvent) => {
+    if (!app.querySelector("#pjFind")) {
+      document.removeEventListener("keydown", searchKey!);
+      return;
+    }
+    const el = e.target as HTMLElement | null;
+    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || modalOpen()) return;
+    if (el?.closest("input, textarea, select, [contenteditable]")) return;
+    e.preventDefault();
+    void openSearch();
+  };
+  document.addEventListener("keydown", searchKey);
 
   if (ctx.isOwner) {
     app.querySelector("#pjEdit")?.addEventListener("click", () => editProjectDialog(ctx, () => void renderProject(app, me, id, tab)));
@@ -300,6 +327,8 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
     if (tab === "overview") (await import("./projectOverview")).mountOverview(body, ctx);
     else if (tab === "activity") (await import("./projectActivity")).mountActivity(body, ctx);
     else if (tab === "public" || tab === "builder") (await import("./projectDocs")).mountDocs(body, ctx, tab);
+    else if (tab === "directory") (await import("./projectDirectory")).mountDirectory(body, ctx);
+    else if (tab === "timeline") (await import("./projectTimeline")).mountTimeline(body, ctx);
     else if (tab === "plans") await mountPlans(body, ctx);
     else if (tab === "tasks") (await import("./projectBoard")).mountBoard(body, ctx);
     else if (tab === "whiteboard") (await import("./projectWhiteboard")).mountWhiteboard(body, ctx);
@@ -394,6 +423,7 @@ async function mountPlans(host: HTMLElement, ctx: ProjCtx): Promise<void> {
   const reload = () => {
     if (host.isConnected) void mountPlans(host, ctx).catch(toastError);
   };
+  wireCopyButtons(host.querySelector<HTMLElement>("#ppTree")!);
   renderPlanTree(host.querySelector<HTMLElement>("#ppTree")!, plans, folders, ctx.canEdit, {
     projectId: ctx.id,
     user: { id: ctx.me.id, isAdmin: ctx.me.role === "admin" },

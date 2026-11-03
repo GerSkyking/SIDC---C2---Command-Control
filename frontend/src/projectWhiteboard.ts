@@ -6,7 +6,9 @@ import { api, type NoteColor, type NoteLink, type ProjectNote } from "./api";
 import { esc } from "./esc";
 import { icon } from "./icons";
 import { t } from "./i18n";
-import { confirmDialog, toastError } from "./notify";
+import { findRefCodes, refChipHtml } from "./md";
+import { confirmDialog, toast, toastError } from "./notify";
+import { copyBtn, onDeepLink, takeDeepLink, wireCopyButtons, wireRefChips } from "./projectRefs";
 import { type ProjCtx, dragWith, modalOpen, startPolling } from "./projectUtil";
 
 const COLORS: NoteColor[] = ["yellow", "green", "blue", "pink", "orange", "gray"];
@@ -79,6 +81,7 @@ export function mountWhiteboard(host: HTMLElement, ctx: ProjCtx): void {
   const linkG = host.querySelector<SVGGElement>("#wbLinkG")!;
   const tmp = host.querySelector<SVGLineElement>("#wbTmp")!;
   const zoomVal = host.querySelector<HTMLElement>(".wb-zoomval")!;
+  wireCopyButtons(world);
 
   // ─── Ansicht (Verschieben + Zoom) ──────────────────────────────────────
   let saveTimer = 0;
@@ -413,12 +416,15 @@ export function mountWhiteboard(host: HTMLElement, ctx: ProjCtx): void {
   const paintRefs = (n: ProjectNote) => {
     const box = els.get(n.id)?.querySelector<HTMLElement>(".wb-refs");
     if (!box) return;
+    const codes = findRefCodes(n.text).slice(0, 6); // {{…}}-Verweise im Text als Chips
     box.innerHTML =
+      codes.map((c) => refChipHtml(c.type, c.id)).join("") +
       (n.task_id
         ? `<a class="wb-chip wb-chip-task" href="#/projects/${ctx.id}/tasks" title="${esc(t("proj.wb.openTasks"))}">${icon("check", 12)}<span>${esc(n.task_title || t("proj.wb.taskGone"))}</span></a>`
         : "") +
       (n.user_id ? `<span class="wb-chip wb-chip-user" title="${esc(n.user_label || "")}">${icon("users", 12)}<span>${esc(n.user_label || "?")}</span></span>` : "");
     box.hidden = !box.innerHTML;
+    if (codes.length) void wireRefChips(box, ctx.id);
   };
 
   // ─── Notizen ───────────────────────────────────────────────────────────
@@ -430,9 +436,11 @@ export function mountWhiteboard(host: HTMLElement, ctx: ProjCtx): void {
       <div class="wb-head" ${ctx.canEdit ? `title="${t("proj.wb.dragHint")}"` : ""}>
         <span class="wb-grip">${ctx.canEdit ? icon("drag", 14) : ""}</span>
         <span class="grow"></span>
+        ${copyBtn("note", n.id, "icon-btn", 14)}
         ${
           ctx.canEdit
-            ? `<button class="icon-btn wb-ltask" title="${t("proj.wb.linkTask")}" aria-label="${t("proj.wb.linkTask")}">${icon("check", 14)}</button>
+            ? `<button class="icon-btn wb-ins" title="${t("md.insertRefHint")}" aria-label="${t("md.insertRefHint")}" aria-haspopup="dialog">${icon("search", 14)}</button>
+               <button class="icon-btn wb-ltask" title="${t("proj.wb.linkTask")}" aria-label="${t("proj.wb.linkTask")}">${icon("check", 14)}</button>
                <button class="icon-btn wb-luser" title="${t("proj.wb.linkUser")}" aria-label="${t("proj.wb.linkUser")}">${icon("users", 14)}</button>
                <button class="icon-btn wb-col" title="${t("proj.wb.changeColor")}" aria-label="${t("proj.wb.changeColor")}">${icon("star", 14)}</button>
                <button class="icon-btn wb-del" title="${t("proj.wb.delete")}" aria-label="${t("proj.wb.delete")}">${icon("trash", 14)}</button>`
@@ -452,6 +460,18 @@ export function mountWhiteboard(host: HTMLElement, ctx: ProjCtx): void {
     ta.addEventListener("blur", () => {
       editing = Math.max(0, editing - 1);
       flush(n);
+      paintRefs(n);
+    });
+    el.querySelector(".wb-ins")!.addEventListener("click", async () => {
+      const s = ta.selectionStart ?? ta.value.length;
+      const e = ta.selectionEnd ?? s;
+      const { openRefPicker } = await import("./refPicker");
+      const code = await openRefPicker({ projectId: ctx.id, mode: "insert", isBuilder: ctx.isBuilder });
+      ta.focus();
+      if (!code) return;
+      if (ta.value.length - (e - s) + code.length > 4000) return toast(t("proj.wb.tooLong"), { kind: "warn" });
+      ta.setRangeText(code, s, e, "end");
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
     });
     ta.addEventListener("input", () => {
       n.text = ta.value;
@@ -625,6 +645,7 @@ export function mountWhiteboard(host: HTMLElement, ctx: ProjCtx): void {
       if (!typing && cur.text !== s.text) {
         cur.text = s.text;
         ta.value = s.text;
+        paintRefs(cur);
       }
       if (!el.classList.contains("dragging")) {
         Object.assign(cur, { x: s.x, y: s.y, w: s.w, h: s.h });
@@ -681,7 +702,37 @@ export function mountWhiteboard(host: HTMLElement, ctx: ProjCtx): void {
     }
   });
 
-  load().catch((e) => {
+  // Deep-Link ?note=<id> (aus Verweis-Chips/Suche): Ansicht auf die Notiz zentrieren und markieren
+  const focusNote = (id: string): boolean => {
+    const n = notes.get(id);
+    const el = els.get(id);
+    if (!n || !el) {
+      toast(t("ref.unavailable"), { kind: "warn" });
+      return false;
+    }
+    view.x = viewEl.clientWidth / 2 - (n.x + n.w / 2) * view.z;
+    view.y = viewEl.clientHeight / 2 - (n.y + n.h / 2) * view.z;
+    applyView();
+    el.classList.add("wb-flash");
+    window.setTimeout(() => el.classList.remove("wb-flash"), 2400);
+    el.querySelector("textarea")?.focus({ preventScroll: true });
+    return true;
+  };
+  let wantNote = takeDeepLink().get("note") ?? "";
+  onDeepLink(host, ctx.id, ["whiteboard"], (p) => {
+    const id = p.get("note");
+    if (!id) return false;
+    focusNote(id);
+    return true;
+  });
+  load()
+    .then(() => {
+      if (!wantNote) return;
+      const w = wantNote;
+      wantNote = "";
+      focusNote(w);
+    })
+    .catch((e) => {
     viewEl.insertAdjacentHTML("beforebegin", `<p class="error">${esc(e instanceof Error ? e.message : String(e))}</p>`);
   });
   startPolling(host, load, () => busyDrag || editing > 0 || timers.size > 0 || modalOpen());

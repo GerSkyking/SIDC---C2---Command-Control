@@ -57,6 +57,8 @@ const ICONS: Record<string, string> = {
   folder: `${A("M3 7h6l2 2h10v10H3z")}${L("M3 7h6l2 2h10v10H3z")}`,
   folderOpen: `${A("M3 7h6l2 2h10v10H3z")}${L("M3 7h6l2 2h9M3 7v12h16l2-8H7z")}`,
   drag: L("M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01"),
+  link: L("M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"),
+  clock: `${A("M12 21a9 9 0 100-18 9 9 0 000 18z")}${L("M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2")}`,
   pin: `${A("M9 4h6l-1 6 3 3H7l3-3z")}${L("M9 4h6l-1 6 3 3H7l3-3zM12 16v4")}`,
 
   // Theme

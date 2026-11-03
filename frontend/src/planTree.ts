@@ -5,6 +5,7 @@ import { t } from "./i18n";
 import { icon } from "./icons";
 import { confirmDialog, promptDialog, toastError } from "./notify";
 import { esc } from "./esc";
+import { copyBtn } from "./projectRefs";
 
 interface TreeOpts {
   onChanged: () => void; // Daten neu laden (nach Änderungen am Server)
@@ -232,6 +233,7 @@ export function renderPlanTree(
       `<span class="badge">${p.level}</span>` +
       (opts.mapName ? `<span class="tree-map" title="${t("plans.map")}">${icon("map", 12)} ${esc(opts.mapName(p.map_id))}</span>` : "") +
       `<span class="tree-actions">` +
+      (pid ? copyBtn("plan", p.id, "icon-btn", 16) : "") +
       (canManage
         ? `<select class="tree-move" title="${t("plans.moveTo")}" aria-label="${t("plans.moveTo")}">${folderOptions(p.folder_id)}</select>`
         : "") +

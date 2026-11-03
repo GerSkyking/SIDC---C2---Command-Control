@@ -156,7 +156,18 @@ function buttons(): Btn[] {
 const HEADINGS = [1, 2, 3, 4];
 const CALLOUTS = ["note", "info", "tip", "success", "question", "warning", "danger", "quote"];
 
-export function attachMdToolbar(ta: HTMLTextAreaElement): void {
+/** Verknüpfung per Einfügen-Fenster an der Cursorposition einsetzen. */
+async function insertRef(ta: HTMLTextAreaElement, projectId: string, isBuilder: boolean): Promise<void> {
+  const s = ta.selectionStart;
+  const e = ta.selectionEnd;
+  const { openRefPicker } = await import("./refPicker");
+  const code = await openRefPicker({ projectId, mode: "insert", isBuilder });
+  if (code) replaceRange(ta, s, e, code, s + code.length, s + code.length);
+  else ta.focus();
+}
+
+/** `opts.projectId` schaltet den Knopf „Einfügen" (Verknüpfungen auf Dateien, Aufgaben, Pläne, Notizen, Bilder, Orte) frei. */
+export function attachMdToolbar(ta: HTMLTextAreaElement, opts: { projectId?: string; isBuilder?: boolean } = {}): void {
   if (ta.readOnly || ta.dataset.mdtb) return;
   ta.dataset.mdtb = "1";
   const wrapEl = document.createElement("div");
@@ -229,6 +240,17 @@ export function attachMdToolbar(ta: HTMLTextAreaElement): void {
     bar.append(el);
   }
   bar.append(cos);
+  if (opts.projectId) {
+    const pid = opts.projectId;
+    const ins = document.createElement("button");
+    ins.type = "button";
+    ins.className = "mdtb-btn mdtb-ref";
+    ins.title = t("md.insertRefHint");
+    ins.setAttribute("aria-haspopup", "dialog");
+    ins.innerHTML = `${icon("link", 13)} ${t("md.insertRef")}`;
+    ins.addEventListener("click", () => void insertRef(ta, pid, !!opts.isBuilder));
+    bar.append(ins);
+  }
 
   const apply = (open: boolean): void => {
     bar.hidden = !open;

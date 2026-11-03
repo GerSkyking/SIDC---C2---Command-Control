@@ -32,7 +32,9 @@ from ..models import (
     ProjectMember,
     ProjectNote,
     ProjectNoteLink,
+    ProjectRef,
     ProjectTask,
+    ProjectTimelineEntry,
     TaskComment,
     User,
     now,
@@ -57,6 +59,8 @@ from ..schemas import (
 )
 from ..services import mentions as mentions_svc
 from ..services import notify
+from ..services import refs as refs_svc
+from ..services import timeline as timeline_svc
 from ..services.realtime import broadcast_from_thread
 from .live import _author_of, _image_out
 from .project_folders import can_use_folder
@@ -69,6 +73,7 @@ _MAX_TASKS = 5000
 _MAX_MEMBERS = 500
 _MAX_COMMENTS = 1000
 _SPACE_Q = Annotated[str, Query(pattern=r"^(public|builder)$")]
+_DOC_TYPE_RE = r"^(mission|briefing|opord|character|faction|place|scene)$"
 
 
 # ─── Helfer ────────────────────────────────────────────────────────────────
@@ -252,6 +257,8 @@ def delete_project(pid: str, request: Request, user: CurrentUser, db: DbDep) -> 
     db.execute(sa_delete(ProjectTask).where(ProjectTask.project_id == pid))
     db.execute(sa_delete(ProjectNoteLink).where(ProjectNoteLink.project_id == pid))
     db.execute(sa_delete(ProjectNote).where(ProjectNote.project_id == pid))
+    db.execute(sa_delete(ProjectRef).where(ProjectRef.project_id == pid))
+    db.execute(sa_delete(ProjectTimelineEntry).where(ProjectTimelineEntry.project_id == pid))
     db.execute(sa_delete(ProjectDoc).where(ProjectDoc.project_id == pid))
     db.execute(sa_delete(ProjectMember).where(ProjectMember.project_id == pid))
     db.delete(p)
@@ -352,7 +359,7 @@ def assignees(pid: str, user: CurrentUser, db: DbDep) -> list[dict]:
 def _doc_out(d: ProjectDoc, labels: dict[str, str], content: bool = False) -> dict:
     out = {
         "id": d.id, "parent_id": d.parent_id, "kind": d.kind, "name": d.name, "space": d.space,
-        "ordering": d.ordering, "byte_size": d.byte_size, "updated_at": _iso(d.updated_at),
+        "doc_type": d.doc_type or "", "ordering": d.ordering, "byte_size": d.byte_size, "updated_at": _iso(d.updated_at),
         "updated_by": labels.get(d.updated_by or "", None),
     }
     if content:
@@ -362,13 +369,16 @@ def _doc_out(d: ProjectDoc, labels: dict[str, str], content: bool = False) -> di
 
 
 @router.get("/{pid}/docs")
-def list_docs(pid: str, user: CurrentUser, db: DbDep, space: _SPACE_Q = "public") -> list[dict]:
+def list_docs(
+    pid: str, user: CurrentUser, db: DbDep, space: _SPACE_Q = "public",
+    type_: Annotated[str | None, Query(alias="type", pattern=_DOC_TYPE_RE)] = None,
+) -> list[dict]:
     _ctx(db, user, pid)
     _require_space(db, user, space)
-    rows = list(db.scalars(
-        select(ProjectDoc).where(ProjectDoc.project_id == pid, ProjectDoc.space == space)
-        .order_by(ProjectDoc.ordering, ProjectDoc.name)
-    ))
+    q = select(ProjectDoc).where(ProjectDoc.project_id == pid, ProjectDoc.space == space)
+    if type_:
+        q = q.where(ProjectDoc.doc_type == type_)
+    rows = list(db.scalars(q.order_by(ProjectDoc.ordering, ProjectDoc.name)))
     labels = _labels(db, [d.updated_by for d in rows])
     return [_doc_out(d, labels) for d in rows]
 
@@ -398,11 +408,15 @@ def create_doc(pid: str, body: DocCreateIn, request: Request, user: CurrentUser,
         if parent_id else ProjectDoc.parent_id.is_(None)))
     d = ProjectDoc(
         project_id=pid, space=body.space, parent_id=parent_id, kind=body.kind, name=name,
-        content=content, ordering=int(nxt) + 1, byte_size=len(content.encode("utf-8")),
+        content=content, doc_type=body.doc_type if body.kind == "doc" else "",
+        ordering=int(nxt) + 1, byte_size=len(content.encode("utf-8")),
         created_by=user.id, updated_by=user.id,
     )
     db.add(d)
     db.flush()
+    if d.kind == "doc":
+        refs_svc.rebuild(db, pid, "doc", d.id, d.content)
+        timeline_svc.rebuild(db, d)
     _act(db, user, pid, "doc.create", "doc", d.id, d.name, space=d.space, folder=(d.kind == "folder"))
     db.commit()
     _audit(db, request, user, "project.doc.create", "project_doc", d.id, project_id=pid, space=d.space)
@@ -435,6 +449,10 @@ def patch_doc(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ordner haben keinen Inhalt")
         d.content = body.content
         d.byte_size = len(body.content.encode("utf-8"))
+    if body.doc_type is not None:
+        if d.kind != "doc" and body.doc_type:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ordner haben keinen Typ")
+        d.doc_type = body.doc_type
     if "parent_id" in body.model_fields_set:
         target = body.parent_id or None
         _check_parent(db, pid, d.space, target)
@@ -458,6 +476,8 @@ def patch_doc(
         _act(db, user, pid, "doc.rename", "doc", d.id, d.name, space=d.space, old=old_name)
     if d.content != old_content:
         _act(db, user, pid, "doc.update", "doc", d.id, d.name, space=d.space)
+        refs_svc.rebuild(db, pid, "doc", d.id, d.content)
+        timeline_svc.rebuild(db, d)
     db.commit()
     _audit(db, request, user, "project.doc.update", "project_doc", d.id, project_id=pid)
     return _doc_out(d, _labels(db, [user.id]), content=True)
@@ -475,6 +495,8 @@ def delete_doc(pid: str, doc_id: str, request: Request, user: CurrentUser, db: D
         frontier = [k for k in kids if k not in ids]
         ids.update(frontier)
     db.execute(update(ProjectTask).where(ProjectTask.doc_id.in_(ids)).values(doc_id=None))
+    refs_svc.drop(db, "doc", ids)
+    timeline_svc.drop(db, ids)
     db.execute(sa_delete(ProjectDoc).where(ProjectDoc.id.in_(ids)))
     db.commit()
     _audit(db, request, user, "project.doc.delete", "project_doc", doc_id, project_id=pid, count=len(ids))
@@ -660,6 +682,7 @@ def create_note(pid: str, body: NoteCreateIn, user: CurrentUser, db: DbDep) -> d
     db.add(n)
     db.flush()
     _act(db, user, pid, "note.create", "note", n.id, n.text.strip().split("\n")[0][:80])
+    refs_svc.rebuild(db, pid, "note", n.id, n.text)
     db.commit()
     return _note_out(db, n)
 
@@ -693,6 +716,7 @@ def patch_note(pid: str, nid: str, body: NotePatchIn, user: CurrentUser, db: DbD
     n.updated_at = now()
     if n.text != old_text:
         _act(db, user, pid, "note.update", "note", n.id, n.text.strip().split("\n")[0][:80])
+        refs_svc.rebuild(db, pid, "note", n.id, n.text)
     db.commit()
     return _note_out(db, n)
 
@@ -704,6 +728,7 @@ def delete_note(pid: str, nid: str, user: CurrentUser, db: DbDep) -> dict:
     _act(db, user, pid, "note.delete", "note", n.id, n.text.strip().split("\n")[0][:80])
     db.execute(sa_delete(ProjectNoteLink).where(
         (ProjectNoteLink.from_id == nid) | (ProjectNoteLink.to_id == nid)))
+    refs_svc.drop(db, "note", [nid])
     db.delete(n)
     db.commit()
     return {"ok": True}
@@ -811,6 +836,7 @@ def create_task(pid: str, body: TaskCreateIn, request: Request, user: CurrentUse
     db.add(t)
     db.flush()
     _act(db, user, pid, "task.create", "task", t.id, t.title, status=t.status, assignee_id=t.assignee_id)
+    refs_svc.rebuild(db, pid, "task", t.id, t.title, t.description)
     db.commit()
     _audit(db, request, user, "project.task.create", "project_task", t.id, project_id=pid)
     return _tasks_out(db, user, [t])[0]
@@ -846,6 +872,8 @@ def patch_task(
     t.updated_by = user.id
     t.updated_at = now()
     _task_changes(db, user, pid, t, before)
+    if t.title != before["title"] or t.description != before["description"]:
+        refs_svc.rebuild(db, pid, "task", t.id, t.title, t.description)
     db.commit()
     _audit(db, request, user, "project.task.update", "project_task", t.id, project_id=pid)
     return _tasks_out(db, user, [t])[0]
@@ -874,6 +902,7 @@ def delete_task(pid: str, tid: str, request: Request, user: CurrentUser, db: DbD
     _ctx(db, user, pid, "editor", write=True)
     t = _get_task(db, pid, tid)
     _act(db, user, pid, "task.delete", "task", t.id, t.title)
+    refs_svc.drop(db, "task", [tid])
     db.delete(t)
     db.commit()
     _audit(db, request, user, "project.task.delete", "project_task", tid, project_id=pid)

@@ -3,9 +3,12 @@ import { api, ApiError, type ProjectDoc, type ProjectDocNode, type ProjectImage,
 import { esc } from "./esc";
 import { icon } from "./icons";
 import { t } from "./i18n";
+import { openLightbox } from "./lightbox";
 import { renderMarkdown } from "./md";
 import { attachMdToolbar } from "./mdtoolbar";
 import { confirmDialog, promptDialog, toast, toastError } from "./notify";
+import { clearRefCache, copyBtn, mountBacklinks, onDeepLink, takeDeepLink, wireCopyButtons, wireRefChips } from "./projectRefs";
+import { type DocType, DOC_TYPES, DOC_TYPE_ICON, askNewDoc, docTypeLabel, isDocType, templateContent } from "./projectTemplates";
 import { type ProjCtx, fmtBytes, modalOpen, relTime, startPolling } from "./projectUtil";
 
 type Mode = "edit" | "split" | "preview";
@@ -43,6 +46,31 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
     },
   };
   let sub: "docs" | "images" = ls.get("sidc_proj_sub") === "images" ? "images" : "docs";
+  // Deep-Links aus Verweis-Chips/Suche: ?doc=<id> öffnet die Datei, ?img=<id> das Bild
+  const dl = takeDeepLink();
+  let wantDoc = dl.get("doc") ?? "";
+  let wantImg = dl.get("img") ?? "";
+  if (wantDoc) sub = "docs";
+  else if (wantImg) sub = "images";
+  let selectDoc: ((id: string) => Promise<void>) | null = null;
+  let imgFocus: ((id: string) => void) | null = null;
+  onDeepLink(host, ctx.id, [space], (p) => {
+    const d = p.get("doc");
+    const im = p.get("img");
+    if (d) {
+      wantDoc = d;
+      if (sub === "docs" && selectDoc) void selectDoc(d);
+      else void switchSub("docs");
+      return true;
+    }
+    if (im) {
+      wantImg = im;
+      if (sub === "images" && imgFocus) imgFocus(im);
+      else void switchSub("images");
+      return true;
+    }
+    return false;
+  });
 
   host.innerHTML = `
     <div class="pd">
@@ -62,15 +90,14 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
     if (sub === "docs") stopPoll = mountTree();
     else mountImages();
   };
-  host.querySelectorAll<HTMLElement>("[data-sub]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (b.dataset.sub === sub) return;
-      if (dirtyCheck && !(await dirtyCheck())) return;
-      sub = b.dataset.sub as "docs" | "images";
-      ls.set("sidc_proj_sub", sub);
-      showSub();
-    }),
-  );
+  async function switchSub(next: "docs" | "images"): Promise<void> {
+    if (next === sub) return;
+    if (dirtyCheck && !(await dirtyCheck())) return;
+    sub = next;
+    ls.set("sidc_proj_sub", sub);
+    showSub();
+  }
+  host.querySelectorAll<HTMLElement>("[data-sub]").forEach((b) => b.addEventListener("click", () => void switchSub(b.dataset.sub as "docs" | "images")));
   let dirtyCheck: (() => Promise<boolean>) | null = null;
 
   // ─── Dateibaum + Editor ──────────────────────────────────────────────────
@@ -104,6 +131,8 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
     const split = main.querySelector<HTMLElement>(".pd-split")!;
     const treeEl = main.querySelector<HTMLElement>("#pdTree")!;
     const edEl = main.querySelector<HTMLElement>("#pdEd")!;
+    wireCopyButtons(treeEl);
+    wireCopyButtons(edEl);
 
     const byId = () => new Map(nodes.map((n) => [n.id, n]));
     const kids = (pid: string | null) =>
@@ -142,20 +171,24 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
     const rowHtml = (n: ProjectDocNode, depth: number): string => {
       const isOpen = open.has(n.id);
       const sel = doc?.id === n.id;
-      const acts = ctx.canEdit
-        ? `<span class="pd-acts">${
+      const edit = ctx.canEdit
+        ? `${
             n.kind === "folder"
               ? `<button class="icon-btn" data-a="newdoc" title="${t("proj.docs.newDocIn")}" aria-label="${t("proj.docs.newDocIn")}">${icon("plus", 14)}</button>
                  <button class="icon-btn" data-a="newfolder" title="${t("proj.docs.newFolderIn")}" aria-label="${t("proj.docs.newFolderIn")}">${icon("folder", 14)}</button>`
               : ""
           }<button class="icon-btn" data-a="ren" title="${t("common.rename")}" aria-label="${t("common.rename")}">${icon("edit", 14)}</button>
-            <button class="icon-btn" data-a="del" title="${t("common.delete")}" aria-label="${t("common.delete")}">${icon("x", 14)}</button></span>`
+            <button class="icon-btn" data-a="del" title="${t("common.delete")}" aria-label="${t("common.delete")}">${icon("x", 14)}</button>`
         : "";
+      const acts = n.kind === "doc" || edit ? `<span class="pd-acts">${n.kind === "doc" ? copyBtn("doc", n.id) : ""}${edit}</span>` : "";
+      const dt = n.doc_type ? docTypeLabel(n.doc_type) : "";
       return `<div class="pd-row ${n.kind} ${sel ? "selected" : ""}" data-id="${esc(n.id)}" style="padding-left:${0.4 + depth * 1.1}rem" ${ctx.canEdit ? 'draggable="true"' : ""}>
         ${
           n.kind === "folder"
             ? `<button class="tree-tw icon-btn" data-a="tw" title="${isOpen ? t("common.collapse") : t("common.expand")}" aria-label="${isOpen ? t("common.collapse") : t("common.expand")}">${icon(isOpen ? "chevronDown" : "chevron", 14)}</button>${icon(isOpen ? "folderOpen" : "folder", 15)}`
-            : `<span class="pd-sp"></span>${icon("notes", 15)}`
+            : `<span class="pd-sp"></span>${
+                dt ? `<span class="pd-type" role="img" title="${esc(dt)}" aria-label="${esc(dt)}">${icon(DOC_TYPE_ICON[n.doc_type!] ?? "notes", 15)}</span>` : icon("notes", 15)
+              }`
         }
         <span class="pd-name" title="${esc(n.name)}">${esc(n.name)}</span>${acts}</div>`;
     };
@@ -236,11 +269,16 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
     };
 
     const create = async (kind: "doc" | "folder", parent: string | null = currentFolder()) => {
-      const name = (
-        await promptDialog(kind === "doc" ? t("proj.docs.namePromptDoc") : t("proj.docs.namePromptFolder"), {
-          placeholder: kind === "doc" ? t("proj.docs.namePhDoc") : t("proj.docs.namePhFolder"),
-        })
-      )?.trim();
+      let name = "";
+      let type: DocType = "";
+      if (kind === "doc") {
+        const pick = await askNewDoc(); // Name + Vorlage
+        if (!pick) return;
+        name = pick.name;
+        type = pick.type;
+      } else {
+        name = (await promptDialog(t("proj.docs.namePromptFolder"), { placeholder: t("proj.docs.namePhFolder") }))?.trim() ?? "";
+      }
       if (!name) return;
       if (!(await leave())) return;
       try {
@@ -250,7 +288,8 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
           parent_id: parent,
           kind,
           name: nm,
-          content: kind === "doc" ? `# ${name.replace(/\.md$/i, "")}\n\n` : undefined,
+          content: kind === "doc" ? templateContent(type, name.replace(/\.md$/i, "")) : undefined,
+          doc_type: kind === "doc" && type ? type : undefined,
         });
         if (parent) open.add(parent);
         saveOpen();
@@ -265,6 +304,7 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
       if (!name || name === n.name) return;
       try {
         await api.patchProjectDoc(ctx.id, n.id, { name });
+        clearRefCache();
         if (doc?.id === n.id) doc.name = name;
         await refresh();
         if (doc?.id === n.id) paintEditor(false);
@@ -315,6 +355,17 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
       }
     };
 
+    selectDoc = async (id) => {
+      if (!nodes.some((n) => n.id === id && n.kind === "doc")) await refresh().catch(() => {});
+      if (!nodes.some((n) => n.id === id && n.kind === "doc")) return;
+      await select(id);
+      // Eltern aufklappen, damit die Datei im Baum sichtbar ist
+      const m = byId();
+      for (let c = m.get(id)?.parent_id ? m.get(m.get(id)!.parent_id!) : undefined; c; c = c.parent_id ? m.get(c.parent_id) : undefined) open.add(c.id);
+      saveOpen();
+      paintTree();
+    };
+
     const folderOptions = (): string => {
       const out: string[] = [`<option value="">${t("proj.docs.rootFolder")}</option>`];
       const walk = (pid: string | null, depth: number) => {
@@ -347,7 +398,17 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
           <button class="icon-btn pd-back" id="pdBack" title="${t("proj.docs.backToTree")}" aria-label="${t("proj.docs.backToTree")}">${icon("back", 18)}</button>
           <strong class="pd-docname" title="${esc(doc.name)}">${esc(doc.name)}</strong>
           <span class="pd-dirty" id="pdDirty" hidden title="${t("proj.docs.unsaved")}">●</span>
+          ${copyBtn("doc", doc.id, "icon-btn", 15)}
           <span class="grow"></span>
+          ${
+            ro
+              ? doc.doc_type
+                ? `<span class="badge pd-typebadge">${esc(docTypeLabel(doc.doc_type))}</span>`
+                : ""
+              : `<select id="pdType" class="pd-folder" title="${t("tpl.typeHint")}" aria-label="${t("tpl.typeHint")}">${["", ...DOC_TYPES]
+                  .map((ty) => `<option value="${ty}" ${(doc!.doc_type ?? "") === ty ? "selected" : ""}>${ty ? t("dt." + ty) : t("dt.none")}</option>`)
+                  .join("")}</select>`
+          }
           ${ro ? "" : `<select id="pdFolder" class="pd-folder" title="${t("proj.docs.moveTo")}" aria-label="${t("proj.docs.moveTo")}">${folderOptions()}</select>`}
           ${
             ro
@@ -365,13 +426,33 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
           ${ro ? "" : `<textarea id="pdText" spellcheck="false" maxlength="200000" placeholder="${t("proj.docs.textPh")}" aria-label="${t("proj.docs.text")}"></textarea>`}
           <div class="pd-preview md-preview" id="pdPrev"></div>
         </div>
-        <div class="pd-ed-foot muted" id="pdFoot"></div>`;
+        <div class="pd-ed-foot muted" id="pdFoot"></div>
+        <div class="pd-backlinks" id="pdBl"></div>`;
+      void mountBacklinks(edEl.querySelector<HTMLElement>("#pdBl")!, ctx.id, "doc", doc.id);
+      edEl.querySelector<HTMLSelectElement>("#pdType")?.addEventListener("change", async (e) => {
+        const sel = e.target as HTMLSelectElement;
+        const v = isDocType(sel.value) ? sel.value : "";
+        try {
+          const r = await api.patchProjectDoc(ctx.id, doc!.id, { doc_type: v });
+          doc!.doc_type = v;
+          doc!.updated_at = r.updated_at ?? doc!.updated_at;
+          const nd = nodes.find((x) => x.id === doc!.id);
+          if (nd) nd.doc_type = v;
+          paintTree();
+        } catch (err) {
+          sel.value = doc!.doc_type ?? "";
+          toastError(err);
+        }
+      });
       const ta = edEl.querySelector<HTMLTextAreaElement>("#pdText");
       const prev = edEl.querySelector<HTMLElement>("#pdPrev")!;
       const body = edEl.querySelector<HTMLElement>(".pd-ed-body")!;
       const foot = edEl.querySelector<HTMLElement>("#pdFoot")!;
       const saveBtn = edEl.querySelector<HTMLButtonElement>("#pdSave");
-      const paintPrev = () => (prev.innerHTML = renderDoc(ta ? ta.value : doc!.content));
+      const paintPrev = () => {
+        prev.innerHTML = renderDoc(ta ? ta.value : doc!.content);
+        void wireRefChips(prev, ctx.id);
+      };
       const paintFoot = () =>
         (foot.textContent = `${fmtBytes(new Blob([ta ? ta.value : doc!.content]).size)} · ${t("proj.docs.saved")} ${relTime(doc!.updated_at)}${doc!.updated_by ? " · " + doc!.updated_by : ""}`);
       const setDirty = (v: boolean) => {
@@ -396,7 +477,7 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
       edEl.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode as Mode)));
       if (ta) {
         ta.value = doc.content;
-        attachMdToolbar(ta);
+        attachMdToolbar(ta, { projectId: ctx.id, isBuilder: ctx.isBuilder });
         let tm = 0;
         ta.addEventListener("input", () => {
           setDirty(true);
@@ -505,7 +586,8 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
     const poll = startPolling(host, refresh, () => !!dragId || modalOpen());
     refresh()
       .then(async () => {
-        const last = ls.get("sidc_proj_doc");
+        const last = wantDoc || ls.get("sidc_proj_doc");
+        wantDoc = "";
         if (last && nodes.some((n) => n.id === last && n.kind === "doc")) {
           try {
             doc = await api.projectDoc(ctx.id, last);
@@ -532,6 +614,7 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
       poll();
       document.removeEventListener("keydown", onKey);
       dirtyCheck = null;
+      selectDoc = null;
     };
   }
 
@@ -558,6 +641,7 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
                       <span class="muted"><a href="#/plans/${esc(i.plan_id)}">${icon("map", 11)} ${esc(i.plan_name)}</a> · ${fmtBytes(i.byte_size)}${i.natural_w ? ` · ${i.natural_w}×${i.natural_h}` : ""}${i.author ? " · " + esc(i.author) : ""}</span>
                       <span class="pd-imgacts">
                         <button data-a="copy" title="${t("proj.img.copyHint")}">${icon("clone", 13)} ${t("proj.img.copy")}</button>
+                        ${copyBtn("img", i.id, "icon-btn", 14)}
                         ${
                           ctx.canEdit
                             ? `<button class="icon-btn" data-a="ren" title="${t("common.rename")}" aria-label="${t("common.rename")}">${icon("edit", 14)}</button>
@@ -610,7 +694,18 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
         box.innerHTML = `<p class="error">${esc(e instanceof Error ? e.message : String(e))}</p>`;
       }
     };
-    void load();
+    wireCopyButtons(box);
+    imgFocus = (id) => {
+      const i = imgs.find((x) => x.id === id);
+      if (i) openLightbox([{ url: url(i), caption: i.caption || i.filename }]);
+      else toast(t("ref.unavailable"), { kind: "warn" });
+    };
+    void load().then(() => {
+      if (!wantImg) return;
+      const w = wantImg;
+      wantImg = "";
+      imgFocus?.(w);
+    });
   }
 
   showSub();

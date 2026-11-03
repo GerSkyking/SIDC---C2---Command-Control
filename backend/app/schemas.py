@@ -207,6 +207,7 @@ from typing import Literal  # noqa: E402
 
 ProjectRole = Literal["viewer", "editor", "owner"]
 DocSpace = Literal["public", "builder"]
+DocType = Literal["", "mission", "briefing", "opord", "character", "faction", "place", "scene"]
 NoteColor = Literal["yellow", "green", "blue", "pink", "orange", "gray"]
 TaskStatus = Literal["open", "doing", "review", "done"]
 TaskPriority = Literal["low", "normal", "high"]
@@ -249,6 +250,7 @@ class DocCreateIn(BaseModel):
     kind: Literal["folder", "doc"]
     name: str = Field(min_length=1, max_length=200)
     content: str = Field(default="", max_length=200000)
+    doc_type: DocType = ""
 
 
 class DocPatchIn(BaseModel):
@@ -256,6 +258,7 @@ class DocPatchIn(BaseModel):
     content: str | None = Field(default=None, max_length=200000)
     parent_id: str | None = None  # nur mit gesetztem Feld (model_fields_set): null = Wurzel
     ordering: int | None = None
+    doc_type: DocType | None = None
     expected_updated_at: datetime | None = None
 
 

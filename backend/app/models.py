@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -566,12 +567,51 @@ class ProjectDoc(Base):
     kind: Mapped[str] = mapped_column(String(8))  # folder | doc
     name: Mapped[str] = mapped_column(String(200))
     content: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # Vorlage/Verzeichnis-Typ (mission|briefing|opord|character|faction|place|scene), "" = ohne
+    doc_type: Mapped[str] = mapped_column(String(16), default="", server_default="")
     ordering: Mapped[int] = mapped_column(Integer, default=0)
     byte_size: Mapped[int] = mapped_column(Integer, default=0)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ProjectRef(Base):
+    """Verweis-Index: Quelle (doc|task|note) enthält den Code {{target_type:target_id}}.
+    Wird pro Quelle beim Speichern neu aufgebaut (services/refs.py)."""
+
+    __tablename__ = "project_refs"
+    __table_args__ = (
+        Index("ix_project_refs_source", "source_type", "source_id"),
+        Index("ix_project_refs_target", "project_id", "target_type", "target_id"),
+    )
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    source_type: Mapped[str] = mapped_column(String(8))
+    source_id: Mapped[str] = mapped_column(UuidPk)
+    target_type: Mapped[str] = mapped_column(String(8))  # doc|task|plan|note|img|place
+    target_id: Mapped[str] = mapped_column(String(300))  # place: "<karte>:<ortsname>"
+
+
+class ProjectTimelineEntry(Base):
+    """Zeitleisten-Index: Überschrift mit Zeitangabe in einer Datei (services/timeline.py)."""
+
+    __tablename__ = "project_timeline"
+    __table_args__ = (Index("ix_project_timeline_order", "project_id", "ord_key"),)
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    doc_id: Mapped[str] = mapped_column(ForeignKey("project_docs.id", ondelete="CASCADE"), index=True)
+    space: Mapped[str] = mapped_column(String(8))
+    ord_key: Mapped[str] = mapped_column(String(24))
+    heading: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    level: Mapped[int] = mapped_column(Integer, default=2, server_default="2")
+    day: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None bei relativen Einträgen
+    minutes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    relative: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # Zeilennummer (1-basiert)
 
 
 class ProjectNote(Base):

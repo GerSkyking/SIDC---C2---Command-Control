@@ -7,7 +7,7 @@ export class ApiError extends Error {
   }
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
     credentials: "include",
@@ -215,6 +215,8 @@ export interface ProjectDocNode {
   byte_size: number;
   updated_at: string;
   updated_by?: string | null;
+  /** Dokumenttyp (Vorlage): "" | mission | briefing | opord | character | faction | place | scene */
+  doc_type?: string;
 }
 export interface ProjectDoc extends ProjectDocNode {
   content: string;
@@ -836,13 +838,13 @@ export const api = {
   projectDocs: (id: string, space: ProjectSpace) => req<ProjectDocNode[]>("GET", `/projects/${id}/docs?space=${space}`),
   createProjectDoc: (
     id: string,
-    b: { space: ProjectSpace; parent_id?: string | null; kind: "folder" | "doc"; name: string; content?: string },
+    b: { space: ProjectSpace; parent_id?: string | null; kind: "folder" | "doc"; name: string; content?: string; doc_type?: string },
   ) => req<ProjectDoc>("POST", `/projects/${id}/docs`, b),
   projectDoc: (id: string, docId: string) => req<ProjectDoc>("GET", `/projects/${id}/docs/${docId}`),
   patchProjectDoc: (
     id: string,
     docId: string,
-    b: { name?: string; content?: string; parent_id?: string | null; expected_updated_at?: string },
+    b: { name?: string; content?: string; parent_id?: string | null; expected_updated_at?: string; doc_type?: string },
   ) => req<ProjectDoc>("PATCH", `/projects/${id}/docs/${docId}`, b),
   deleteProjectDoc: (id: string, docId: string) => req<void>("DELETE", `/projects/${id}/docs/${docId}`),
   projectImages: (id: string, space: ProjectSpace) => req<ProjectImage[]>("GET", `/projects/${id}/images?space=${space}`),

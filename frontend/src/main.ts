@@ -74,7 +74,7 @@ async function route(): Promise<void> {
     }
   }
   if (location.hash === "#/trash") return renderTrash();
-  const projMatch = location.hash.match(/^#\/projects(?:\/([0-9a-f]{32})(?:\/([a-z]+))?)?$/);
+  const projMatch = location.hash.match(/^#\/projects(?:\/([0-9a-f]{32})(?:\/([a-z]+))?)?(?:\?[^#]*)?$/); // optionaler Deep-Link (?doc=, ?task=, ?note=, ?img=) – liest der jeweilige Tab selbst
   if (projMatch) {
     const { renderProjects } = await import("./projects");
     return renderProjects(app, me, projMatch[1], projMatch[2]);

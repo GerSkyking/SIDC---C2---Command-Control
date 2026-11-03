@@ -5,6 +5,32 @@
 // > [!note] Hinweise (Callouts), | Tabellen |, $Mathe$ / $$-Blöcke, %%Kommentare%%,
 // [text](url), Trennlinie, Absätze.
 
+import { icon } from "./icons";
+import { t } from "./i18n";
+
+/** Icon je Verknüpfungs-Typ ({{doc:…}} usw.) */
+export const REF_ICON: Record<string, string> = { doc: "notes", task: "check", plan: "map", note: "textbox", img: "image", place: "marker" };
+// Verknüpfungs-Codes auf bereits escapetem Text: {{doc|task|plan|note:<32hex>}} und {{place:<karte>:<ortsname>}}
+const REF_RE = /\{\{(?:(doc|task|plan|note):([0-9a-f]{32})|place:([a-z0-9][a-z0-9_-]{1,63}):([^{}\n]{1,200}?))\}\}/g;
+const REF_RAW = /\{\{(?:(doc|task|plan|note|img):([0-9a-f]{32})|place:([a-z0-9][a-z0-9_-]{1,63}):([^{}\n]{1,200}?))\}\}/g;
+
+/** Alle Verknüpfungs-Codes in einem Rohtext (für Anzeigen außerhalb des Markdown-Renderers). place-IDs lauten `<karte>:<name>`. */
+export function findRefCodes(text: string): { type: string; id: string }[] {
+  const out: { type: string; id: string }[] = [];
+  for (const m of (text || "").matchAll(REF_RAW)) out.push(m[1] ? { type: m[1], id: m[2] } : { type: "place", id: `${m[3]}:${m[4].trim()}` });
+  return out;
+}
+
+// Chip ohne href: bleibt ohne wireRefChips() (z. B. öffentliche Ansicht) inaktiv und zeigt nur Typ bzw. Ortsname.
+function chipHtml(type: string, id: string, label: string): string {
+  return `<a class="ref-chip ref-${type}" role="button" tabindex="0" data-ref-type="${type}" data-ref-id="${id}">${icon(REF_ICON[type] ?? "help", 12)}<span class="ref-lbl">${label}</span></a>`;
+}
+
+/** Chip-HTML für Rohwerte (escaped selbst) */
+export function refChipHtml(type: string, id: string, label?: string): string {
+  return chipHtml(type, esc(id), esc(label ?? (type === "place" ? id.slice(id.indexOf(":") + 1) : t("ref.type." + type))));
+}
+
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -24,6 +50,9 @@ function inline(s: string): string {
     .replace(/%%[^%]*%%/g, "")
     .replace(/&lt;!--[\s\S]*?--&gt;/g, "")
     .replace(/`([^`]+)`/g, (_m, c: string) => hold(`<code>${c}</code>`))
+    .replace(REF_RE, (_m, ty: string | undefined, id: string, map: string, name: string) =>
+      hold(ty ? chipHtml(ty, id, esc(t("ref.type." + ty))) : chipHtml("place", `${map}:${name.trim()}`, name.trim())),
+    )
     .replace(/\$([^$\s](?:[^$]*?[^$\s])?)\$(?!\d)/g, (_m, c: string) => hold(`<span class="md-math">${c}</span>`));
   r = r
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
