@@ -582,7 +582,7 @@ class ProjectDoc(Base):
 
 
 class ProjectRef(Base):
-    """Verweis-Index: Quelle (doc|task|note) enthält den Code {{target_type:target_id}}.
+    """Verweis-Index: Quelle (doc|task|note|annotation) enthält den Code {{target_type:target_id}}.
     Wird pro Quelle beim Speichern neu aufgebaut (services/refs.py)."""
 
     __tablename__ = "project_refs"
@@ -593,9 +593,9 @@ class ProjectRef(Base):
 
     id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
-    source_type: Mapped[str] = mapped_column(String(8))
+    source_type: Mapped[str] = mapped_column(String(16))
     source_id: Mapped[str] = mapped_column(UuidPk)
-    target_type: Mapped[str] = mapped_column(String(8))  # doc|task|plan|note|img|place
+    target_type: Mapped[str] = mapped_column(String(16))  # doc|task|plan|note|img|place
     target_id: Mapped[str] = mapped_column(String(300))  # place: "<karte>:<ortsname>"
 
 

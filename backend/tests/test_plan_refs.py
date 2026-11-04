@@ -147,3 +147,13 @@ def test_plan_delete_and_phase_delete(world):
 
     with SessionLocal() as db:
         assert not list(db.scalars(select(ProjectRef).where(ProjectRef.source_type == "annotation", ProjectRef.target_id == doc["id"])))
+
+
+def test_ref_columns_fit_all_source_types():
+    """SQLite prüft VARCHAR-Längen nicht, Postgres schon: „annotation“ passte einst nicht in String(8)."""
+    from app.models import ProjectRef
+
+    for col in ("source_type", "target_type"):
+        length = ProjectRef.__table__.c[col].type.length
+        for value in ("doc", "task", "note", "annotation", "plan", "img", "place"):
+            assert len(value) <= length, (col, value, length)
