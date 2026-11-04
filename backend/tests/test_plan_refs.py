@@ -43,6 +43,20 @@ def _ws(c, plan_id, **msg):
         return ws.receive_json()
 
 
+def _db_ann(plan_id, phase_id, text):
+    """Altbestand: Annotation direkt auf eine beliebige Phase (per Live-Socket liegt sie in Projekt-Plänen immer auf "Karten-Notizen")."""
+    from app.db import SessionLocal
+    from app.models import Annotation, Plan
+    from app.services import refs as refs_svc
+
+    with SessionLocal() as db:
+        a = Annotation(plan_id=plan_id, phase_id=phase_id, world_x=0, world_y=0, text=text)
+        db.add(a)
+        db.flush()
+        refs_svc.rebuild(db, db.get(Plan, plan_id).project_id, "annotation", a.id, text)
+        db.commit()
+
+
 def _acl_plus(owner, plan_id, uid):
     cur = owner.get(f"/plans/{plan_id}/acl").json()
     acl = [{"subject_type": e["subject_type"], "subject_id": e["subject_id"], "level": e["level"]} for e in cur]
@@ -98,8 +112,8 @@ def test_rights_plan_acl_and_builder_plane(world):
     code = "{{doc:%s}}" % doc["id"]
     bph = next(p for p in b.get(f"/plans/{plan['id']}/phases").json() if p["plane"] == "builder")
     pph = next(p for p in b.get(f"/plans/{plan['id']}/phases").json() if p["plane"] == "player")
-    _ws_ann(b, plan["id"], text=code, phase_id=pph["id"])
-    _ws_ann(b, plan["id"], text=code, phase_id=bph["id"])
+    _db_ann(plan["id"], pph["id"], code)  # Altbestand auf der Spieler-Phase
+    _ws_ann(b, plan["id"], text=code, phase_id=bph["id"])  # landet auf "Karten-Notizen" (Missionsbau)
     assert len(_back(b, pid, "doc", doc["id"])) == 2  # eine Zeile je Annotation
     # Projektmitglieder ohne Plan-ACL sehen keinen Rückverweis
     assert _back(ed, pid, "doc", doc["id"]) == []
@@ -111,7 +125,7 @@ def test_rights_plan_acl_and_builder_plane(world):
     # Nur Builder-Annotation vorhanden -> Nicht-Builder sieht nichts
     plan2 = b.post("/plans", json={"name": "Beta", "map_id": "m1", "project_id": pid}).json()
     bph2 = next(p for p in b.get(f"/plans/{plan2['id']}/phases").json() if p["plane"] == "builder")
-    _ws_ann(b, plan2["id"], text=code, phase_id=bph2["id"])
+    _db_ann(plan2["id"], bph2["id"], code)
     acl2 = _acl_plus(b, plan2["id"], w["eid"])
     assert b.put(f"/plans/{plan2['id']}/acl", json=acl2).status_code == 200
     labels = [r["label"] for r in _back(ed, pid, "doc", doc["id"])]
@@ -126,7 +140,7 @@ def test_plan_delete_and_phase_delete(world):
     code = "{{doc:%s}}" % doc["id"]
     extra = b.post(f"/plans/{plan['id']}/phases", json={"name": "Zwei"}).json()
     bph = b.post(f"/plans/{plan['id']}/phases", json={"name": "B2", "plane": "builder", "parent_id": extra["id"]}).json()
-    _ws_ann(b, plan["id"], text=code, phase_id=bph["id"])
+    _db_ann(plan["id"], bph["id"], code)
     assert len(_back(b, pid, "doc", doc["id"])) == 1
     assert b.delete(f"/plans/{plan['id']}/phases/{extra['id']}").status_code == 200  # Missionsbau-Inhalte gehen mit
     assert _back(b, pid, "doc", doc["id"]) == []

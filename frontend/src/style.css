@@ -1539,6 +1539,22 @@ html:has(.wb-wrap), body:has(.wb-wrap) { overflow: hidden; height: 100%; }
 .dir-snip { flex: 1 1 100%; font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
 .dir-none { margin: .2rem 0 0; font-size: .85rem; }
 .dir-item .icon-btn { margin-top: .25rem; }
+.dir-map { display: flex; flex-direction: column; gap: .6rem; margin-top: .4rem; }
+.dir-map > h3 { margin: 0; display: flex; align-items: center; gap: .35rem; font-size: 1rem; }
+.dir-map > h3 .ic { color: var(--accent); }
+.dir-note { flex-direction: column; gap: 0; padding-bottom: .3rem; }
+.dir-note .dir-snip { padding: 0 .2rem; }
+.dir-note .dir-snip p { margin: 0; }
+.dir-who { font-size: .72rem; }
+.dir-plan-open { font-size: .78rem; }
+.annot-notes-hint { margin: .4rem 0 0; font-size: .8rem; }
+.tl-bar.tl-notes { border-style: dashed; cursor: pointer; }
+.tl-zeus.tl-zeus-off { color: var(--muted); opacity: .6; }
+.nt-notes-info { font-size: .75rem; color: var(--muted); flex: 1 1 100%; }
+.nt-zbadge { font-size: .72rem; font-weight: 700; padding: .1rem .5rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.nt-zbadge.on { color: #1b1b1b; background: #ffe600; border-color: #ffe600; }
+.nt-zeus-prom { padding: .25rem .4rem; border: 1px solid var(--accent); border-radius: var(--r-md); }
+.nt-zeus .zq { font-size: .75rem; padding: .1rem .5rem; }
 
 /* Zeitleiste */
 .tl { display: flex; flex-direction: column; gap: .6rem; min-width: 0; max-width: 56rem; }

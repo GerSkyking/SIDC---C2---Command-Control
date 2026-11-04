@@ -110,6 +110,7 @@ export interface Phase {
   zeus_released?: boolean;
   zeus_until?: string | null;
   player_released?: boolean;
+  role?: string | null;
 }
 export interface PlanLayer {
   id: string;

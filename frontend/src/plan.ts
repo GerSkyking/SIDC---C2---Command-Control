@@ -298,11 +298,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     zeus_released?: boolean;
     zeus_until?: string | null;
     player_released?: boolean;
+    role?: string | null; // "notes" = feste Ebene „Karten-Notizen“ (Projekt-Pläne)
   }
   const isMB: boolean = !!me.is_mission_builder_effective;
   const phases: PhaseT[] = [...(snap.phases ?? [])].sort(
     (a: PhaseT, b: PhaseT) => a.ordering - b.ordering || (a.sub_ordering ?? 0) - (b.sub_ordering ?? 0),
   );
+  const isNotesPhase = (p: PhaseT | undefined): boolean => p?.role === "notes";
   const isBuilderPhase = (id: string | null | undefined): boolean =>
     !!id && phases.some((p) => p.id === id && p.plane === "builder");
   // Die an eine gesperrte Spieler-Phase (aktuell nur "Base") gekoppelte Missionsbau-
@@ -442,6 +444,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     // Freigegebene Base-Missionsbau-Phase: immer voll sichtbar, auch in der
     // echten Spieler-Vorschau — unabhängig von der aktuell gewählten Phase.
     if (mB && isReleasedBuilderPhase(phaseId)) return 1;
+    // Feste Ebene „Karten-Notizen“: ohne Phasen-Abdunklung, solange sie in der aktuellen Ansicht überhaupt sichtbar ist
+    if (isNotesPhase(phases.find((x) => x.id === phaseId))) {
+      if (actAs === "zeus") return zeusOpen(phaseId) ? 1 : 0;
+      return isMB && actAs === "builder" ? 1 : 0;
+    }
     // Zeus-Ansicht: Spieler-Inhalt (nur ansehen) + für Zeus freigegebene Missionsbau-Phasen
     if (actAs === "zeus") {
       const outO = Math.max(0, Math.min(100, outOpacity)) / 100;
@@ -661,6 +668,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (cam?.zoom) map.setMinZoom(Math.max(0, cam.zoom - 0.5));
   }
   map.on("load", applyCameraBounds);
+  // Deep-Link aus dem Projekt-Verzeichnis („Auf der Karte“): #/plans/<id>?annot=<id> fliegt zur Annotation
+  map.once("load", () => {
+    const aid = location.hash.match(/[?&]annot=([0-9a-f]{32})/)?.[1];
+    const a = aid ? annots.get(aid) : undefined;
+    if (a) map.flyTo({ center: [a.world_x, a.world_y], essential: true });
+  });
   map.on("style.load", applyCameraBounds);
 
   const loadedIcons = new Set<string>();
@@ -2203,19 +2216,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const sp = spans.get(id)!;
       const p = phases.find((x) => x.id === id)!;
       const explicit = !!(p.start_at || p.end_at);
+      const fixedRole = isNotesPhase(p);
       const left = xOf(sp.s);
       const w = Math.max(26, xOf(sp.e) - left);
       const dur = Math.round((sp.e - sp.s) / 60000);
       const durTxt = dur >= 1440 ? `${(dur / 1440).toFixed(1)} d` : dur >= 60 ? `${(dur / 60).toFixed(dur % 60 ? 1 : 0)} h` : `${dur} min`;
       return (
-        `<div class="tl-bar ${id === currentPhaseId ? "active" : ""} ${explicit ? "" : "tl-auto"}" ` +
+        `<div class="tl-bar ${id === currentPhaseId ? "active" : ""} ${explicit ? "" : "tl-auto"} ${fixedRole ? "tl-notes" : ""}" ` +
         `data-pick="${id}" data-plane="${plane}" style="left:${left}px;width:${w}px;top:${row * 26}px" ` +
-        `title="${esc0(p.name)} · ${durTxt}">` +
-        (canEdit && (plane === "player" || isMB) ? `<span class="tl-edge tl-edge-l" data-edge="l" data-id="${id}"></span>` : "") +
-        (plane === "builder" && isMB && zeusOpen(id) ? `<span class="tl-zeus" title="${t("zeus.badge")}">Z</span>` : "") +
+        `title="${esc0(p.name)} · ${fixedRole ? t("notes.layerHint") : durTxt}">` +
+        (canEdit && (plane === "player" || isMB) && !fixedRole ? `<span class="tl-edge tl-edge-l" data-edge="l" data-id="${id}"></span>` : "") +
+        (plane === "builder" && isMB && zeusOpen(id) ? `<span class="tl-zeus" title="${t("zeus.badge")}">Z</span>` : fixedRole && isMB ? `<span class="tl-zeus tl-zeus-off" title="${t("zeus.statusOff")}">Z</span>` : "") +
         (p.locked ? `<span class="tl-lock" title="${t("phase.lockedHint")}">${icon("lock", 10)}</span>` : "") +
-        `<span class="tl-bar-name">${esc0(p.name)}</span>` +
-        (canEdit && (plane === "player" || isMB)
+        `<span class="tl-bar-name">${fixedRole ? "⚑ " : ""}${esc0(p.name)}</span>` +
+        (canEdit && (plane === "player" || isMB) && !fixedRole
           ? `<span class="tl-edge tl-edge-r" data-edge="r" data-id="${id}"></span>` +
             (p.locked
               ? ""
@@ -2324,7 +2338,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     timelineEl.querySelectorAll<HTMLElement>(".tl-bar").forEach((el) => {
       const id = el.dataset.pick!;
       const startDrag = (ev: MouseEvent, edge: "" | "l" | "r") => {
-        if (!canEdit || (el.dataset.plane === "builder" && !isMB)) {
+        if (!canEdit || (el.dataset.plane === "builder" && !isMB) || isNotesPhase(phases.find((x) => x.id === id))) {
           if (!edge) pickPhase(id);
           return;
         }
@@ -2468,18 +2482,26 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const val = (raw: string | null | undefined, fb?: number) =>
       raw ? fmtInput(parseNaive(raw)) : fb != null ? fmtInput(new Date(fb)) : "";
     nTimes.innerHTML =
-      `<label class="nt-name">${t("common.name")}<input data-nname ${canEdit ? "" : "disabled"} value="${esc0(ph.name)}"/></label>` +
-      `<label>${t("phase.start")}<input type="datetime-local" data-nstart ${canEdit ? "" : "disabled"} value="${val(ph.start_at, sp?.s)}"/></label>` +
-      `<label>${t("phase.end")}<input type="datetime-local" data-nend ${canEdit ? "" : "disabled"} value="${val(ph.end_at, sp?.e)}"/></label>` +
+      `<label class="nt-name">${t("common.name")}<input data-nname ${canEdit && !isNotesPhase(ph) ? "" : "disabled"} value="${esc0(ph.name)}"/></label>` +
+      `<label>${t("phase.start")}<input type="datetime-local" data-nstart ${canEdit && !isNotesPhase(ph) ? "" : "disabled"} value="${val(ph.start_at, sp?.s)}"/></label>` +
+      `<label>${t("phase.end")}<input type="datetime-local" data-nend ${canEdit && !isNotesPhase(ph) ? "" : "disabled"} value="${val(ph.end_at, sp?.e)}"/></label>` +
       (ph.start_at || ph.end_at
         ? `<button data-ntclear title="${t("common.reset")}">${icon("x", 12)}</button>`
         : `<span class="muted">(auto)</span>`) +
+      (isNotesPhase(ph)
+        ? `<span class="nt-notes-info">⚑ ${t("notes.layerHint")}</span>` +
+          (isMB
+            ? `<span class="nt-zbadge ${zeusOpen(ph.id) ? "on" : ""}" role="status">${t(zeusOpen(ph.id) ? "zeus.statusOn" : "zeus.statusOff")}</span>`
+            : "")
+        : "") +
       (isMB && canEdit && ph.plane === "builder"
-        ? `<span class="nt-zeus"><label class="chk"><input type="checkbox" data-prel ${ph.player_released ? "checked" : ""}/> ${t("phase.playerRelease")}</label>` +
+        ? `<span class="nt-zeus ${isNotesPhase(ph) ? "nt-zeus-prom" : ""}"><label class="chk"><input type="checkbox" data-prel ${ph.player_released ? "checked" : ""}/> ${t("phase.playerRelease")}</label>` +
           `<label class="chk"><input type="checkbox" data-zrel ${ph.zeus_released ? "checked" : ""}/> ${t("zeus.release")}</label>` +
           `<label>${t("zeus.hours")}<input type="number" min="0" step="1" data-zhours style="width:4.5rem" value="${
-            ph.zeus_released && ph.zeus_until ? Math.max(1, Math.round((parseUtc(ph.zeus_until) - Date.now()) / 3600e3)) : ph.zeus_released ? "" : 48
-          }"/></label>` +
+            ph.zeus_released && ph.zeus_until ? Math.max(1, Math.round((parseUtc(ph.zeus_until) - Date.now()) / 3600e3)) : ""
+          }" placeholder="${t("zeus.unlimited")}" title="${t("zeus.hoursHint")}"/></label>` +
+          `<button type="button" class="zq" data-zq="">${t("zeus.unlimited")}</button>` +
+          `<button type="button" class="zq" data-zq="72">72 h</button>` +
           (ph.zeus_released && ph.zeus_until
             ? `<span class="muted">${t("zeus.until")} ${fmtInput(new Date(parseUtc(ph.zeus_until)))}</span>`
             : "") +
@@ -2510,6 +2532,21 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       applyPhase();
     });
     nTimes.querySelector("[data-zrel]")?.addEventListener("change", () => void sendZeus());
+    // Schnellknöpfe: Freigabe sofort setzen (leer = unbegrenzt)
+    nTimes.querySelectorAll<HTMLButtonElement>("[data-zq]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const h = b.dataset.zq ? Number(b.dataset.zq) : null;
+        try {
+          const upd = await api.patchPhase(planId, ph.id, { zeus_released: true, zeus_hours: h });
+          ph.zeus_released = upd.zeus_released;
+          ph.zeus_until = upd.zeus_until;
+        } catch (e) {
+          toastError(e);
+        }
+        renderTimeline();
+        renderNotesTimes();
+      }),
+    );
     nTimes.querySelector("[data-zhours]")?.addEventListener("change", () => {
       if (nTimes.querySelector<HTMLInputElement>("[data-zrel]")!.checked) void sendZeus();
     });
@@ -2555,7 +2592,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (!ph) return;
     notesTabId = ph.id;
     const tabBtn = (p: (typeof phases)[number]) =>
-      `<button data-nt="${p.id}" class="${p.id === notesTabId ? "active" : ""}">${esc(p.name)}</button>`;
+      `<button data-nt="${p.id}" class="${p.id === notesTabId ? "active" : ""}">${isNotesPhase(p) ? "⚑ " : ""}${esc(p.name)}</button>`;
     const playerP = phases.filter((p) => (p.plane ?? "player") !== "builder");
     const builderP = phases.filter((p) => (p.plane ?? "player") === "builder");
     const addBtn = (attr: string, title: string) =>
@@ -4933,7 +4970,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     back.innerHTML = `<div class="card" style="width:min(34rem,96vw)">
       <div class="row"><h1 style="flex:1;margin:0">${t("annot.title")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
       <textarea class="notes-edit annot-edit" rows="6" placeholder="${t("annot.hint")}"></textarea>
-      <label style="margin-top:.4rem">${t("phase.assign")}</label>
+      ${
+        projectId
+          ? `<p class="muted annot-notes-hint">⚑ ${t("annot.notesLayer")}</p>`
+          : `<label style="margin-top:.4rem">${t("phase.assign")}</label>
       <select data-aphase>
         ${selectablePhases()
           .map(
@@ -4943,7 +4983,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           .join("")}
       </select>
       <label style="margin-top:.4rem">${t("phase.extra")}</label>
-      <div data-ax>${phaseMultiHtml("data-xphases", samePlanePhases(a.phase_id), a.extra_phase_ids ?? [], a.phase_id)}</div>
+      <div data-ax>${phaseMultiHtml("data-xphases", samePlanePhases(a.phase_id), a.extra_phase_ids ?? [], a.phase_id)}</div>`
+      }
       <label class="ph-op" style="margin-top:.4rem">${t("annot.width")}
         <input type="range" min="140" max="480" step="10" value="${a.width}" data-w /></label>
       <label class="chk" style="margin-top:.3rem"><input type="checkbox" data-fix ${a.scale_fixed ? "checked" : ""}/> <span>${t("annot.scaleWithMap")}</span></label>
@@ -4962,8 +5003,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const wIn = back.querySelector<HTMLInputElement>("[data-w]")!;
     const fixIn = back.querySelector<HTMLInputElement>("[data-fix]")!;
     {
-      const asel = back.querySelector<HTMLSelectElement>("[data-aphase]")!;
-      asel.addEventListener("change", () => {
+      const asel = back.querySelector<HTMLSelectElement>("[data-aphase]");
+      asel?.addEventListener("change", () => {
         back.querySelector<HTMLElement>("[data-ax]")!.innerHTML = phaseMultiHtml(
           "data-xphases", samePlanePhases(asel.value), readPhaseMulti(back, "data-xphases"), asel.value,
         );
@@ -4994,7 +5035,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
       const wantScale = fixIn.checked; // true = mit der Karte mitskalieren
       const sc = annotScale(a);
-      const phaseSel = back.querySelector<HTMLSelectElement>("[data-aphase]")!;
+      const phaseSel = back.querySelector<HTMLSelectElement>("[data-aphase]"); // fehlt in Projekt-Plänen (feste Ebene)
       const data: Record<string, unknown> = {
         text: ta.value,
         // Wird das Mitskalieren abgeschaltet, aktuelle Bildschirmgröße einfrieren:
@@ -5004,10 +5045,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             : Number(wIn.value),
         height:
           !wantScale && a.scale_fixed && a.height ? Math.round(a.height * sc) : a.height ?? 0,
-        phase_id: phaseSel.value || currentPhaseId || null,
-        extra_phase_ids: readPhaseMulti(back, "data-xphases"),
         scale_fixed: wantScale,
       };
+      if (phaseSel) {
+        data.phase_id = phaseSel.value || currentPhaseId || null;
+        data.extra_phase_ids = readPhaseMulti(back, "data-xphases");
+      }
       if (wantScale && (!a.scale_fixed || !a.ref_zoom || a.ref_zoom <= 0))
         data.ref_zoom = map.getZoom(); // aktuelle Größe = natürliche Größe
       socket.send({ type: "annotation.modify", id, data });
@@ -5521,7 +5564,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   function createRefPinAt(pos: [number, number], code: string): void {
     socket.send({
       type: "annotation.create",
-      data: { world_x: pos[0], world_y: pos[1], text: code, width: 160, phase_id: currentPhaseId || null, ref_zoom: map.getZoom() },
+      data: { world_x: pos[0], world_y: pos[1], text: code, width: 160, ...(projectId ? {} : { phase_id: currentPhaseId || null }), ref_zoom: map.getZoom() },
     });
   }
   function createAnnotAt(pos: [number, number]): void {
@@ -5535,7 +5578,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         world_y: pos[1],
         text: "",
         width: 220,
-        phase_id: currentPhaseId || null,
+        ...(projectId ? {} : { phase_id: currentPhaseId || null }), // Projekt-Plan: Server legt auf „Karten-Notizen“
         ref_zoom: map.getZoom(),
       },
     });

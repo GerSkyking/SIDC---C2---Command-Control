@@ -30,6 +30,7 @@ from ..permissions import (
 )
 from ..security import SESSION_COOKIE, origin_allowed, read_session
 from ..services import refs as refs_svc
+from ..services.notes_layer import ensure_notes_phase, get_notes_phase
 from ..services.realtime import hub
 
 log = logging.getLogger("sidc.live")
@@ -336,6 +337,26 @@ async def _handle(
     if not caps.get(need):
         await _reject(ws, msg.get("cid"), f"Keine Berechtigung: {need}")
         return
+
+    # Projekt-Pläne: NEUE Annotationen liegen immer auf der festen Ebene "Karten-Notizen" (Client-Werte
+    # werden ignoriert). MUSS vor der Builder-Gate-Prüfung passieren, damit sie die Ebene trifft.
+    # Bestehende Annotationen behalten ihre Phase: der Client schickt sie beim Verschieben/Skalieren
+    # mit, das darf eine für Spieler sichtbare Notiz nicht still auf die Missionsbau-Ebene heben.
+    if t == "annotation.create":
+        d = msg.get("data")
+        if not isinstance(d, dict):
+            d = msg["data"] = {}
+        notes_id, created = await run_in_threadpool(_project_notes_phase, plan_id)
+        if notes_id:
+            d["phase_id"] = notes_id
+            d["extra_phase_ids"] = []
+            await _prime_phases(plan_id, [notes_id])
+            if created:
+                await hub.broadcast(plan_id, {"type": "phases.changed"})
+    elif t in ("annotation.move", "annotation.modify") and isinstance(msg.get("data"), dict):
+        if await run_in_threadpool(_plan_has_project, plan_id):
+            msg["data"].pop("phase_id", None)
+            msg["data"].pop("extra_phase_ids", None)
 
     # Nicht-Missionsbauer dürfen keine Objekte auf Builder-Phasen anlegen/ändern.
     if not is_builder and t in (
@@ -724,6 +745,25 @@ def _delete_stroke(plan_id: str, stroke_id: str) -> str | None:
         db.delete(s)
         db.commit()
         return pid
+
+
+def _plan_has_project(plan_id: str) -> bool:
+    with SessionLocal() as db:
+        plan = db.get(Plan, plan_id)
+        return bool(plan is not None and plan.project_id)
+
+
+def _project_notes_phase(plan_id: str) -> tuple[str | None, bool]:
+    """(notes-Phase-ID, neu angelegt) für Pläne in einem Projekt; (None, False) sonst."""
+    with SessionLocal() as db:
+        plan = db.get(Plan, plan_id)
+        if plan is None or not plan.project_id:
+            return None, False
+        had = get_notes_phase(db, plan_id) is not None
+        p = ensure_notes_phase(db, plan)
+        if not had:
+            db.commit()
+        return p.id, not had
 
 
 def _annotation_out(a: Annotation) -> dict:

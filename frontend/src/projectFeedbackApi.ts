@@ -12,6 +12,24 @@ function asList<T>(r: unknown): T[] {
   return Array.isArray(items) ? (items as T[]) : [];
 }
 
+// ─── Karten-Notizen (Annotationen aller Pläne des Projekts; nur Missionsbau, sonst 404) ───
+
+export interface MapNote {
+  id: string;
+  plan_id: string;
+  plan_name: string;
+  text: string;
+  title?: string | null;
+  world_x: number;
+  world_y: number;
+  updated_at?: string | null;
+  updated_by_label?: string | null;
+  href: string;
+}
+
+export const projectMapNotes = async (pid: string): Promise<MapNote[]> =>
+  asList<MapNote>(await req<unknown>("GET", `/projects/${enc(pid)}/map-notes`));
+
 // ─── Feedback ─────────────────────────────────────────────────────────────
 
 export const FEEDBACK_KINDS = ["bug", "idea", "praise", "other"] as const;

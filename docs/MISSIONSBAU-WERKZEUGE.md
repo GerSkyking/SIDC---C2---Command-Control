@@ -142,3 +142,22 @@ Annotation aus der Phase (Missionsbau-Phase = nur Missionsbauer).
   `<Planname> (Karte)` und `href` `#/plans/<plan_id>`. Die Suche bleibt unverändert.
 * **Klonen:** Plan-Klone enthalten bisher keine Annotationen (bestehendes Verhalten) – daher entsteht dort auch kein Index.
 * Tests: `backend/tests/test_plan_refs.py`.
+
+## Karten-Notizen (feste Ebene in Projekt-Plänen)
+
+Jede Annotation (Textfeld/Verweis-Pin) eines Plans mit `project_id` liegt automatisch auf einer **festen Missionsbau-Ebene** „Karten-Notizen“.
+
+* **Modell:** `phases.role = 'notes'` (Migration `0043_notes_layer`), `plane = 'builder'`, **`parent_id` bleibt leer** (eine an die gesperrte Base-Phase
+  gehängte Builder-Phase mit `sub_ordering 0` gilt als „Spiegel“ und wäre für alle sichtbar). `GET /plans/{id}/phases` und der Snapshot liefern `role`.
+* **Anlage:** `services/notes_layer.ensure_notes_phase` (idempotent) bei Plan-Erstellung im Projekt, Verschieben in ein Projekt, Klonen in ein Projekt,
+  Versions-Wiederherstellung und lazy beim Anlegen/Ändern einer Annotation (Altpläne). Daten-Migration legt sie für alle Projekt-Pläne an;
+  bestehende Annotationen werden **nicht** verschoben. Beim Herauslösen aus dem Projekt verliert die Phase die Rolle (bleibt samt Inhalt).
+* **Sichtbarkeit:** nur Missionsbauer. **Zeus sieht sie erst nach Freigabe** (`PATCH /plans/{id}/phases/{pid}` mit `zeus_released`, nur Missionsbauer;
+  ohne `zeus_hours` bei dieser Ebene unbegrenzt, mit `zeus_hours` befristet, `zeus_released=false` nimmt zurück). Spieler sehen sie nie.
+  Vor der Freigabe darf Zeus hier nichts anlegen/ändern und bekommt keinen Live-Broadcast.
+* **Live:** `annotation.create/move/modify` mit `phase_id`/`extra_phase_ids` setzen serverseitig `phase_id` = notes-Phase und `extra_phase_ids = []`
+  (Client-Werte werden ignoriert) – vor der Rechteprüfung; Nicht-Missionsbauer werden daher abgelehnt (Zeus nur bei Freigabe).
+* **Schutz:** `DELETE` der Phase → 400, `role` ist per API nicht änderbar, Umbenennen erlaubt.
+* **Liste „Auf der Karte“:** `GET /projects/{pid}/map-notes` (nur Missionsbauer, sonst 404; nur Pläne mit Zugriff, nicht im Papierkorb):
+  `[{id, plan_id, plan_name, text, title, world_x, world_y, updated_at, updated_by_label, href}]`, sortiert nach Planname, dann Änderung absteigend, max. 2000.
+* Tests: `backend/tests/test_map_notes.py`.

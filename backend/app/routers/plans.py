@@ -62,6 +62,8 @@ from ..schemas import (
     VersionCreateIn,
 )
 
+from ..services.notes_layer import NOTES_ROLE, ensure_notes_phase, release_notes_role
+
 router = APIRouter(prefix="/plans", tags=["plans"])
 folders_router = APIRouter(prefix="/folders", tags=["folders"])
 
@@ -338,6 +340,9 @@ def create_plan(body: PlanCreateIn, request: Request, user: CurrentUser, db: DbD
     db.add(base)
     db.flush()
     db.add(Phase(plan_id=plan.id, name="Base", ordering=0, plane="builder", parent_id=base.id, locked=True))
+    if project_id is not None:
+        db.flush()
+        ensure_notes_phase(db, plan)
     db.commit()
     audit.record(db, "plan.create", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request, name=plan.name, map_id=plan.map_id)
@@ -383,6 +388,10 @@ def set_plan_project(
     if target != plan.project_id:
         plan.project_id = target
         plan.folder_id = None  # Ordner gehört zum alten Kontext
+        if target is not None:
+            ensure_notes_phase(db, plan)
+        else:
+            release_notes_role(db, plan)
         db.execute(update(PlanImage).where(PlanImage.plan_id == plan.id).values(project_id=target))
         refs_svc.rebuild_plan_annotations(db, plan)  # Verweis-Index folgt dem Projekt
         db.commit()
@@ -737,6 +746,7 @@ def _phase_out(p: Phase) -> dict:
         "start_at": p.start_at.isoformat() if p.start_at else None,
         "end_at": p.end_at.isoformat() if p.end_at else None,
         "locked": bool(p.locked),
+        "role": p.role,
         "player_released": bool(p.player_released),
         "zeus_released": bool(p.zeus_released),
         "zeus_until": p.zeus_until.isoformat() if p.zeus_until else None,
@@ -827,7 +837,8 @@ def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: CurrentU
     if body.zeus_released is not None and p.plane == "builder":
         p.zeus_released = body.zeus_released
         if body.zeus_released:
-            hours = 48.0 if "zeus_hours" not in body.model_fields_set else body.zeus_hours
+            default_h = 0.0 if p.role == NOTES_ROLE else 48.0  # Notizen-Ebene: ohne Angabe unbegrenzt
+            hours = default_h if "zeus_hours" not in body.model_fields_set else body.zeus_hours
             p.zeus_until = now() + timedelta(hours=min(float(hours), 24 * 365)) if hours and hours > 0 else None
         else:
             p.zeus_until = None
@@ -856,6 +867,10 @@ def delete_phase(phase_id: str, plan: EditorPlan, user: CurrentUser, db: DbDep) 
         raise HTTPException(status.HTTP_403_FORBIDDEN)
     if p.locked:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Phase ist gesperrt und kann nicht gelöscht werden")
+    if p.role == NOTES_ROLE:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Die Ebene „Karten-Notizen“ ist fest und kann nicht gelöscht werden"
+        )
     victims = [p.id]
     if p.plane == "player":  # Spieler-Phase löschen → alle Builder-Kinder mit
         victims += list(db.scalars(select(Phase.id).where(Phase.parent_id == p.id)))
@@ -1070,6 +1085,7 @@ def clone_plan(
             start_at=p.start_at, end_at=p.end_at, notes=p.notes,
             plane=p.plane or "player", sub_ordering=p.sub_ordering or 0,
             parent_id=phase_map.get(p.parent_id or ""),
+            role=p.role if (clone_project and p.role == NOTES_ROLE) else None,
         )
         db.add(np)
         db.flush()
@@ -1084,6 +1100,8 @@ def clone_plan(
         layer_map[ly.id] = nl.id
     if not layer_map:
         db.add(Layer(plan_id=clone.id, name="Allgemein", is_default=True))
+    if clone_project:  # auch wenn die Quelle kein Projekt-Plan war oder die Ebene (Nicht-Builder) übersprungen wurde
+        ensure_notes_phase(db, clone)
 
     for m in db.scalars(select(Marker).where(Marker.plan_id == plan.id)):
         if m.phase_id in skip_ids:
@@ -1197,6 +1215,8 @@ def restore_version(version_id: str, plan: OwnerPlan, user: CurrentUser, db: DbD
     )
     snap = v.snapshot or {}
     # Verweise der Version können inzwischen gelöscht sein → bereinigen (FK / Sichtbarkeit)
+    if plan.project_id:
+        ensure_notes_phase(db, plan)
     phase_ids = set(db.scalars(select(Phase.id).where(Phase.plan_id == plan.id)))
     layer_ids = set(db.scalars(select(Layer.id).where(Layer.plan_id == plan.id)))
     fallback_phase = db.scalar(

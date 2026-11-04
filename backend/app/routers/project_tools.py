@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import timezone
 from typing import Annotated, Literal
 from urllib.parse import quote
 
@@ -326,6 +327,51 @@ def search(
 
 
 # ─── Zeitleiste ────────────────────────────────────────────────────────────
+
+def _title_of(text: str) -> str:
+    """Erste nicht-leere Zeile ohne führende # (Überschrift-Markierung)."""
+    for line in (text or "").splitlines():
+        t = line.strip().lstrip("#").strip()
+        if t:
+            return t[:120]
+    return ""
+
+
+@router.get("/{pid}/map-notes")
+def map_notes(pid: str, user: CurrentUser, db: DbDep) -> list[dict]:
+    """Liste "Auf der Karte": Annotationen der Ebene "Karten-Notizen" aller Pläne des Projekts
+    (nur Missionsbauer; nur Pläne mit Zugriff)."""
+    _ctx(db, user, pid)
+    if not effective_mission_builder(db, user):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nicht gefunden")
+    plans = {
+        p.id: p for p in db.scalars(select(Plan).where(Plan.project_id == pid, Plan.deleted_at.is_(None)))
+    }
+    plans = {k: p for k, p in plans.items() if effective_level(db, user, p) is not None}
+    if not plans:
+        return []
+    rows = list(db.execute(
+        select(Annotation, User.display_name, User.username)
+        .join(Phase, Phase.id == Annotation.phase_id)
+        .outerjoin(User, User.id == Annotation.updated_by)
+        .where(Annotation.plan_id.in_(plans), Phase.role == "notes")
+    ))
+    out = []
+    for a, display, username in rows:
+        ts = a.updated_at
+        out.append({
+            "id": a.id, "plan_id": a.plan_id, "plan_name": plans[a.plan_id].name,
+            "text": a.text or "", "title": _title_of(a.text or ""),
+            "world_x": a.world_x, "world_y": a.world_y,
+            "updated_at": ts.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if ts.tzinfo
+            else ts.isoformat() + "Z",
+            "updated_by_label": (display or username or "") if (display or username) else "",
+            "href": f"#/plans/{a.plan_id}",
+        })
+    out.sort(key=lambda r: r["updated_at"], reverse=True)
+    out.sort(key=lambda r: r["plan_name"].lower())
+    return out[:2000]
+
 
 @router.get("/{pid}/timeline")
 def timeline(pid: str, user: CurrentUser, db: DbDep) -> list[dict]:

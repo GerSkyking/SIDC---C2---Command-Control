@@ -67,7 +67,7 @@ async function route(): Promise<void> {
   initSettings(me);
   setLastProject(me.ui_settings?.last_project);
 
-  const planMatch = location.hash.match(/^#\/plans\/([0-9a-f]{32})$/);
+  const planMatch = location.hash.match(/^#\/plans\/([0-9a-f]{32})(?:\?[^#]*)?$/);
   if (planMatch) {
     try {
       return await openPlanView(app, planMatch[1], me);

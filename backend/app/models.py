@@ -235,6 +235,8 @@ class Phase(Base):
     zeus_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Missionsbau-Phase für Spieler freigegeben: Inhalt erscheint wie die Base-Phase (Phase selbst bleibt verborgen).
     player_released: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Feste Rolle: 'notes' = Ebene "Karten-Notizen" (alle Annotationen eines Projekt-Plans), nicht löschbar.
+    role: Mapped[str | None] = mapped_column(String(16))
 
 
 class Layer(Base):
