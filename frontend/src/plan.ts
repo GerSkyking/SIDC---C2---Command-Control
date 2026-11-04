@@ -46,6 +46,8 @@ import {
 import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
 import { attachMdToolbar } from "./mdtoolbar";
+import { wireRefChips, type WireOpts } from "./projectRefs";
+import { openRefPicker } from "./refPicker";
 import { esc } from "./esc";
 import { initNavCube } from "./navcube";
 import { wireScaleBox } from "./scalebox";
@@ -104,7 +106,7 @@ interface Stroke {
   layer_id?: string | null;
   channel?: string;
 }
-type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text";
+type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text" | "ref";
 
 // Touch-Gerät erkannt → "Marker verschieben" als Werkzeug anzeigen (am Desktop genügt die mittlere Maustaste).
 const IS_MOBILE =
@@ -197,6 +199,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       });
     });
   };
+  // Projekt-Verweise: gehört der Plan zu einem Projekt, werden {{…}}-Codes in Textfeldern/Phasen-Notizen
+  // zu Chips (Ziele öffnen in neuem Tab, damit hier nichts verloren geht); sonst bleiben sie inaktiv.
+  const projectId: string | null = snap.plan.project_id ?? null;
+  const refOpts: WireOpts = { newTab: true, skipImg: true, onPlace: (m, n) => flyToPlace(m, n) };
+  const wireRefs = (el: HTMLElement): void => {
+    if (projectId) void wireRefChips(el, projectId, refOpts);
+  };
   const myPlan = (await api.plans()).find((p) => p.id === planId);
   const canEdit = myPlan?.level === "editor" || myPlan?.level === "owner";
   const lineStyle = await loadPhaseLineStyle();
@@ -267,6 +276,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const caps = { place: canEdit, move: canEdit, delete: canEdit, draw: canEdit };
   let mode: Mode = "move";
+  let pendingRefCode: string | null = null; // Werkzeug „Verweis platzieren": gewählter Code
   let pending: MarkerTemplate | null = null;
   let is3D = false;
 
@@ -503,6 +513,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") + hk("measure") }) +
             iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") + hk("erase") }) +
             iconBtn("textbox", { data: { mode: "text" }, title: t("tool.text") + hk("text") }) +
+            (projectId ? iconBtn("link", { id: "tool-ref", title: t("tool.ref") }) : "") +
             iconBtn("marker", { id: "tool-marker", title: t("tool.marker") + hk("place") }) +
             `<span class="tb-sep"></span>`
           : ""
@@ -2435,7 +2446,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const nTabs = notesWin.querySelector<HTMLDivElement>(".notes-tabs")!;
   const nTimes = notesWin.querySelector<HTMLDivElement>(".notes-times")!;
   const nEdit = notesWin.querySelector<HTMLTextAreaElement>(".notes-edit")!;
-  if (canEdit) attachMdToolbar(nEdit);
+  if (canEdit) attachMdToolbar(nEdit, { projectId: projectId ?? undefined, isBuilder: isMB });
   const nView = notesWin.querySelector<HTMLDivElement>(".notes-view")!;
   let notesTabId = currentPhaseId;
   const saveTimers = new Map<string, number>();
@@ -2563,12 +2574,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     nEdit.value = ph.notes ?? "";
     nView.innerHTML = renderMarkdown(ph.notes ?? "");
     wireNoteImageRefs(nView);
+    wireRefs(nView);
     renderNotesTimes();
   };
   nEdit.addEventListener("input", () => {
     flushNotes();
     nView.innerHTML = renderMarkdown(nEdit.value);
     wireNoteImageRefs(nView);
+    wireRefs(nView);
   });
   notesWin.querySelector(".notes-img")?.addEventListener("click", async () => {
     const pick = await pickPlanImage();
@@ -2766,6 +2779,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ),
   });
   const refreshLoc = () => (map.getSource("locations") as GeoJSONSource)?.setData(locFC());
+  /** Ort-Chip ({{place:<karte>:<name>}}) dieser Karte: zum Ort fliegen (true), sonst Popover im Chip-Code. */
+  function flyToPlace(mid: string, name: string): boolean {
+    if (mid !== mapId || !locData) return false;
+    for (const g of locData.groups)
+      for (const it of g.items)
+        if (Object.values(it.names).some((n) => n.trim() === name)) {
+          map.flyTo({ center: [it.lon, it.lat], zoom: Math.max(map.getZoom(), 12) });
+          return true;
+        }
+    return false;
+  }
 
   map.on("load", async () => {
     // Map-Locations  (Topo/Straßen-Overlay ist derzeit deaktiviert)
@@ -3832,7 +3856,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
 
   const modeCursor = (m: Mode = mode): string =>
-    m === "place" || m === "line" || m === "point" || m === "measure" || m === "text"
+    m === "place" || m === "line" || m === "point" || m === "measure" || m === "text" || m === "ref"
       ? "crosshair"
       : m === "erase"
         ? "crosshair"
@@ -3885,6 +3909,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     eraserPanel.hidden = mvEraser.isPinned() ? false : m !== "erase";
     if (m !== "erase") eraserRing.hidden = true;
     toolbar.querySelector("#tool-marker")?.classList.toggle("active", m === "place");
+    toolbar.querySelector("#tool-ref")?.classList.toggle("active", m === "ref");
+    if (m !== "ref") pendingRefCode = null;
     lineStylePanel.hidden = mvLine.isPinned() ? false : m !== "line";
     if (measureStylePanel) {
       measureStylePanel.hidden = mvMeasure.isPinned() ? false : m !== "measure";
@@ -3934,6 +3960,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   toolbar.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => setMode(b.dataset.mode as Mode)),
   );
+  // „Verweis platzieren": erst Ziel wählen (Auswahlfenster), dann auf die Karte klicken; Esc bricht ab.
+  toolbar.querySelector("#tool-ref")?.addEventListener("click", async () => {
+    if (!caps.place || !projectId) return;
+    const code = await openRefPicker({ projectId, mode: "insert", isBuilder: isMB });
+    if (!code) return;
+    setMode("ref");
+    pendingRefCode = code;
+    toast(t("tool.refPlace"), { kind: "info", timeout: 3500 });
+  });
 
   // ── Radierer: Kreis mit einstellbarem Radius (Bildschirm-Pixel) ───────
   // Löscht beim Klicken/Ziehen alles im Kreis: Marker, Phasenlinien, Messlinien.
@@ -4324,6 +4359,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     tb.querySelector<HTMLButtonElement>('[data-mode="erase"]')?.toggleAttribute("disabled", !caps.delete);
     tb.querySelector<HTMLButtonElement>('[data-mode="text"]')?.toggleAttribute("disabled", !caps.place);
     tb.querySelector<HTMLButtonElement>("#tool-marker")?.toggleAttribute("disabled", !caps.place);
+    tb.querySelector<HTMLButtonElement>("#tool-ref")?.toggleAttribute("disabled", !caps.place);
     tb.querySelector<HTMLButtonElement>("#tool-fav")?.toggleAttribute("disabled", !caps.place);
   }
   applyCaps();
@@ -4856,6 +4892,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       /* ignore */
     }
   };
+  // Nur Verknüpfungs-Codes (kein weiterer Text) = Referenz-Pin: erscheint als kompakter Chip.
+  const isRefPin = (s: string): boolean =>
+    !!s.trim() && !s.replace(/\{\{(?:(?:doc|task|plan|note|img):[0-9a-f]{32}|place:[^{}\n]+)\}\}/g, "").trim();
   const annotFirstLine = (s: string): string =>
     (s.split("\n").find((l) => l.trim()) ?? "").replace(/^#{1,6}\s+/, "").trim() || t("annot.placeholder");
   // Referenz-Zoom für Notizen ohne eigenen ref_zoom (Altbestand): der Zoom beim
@@ -4910,7 +4949,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     </div>`;
     document.body.appendChild(back);
     const ta = back.querySelector<HTMLTextAreaElement>(".annot-edit")!;
-    attachMdToolbar(ta);
+    attachMdToolbar(ta, { projectId: projectId ?? undefined, isBuilder: isMB });
     ta.value = a.text;
     const prev = back.querySelector<HTMLDivElement>(".annot-prev")!;
     const wIn = back.querySelector<HTMLInputElement>("[data-w]")!;
@@ -4923,7 +4962,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         );
       });
     }
-    const upd = () => (prev.innerHTML = renderMarkdown(ta.value));
+    const upd = () => {
+      prev.innerHTML = renderMarkdown(ta.value);
+      wireRefs(prev);
+    };
     ta.addEventListener("input", upd);
     upd();
     setTimeout(() => ta.focus(), 0);
@@ -4972,7 +5014,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   function onAnnotDown(ev: MouseEvent, id: string): void {
     if (!canEdit || (mode !== "move" && mode !== "markermove")) return;
-    if ((ev.target as HTMLElement).closest(".annot-tools")) return;
+    if ((ev.target as HTMLElement).closest(".annot-tools, .ref-chip")) return; // Chip = Klick, kein Ziehen
     // Untere rechte Ecke = CSS-resize-Griff → Browser die Größenänderung machen
     // lassen und erst beim Loslassen synchronisieren (kein Neuaufbau währenddessen).
     const el0 = annotsEl.querySelector<HTMLElement>(`[data-aid="${id}"]`);
@@ -5053,7 +5095,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     for (const a of annots.values()) {
       const collapsed = collapsedAnnots.has(a.id);
       const el = document.createElement("div");
-      el.className = "annot" + (collapsed ? " annot-collapsed" : "");
+      el.className = "annot" + (collapsed ? " annot-collapsed" : "") + (isRefPin(a.text) ? " annot-ref" : "");
       el.dataset.aid = a.id;
       el.style.width = `${a.width}px`;
       if (a.height && !collapsed) el.style.height = `${a.height}px`;
@@ -5104,6 +5146,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       annotsEl.appendChild(el);
     }
     wireNoteImageRefs(annotsEl);
+    wireRefs(annotsEl);
     positionAnnots();
   }
 
@@ -5467,6 +5510,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       },
     });
   }
+  /** Referenz-Pin: Annotation, deren Text nur den Verknüpfungs-Code enthält (Ebene = aktive Phase). */
+  function createRefPinAt(pos: [number, number], code: string): void {
+    socket.send({
+      type: "annotation.create",
+      data: { world_x: pos[0], world_y: pos[1], text: code, width: 160, phase_id: currentPhaseId || null, ref_zoom: map.getZoom() },
+    });
+  }
   function createAnnotAt(pos: [number, number]): void {
     const ac = cid();
     pendingAnnotCid = ac; // Antwort öffnet direkt den Editor
@@ -5520,6 +5570,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         setEditMeasure(null);
         return;
       }
+    }
+
+    if (mode === "ref") {
+      const code = pendingRefCode;
+      setMode("move");
+      if (caps.place && code) createRefPinAt([e.lngLat.lng, e.lngLat.lat], code);
+      return;
     }
 
     if (mode === "text") {

@@ -556,6 +556,11 @@ a { color: var(--accent); }
 .annot-body h1, .annot-body h2, .annot-body h3 { font-size: 0.95rem; margin: 0.3rem 0 0.2rem; }
 .annot-body p, .annot-body ul, .annot-body ol { margin: 0.25rem 0; }
 .annot-body code { background: var(--surface-2); padding: 0 0.2rem; border-radius: 3px; }
+/* Referenz-Pin: Annotation nur aus Verknüpfungs-Codes – kompakter Chip auf der Karte (Hell/Dunkel über Tokens) */
+.annot.annot-ref { min-width: 0; min-height: 0; padding: 0.15rem 0.3rem; resize: horizontal; border-left: 3px solid var(--accent); }
+.annot-ref .annot-body { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem; overflow: hidden; }
+.annot-ref .annot-body p { margin: 0; display: flex; flex-wrap: wrap; gap: 0.2rem; }
+.annot-ref .ref-chip { cursor: pointer; }
 .annot-tools { position: absolute; top: 2px; right: 2px; display: none; gap: 0.2rem;
   background: var(--surface); border-radius: var(--r-sm); }
 .annot:hover .annot-tools { display: flex; }

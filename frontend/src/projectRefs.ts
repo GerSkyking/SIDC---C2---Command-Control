@@ -184,6 +184,17 @@ export function clearRefCache(): void {
 
 const chipInfo = new WeakMap<HTMLElement, RefInfo | null>();
 
+/** Optionen für Chips in Oberflächen mit eigener Navigation (Plan-Ansicht). */
+export interface WireOpts {
+  /** Ziele in neuem Tab öffnen (die Ansicht hat ungespeicherte/laufende Zustände) */
+  newTab?: boolean;
+  /** `{{img:…}}`-Chips (.note-img-ref) auslassen, wenn die Ansicht sie selbst behandelt */
+  skipImg?: boolean;
+  /** Ort-Chip: true = selbst behandelt (z. B. zum Ort fliegen), sonst Popover */
+  onPlace?: (mapId: string, name: string) => boolean;
+}
+const chipOpts = new WeakMap<HTMLElement, WireOpts>();
+
 function chipRef(el: HTMLElement): { type: string; id: string } {
   return el.classList.contains("note-img-ref") ? { type: "img", id: el.dataset.img ?? "" } : { type: el.dataset.refType ?? "", id: el.dataset.refId ?? "" };
 }
@@ -192,9 +203,10 @@ function chipRef(el: HTMLElement): { type: string; id: string } {
  * Chips ({{…}}-Codes) im gerenderten Markdown füllen: ein gebündelter `refs/resolve`-Aufruf je Render
  * (Ergebnisse 30 s im Cache). Unbekannte/nicht erlaubte Ziele werden zu grauen „nicht verfügbar"-Chips.
  */
-export async function wireRefChips(root: HTMLElement, pid: string): Promise<void> {
-  const chips = [...root.querySelectorAll<HTMLElement>(".ref-chip, .note-img-ref")];
+export async function wireRefChips(root: HTMLElement, pid: string, opts: WireOpts = {}): Promise<void> {
+  const chips = [...root.querySelectorAll<HTMLElement>(opts.skipImg ? ".ref-chip:not(.note-img-ref)" : ".ref-chip, .note-img-ref")];
   if (!chips.length) return;
+  for (const el of chips) chipOpts.set(el, opts);
   const now = Date.now();
   const need = new Map<string, { type: string; id: string }>();
   for (const el of chips) {
@@ -268,8 +280,11 @@ function applyChip(el: HTMLElement, info: RefInfo | null, pid: string): void {
   const go = (e: Event) => {
     const cur = chipInfo.get(el);
     if (!cur || cur.ok === false) return e.preventDefault();
+    const o = chipOpts.get(el) ?? {};
     if (r.type === "place") {
       e.preventDefault();
+      const i = r.id.indexOf(":");
+      if (o.onPlace?.(r.id.slice(0, i), r.id.slice(i + 1).trim())) return;
       showPlacePopover(el, cur);
       return;
     }
@@ -278,7 +293,8 @@ function applyChip(el: HTMLElement, info: RefInfo | null, pid: string): void {
     const me = e as MouseEvent;
     if (me.ctrlKey || me.metaKey || me.shiftKey || me.button) return; // neuer Tab etc.: Browser entscheiden lassen
     e.preventDefault();
-    openHref(href, pid);
+    if (o.newTab) window.open(`${location.pathname}${location.search}${href}`, "_blank", "noopener");
+    else openHref(href, pid);
   };
   el.addEventListener("click", go);
   el.addEventListener("keydown", (e) => {

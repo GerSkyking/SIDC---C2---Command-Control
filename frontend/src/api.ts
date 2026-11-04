@@ -317,7 +317,7 @@ export interface NotifyType {
   form: boolean;
   available: boolean;
 }
-export type NotifyKind = "task_mention" | "chat_mention" | "assigned" | "plan_shared" | "project_added";
+export type NotifyKind = "task_mention" | "chat_mention" | "assigned" | "plan_shared" | "project_added" | "feedback_new" | "doc_mention";
 export interface NotifyChannel {
   id: string;
   type: string;

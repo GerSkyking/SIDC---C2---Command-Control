@@ -8,6 +8,7 @@ Der öffentliche Teil (ohne Login) gibt nur den Projektnamen preis. Alle Endpunk
 """
 from __future__ import annotations
 
+import logging
 import re
 import secrets
 from datetime import date
@@ -26,6 +27,7 @@ from ..models import (
     ProjectDoc,
     ProjectDocVersion,
     ProjectFeedback,
+    ProjectMember,
     ProjectMilestone,
     ProjectTask,
     User,
@@ -36,6 +38,7 @@ from ..ratelimit import hit_limit
 from ..schemas import CommentIn
 from ..services import doc_versions as versions_svc
 from ..services import mentions as mentions_svc
+from ..services import notify
 from ..services import refs as refs_svc
 from ..services import timeline as timeline_svc
 from .project_tools import _like as like_pattern
@@ -54,6 +57,7 @@ from .projects import (
     _validate_task_refs,
 )
 
+log = logging.getLogger("sidc.feedback")
 router = APIRouter(prefix="/projects", tags=["project-feedback"])
 public_router = APIRouter(prefix="/api/public/feedback", tags=["public"])
 
@@ -120,6 +124,32 @@ def _get_feedback(db, pid: str, fid: str) -> ProjectFeedback:
     return f
 
 
+def _notify_feedback(db, pid: str, actor: User | None, title: str, text: str) -> None:
+    """Opt-in-Benachrichtigung `feedback_new` an die Projekt-Owner (ohne Auslöser); Fehler verhindern nie das Speichern."""
+    try:
+        owners = [(m.subject_type, m.subject_id) for m in db.scalars(
+            select(ProjectMember).where(ProjectMember.project_id == pid, ProjectMember.role == "owner"))]
+        notify.send(db, notify.subject_user_ids(db, owners), "feedback_new", actor=actor, title=title, text=text,
+                    project_id=pid)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("Feedback-Benachrichtigung fehlgeschlagen")
+
+
+def _notify_doc_mentions(db, pid: str, doc: ProjectDoc, actor: User, mentions: list[dict], text: str) -> None:
+    """Opt-in-Benachrichtigung `doc_mention`: Erwähnte mit Projektzugriff; Missionsbau-Dateien nur an Missionsbauer."""
+    try:
+        rec = mentions_svc.mention_recipients(db, pid, mentions, exclude=actor.id)
+        if rec and doc.space == "builder":
+            rec = {u.id for u in db.scalars(select(User).where(User.id.in_(rec))) if effective_mission_builder(db, u)}
+        notify.send(db, rec, "doc_mention", actor=actor, title=doc.name, text=text, project_id=pid, plan_id=doc.id)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("Datei-Erwähnung: Benachrichtigung fehlgeschlagen")
+
+
 def _feedback_count(db, pid: str) -> int:
     return db.scalar(select(func.count(ProjectFeedback.id)).where(ProjectFeedback.project_id == pid)) or 0
 
@@ -162,7 +192,9 @@ def create_feedback(pid: str, body: FeedbackIn, user: CurrentUser, db: DbDep) ->
     )
     db.add(f)
     db.commit()
-    return _feedback_out(db, user, [f])[0]
+    out = _feedback_out(db, user, [f])[0]
+    _notify_feedback(db, pid, user, title, f.text)
+    return out
 
 
 @router.patch("/{pid}/feedback/{fid}")
@@ -304,6 +336,7 @@ def public_feedback_submit(token: str, body: PublicFeedbackIn, request: Request,
         author_name=body.name.strip(),
     ))
     db.commit()
+    _notify_feedback(db, p.id, None, title, body.text.strip())
     return {"ok": True}
 
 
@@ -425,7 +458,7 @@ def list_doc_comments(pid: str, doc_id: str, user: CurrentUser, db: DbDep) -> li
 @router.post("/{pid}/docs/{doc_id}/comments", status_code=status.HTTP_201_CREATED)
 def create_doc_comment(pid: str, doc_id: str, body: CommentIn, user: CurrentUser, db: DbDep) -> dict:
     _, role = _ctx(db, user, pid, "viewer", write=True)  # auch Betrachter dürfen kommentieren
-    _get_text_doc(db, user, pid, doc_id)
+    doc = _get_text_doc(db, user, pid, doc_id)
     text = body.text.strip()
     if not text:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Text fehlt")
@@ -435,25 +468,33 @@ def create_doc_comment(pid: str, doc_id: str, body: CommentIn, user: CurrentUser
                    mentions=mentions_svc.resolve_mentions(db, text, pid))
     db.add(c)
     db.commit()
-    return _dcomments_out(db, [c], user, role)[0]
+    out = _dcomments_out(db, [c], user, role)[0]
+    _notify_doc_mentions(db, pid, doc, user, c.mentions or [], text)
+    return out
 
 
 @router.patch("/{pid}/docs/{doc_id}/comments/{cid}")
 def patch_doc_comment(pid: str, doc_id: str, cid: str, body: CommentIn, user: CurrentUser, db: DbDep) -> dict:
     _, role = _ctx(db, user, pid, "viewer", write=True)
-    _get_text_doc(db, user, pid, doc_id)
+    doc = _get_text_doc(db, user, pid, doc_id)
     c = _get_dcomment(db, pid, doc_id, cid)
     if c.user_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur eigene Kommentare bearbeitbar")
     text = body.text.strip()
     if not text:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Text fehlt")
+    added: list[dict] = []
     if text != c.text:
+        old = {(m["type"], m["id"]) for m in (c.mentions or [])}
         c.text = text
         c.mentions = mentions_svc.resolve_mentions(db, text, pid)
         c.edited_at = now()
+        added = [m for m in c.mentions if (m["type"], m["id"]) not in old]  # nur neu Erwähnte
     db.commit()
-    return _dcomments_out(db, [c], user, role)[0]
+    out = _dcomments_out(db, [c], user, role)[0]
+    if added:
+        _notify_doc_mentions(db, pid, doc, user, added, text)
+    return out
 
 
 @router.delete("/{pid}/docs/{doc_id}/comments/{cid}")

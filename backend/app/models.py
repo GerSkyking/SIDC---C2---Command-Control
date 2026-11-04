@@ -816,7 +816,7 @@ class Notification(Base):
 
     id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    kind: Mapped[str] = mapped_column(String(16))  # task_mention | chat_mention | assigned | plan_shared | project_added
+    kind: Mapped[str] = mapped_column(String(16))  # task_mention | chat_mention | assigned | plan_shared | project_added | Opt-in: feedback_new | doc_mention (doc_mention: plan_id = Datei-ID)
     actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="", server_default="")
     text: Mapped[str] = mapped_column(String(300), default="", server_default="")

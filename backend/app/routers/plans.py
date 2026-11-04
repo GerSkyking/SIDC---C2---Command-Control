@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..services import notify
+from ..services import refs as refs_svc
 
 from ..deps import CurrentUser, DbDep, load_plan, require_plan_level
 from ..ratelimit import hit_limit
@@ -311,6 +312,7 @@ def purge_plan(plan_id: str, request: Request, user: CurrentUser, db: DbDep) -> 
     plan = _deleted_plan_owned(plan_id, user, db)
     audit.record(db, "plan.purge", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request, name=plan.name)
+    refs_svc.drop(db, "annotation", list(db.scalars(select(Annotation.id).where(Annotation.plan_id == plan.id))))
     db.delete(plan)
     db.commit()
     _thumb_path(plan_id).unlink(missing_ok=True)
@@ -382,6 +384,7 @@ def set_plan_project(
         plan.project_id = target
         plan.folder_id = None  # Ordner gehört zum alten Kontext
         db.execute(update(PlanImage).where(PlanImage.plan_id == plan.id).values(project_id=target))
+        refs_svc.rebuild_plan_annotations(db, plan)  # Verweis-Index folgt dem Projekt
         db.commit()
         audit.record(db, "plan.project", user_id=user.id, target_type="plan", target_id=plan.id,
                      request=request, project_id=target)
@@ -870,6 +873,7 @@ def delete_phase(phase_id: str, plan: EditorPlan, user: CurrentUser, db: DbDep) 
                 db.execute(sa_delete(PlanImage).where(PlanImage.id.in_(img_ids)))
             db.execute(sa_delete(Marker).where(Marker.phase_id == vid))
             db.execute(sa_delete(Stroke).where(Stroke.phase_id == vid))
+            refs_svc.drop(db, "annotation", list(db.scalars(select(Annotation.id).where(Annotation.phase_id == vid))))
             db.execute(sa_delete(Annotation).where(Annotation.phase_id == vid))
         else:
             db.execute(update(Marker).where(Marker.phase_id == vid).values(phase_id=None))
@@ -1231,11 +1235,13 @@ def restore_version(version_id: str, plan: OwnerPlan, user: CurrentUser, db: DbD
     for sd in snap.get("strokes", []):
         db.add(Stroke(plan_id=plan.id, **fix(sd)))
     if "annotations" in snap:  # ältere Versionen enthalten keine Annotationen
+        old_ann_ids = list(db.scalars(select(Annotation.id).where(Annotation.plan_id == plan.id)))
         db.query(Annotation).filter(Annotation.plan_id == plan.id).delete()
         for ad in snap["annotations"]:
             ad = fix(ad)
             ad.pop("layer_id", None)
             db.add(Annotation(plan_id=plan.id, **ad))
+        refs_svc.rebuild_plan_annotations(db, plan, old_ann_ids)
     if "image_placements" in snap:  # Bilddaten selbst sind nicht in der Version → nur Platzierungen
         db.query(ImagePlacement).filter(ImagePlacement.plan_id == plan.id).delete()
         image_ids = set(db.scalars(select(PlanImage.id).where(PlanImage.plan_id == plan.id)))

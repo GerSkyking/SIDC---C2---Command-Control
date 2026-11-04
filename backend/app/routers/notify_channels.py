@@ -11,13 +11,13 @@ from ..deps import CurrentUser, DbDep
 from ..models import NotificationChannel, now
 from ..services import bridge as bridge_svc
 from ..services import channels as ch
-from ..services import dispatcher
+from ..services import dispatcher, notify
 
 router = APIRouter(prefix="/notify", tags=["notify"])
 
 _MAX_CHANNELS = 10
-Kind = Literal["task_mention", "chat_mention", "assigned", "plan_shared", "project_added"]
-KINDS = ("task_mention", "chat_mention", "assigned", "plan_shared", "project_added")
+Kind = Literal["task_mention", "chat_mention", "assigned", "plan_shared", "project_added", "feedback_new", "doc_mention"]
+KINDS = ("task_mention", "chat_mention", "assigned", "plan_shared", "project_added", "feedback_new", "doc_mention")
 
 
 class ChannelIn(BaseModel):
@@ -67,7 +67,7 @@ def _count(db, user) -> int:
 
 @router.get("/types")
 def types(user: CurrentUser) -> dict:
-    return {"types": ch.type_info(), "kinds": list(KINDS)}
+    return {"types": ch.type_info(), "kinds": list(KINDS), "opt_in": sorted(notify.OPT_IN_KINDS)}
 
 
 @router.get("/channels")

@@ -14,6 +14,7 @@ import time
 from datetime import timezone
 
 from sqlalchemy import case, func, select, update
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
@@ -28,6 +29,7 @@ from ..permissions import (
     rank,
 )
 from ..security import SESSION_COOKIE, origin_allowed, read_session
+from ..services import refs as refs_svc
 from ..services.realtime import hub
 
 log = logging.getLogger("sidc.live")
@@ -747,8 +749,17 @@ def _create_annotation(plan_id: str, uid: str, data: dict) -> dict:
             ref_zoom=float(data.get("ref_zoom", 0)),
         )
         db.add(a)
+        db.flush()
+        _index_annotation(db, a)
         db.commit()
         return _annotation_out(a)
+
+
+def _index_annotation(db: Session, a: Annotation) -> None:
+    """Verknüpfungs-Codes der Annotation im Projekt-Index führen (nur Pläne in einem Projekt)."""
+    plan = db.get(Plan, a.plan_id)
+    if plan is not None and plan.project_id:
+        refs_svc.rebuild(db, plan.project_id, "annotation", a.id, a.text)
 
 
 def _update_annotation(plan_id: str, ann_id: str, uid: str, fields: dict) -> dict | None:
@@ -766,6 +777,8 @@ def _update_annotation(plan_id: str, ann_id: str, uid: str, fields: dict) -> dic
             setattr(a, k, v)
         a.updated_by = uid
         a.updated_at = now()
+        if "text" in fields:
+            _index_annotation(db, a)
         db.commit()
         return _annotation_out(a)
 
@@ -776,6 +789,7 @@ def _delete_annotation(plan_id: str, ann_id: str) -> str | None:
         if a is None or a.plan_id != plan_id:
             return None
         pid = a.phase_id
+        refs_svc.drop(db, "annotation", [a.id])
         db.delete(a)
         db.commit()
         return pid

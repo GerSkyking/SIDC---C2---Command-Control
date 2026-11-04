@@ -7,6 +7,8 @@ import { mountAccountLinks } from "./bridgeUi";
 import { confirmDialog, toast, toastError } from "./notify";
 
 const KINDS: NotifyKind[] = ["task_mention", "chat_mention", "assigned", "plan_shared", "project_added"];
+// Opt-in: standardmäßig aus; kommen nur an, wenn sie ausdrücklich in `kinds` stehen (leer = alle Standard-Arten)
+const OPT_IN: NotifyKind[] = ["feedback_new", "doc_mention"];
 
 function b64urlToBytes(s: string): Uint8Array {
   const pad = "=".repeat((4 - (s.length % 4)) % 4);
@@ -42,13 +44,20 @@ export function mountNotifySettings(host: HTMLElement): void {
   let rows: NotifyChannel[] = [];
 
   const typeLabel = (ty: string) => types.find((x) => x.type === ty)?.label ?? ty;
-  const kindBoxes = (sel: NotifyKind[], name: string) =>
-    KINDS.map(
-      (k) => `<label class="ntf-k"><input type="checkbox" data-k="${name}" value="${k}" ${!sel.length || sel.includes(k) ? "checked" : ""} /> ${t("ntf.kind." + k)}</label>`,
-    ).join("");
+  const kindBoxes = (sel: NotifyKind[], name: string) => {
+    const box = (k: NotifyKind, on: boolean) =>
+      `<label class="ntf-k"><input type="checkbox" data-k="${name}" value="${k}" ${on ? "checked" : ""} /> ${t("ntf.kind." + k)}</label>`;
+    return (
+      KINDS.map((k) => box(k, !sel.length || sel.includes(k))).join("") +
+      `<div class="muted" style="font-size:.75rem;margin-top:.3rem;flex-basis:100%">${t("ntf.optIn")}</div>` +
+      OPT_IN.map((k) => box(k, sel.includes(k))).join("") // leer = keine Opt-in-Art
+    );
+  };
   const pickKinds = (root: ParentNode, name: string): NotifyKind[] => {
     const on = [...root.querySelectorAll<HTMLInputElement>(`input[data-k="${name}"]:checked`)].map((i) => i.value as NotifyKind);
-    return on.length === KINDS.length ? [] : on; // alles gewählt = keine Einschränkung
+    const std = on.filter((k) => KINDS.includes(k)).length;
+    // alle Standard-Arten und keine Opt-in-Art = keine Einschränkung; sonst ausdrückliche Liste
+    return std === KINDS.length && std === on.length ? [] : on;
   };
 
   const paint = () => {

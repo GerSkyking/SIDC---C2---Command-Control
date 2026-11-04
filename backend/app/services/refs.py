@@ -1,6 +1,6 @@
 """Verknüpfungs-Codes in Texten: {{doc|task|plan|note|img:<32hex>}} und {{place:<karte>:<ortsname>}}.
 
-Der Index ``project_refs`` hält je Quelle (Datei, Aufgabe, Notiz) die enthaltenen Codes und wird
+Der Index ``project_refs`` hält je Quelle (Datei, Aufgabe, Notiz, Annotation auf der Karte) die enthaltenen Codes und wird
 beim Speichern der Quelle komplett neu aufgebaut. Ziele werden beim Auflösen auf Existenz und
 Rechte geprüft (kein ON DELETE für Ziele nötig). Die Funktionen committen nicht – sie laufen in
 der Transaktion der aufrufenden Aktion. Spezifikation: docs/MISSIONSBAU-WERKZEUGE.md.
@@ -11,9 +11,10 @@ import re
 from collections.abc import Iterable
 
 from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import ProjectRef
+from ..models import Annotation, Plan, ProjectRef
 
 ID_TYPES = ("doc", "task", "plan", "note", "img")
 _CODE = re.compile(r"\{\{(doc|task|plan|note|img):([0-9a-f]{32})\}\}")
@@ -53,3 +54,15 @@ def drop(db: Session, source_type: str, source_ids: Iterable[str]) -> None:
     if ids:
         db.execute(sa_delete(ProjectRef).where(
             ProjectRef.source_type == source_type, ProjectRef.source_id.in_(ids)))
+
+
+def rebuild_plan_annotations(db: Session, plan: Plan, gone_ids: Iterable[str] = ()) -> None:
+    """Index aller Annotationen eines Plans neu aufbauen (Projektwechsel, Versions-Wiederherstellung).
+    ``gone_ids``: IDs inzwischen gelöschter Annotationen. Ohne Projekt bleibt der Plan ohne Einträge.
+    Erwartet geflushte Annotationen (Aufrufer committet)."""
+    db.flush()
+    anns = list(db.scalars(select(Annotation).where(Annotation.plan_id == plan.id)))
+    drop(db, "annotation", [*gone_ids, *(a.id for a in anns)])
+    if plan.project_id:
+        for a in anns:
+            rebuild(db, plan.project_id, "annotation", a.id, a.text)

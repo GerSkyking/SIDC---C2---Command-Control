@@ -9,7 +9,7 @@ import { icon } from "./icons";
 import { t } from "./i18n";
 
 /** Icon je Verknüpfungs-Typ ({{doc:…}} usw.) */
-export const REF_ICON: Record<string, string> = { doc: "notes", task: "check", plan: "map", note: "textbox", img: "image", place: "marker" };
+export const REF_ICON: Record<string, string> = { doc: "notes", task: "check", plan: "map", note: "textbox", img: "image", place: "marker", annotation: "textbox" };
 // Verknüpfungs-Codes auf bereits escapetem Text: {{doc|task|plan|note:<32hex>}} und {{place:<karte>:<ortsname>}}
 const REF_RE = /\{\{(?:(doc|task|plan|note):([0-9a-f]{32})|place:([a-z0-9][a-z0-9_-]{1,63}):([^{}\n]{1,200}?))\}\}/g;
 const REF_RAW = /\{\{(?:(doc|task|plan|note|img):([0-9a-f]{32})|place:([a-z0-9][a-z0-9_-]{1,63}):([^{}\n]{1,200}?))\}\}/g;

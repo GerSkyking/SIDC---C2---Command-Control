@@ -19,7 +19,9 @@ from sqlalchemy.orm import Session
 
 from ..deps import CurrentUser, DbDep
 from ..models import (
+    Annotation,
     Map,
+    Phase,
     Plan,
     PlanImage,
     ProjectDoc,
@@ -108,7 +110,7 @@ def _missing(typ: str, tid: str) -> dict:
 def resolve_refs(db: Session, user: User, pid: str, refs: list[tuple[str, str]]) -> list[dict]:
     """Ein Ergebnis je Eingabe (gleiche Reihenfolge). Prüft Projektzugehörigkeit, Bereich und Plan-Rechte."""
     is_b = effective_mission_builder(db, user)
-    ids: dict[str, set[str]] = {t: set() for t in ("doc", "task", "plan", "note", "img")}
+    ids: dict[str, set[str]] = {t: set() for t in ("doc", "task", "plan", "note", "img", "annotation")}
     for typ, tid in refs:
         if typ in ids and _HEX32.match(tid):
             ids[typ].add(tid)
@@ -153,6 +155,21 @@ def resolve_refs(db: Session, user: User, pid: str, refs: list[tuple[str, str]])
             found[("img", i.id)] = _item("img", i.id, i.caption or i.filename, pn.get(i.plan_id, ""),
                                          f"#/projects/{pid}/{sp}?img={i.id}")
 
+    if ids["annotation"]:  # nur als Rückverweis-Quelle: Annotation auf der Karte eines Plans dieses Projekts
+        rows = list(db.execute(
+            select(Annotation, Plan).join(Plan, Plan.id == Annotation.plan_id)
+            .where(Plan.project_id == pid, Plan.deleted_at.is_(None), Annotation.id.in_(ids["annotation"]))).all())
+        pids_ = {a.phase_id for a, _ in rows if a.phase_id}
+        planes = dict(db.execute(select(Phase.id, Phase.plane).where(Phase.id.in_(pids_))).all()) if pids_ else {}
+        levels: dict[str, bool] = {}
+        for a, p in rows:
+            if planes.get(a.phase_id or "") == "builder" and not is_b:
+                continue
+            if p.id not in levels:
+                levels[p.id] = effective_level(db, user, p) is not None
+            if levels[p.id]:
+                found[("annotation", a.id)] = _item("annotation", a.id, f"{p.name} (Karte)", "Karten-Verweis", f"#/plans/{p.id}")
+
     maps: dict[str, Map | None] = {}
     out: list[dict] = []
     for typ, tid in refs:
@@ -182,7 +199,7 @@ def resolve(pid: str, body: ResolveIn, user: CurrentUser, db: DbDep) -> list[dic
 def backlinks(
     pid: str, user: CurrentUser, db: DbDep, type: RefType, id: Annotated[str, Query(max_length=300)],
 ) -> list[dict]:
-    """Quellen (Dateien, Aufgaben, Notizen), die das Ziel erwähnen; nur sichtbare Quellen.
+    """Quellen (Dateien, Aufgaben, Notizen, Annotationen auf Plankarten), die das Ziel erwähnen; nur sichtbare Quellen.
     Ist das Ziel selbst nicht sichtbar/vorhanden, kommt eine leere Liste."""
     _ctx(db, user, pid)
     if not resolve_refs(db, user, pid, [(type, id)])[0]["ok"]:

@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import SessionLocal
-from ..models import BridgeIdentity, BridgeOutbox, Notification, NotificationChannel, User, now
-from . import channels
+from ..models import BridgeIdentity, BridgeOutbox, Notification, NotificationChannel, ProjectDoc, User, now
+from . import channels, notify
 
 log = logging.getLogger("sidc.dispatch")
 
@@ -24,10 +24,15 @@ _INTERVAL_S = 3.0
 _BATCH = 50
 
 
-def _link(n: Notification) -> str:
+def _link(n: Notification, space: str = "public") -> str:
     base = get_settings().public_url.rstrip("/")
     if not base:
         return ""
+    if n.kind == "feedback_new" and n.project_id:
+        return f"{base}/#/projects/{quote(n.project_id)}/feedback"
+    if n.kind == "doc_mention" and n.project_id:  # plan_id trägt hier die Datei-ID
+        tab = "builder" if space == "builder" else "public"
+        return f"{base}/#/projects/{quote(n.project_id)}/{tab}" + (f"?doc={quote(n.plan_id)}" if n.plan_id else "")
     if n.plan_id:
         return f"{base}/#/plans/{quote(n.plan_id)}"
     if n.conversation_id:
@@ -46,6 +51,10 @@ def _headline(n: Notification, actor: str) -> str:
         return f"{who} hat dir Zugriff auf den Plan „{t}“ gegeben"
     if n.kind == "project_added":
         return f"{who} hat dich zum Projekt „{t}“ hinzugefügt"
+    if n.kind == "feedback_new":
+        return f"{actor or 'Jemand von außen'} hat neues Feedback „{t}“ im Projekt gesendet"
+    if n.kind == "doc_mention":
+        return f"{who} hat dich in einem Kommentar zu „{t}“ erwähnt"
     if n.kind == "chat_mention":
         return f"{who} hat dich im Chat{(' „' + t + '“') if n.title else ''} erwähnt"
     return f"{who} hat dich in „{t}“ erwähnt"
@@ -67,13 +76,17 @@ def send_one(db: Session, ch: NotificationChannel, msg: channels.Msg) -> None:
 
 def deliver(db: Session, n: Notification, actor_label: str = "") -> int:
     """Schickt eine Benachrichtigung an alle passenden, aktiven Kanäle des Empfängers. Gibt die Zahl der Erfolge zurück."""
-    msg = channels.Msg(kind=n.kind, headline=_headline(n, actor_label), text=n.text or "", url=_link(n), actor=actor_label,
-                       notification_id=n.id)
+    space = "public"
+    if n.kind == "doc_mention" and n.plan_id:
+        d = db.get(ProjectDoc, n.plan_id)
+        space = d.space if d else "public"
+    msg = channels.Msg(kind=n.kind, headline=_headline(n, actor_label), text=n.text or "", url=_link(n, space),
+                       actor=actor_label, notification_id=n.id)
     rows = list(db.scalars(select(NotificationChannel).where(
         NotificationChannel.user_id == n.user_id, NotificationChannel.enabled.is_(True))))
     ok = 0
     for ch in rows:
-        if ch.kinds and n.kind not in ch.kinds:
+        if not notify.kind_wanted(ch.kinds, n.kind):
             continue
         try:
             send_one(db, ch, msg)

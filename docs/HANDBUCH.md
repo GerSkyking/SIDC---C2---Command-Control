@@ -105,6 +105,11 @@ gewählter Ordner ist das Ziel für „Neues Projekt"). Löscht man einen Ordner
   Missionsbau-Phasen im Bereich „Missionsbau", alle anderen in „Öffentlich". Dort lassen sie sich umbenennen, löschen
   und als Markdown-Link in Dateien einbetten.
 - Aufgaben, Whiteboard und Dateiliste aktualisieren sich alle 5 Sekunden (nicht während du tippst oder ziehst).
+- **Verweise im Plan:** Gehört ein Plan zu einem Projekt, funktionieren `{{…}}`-Verweise auch in Textfeldern und Phasen-Notizen des
+  Plans (Chips; Ziele öffnen in neuem Tab, Orte dieser Karte zoomen zum Ort). Der Knopf „Verweis einfügen" im Editor und das
+  Werkzeug **Verweis platzieren** (Kettenglied in der Werkzeugleiste) setzen einen **Referenz-Pin** – ein kompaktes Textfeld
+  mit nur dem Verweis, in der aktiven Phase (Missionsbau-Phase = nur für Missionsbauer sichtbar). Erwähnt ein Pin eine Datei,
+  Aufgabe usw., erscheint der Plan dort unter „Erwähnt in …".
 - **Speicher** (nur Admin): Admin-Bereich → *Speicher* zeigt je Projekt den belegten Platz für Bilder und Dateien. Der
   frühere Admin-Reiter „Bilder" entfällt.
 

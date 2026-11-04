@@ -9,7 +9,7 @@ ohne zusätzliche Tools für Mod-Listen und Slotlisten (kommen aus anderen Werkz
 |---|---|---|
 | 1 | Verknüpfungen (`{{typ:id}}`), Einfügen-Fenster, Suche (Titel + Inhalt), Vorlagen, Verzeichnisse, Zeitleiste | umgesetzt |
 | 2 | Feedback-Schnittstelle (intern + extern per API), Status/Meilensteine, Kommentare/Versionen/Export für Dokumente | Backend umgesetzt |
-| 3 | Referenz-Marker im Plan (Aufgaben/Dokumente/Orte auf der Karte platzieren) | offen |
+| 3 | Projekt-Verweise im Plan (Referenz-Pins, Chips in Textfeldern, Rückverweise von der Karte) | umgesetzt |
 
 ## Phase 1
 
@@ -117,6 +117,28 @@ Rechte-gefiltert wie die Auflösung. `space` beschränkt nur Dateien und Bilder;
 * Dokument-Kommentare und Feedback lösen **keine** Benachrichtigung aus (die Benachrichtigungsarten sind fest an Frontend/Kanäle gebunden); Erwähnungen werden aber aufgelöst und gespeichert. Aktivitätsfeed: kein Eintrag für Feedback, Meilensteine, Kommentare.
 * Der öffentliche Teil setzt keine eigenen CORS-/Frame-Header; die CSP der App verbietet das Einbetten per `<iframe>` (`frame-ancestors 'none'`, `X-Frame-Options: DENY`) – für das einbettbare Formular braucht die Route `#/feedback/<token>` im Frontend/Proxy eine Ausnahme.
 
-## Phase 3 (Skizze)
-Referenz-Marker im Missionsbau-Layer eines Plans: Aufgabe, Datei oder Ort wird als Pin auf der Karte platziert; Klick öffnet
-das Ziel. Baut auf den Codes aus Phase 1 auf.
+## Phase 3: Projekt-Verweise im Plan
+
+Es gibt **keine neue Marker-Art**: Ein **Referenz-Pin** ist eine gewöhnliche **Annotation** (frei platzierbares Markdown-Textfeld,
+per WebSocket synchronisiert), deren Text nur aus Verknüpfungs-Codes (Phase 1) besteht. Die Ebene ergibt sich wie bei jeder
+Annotation aus der Phase (Missionsbau-Phase = nur Missionsbauer).
+
+* **Projekt-ID im Frontend:** kommt aus dem Plan-Snapshot (`snapshot.plan.project_id`, schon vorhanden) – keine Backend-Änderung.
+* **Chips im Plan:** Annotationen, Annotations-Vorschau und Phasen-Notizen rufen `wireRefChips(root, project_id, opts)` auf, wenn der Plan
+  zu einem Projekt gehört (sonst bleiben die Chips inaktiv). Ziele (Datei, Aufgabe, Plan, Notiz) öffnen in einem **neuen Tab**
+  (`opts.newTab`), damit Entwürfe/Live-Zustand nicht verloren gehen. `{{img:…}}` bleibt beim Lightbox-Verhalten des Plans (`opts.skipImg`).
+* **Ort-Chip:** gehört der Ort zur Karte des Plans (`mapId` gleich), fliegt die Karte zu den Koordinaten aus `locations.json`
+  (`[lon, lat]` wie die Ortsebene, `opts.onPlace`); andere Karten zeigen das Popover aus Phase 1.
+* **Editor:** Annotations- und Phasen-Notizen-Editor bekommen über `attachMdToolbar(ta, { projectId })` den Knopf „Verweis einfügen".
+  Ohne Projekt erscheint er nicht.
+* **Werkzeug „Verweis platzieren"** (Plan-Werkzeugleiste, nur mit Projekt und Bearbeiten-Recht): Auswahlfenster → Klick auf die Karte legt
+  eine Annotation (Breite 160, aktive Phase) mit dem Code an; `Esc` bricht ab, es wird nie eine leere Annotation angelegt.
+  Annotationen aus reinen Codes erhalten die CSS-Klasse `annot-ref` (kompakter Pin).
+* **Rückverweise:** `project_refs` kennt die Quelle `annotation` (`source_id` = Annotation-ID). Der Index wird in `routers/live.py`
+  beim Anlegen/Ändern des **Textes**/Löschen aufgebaut, außerdem beim Verschieben eines Plans in/aus einem Projekt, bei der
+  Versions-Wiederherstellung, beim Löschen von Missionsbau-Phasen und beim endgültigen Löschen eines Plans. Pläne ohne Projekt haben
+  keine Einträge. Beim Auflösen zählt die Annotation nur, wenn der Plan zum Projekt gehört, nicht im Papierkorb liegt, der Nutzer
+  Plan-Zugriff hat und – bei Missionsbau-Phase – Missionsbauer ist. `refs/backlinks` und `refs/resolve` liefern dann Label
+  `<Planname> (Karte)` und `href` `#/plans/<plan_id>`. Die Suche bleibt unverändert.
+* **Klonen:** Plan-Klone enthalten bisher keine Annotationen (bestehendes Verhalten) – daher entsteht dort auch kein Index.
+* Tests: `backend/tests/test_plan_refs.py`.
