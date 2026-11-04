@@ -516,13 +516,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") + hk("measure") }) +
             iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") + hk("erase") }) +
             iconBtn("textbox", { data: { mode: "text" }, title: t("tool.text") + hk("text") }) +
+            iconBtn("marker", { id: "tool-marker", title: t("tool.marker") + hk("place") }) +
             // Verweise setzen braucht nur der Missionsbau, daher eigene Gruppe; ohne Projekt gesperrt
             (isMB
               ? `<span class="tb-sep"></span>` +
-                iconBtn("link", { id: "tool-ref", title: projectId ? t("tool.ref") : t("tool.refNoProject") }) +
-                `<span class="tb-sep"></span>`
+                iconBtn("link", { id: "tool-ref", title: projectId ? t("tool.ref") : t("tool.refNoProject") })
               : "") +
-            iconBtn("marker", { id: "tool-marker", title: t("tool.marker") + hk("place") }) +
             `<span class="tb-sep"></span>`
           : ""
       }

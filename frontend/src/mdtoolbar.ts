@@ -227,14 +227,14 @@ export function attachMdToolbar(
       pop.className = "mdtb-pop";
       pop.hidden = true;
       pop.innerHTML =
-        `<label>${t("md.cols")} <input type="number" min="1" max="12" value="3" data-c/></label>` +
-        `<label>${t("md.rows")} <input type="number" min="1" max="50" value="2" data-r/></label>` +
-        `<button type="button" class="mdtb-btn" data-ok>${t("md.insert")}</button>`;
+        `<label>${t("md.cols")} <input type="number" min="1" max="12" value="3" data-mdtb-c/></label>` +
+        `<label>${t("md.rows")} <input type="number" min="1" max="50" value="2" data-mdtb-r/></label>` +
+        `<button type="button" class="mdtb-btn" data-mdtb-ok>${t("md.insert")}</button>`;
       el.addEventListener("click", () => (pop.hidden = !pop.hidden));
-      pop.querySelector("[data-ok]")!.addEventListener("click", () => {
+      pop.querySelector("[data-mdtb-ok]")!.addEventListener("click", () => {
         const n = (sel: string, max: number) =>
           Math.min(max, Math.max(1, Math.floor(Number(pop.querySelector<HTMLInputElement>(sel)!.value)) || 1));
-        insertTable(ta, n("[data-c]", 12), n("[data-r]", 50));
+        insertTable(ta, n("[data-mdtb-c]", 12), n("[data-mdtb-r]", 50));
         pop.hidden = true;
       });
       bar.append(el, pop);
@@ -267,30 +267,30 @@ export function attachMdToolbar(
     pop.className = "mdtb-pop mdtb-timepop";
     pop.hidden = true;
     pop.innerHTML =
-      `<select data-m aria-label="${t("md.timeMode")}"><option value="abs">${t("md.timeAbs")}</option><option value="rel">${t("md.timeRel")}</option></select>` +
-      `<label data-dayw>${t("md.timeDay")} <input type="number" min="1" max="99" value="1" data-d/></label>` +
-      `<input type="time" value="06:00" data-t aria-label="${t("md.timeAt")}"/>` +
-      `<input type="text" maxlength="120" placeholder="${t("md.timeTitle")}" data-h aria-label="${t("md.timeTitle")}"/>` +
-      `<button type="button" class="mdtb-btn" data-ok>${t("md.insert")}</button>`;
+      `<select data-mdtb-m aria-label="${t("md.timeMode")}"><option value="abs">${t("md.timeAbs")}</option><option value="rel">${t("md.timeRel")}</option></select>` +
+      `<label data-mdtb-dayw>${t("md.timeDay")} <input type="number" min="1" max="99" value="1" data-mdtb-d/></label>` +
+      `<input type="time" value="06:00" data-mdtb-t aria-label="${t("md.timeAt")}"/>` +
+      `<input type="text" maxlength="120" placeholder="${t("md.timeTitle")}" data-mdtb-h aria-label="${t("md.timeTitle")}"/>` +
+      `<button type="button" class="mdtb-btn" data-mdtb-ok>${t("md.insert")}</button>`;
     const q = <T extends HTMLElement>(sel: string): T => pop.querySelector<T>(sel)!;
     const sync = (): void => {
-      q("[data-dayw]").hidden = q<HTMLSelectElement>("[data-m]").value === "rel";
+      q("[data-mdtb-dayw]").hidden = q<HTMLSelectElement>("[data-mdtb-m]").value === "rel";
     };
-    q("[data-m]").addEventListener("change", sync);
+    q("[data-mdtb-m]").addEventListener("change", sync);
     el.addEventListener("click", () => {
       pop.hidden = !pop.hidden;
-      if (!pop.hidden) q<HTMLInputElement>("[data-t]").focus();
+      if (!pop.hidden) q<HTMLInputElement>("[data-mdtb-t]").focus();
     });
-    q("[data-ok]").addEventListener("click", () => {
-      const rel = q<HTMLSelectElement>("[data-m]").value === "rel";
-      const time = q<HTMLInputElement>("[data-t]").value || "00:00";
-      const day = Math.min(99, Math.max(1, Math.floor(Number(q<HTMLInputElement>("[data-d]").value)) || 1));
+    q("[data-mdtb-ok]").addEventListener("click", () => {
+      const rel = q<HTMLSelectElement>("[data-mdtb-m]").value === "rel";
+      const time = q<HTMLInputElement>("[data-mdtb-t]").value || "00:00";
+      const day = Math.min(99, Math.max(1, Math.floor(Number(q<HTMLInputElement>("[data-mdtb-d]").value)) || 1));
       const prefix = rel ? `T+${time}` : day > 1 ? `Tag ${day} · ${time}` : time;
-      const title = q<HTMLInputElement>("[data-h]").value.trim() || t("md.ph");
+      const title = q<HTMLInputElement>("[data-mdtb-h]").value.trim() || t("md.ph");
       const head = `## ${prefix} `;
       insertBlock(ta, head + title, head.length, title.length);
       pop.hidden = true;
-      q<HTMLInputElement>("[data-h]").value = "";
+      q<HTMLInputElement>("[data-mdtb-h]").value = "";
     });
     sync();
     bar.append(el, pop);
