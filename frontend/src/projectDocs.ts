@@ -516,7 +516,7 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
       edEl.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode as Mode)));
       if (ta) {
         ta.value = doc.content;
-        attachMdToolbar(ta, { projectId: ctx.id, isBuilder: ctx.isBuilder });
+        attachMdToolbar(ta, { projectId: ctx.id, isBuilder: ctx.isBuilder, timeline: true });
         let tm = 0;
         ta.addEventListener("input", () => {
           setDirty(true);

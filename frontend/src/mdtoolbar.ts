@@ -167,7 +167,11 @@ async function insertRef(ta: HTMLTextAreaElement, projectId: string, isBuilder: 
 }
 
 /** `opts.projectId` schaltet den Knopf „Einfügen" (Verknüpfungen auf Dateien, Aufgaben, Pläne, Notizen, Bilder, Orte) frei. */
-export function attachMdToolbar(ta: HTMLTextAreaElement, opts: { projectId?: string; isBuilder?: boolean } = {}): void {
+/** `opts.timeline` blendet „Zeitpunkt" ein: Uhrzeit/Tag wählen und als Überschrift setzen, die in die Zeitleiste einsortiert wird. */
+export function attachMdToolbar(
+  ta: HTMLTextAreaElement,
+  opts: { projectId?: string; isBuilder?: boolean; timeline?: boolean } = {},
+): void {
   if (ta.readOnly || ta.dataset.mdtb) return;
   ta.dataset.mdtb = "1";
   const wrapEl = document.createElement("div");
@@ -250,6 +254,46 @@ export function attachMdToolbar(ta: HTMLTextAreaElement, opts: { projectId?: str
     ins.innerHTML = `${icon("link", 13)} ${t("md.insertRef")}`;
     ins.addEventListener("click", () => void insertRef(ta, pid, !!opts.isBuilder));
     bar.append(ins);
+  }
+
+  if (opts.timeline) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "mdtb-btn mdtb-time";
+    el.title = t("md.timeHint");
+    el.setAttribute("aria-haspopup", "dialog");
+    el.innerHTML = `${icon("clock", 13)} ${t("md.time")}`;
+    const pop = document.createElement("span");
+    pop.className = "mdtb-pop mdtb-timepop";
+    pop.hidden = true;
+    pop.innerHTML =
+      `<select data-m aria-label="${t("md.timeMode")}"><option value="abs">${t("md.timeAbs")}</option><option value="rel">${t("md.timeRel")}</option></select>` +
+      `<label data-dayw>${t("md.timeDay")} <input type="number" min="1" max="99" value="1" data-d/></label>` +
+      `<input type="time" value="06:00" data-t aria-label="${t("md.timeAt")}"/>` +
+      `<input type="text" maxlength="120" placeholder="${t("md.timeTitle")}" data-h aria-label="${t("md.timeTitle")}"/>` +
+      `<button type="button" class="mdtb-btn" data-ok>${t("md.insert")}</button>`;
+    const q = <T extends HTMLElement>(sel: string): T => pop.querySelector<T>(sel)!;
+    const sync = (): void => {
+      q("[data-dayw]").hidden = q<HTMLSelectElement>("[data-m]").value === "rel";
+    };
+    q("[data-m]").addEventListener("change", sync);
+    el.addEventListener("click", () => {
+      pop.hidden = !pop.hidden;
+      if (!pop.hidden) q<HTMLInputElement>("[data-t]").focus();
+    });
+    q("[data-ok]").addEventListener("click", () => {
+      const rel = q<HTMLSelectElement>("[data-m]").value === "rel";
+      const time = q<HTMLInputElement>("[data-t]").value || "00:00";
+      const day = Math.min(99, Math.max(1, Math.floor(Number(q<HTMLInputElement>("[data-d]").value)) || 1));
+      const prefix = rel ? `T+${time}` : day > 1 ? `Tag ${day} · ${time}` : time;
+      const title = q<HTMLInputElement>("[data-h]").value.trim() || t("md.ph");
+      const head = `## ${prefix} `;
+      insertBlock(ta, head + title, head.length, title.length);
+      pop.hidden = true;
+      q<HTMLInputElement>("[data-h]").value = "";
+    });
+    sync();
+    bar.append(el, pop);
   }
 
   const apply = (open: boolean): void => {

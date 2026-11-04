@@ -206,7 +206,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const wireRefs = (el: HTMLElement): void => {
     if (projectId) void wireRefChips(el, projectId, refOpts);
   };
-  const myPlan = (await api.plans()).find((p) => p.id === planId);
+  // `/plans` listet nur Pläne ohne Projekt; Projekt-Pläne stehen in `/plans/in-projects`.
+  const myPlan = projectId
+    ? (await api.plansInProjects()).find((p) => p.id === planId)
+    : (await api.plans()).find((p) => p.id === planId);
   const canEdit = myPlan?.level === "editor" || myPlan?.level === "owner";
   const lineStyle = await loadPhaseLineStyle();
   const modCat = await loadModifiers();
@@ -513,7 +516,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") + hk("measure") }) +
             iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") + hk("erase") }) +
             iconBtn("textbox", { data: { mode: "text" }, title: t("tool.text") + hk("text") }) +
-            (projectId ? iconBtn("link", { id: "tool-ref", title: t("tool.ref") }) : "") +
+            // Verweise setzen braucht nur der Missionsbau, daher eigene Gruppe; ohne Projekt gesperrt
+            (isMB
+              ? `<span class="tb-sep"></span>` +
+                iconBtn("link", { id: "tool-ref", title: projectId ? t("tool.ref") : t("tool.refNoProject") }) +
+                `<span class="tb-sep"></span>`
+              : "") +
             iconBtn("marker", { id: "tool-marker", title: t("tool.marker") + hk("place") }) +
             `<span class="tb-sep"></span>`
           : ""
@@ -4359,7 +4367,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     tb.querySelector<HTMLButtonElement>('[data-mode="erase"]')?.toggleAttribute("disabled", !caps.delete);
     tb.querySelector<HTMLButtonElement>('[data-mode="text"]')?.toggleAttribute("disabled", !caps.place);
     tb.querySelector<HTMLButtonElement>("#tool-marker")?.toggleAttribute("disabled", !caps.place);
-    tb.querySelector<HTMLButtonElement>("#tool-ref")?.toggleAttribute("disabled", !caps.place);
+    tb.querySelector<HTMLButtonElement>("#tool-ref")?.toggleAttribute("disabled", !caps.place || !projectId);
     tb.querySelector<HTMLButtonElement>("#tool-fav")?.toggleAttribute("disabled", !caps.place);
   }
   applyCaps();

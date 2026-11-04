@@ -1480,7 +1480,10 @@ html:has(.wb-wrap), body:has(.wb-wrap) { overflow: hidden; height: 100%; }
 .wb-refs .ref-chip.ref-missing { background: transparent; border: 1px dashed rgba(0,0,0,.4); color: #444; }
 .wb-note.wb-flash { outline: 3px solid var(--accent); outline-offset: 2px; animation: wbflash 1.2s ease-in-out 2; }
 @keyframes wbflash { 50% { outline-color: transparent; } }
-.mdtb-ref { display: inline-flex; align-items: center; gap: .25rem; padding: 0 .5rem; }
+.mdtb-ref, .mdtb-time { display: inline-flex; align-items: center; gap: .25rem; padding: 0 .5rem; }
+.mdtb-timepop { flex-wrap: wrap; }
+.mdtb-timepop input[type=time] { width: 6.2rem; }
+.mdtb-timepop input[type=text] { width: 11rem; }
 
 /* Projektsuche (Kopf) */
 .pj-find { display: inline-flex; align-items: center; gap: .35rem; }
