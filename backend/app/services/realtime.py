@@ -102,12 +102,15 @@ class Hub:
         return len(self._rooms.get(plan_id, ()))
 
     async def broadcast(
-        self, plan_id: str, message: dict, *, builder_only: bool = False, zeus_ok: bool = False
+        self, plan_id: str, message: dict, *, builder_only: bool = False, zeus_ok: bool = False,
+        zeus_only: bool = False,
     ) -> None:
         if builder_only:
             message = {**message, "_bo": True}
-            if zeus_ok:  # auch an Zeus-Sockets (Phase ist für Zeus freigegeben)
+            if zeus_ok or zeus_only:  # auch an Zeus-Sockets (Phase/Notiz ist für Zeus freigegeben)
                 message["_zo"] = True
+            if zeus_only:  # nur an Zeus (z. B. Freigabe zurückgenommen), nicht an den Missionsbau
+                message["_zx"] = True
         payload = json.dumps(message)
         if self._redis is not None:
             try:
@@ -120,6 +123,7 @@ class Hub:
     async def _local_send(self, plan_id: str, payload: str) -> None:
         builder_only = '"_bo": true' in payload or '"_bo":true' in payload
         zeus_ok = '"_zo": true' in payload or '"_zo":true' in payload
+        zeus_only = '"_zx": true' in payload or '"_zx":true' in payload
         send_payload = payload
         if builder_only:
             # das interne Flag nicht an den Client durchreichen
@@ -127,6 +131,7 @@ class Hub:
                 obj = json.loads(payload)
                 obj.pop("_bo", None)
                 obj.pop("_zo", None)
+                obj.pop("_zx", None)
                 send_payload = json.dumps(obj)
             except ValueError:
                 pass
@@ -134,6 +139,8 @@ class Hub:
         targets: list[tuple[WebSocket, str]] = []
         for ws in list(self._rooms.get(plan_id, ())):
             if builder_only and ws not in self._builders and not (zeus_ok and ws in self._zeus):
+                continue
+            if zeus_only and ws in self._builders:
                 continue
             out = send_payload
             flt = self._filters.get(ws)

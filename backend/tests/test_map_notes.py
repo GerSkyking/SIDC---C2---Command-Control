@@ -98,57 +98,96 @@ def test_annotation_forced_onto_notes_phase(world):
     assert msg["annotation"]["phase_id"] == notes and msg["annotation"]["extra_phase_ids"] == []
 
 
-def test_zeus_visibility_follows_release(world):
+def _rel(c, plan, aid, released, hours=None):
+    data = {"zeus_released": released}
+    if hours is not None:
+        data["zeus_hours"] = hours
+    return _ws(c, plan, type="annotation.modify", id=aid, data=data)
+
+
+def test_zeus_sees_only_released_pins(world):
     w = world
     a = _ws_ann(w["builder"], w["plan"], text="geheim")
-    notes = _notes(w["builder"], w["plan"])[0]["id"]
-    # vor Freigabe: Zeus sieht nichts (Snapshot) ...
-    assert a["id"] in _snap_ann_ids(w["builder"], w["plan"])
-    assert a["id"] not in _snap_ann_ids(w["zeus"], w["plan"])
+    b = _ws_ann(w["builder"], w["plan"], text="offen")
+    assert a["zeus_released"] is False
+    # Standard: Zeus sieht keine Notiz, auch keine Ebene
+    assert _snap_ann_ids(w["zeus"], w["plan"]) & {a["id"], b["id"]} == set()
     assert _notes(w["zeus"], w["plan"]) == []
-    # ... und bekommt keinen Live-Broadcast / darf nichts anlegen
+    # nur b freigeben (unbegrenzt)
+    msg = _rel(w["builder"], w["plan"], b["id"], True)
+    assert msg["annotation"]["zeus_released"] is True and msg["annotation"]["zeus_until"] is None
+    ids = _snap_ann_ids(w["zeus"], w["plan"])
+    assert b["id"] in ids and a["id"] not in ids
+    # Zeus darf die Ebene weiterhin nicht freigeben und nichts ändern
+    notes = _notes(w["builder"], w["plan"])[0]["id"]
+    assert w["builder"].patch(f"/plans/{w['plan']}/phases/{notes}", json={"zeus_released": True}).status_code == 400
+    assert _ws(w["zeus"], w["plan"], type="annotation.modify", id=b["id"], data={"text": "x"})["type"] == "reject"
+    assert _ws(w["zeus"], w["plan"], type="annotation.modify", id=b["id"], data={"zeus_released": False})["type"] == "reject"
+    assert _ws(w["zeus"], w["plan"], type="annotation.delete", id=b["id"])["type"] == "reject"
+    # 72 h: befristet; abgelaufene Freigabe zählt nicht mehr
+    msg = _rel(w["builder"], w["plan"], b["id"], True, 72)
+    assert msg["annotation"]["zeus_until"] is not None and msg["annotation"]["zeus_released"] is True
+    from datetime import timedelta
+
+    from app.db import SessionLocal
+    from app.models import Annotation, now
+
+    with SessionLocal() as db:
+        x = db.get(Annotation, b["id"])
+        x.zeus_until = now() - timedelta(hours=1)
+        db.commit()
+    assert b["id"] not in _snap_ann_ids(w["zeus"], w["plan"])
+    # Rücknahme
+    _rel(w["builder"], w["plan"], b["id"], True)
+    assert b["id"] in _snap_ann_ids(w["zeus"], w["plan"])
+    _rel(w["builder"], w["plan"], b["id"], False)
+    assert b["id"] not in _snap_ann_ids(w["zeus"], w["plan"])
+    # Missionsbau sieht alle samt Zustand
+    snap = {x["id"]: x for x in w["builder"].get(f"/plans/{w['plan']}/snapshot").json()["annotations"]}
+    assert snap[a["id"]]["zeus_released"] is False and snap[b["id"]]["zeus_released"] is False
+
+
+def test_zeus_live_follows_pin_release(world):
+    w = world
+    a = _ws_ann(w["builder"], w["plan"], text="live")
     with w["zeus"].websocket_connect(f"/plans/{w['plan']}/live") as zws:
         _skip_hello(zws)
         with w["builder"].websocket_connect(f"/plans/{w['plan']}/live") as bws:
             _skip_hello(bws)
-            zws.receive_json()  # presence.join des Builders
-            bws.send_json({"type": "annotation.create", "cid": "x", "data": {"text": "neu"}})
+            assert zws.receive_json()["type"] == "presence.join"
+            # unfreigegebene Änderung: Zeus bekommt nichts
+            bws.send_json({"type": "annotation.modify", "id": a["id"], "data": {"text": "still"}})
             assert bws.receive_json()["type"] == "annotation.upsert"
-            zws.send_json({"type": "annotation.create", "cid": "z", "data": {"text": "darf nicht"}})
-            assert zws.receive_json()["type"] == "reject"  # kein upsert vorher im Zeus-Socket
-    # Freigabe (ohne zeus_hours: unbegrenzt)
-    r = w["builder"].patch(f"/plans/{w['plan']}/phases/{notes}", json={"zeus_released": True})
-    assert r.status_code == 200 and r.json()["zeus_released"] is True and r.json()["zeus_until"] is None
-    assert a["id"] in _snap_ann_ids(w["zeus"], w["plan"])
-    assert len(_notes(w["zeus"], w["plan"])) == 1
-    z = _ws_ann(w["zeus"], w["plan"], text="von Zeus", phase_id=None)
-    assert z["phase_id"] == notes
-    # Befristet erneut freigeben
-    r = w["builder"].patch(f"/plans/{w['plan']}/phases/{notes}", json={"zeus_released": True, "zeus_hours": 72})
-    assert r.json()["zeus_until"] is not None
-    # Rücknahme
-    w["builder"].patch(f"/plans/{w['plan']}/phases/{notes}", json={"zeus_released": False})
-    assert a["id"] not in _snap_ann_ids(w["zeus"], w["plan"])
-
-
-def test_zeus_cannot_manage_release(world):
-    w = world
-    notes = _notes(w["builder"], w["plan"])[0]["id"]
-    assert w["zeus"].patch(f"/plans/{w['plan']}/phases/{notes}", json={"zeus_released": True}).status_code == 403
-    assert w["ed"].patch(f"/plans/{w['plan']}/phases/{notes}", json={"zeus_released": True}).status_code == 403
+            # Freigabe: Zeus bekommt die Notiz
+            bws.send_json({"type": "annotation.modify", "id": a["id"], "data": {"zeus_released": True}})
+            assert bws.receive_json()["annotation"]["zeus_released"] is True
+            m = zws.receive_json()
+            assert m["type"] == "annotation.upsert" and m["annotation"]["id"] == a["id"]
+            assert m["annotation"]["text"] == "still"
+            # Rücknahme: Zeus bekommt ein delete, der Missionsbau ein upsert
+            bws.send_json({"type": "annotation.modify", "id": a["id"], "data": {"zeus_released": False}})
+            assert bws.receive_json()["type"] == "annotation.upsert"
+            assert zws.receive_json() == {"type": "annotation.delete", "id": a["id"]}
+            # wieder freigeben und löschen: Zeus bekommt das delete
+            bws.send_json({"type": "annotation.modify", "id": a["id"], "data": {"zeus_released": True}})
+            bws.receive_json()
+            assert zws.receive_json()["type"] == "annotation.upsert"
+            bws.send_json({"type": "annotation.delete", "id": a["id"]})
+            assert bws.receive_json()["type"] == "annotation.delete"
+            assert zws.receive_json() == {"type": "annotation.delete", "id": a["id"]}
 
 
 def test_players_never_see_notes(world):
     w = world
     a = _ws_ann(w["builder"], w["plan"], text="intern")
-    notes = _notes(w["builder"], w["plan"])[0]["id"]
-    w["builder"].patch(f"/plans/{w['plan']}/phases/{notes}", json={"zeus_released": True})
+    _rel(w["builder"], w["plan"], a["id"], True)  # nur Zeus
     for who in ("ed", "vw"):
         assert a["id"] not in _snap_ann_ids(w[who], w["plan"])
         assert _notes(w[who], w["plan"]) == []
-    # Editor ohne Missionsbau darf keine Annotation anlegen
+    # Editor ohne Missionsbau darf keine Annotation anlegen oder freigeben
     msg = _ws(w["ed"], w["plan"], type="annotation.create", cid="e", data={"text": "x"})
     assert msg["type"] == "reject"
+    assert _ws(w["ed"], w["plan"], type="annotation.modify", id=a["id"], data={"zeus_released": False})["type"] == "reject"
     # Viewer: ebenfalls abgelehnt
     msg = _ws(w["vw"], w["plan"], type="annotation.create", cid="v", data={"text": "x"})
     assert msg["type"] == "reject"
@@ -158,7 +197,7 @@ def test_players_never_see_notes(world):
         with w["builder"].websocket_connect(f"/plans/{w['plan']}/live") as bws:
             _skip_hello(bws)
             ews.receive_json()  # presence.join
-            bws.send_json({"type": "annotation.create", "cid": "x", "data": {"text": "neu"}})
+            bws.send_json({"type": "annotation.modify", "id": a["id"], "data": {"text": "neu"}})
             assert bws.receive_json()["type"] == "annotation.upsert"
         assert ews.receive_json()["type"] == "presence.leave"  # kein annotation.upsert dazwischen
 
@@ -185,6 +224,7 @@ def test_map_notes_endpoint(world):
     assert row["title"] == "Erster Titel" and row["plan_name"] == "Alpha" and row["plan_id"] == w["plan"]
     assert row["href"] == f"#/plans/{w['plan']}" and row["updated_at"].endswith("Z")
     assert row["updated_by_label"]
+    assert row["zeus_released"] is False and row["zeus_until"] is None
     assert rows[0]["updated_at"] >= rows[1]["updated_at"]
     # Nicht-Missionsbauer: 404; Missionsbauer ohne Plan-Zugriff: Plan fehlt
     assert w["ed"].get(f"/projects/{w['pid']}/map-notes").status_code == 404
@@ -207,7 +247,7 @@ def test_migration_values_fit_columns():
 
     assert len(NOTES_ROLE) <= Phase.__table__.c.role.type.length
     assert len(NOTES_NAME) <= Phase.__table__.c.name.type.length
-    assert len("0043_notes_layer") <= 32  # alembic_version.version_num
+    assert len("0044_annotation_zeus") <= 32  # alembic_version.version_num
 
 
 def test_existing_annotation_keeps_its_phase_on_resize(world):

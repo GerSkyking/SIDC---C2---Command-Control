@@ -124,6 +124,8 @@ interface Annot {
   height?: number;
   scale_fixed?: boolean;
   ref_zoom?: number;
+  zeus_released?: boolean; // Einzelfreigabe für Zeus (Karten-Notizen)
+  zeus_until?: string | null;
 }
 
 export async function openPlanView(root: HTMLElement, planId: string, me: Me): Promise<void> {
@@ -2490,12 +2492,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         : `<span class="muted">(auto)</span>`) +
       (isNotesPhase(ph)
         ? `<span class="nt-notes-info">⚑ ${t("notes.layerHint")}</span>` +
-          (isMB
-            ? `<span class="nt-zbadge ${zeusOpen(ph.id) ? "on" : ""}" role="status">${t(zeusOpen(ph.id) ? "zeus.statusOn" : "zeus.statusOff")}</span>`
-            : "")
+          (isMB ? `<span class="nt-zbadge" role="status">${t("notes.perPin")}</span>` : "")
         : "") +
-      (isMB && canEdit && ph.plane === "builder"
-        ? `<span class="nt-zeus ${isNotesPhase(ph) ? "nt-zeus-prom" : ""}"><label class="chk"><input type="checkbox" data-prel ${ph.player_released ? "checked" : ""}/> ${t("phase.playerRelease")}</label>` +
+      (isMB && canEdit && ph.plane === "builder" && !isNotesPhase(ph)
+        ? `<span class="nt-zeus"><label class="chk"><input type="checkbox" data-prel ${ph.player_released ? "checked" : ""}/> ${t("phase.playerRelease")}</label>` +
           `<label class="chk"><input type="checkbox" data-zrel ${ph.zeus_released ? "checked" : ""}/> ${t("zeus.release")}</label>` +
           `<label>${t("zeus.hours")}<input type="number" min="0" step="1" data-zhours style="width:4.5rem" value="${
             ph.zeus_released && ph.zeus_until ? Math.max(1, Math.round((parseUtc(ph.zeus_until) - Date.now()) / 3600e3)) : ""
@@ -4918,7 +4918,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let annotDragId: string | null = null;
   let annotResizingId: string | null = null;
   let pendingAnnotCid: string | null = null;
-  const annotOpacity = (a: Annot): number => multiPhaseOpacity(a.phase_id, a.extra_phase_ids);
+  // Einzelfreigabe für Zeus: aktiv, solange keine Frist gesetzt ist oder sie noch nicht abgelaufen ist.
+  const annotZeusOpen = (a: Annot): boolean =>
+    !!a.zeus_released && (!a.zeus_until || parseUtc(a.zeus_until) > Date.now());
+  // Karten-Notiz = Pin auf der festen Ebene; Zeus kennt die Ebene selbst nicht (nur die freigegebenen Pins).
+  const isNotesAnnot = (a: Annot): boolean =>
+    isNotesPhase(phases.find((x) => x.id === a.phase_id)) ||
+    (!!a.phase_id && !phases.some((x) => x.id === a.phase_id) && !!a.zeus_released);
+  const annotOpacity = (a: Annot): number => {
+    if (isNotesAnnot(a)) {
+      if (actAs === "zeus") return annotZeusOpen(a) ? 1 : 0;
+      return isMB && actAs === "builder" ? 1 : 0;
+    }
+    return multiPhaseOpacity(a.phase_id, a.extra_phase_ids);
+  };
   const ANNOT_COLL_KEY = `sidc_annot_coll_${planId}`;
   const collapsedAnnots = new Set<string>(
     (() => {
@@ -4972,7 +4985,18 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <textarea class="notes-edit annot-edit" rows="6" placeholder="${t("annot.hint")}"></textarea>
       ${
         projectId
-          ? `<p class="muted annot-notes-hint">⚑ ${t("annot.notesLayer")}</p>`
+          ? `<p class="muted annot-notes-hint">⚑ ${t("annot.notesLayer")}</p>` +
+            (isMB
+              ? `<label style="margin-top:.4rem">${t("zeus.release")}</label>
+      <select data-azeus>
+        <option value="off" ${annotZeusOpen(a) ? "" : "selected"}>${t("annot.zeusOff")}</option>
+        <option value="keep" ${annotZeusOpen(a) ? "selected" : "hidden"}>${t("annot.zeusOn")}${
+          a.zeus_until ? ` (${t("zeus.until")} ${fmtInput(new Date(parseUtc(a.zeus_until)))})` : ""
+        }</option>
+        <option value="unl">${t("zeus.unlimited")}</option>
+        <option value="72">72 h</option>
+      </select>`
+              : "")
           : `<label style="margin-top:.4rem">${t("phase.assign")}</label>
       <select data-aphase>
         ${selectablePhases()
@@ -5047,6 +5071,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           !wantScale && a.scale_fixed && a.height ? Math.round(a.height * sc) : a.height ?? 0,
         scale_fixed: wantScale,
       };
+      const zSel = back.querySelector<HTMLSelectElement>("[data-azeus]");
+      if (zSel && zSel.value !== "keep") {
+        data.zeus_released = zSel.value !== "off";
+        if (zSel.value === "72") data.zeus_hours = 72;
+      }
       if (phaseSel) {
         data.phase_id = phaseSel.value || currentPhaseId || null;
         data.extra_phase_ids = readPhaseMulti(back, "data-xphases");
@@ -5158,6 +5187,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         body +
         `<div class="annot-tools">` +
         `<button class="icon-btn" data-acoll title="${t(collapsed ? "annot.expand" : "annot.collapse")}">${icon(collapsed ? "chevron" : "chevronDown", 14)}</button>` +
+        (canEdit && isMB && projectId && isNotesAnnot(a)
+          ? `<button class="icon-btn annot-zeus ${annotZeusOpen(a) ? "on" : ""}" data-azq title="${t(annotZeusOpen(a) ? "annot.zeusTipOn" : "annot.zeusTipOff")}">${icon("eye", 14)}</button>`
+          : "") +
         (canEdit
           ? `<button class="icon-btn" data-aedit title="${t("common.rename")}">${icon("edit", 14)}</button>` +
             `<button class="icon-btn" data-adel title="${t("common.delete")}">${icon("x", 14)}</button>`
@@ -5168,6 +5200,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         collapsed ? collapsedAnnots.delete(a.id) : collapsedAnnots.add(a.id);
         saveCollapsed();
         renderAnnots();
+      });
+      el.querySelector("[data-azq]")?.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        socket.send({ type: "annotation.modify", id: a.id, data: { zeus_released: !annotZeusOpen(a) } });
       });
       el.querySelector("[data-aedit]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();

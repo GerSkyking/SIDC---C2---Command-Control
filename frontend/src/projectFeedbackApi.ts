@@ -24,6 +24,8 @@ export interface MapNote {
   world_y: number;
   updated_at?: string | null;
   updated_by_label?: string | null;
+  zeus_released?: boolean; // Einzelfreigabe für Zeus
+  zeus_until?: string | null;
   href: string;
 }
 

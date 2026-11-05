@@ -62,7 +62,7 @@ from ..schemas import (
     VersionCreateIn,
 )
 
-from ..services.notes_layer import NOTES_ROLE, ensure_notes_phase, release_notes_role
+from ..services.notes_layer import NOTES_ROLE, annotation_zeus_open, ensure_notes_phase, release_notes_role
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 folders_router = APIRouter(prefix="/folders", tags=["folders"])
@@ -128,8 +128,18 @@ def _zeus_released_phase_ids(db: Session, plan_id: str) -> set[str]:
     return out
 
 
+def _zeus_fields(a: Annotation) -> dict:
+    """Freigabe-Zustand einer Karten-Notiz für die Anzeige beim Missionsbau."""
+    u = a.zeus_until
+    return {
+        "zeus_released": annotation_zeus_open(a),
+        "zeus_until": (u.isoformat() if u is not None else None) if a.zeus_released else None,
+    }
+
+
 def _snapshot(
-    db: Session, plan: Plan, *, include_builder: bool = True, visible_builder_ids: set[str] | None = None
+    db: Session, plan: Plan, *, include_builder: bool = True, visible_builder_ids: set[str] | None = None,
+    zeus: bool = False,
 ) -> dict:
     markers = list(db.scalars(select(Marker).where(Marker.plan_id == plan.id)))
     strokes = list(db.scalars(select(Stroke).where(Stroke.plan_id == plan.id)))
@@ -140,7 +150,8 @@ def _snapshot(
         hide = _builder_phase_ids(db, plan.id) - (visible_builder_ids or set())
         markers = [m for m in markers if m.phase_id not in hide]
         strokes = [s for s in strokes if s.phase_id not in hide]
-        anns = [a for a in anns if a.phase_id not in hide]
+        t_now = now()
+        anns = [a for a in anns if a.phase_id not in hide or (zeus and annotation_zeus_open(a, t_now))]
         imgs = [i for i in imgs if i.phase_id not in hide]
         placements = [p for p in placements if p.phase_id not in hide]
     mdicts = [_marker_dict(m) for m in markers]
@@ -593,7 +604,13 @@ def get_snapshot(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> dict:
     from ..models import Map
 
     mp = db.get(Map, plan.map_id)
-    snap = _snapshot(db, plan, include_builder=builder, visible_builder_ids=released)
+    snap = _snapshot(db, plan, include_builder=builder, visible_builder_ids=released, zeus=zeus)
+    if builder or zeus:  # Einzelfreigabe je Karten-Notiz (nicht Teil von _snapshot: der Output wird auch geklont)
+        rel = {a.id: a for a in db.scalars(select(Annotation).where(Annotation.plan_id == plan.id))}
+        for d in snap["annotations"]:
+            a = rel.get(d["id"])
+            if a is not None:
+                d.update(_zeus_fields(a))
     # Ersteller-Namen für die Marker-Anzeige (Hover) anreichern – nur hier,
     # nicht in _snapshot (dessen Output wird für Versionen/Klonen als Marker-kwargs
     # wiederverwendet).
@@ -834,11 +851,13 @@ def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: CurrentU
     if "end_at" in body.model_fields_set:
         p.end_at = body.end_at
     zeus_changed = False
+    if (body.zeus_released or body.player_released) and p.role == NOTES_ROLE:
+        # Karten-Notizen werden nur einzeln (je Pin) für Zeus freigegeben, nie als ganze Ebene.
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Karten-Notizen werden einzeln freigegeben")
     if body.zeus_released is not None and p.plane == "builder":
         p.zeus_released = body.zeus_released
         if body.zeus_released:
-            default_h = 0.0 if p.role == NOTES_ROLE else 48.0  # Notizen-Ebene: ohne Angabe unbegrenzt
-            hours = default_h if "zeus_hours" not in body.model_fields_set else body.zeus_hours
+            hours = 48.0 if "zeus_hours" not in body.model_fields_set else body.zeus_hours
             p.zeus_until = now() + timedelta(hours=min(float(hours), 24 * 365)) if hours and hours > 0 else None
         else:
             p.zeus_until = None

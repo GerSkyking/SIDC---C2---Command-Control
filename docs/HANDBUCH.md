@@ -111,8 +111,8 @@ gewählter Ordner ist das Ziel für „Neues Projekt"). Löscht man einen Ordner
   mit nur dem Verweis, in der aktiven Phase (Missionsbau-Phase = nur für Missionsbauer sichtbar). Erwähnt ein Pin eine Datei,
   Aufgabe usw., erscheint der Plan dort unter „Erwähnt in …".
 - **Karten-Notizen:** In Plänen eines Projekts liegen alle Textfelder und Verweis-Pins automatisch auf der festen Missionsbau-Ebene
-  „Karten-Notizen“ (nicht löschbar, Umbenennen möglich). Sie ist nur für Missionsbauer sichtbar; **Zeus** sieht sie erst, wenn du sie
-  im Zeitstrahl für Zeus freigibst (unbegrenzt oder mit Frist, jederzeit zurücknehmbar). Spieler sehen sie nie. Die Liste
+  „Karten-Notizen“ (nicht löschbar, Umbenennen möglich). Sie ist nur für Missionsbauer sichtbar; **Zeus** sieht nur die Notizen, die du **einzeln**
+  freigibst (Auge-Symbol an der Notiz oder Auswahl im Editor: unbegrenzt oder 72 h, jederzeit zurücknehmbar). Spieler sehen sie nie. Die Liste
   **Auf der Karte** im Projekt zeigt alle Notizen aller Pläne mit Sprung zum Plan.
 - **Speicher** (nur Admin): Admin-Bereich → *Speicher* zeigt je Projekt den belegten Platz für Bilder und Dateien. Der
   frühere Admin-Reiter „Bilder" entfällt.

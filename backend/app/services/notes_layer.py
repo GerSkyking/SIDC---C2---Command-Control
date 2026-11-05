@@ -11,10 +11,21 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import Phase, Plan
+from ..models import Annotation, Phase, Plan, now
 
 NOTES_ROLE = "notes"
 NOTES_NAME = "Karten-Notizen"
+
+
+def annotation_zeus_open(a: Annotation, t_now=None) -> bool:
+    """Einzelfreigabe einer Karten-Notiz für Zeus ist aktiv (freigegeben, Frist nicht abgelaufen)."""
+    if not a.zeus_released:
+        return False
+    if a.zeus_until is None:
+        return True
+    t_now = t_now or now()
+    until = a.zeus_until if a.zeus_until.tzinfo else a.zeus_until.replace(tzinfo=t_now.tzinfo)
+    return until > t_now
 
 
 def get_notes_phase(db: Session, plan_id: str) -> Phase | None:

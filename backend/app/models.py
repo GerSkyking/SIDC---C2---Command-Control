@@ -320,6 +320,9 @@ class Annotation(Base):
     # friert sie auf Bildschirmgröße ein. ref_zoom = Zoom, bei dem width "natürlich" ist.
     scale_fixed: Mapped[bool] = mapped_column(Boolean, default=False)
     ref_zoom: Mapped[float] = mapped_column(Float, default=0)
+    # Einzelfreigabe für Zeus (nur Annotationen auf der Ebene "Karten-Notizen"; None = unbegrenzt).
+    zeus_released: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    zeus_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

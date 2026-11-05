@@ -34,6 +34,7 @@ from ..models import (
 )
 from ..permissions import effective_level, effective_mission_builder
 from ..services.maps_import import map_dir
+from ..services.notes_layer import annotation_zeus_open
 from .projects import _SPACE_Q, _ctx, _image_spaces
 
 router = APIRouter(prefix="/projects", tags=["project-tools"])
@@ -363,6 +364,9 @@ def map_notes(pid: str, user: CurrentUser, db: DbDep) -> list[dict]:
             "id": a.id, "plan_id": a.plan_id, "plan_name": plans[a.plan_id].name,
             "text": a.text or "", "title": _title_of(a.text or ""),
             "world_x": a.world_x, "world_y": a.world_y,
+            "zeus_released": annotation_zeus_open(a),
+            "zeus_until": (a.zeus_until.isoformat() if a.zeus_until is not None else None)
+            if annotation_zeus_open(a) else None,
             "updated_at": ts.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if ts.tzinfo
             else ts.isoformat() + "Z",
             "updated_by_label": (display or username or "") if (display or username) else "",

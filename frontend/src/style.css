@@ -1718,3 +1718,9 @@ button.stg-b:hover:not(:disabled) { border-color: var(--accent); }
   #printRoot table { border-collapse: collapse; }
   #printRoot th, #printRoot td { border: 1px solid #999; padding: .2rem .4rem; }
 }
+
+/* Karten-Notizen: Einzelfreigabe für Zeus */
+.annot-zeus { opacity: .55; }
+.annot-zeus.on { opacity: 1; color: #1b1b1b; background: #ffe600; border-radius: 4px; }
+.dir-zeus { display: inline-flex; align-items: center; gap: .25rem; margin-left: .5rem; font-size: .72rem; font-weight: 700;
+  padding: .05rem .45rem; border-radius: 999px; color: #1b1b1b; background: #ffe600; }

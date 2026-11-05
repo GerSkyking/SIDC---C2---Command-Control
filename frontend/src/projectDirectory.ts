@@ -95,6 +95,7 @@ export function mountDirectory(host: HTMLElement, ctx: ProjCtx): void {
               const who = [n.updated_by_label, n.updated_at ? relTime(n.updated_at) : ""].filter(Boolean).join(" · ");
               return `<li class="dir-item dir-note">
                 <a class="dir-link" href="#/plans/${esc(n.plan_id)}?annot=${esc(n.id)}"><span class="dir-name">${esc(noteTitle(n))}</span></a>
+                ${n.zeus_released ? `<span class="dir-zeus" title="${t("annot.zeusOn")}">${icon("eye", 13)} Zeus</span>` : ""}
                 ${snip ? `<div class="dir-snip note-md">${renderMarkdown(snip)}</div>` : ""}
                 ${who ? `<div class="dir-snip dir-who">${esc(who)}</div>` : ""}</li>`;
             })

@@ -11,7 +11,7 @@ import asyncio
 import logging
 import re
 import time
-from datetime import timezone
+from datetime import timedelta, timezone
 
 from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import Session
@@ -30,7 +30,7 @@ from ..permissions import (
 )
 from ..security import SESSION_COOKIE, origin_allowed, read_session
 from ..services import refs as refs_svc
-from ..services.notes_layer import ensure_notes_phase, get_notes_phase
+from ..services.notes_layer import annotation_zeus_open, ensure_notes_phase, get_notes_phase
 from ..services.realtime import hub
 
 log = logging.getLogger("sidc.live")
@@ -445,20 +445,31 @@ async def _handle(
     elif t in ("annotation.move", "annotation.modify"):
         fields = {
             k: v for k, v in msg.get("data", {}).items()
-            if k in ("world_x", "world_y", "text", "width", "height", "phase_id", "extra_phase_ids", "scale_fixed", "ref_zoom")
+            if k in ("world_x", "world_y", "text", "width", "height", "phase_id", "extra_phase_ids", "scale_fixed",
+                     "ref_zoom", "zeus_released", "zeus_hours")
         }
+        if not is_builder:  # Einzelfreigabe für Zeus: nur Missionsbau
+            fields.pop("zeus_released", None)
+            fields.pop("zeus_hours", None)
         res = await run_in_threadpool(_update_annotation, plan_id, msg["id"], user.id, fields)
         if res is not None:
-            await hub.broadcast(
-                plan_id, {"type": "annotation.upsert", "annotation": res},
-                **await bflags(res.get("phase_id")),
-            )
+            was_open = res.pop("_was_open", False)
+            fl = await bflags(res.get("phase_id"))
+            if fl["builder_only"] and res.get("zeus_released"):
+                fl["zeus_ok"] = True  # einzeln für Zeus freigegeben
+            await hub.broadcast(plan_id, {"type": "annotation.upsert", "annotation": res}, **fl)
+            if was_open and not res.get("zeus_released") and not fl["zeus_ok"]:
+                # Freigabe zurückgenommen: bei Zeus ausblenden (Missionsbau behält die Notiz)
+                await hub.broadcast(
+                    plan_id, {"type": "annotation.delete", "id": msg["id"]}, builder_only=True, zeus_only=True
+                )
 
     elif t == "annotation.delete":
-        pid = await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
-        await hub.broadcast(
-            plan_id, {"type": "annotation.delete", "id": msg["id"]}, **await bflags(pid)
-        )
+        pid, was_open = await run_in_threadpool(_delete_annotation, plan_id, msg["id"])
+        fl = await bflags(pid)
+        if fl["builder_only"] and was_open:
+            fl["zeus_ok"] = True
+        await hub.broadcast(plan_id, {"type": "annotation.delete", "id": msg["id"]}, **fl)
 
     elif t == "image.modify":
         fields = {k: v for k, v in msg.get("data", {}).items() if k in IMAGE_UPDATE_FIELDS}
@@ -773,6 +784,8 @@ def _annotation_out(a: Annotation) -> dict:
         "world_x": a.world_x, "world_y": a.world_y, "text": a.text,
         "width": a.width, "height": a.height,
         "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom,
+        "zeus_released": annotation_zeus_open(a),
+        "zeus_until": a.zeus_until.isoformat() if a.zeus_released and a.zeus_until is not None else None,
     }
 
 
@@ -803,10 +816,21 @@ def _index_annotation(db: Session, a: Annotation) -> None:
 
 
 def _update_annotation(plan_id: str, ann_id: str, uid: str, fields: dict) -> dict | None:
+    """Ergebnis enthält ``_was_open`` (Zeus-Freigabe VOR der Änderung) für den Aufrufer."""
     with SessionLocal() as db:
         a = db.get(Annotation, ann_id)
         if a is None or a.plan_id != plan_id:
             return None
+        was_open = annotation_zeus_open(a)
+        release = fields.pop("zeus_released", None)
+        hours = fields.pop("zeus_hours", None)
+        if release is not None:
+            a.zeus_released = bool(release)
+            try:
+                h = min(float(hours or 0), 24 * 365)
+            except (TypeError, ValueError):
+                h = 0.0
+            a.zeus_until = now() + timedelta(hours=h) if a.zeus_released and h > 0 else None
         if "text" in fields:
             fields["text"] = str(fields["text"])[:8000]
         if "extra_phase_ids" in fields:
@@ -820,19 +844,20 @@ def _update_annotation(plan_id: str, ann_id: str, uid: str, fields: dict) -> dic
         if "text" in fields:
             _index_annotation(db, a)
         db.commit()
-        return _annotation_out(a)
+        return {**_annotation_out(a), "_was_open": was_open}
 
 
-def _delete_annotation(plan_id: str, ann_id: str) -> str | None:
+def _delete_annotation(plan_id: str, ann_id: str) -> tuple[str | None, bool]:
+    """(Phase-ID, war für Zeus freigegeben)."""
     with SessionLocal() as db:
         a = db.get(Annotation, ann_id)
         if a is None or a.plan_id != plan_id:
-            return None
-        pid = a.phase_id
+            return None, False
+        pid, was_open = a.phase_id, annotation_zeus_open(a)
         refs_svc.drop(db, "annotation", [a.id])
         db.delete(a)
         db.commit()
-        return pid
+        return pid, was_open
 
 
 # ── Plan-Bilder ────────────────────────────────────────────────────────────

@@ -152,9 +152,12 @@ Jede Annotation (Textfeld/Verweis-Pin) eines Plans mit `project_id` liegt automa
 * **Anlage:** `services/notes_layer.ensure_notes_phase` (idempotent) bei Plan-Erstellung im Projekt, Verschieben in ein Projekt, Klonen in ein Projekt,
   Versions-Wiederherstellung und lazy beim Anlegen/Ändern einer Annotation (Altpläne). Daten-Migration legt sie für alle Projekt-Pläne an;
   bestehende Annotationen werden **nicht** verschoben. Beim Herauslösen aus dem Projekt verliert die Phase die Rolle (bleibt samt Inhalt).
-* **Sichtbarkeit:** nur Missionsbauer. **Zeus sieht sie erst nach Freigabe** (`PATCH /plans/{id}/phases/{pid}` mit `zeus_released`, nur Missionsbauer;
-  ohne `zeus_hours` bei dieser Ebene unbegrenzt, mit `zeus_hours` befristet, `zeus_released=false` nimmt zurück). Spieler sehen sie nie.
-  Vor der Freigabe darf Zeus hier nichts anlegen/ändern und bekommt keinen Live-Broadcast.
+* **Sichtbarkeit:** nur Missionsbauer. **Zeus sieht nur einzeln freigegebene Pins** (Migration `0044_annotation_zeus`: `annotations.zeus_released`,
+  `zeus_until`). Die Ebene selbst ist nicht freigebbar (`PATCH` der Phase mit `zeus_released`/`player_released` → 400). Freigabe per Live-Nachricht
+  `annotation.modify` mit `zeus_released` (+ optional `zeus_hours`; leer/0 = unbegrenzt), nur Missionsbauer (bei anderen wird das Feld ignoriert). Spieler sehen
+  die Ebene nie. Zeus darf freigegebene Pins nur ansehen (kein Anlegen/Ändern/Löschen). Snapshot und Live-Broadcast liefern Zeus nur freigegebene,
+  nicht abgelaufene Pins; Rücknahme/Löschen schickt Zeus ein `annotation.delete` (`Hub.broadcast(..., zeus_only=True)`). Abgelaufene Fristen greifen
+  beim nächsten Laden (kein Push beim Ablauf, wie bei Phasen).
 * **Live:** `annotation.create/move/modify` mit `phase_id`/`extra_phase_ids` setzen serverseitig `phase_id` = notes-Phase und `extra_phase_ids = []`
   (Client-Werte werden ignoriert) – vor der Rechteprüfung; Nicht-Missionsbauer werden daher abgelehnt (Zeus nur bei Freigabe).
 * **Schutz:** `DELETE` der Phase → 400, `role` ist per API nicht änderbar, Umbenennen erlaubt.
