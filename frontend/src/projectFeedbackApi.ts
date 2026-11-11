@@ -26,6 +26,8 @@ export interface MapNote {
   updated_by_label?: string | null;
   zeus_released?: boolean; // Einzelfreigabe für Zeus
   zeus_until?: string | null;
+  /** liegt auf dem Layer „Missionsbau-Notizen" (nur Missionsbau) */
+  mb?: boolean;
   href: string;
 }
 

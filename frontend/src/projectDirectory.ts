@@ -54,10 +54,17 @@ export function mountDirectory(host: HTMLElement, ctx: ProjCtx): void {
   // ── „Auf der Karte“: Annotationen aus allen Plänen des Projekts (nur Missionsbau) ──
   const mapBox = host.querySelector<HTMLElement>("#dirMap")!;
   let mapNotes: MapNote[] | null = null; // null = nicht verfügbar (z. B. 404 für Nicht-Builder)
-  const stripCodes = (x: string) => x.replace(/\{\{[^{}\n]*\}\}/g, "").replace(/^#{1,6}\s+/, "").trim();
+  const stripCodes = (x: string) =>
+    x.replace(/\{\{[^{}\n]*\}\}/g, "").replace(/^#{1,6}\s+/, "").replace(/\*\*|__/g, "").trim();
   const noteTitle = (n: MapNote): string => {
     const first = stripCodes((n.title || n.text.split("\n").find((l) => l.trim()) || "").trim());
     return first || t("annot.placeholder");
+  };
+  const firstLine = (n: MapNote): string => n.text.split("\n").find((l) => l.trim())?.trim() ?? "";
+  // Stern-Pin = erste Zeile nur Verknüpfungs-Codes
+  const isStar = (n: MapNote): boolean => {
+    const f = firstLine(n);
+    return /\{\{[^{}\n]+\}\}/.test(f) && !f.replace(/\{\{[^{}\n]+\}\}/g, "").trim();
   };
   const noteSnippet = (n: MapNote): string => {
     const lines = n.text.split("\n");
@@ -94,7 +101,10 @@ export function mountDirectory(host: HTMLElement, ctx: ProjCtx): void {
               const snip = noteSnippet(n);
               const who = [n.updated_by_label, n.updated_at ? relTime(n.updated_at) : ""].filter(Boolean).join(" · ");
               return `<li class="dir-item dir-note">
-                <a class="dir-link" href="#/plans/${esc(n.plan_id)}?annot=${esc(n.id)}"><span class="dir-name">${esc(noteTitle(n))}</span></a>
+                <span class="dir-star ${n.mb ? "star-mb" : ""}" title="${t(n.mb ? "star.mbHint" : "annot.visAll")}">${icon(isStar(n) ? "star" : "textbox", 14)}</span>
+                <a class="dir-link" href="#/plans/${esc(n.plan_id)}?annot=${esc(n.id)}"><span class="dir-name">${
+                  isStar(n) && !stripCodes(n.title || "") ? renderMarkdown(firstLine(n)).replace(/^\s*<p>|<\/p>\s*$/g, "") : esc(noteTitle(n))
+                }</span></a>
                 ${n.zeus_released ? `<span class="dir-zeus" title="${t("annot.zeusOn")}">${icon("eye", 13)} Zeus</span>` : ""}
                 ${snip ? `<div class="dir-snip note-md">${renderMarkdown(snip)}</div>` : ""}
                 ${who ? `<div class="dir-snip dir-who">${esc(who)}</div>` : ""}</li>`;

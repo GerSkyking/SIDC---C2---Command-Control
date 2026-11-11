@@ -143,7 +143,24 @@ Annotation aus der Phase (Missionsbau-Phase = nur Missionsbauer).
 * **Klonen:** Plan-Klone enthalten bisher keine Annotationen (bestehendes Verhalten) – daher entsteht dort auch kein Index.
 * Tests: `backend/tests/test_plan_refs.py`.
 
-## Karten-Notizen (feste Ebene in Projekt-Plänen)
+## Stern-Pins und Layer „Missionsbau-Notizen“ (Stand 2026-11-11, ersetzt die beiden folgenden Abschnitte teilweise)
+
+* **Werkzeug „Ort markieren“** (Kartennadel mit Stern) ersetzt „Verweis platzieren“: erst Klick auf die Karte (Entwurfs-Stern als
+  MapLibre-Marker), dann Dialog „Was ist hier?“ → *Aufgabe* (`POST /projects/{pid}/tasks` mit `plan_id`), *Haftnotiz*
+  (`POST /projects/{pid}/notes`, pink bei Missionsbau), *Bestehendes verknüpfen* (Auswahlfenster) oder *Nur Kartennotiz*.
+  Danach `annotation.create` mit Text `{{typ:id}}` (+ optional Bezeichnung/Beschreibung in den Folgezeilen).
+* **Stern-Pin** = Annotation, deren **erste Zeile** nur aus Verknüpfungs-Codes besteht (Rest = Beschreibung, beim Überfahren).
+  Darstellung als Stern genau am Punkt: gelb = normale Notiz, pink (pulsierend) = Layer *Missionsbau-Notizen*.
+* **Layer statt Phase:** Annotationen in Projekt-Plänen liegen nur noch auf der notes-Phase, wenn ein Missionsbauer
+  `mb_layer: true` schickt (`annotation.create`/`annotation.modify`); sonst wie überall in der gewählten Phase (auch für
+  Nicht-Missionsbauer erlaubt). `mb_layer: false` + `phase_id` holt eine Notiz zurück. Wechselt eine Notiz auf den Layer, geht
+  zuerst ein `annotation.delete` an alle Sockets, dann das `annotation.upsert` an den Missionsbau. `annotation.move` ändert
+  die Phase nie. Die notes-Phase erscheint im Frontend nicht im Zeitstrahl und in keiner Phasenauswahl, sondern als Eintrag
+  im Menü *Layer* (je Nutzer ein-/ausblendbar); Missionsbauer sehen sie in jeder Ansicht außer Zeus.
+* Neue Phasen dieser Rolle heißen „Missionsbau-Notizen“. Zeus-Einzelfreigabe unverändert, Standard im Frontend 72 h.
+* `GET /projects/{pid}/map-notes` liefert jetzt **alle** Annotationen der Projekt-Pläne mit Feld `mb` (Layer ja/nein).
+
+## Karten-Notizen (feste Ebene in Projekt-Plänen) – ursprüngliche Fassung
 
 Jede Annotation (Textfeld/Verweis-Pin) eines Plans mit `project_id` liegt automatisch auf einer **festen Missionsbau-Ebene** „Karten-Notizen“.
 

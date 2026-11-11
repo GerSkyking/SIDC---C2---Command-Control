@@ -1,4 +1,4 @@
-"""Feste Ebene "Karten-Notizen" in Projekt-Plänen (Phase.role == "notes") + Liste "Auf der Karte"."""
+"""Layer "Missionsbau-Notizen" in Projekt-Plänen (Phase.role == "notes") + Liste "Auf der Karte"."""
 import itertools
 
 import pytest
@@ -52,7 +52,7 @@ def test_notes_phase_created_with_plan(world):
     ph = _notes(w["builder"], w["plan"])
     assert len(ph) == 1
     p = ph[0]
-    assert p["plane"] == "builder" and p["name"] == "Karten-Notizen"
+    assert p["plane"] == "builder" and p["name"] == "Missionsbau-Notizen"
     assert p["zeus_released"] is False and p["zeus_until"] is None and p["player_released"] is False
     assert p["parent_id"] is None
     # Plan ohne Projekt: keine notes-Phase
@@ -84,18 +84,50 @@ def test_clone_into_project_has_notes_phase(world):
         assert len(_notes(w["builder"], ed_plan.json()["id"])) == 1
 
 
-def test_annotation_forced_onto_notes_phase(world):
+def test_annotation_layer_is_explicit(world):
     w = world
     notes = _notes(w["builder"], w["plan"])[0]["id"]
     base = [p for p in w["builder"].get(f"/plans/{w['plan']}/phases").json() if p["plane"] == "player"][0]["id"]
-    a = _ws_ann(w["builder"], w["plan"], text="# Titel", phase_id=base, extra_phase_ids=[base])
+    # mb_layer: auf den Layer (Client-Phasen werden ignoriert)
+    a = _ws_ann(w["builder"], w["plan"], mb_layer=True, text="# Titel", phase_id=base, extra_phase_ids=[base])
     assert a["phase_id"] == notes and a["extra_phase_ids"] == []
-    # ohne phase_id ebenfalls
-    b = _ws_ann(w["builder"], w["plan"], text="zwei")
-    assert b["phase_id"] == notes
-    # modify mit anderer phase_id wird zurückgebogen
-    msg = _ws(w["builder"], w["plan"], type="annotation.modify", id=a["id"], data={"phase_id": base, "extra_phase_ids": [base]})
-    assert msg["annotation"]["phase_id"] == notes and msg["annotation"]["extra_phase_ids"] == []
+    # ohne mb_layer: normale Notiz in der gewählten Phase
+    b = _ws_ann(w["builder"], w["plan"], text="zwei", phase_id=base)
+    assert b["phase_id"] == base
+    # modify mit ausdrücklicher Phase (ohne mb_layer) setzt die Notiz in diese Phase
+    msg = _ws(w["builder"], w["plan"], type="annotation.modify", id=a["id"], data={"width": 300, "phase_id": base})
+    assert msg["annotation"]["phase_id"] == base  # ausdrückliche Phase = Wechsel auf normale Notiz
+    with w["builder"].websocket_connect(f"/plans/{w['plan']}/live") as ws:
+        _skip_hello(ws)
+        ws.send_json({"type": "annotation.modify", "id": a["id"], "data": {"mb_layer": True}})
+        # Wechsel auf den Layer: erst delete an alle (auch an mich), dann das upsert für den Missionsbau
+        assert ws.receive_json() == {"type": "annotation.delete", "id": a["id"]}
+        assert ws.receive_json()["annotation"]["phase_id"] == notes
+    # mb_layer: false ohne Ziel-Phase lässt die Notiz, wo sie ist
+    msg = _ws(w["builder"], w["plan"], type="annotation.modify", id=a["id"], data={"mb_layer": False, "phase_id": notes})
+    assert msg["annotation"]["phase_id"] == notes
+    msg = _ws(w["builder"], w["plan"], type="annotation.modify", id=a["id"], data={"mb_layer": False, "phase_id": base})
+    assert msg["annotation"]["phase_id"] == base
+
+
+def test_editor_gets_normal_notes_and_layer_switch_hides_live(world):
+    w = world
+    base = [p for p in w["builder"].get(f"/plans/{w['plan']}/phases").json() if p["plane"] == "player"][0]["id"]
+    # Editor ohne Missionsbau: normale Notiz; mb_layer wird ignoriert
+    e = _ws_ann(w["ed"], w["plan"], mb_layer=True, text="Spieler-Notiz", phase_id=base)
+    assert e["phase_id"] == base
+    assert e["id"] in _snap_ann_ids(w["vw"], w["plan"])
+    # Missionsbau hebt sie auf den Layer: Spieler bekommen live ein delete
+    with w["ed"].websocket_connect(f"/plans/{w['plan']}/live") as ews:
+        _skip_hello(ews)
+        with w["builder"].websocket_connect(f"/plans/{w['plan']}/live") as bws:
+            _skip_hello(bws)
+            assert ews.receive_json()["type"] == "presence.join"
+            bws.send_json({"type": "annotation.modify", "id": e["id"], "data": {"mb_layer": True}})
+            assert ews.receive_json() == {"type": "annotation.delete", "id": e["id"]}
+    assert e["id"] not in _snap_ann_ids(w["vw"], w["plan"])
+    # und der Editor darf sie jetzt nicht mehr ändern
+    assert _ws(w["ed"], w["plan"], type="annotation.modify", id=e["id"], data={"text": "x"})["type"] == "reject"
 
 
 def _rel(c, plan, aid, released, hours=None):
@@ -107,8 +139,8 @@ def _rel(c, plan, aid, released, hours=None):
 
 def test_zeus_sees_only_released_pins(world):
     w = world
-    a = _ws_ann(w["builder"], w["plan"], text="geheim")
-    b = _ws_ann(w["builder"], w["plan"], text="offen")
+    a = _ws_ann(w["builder"], w["plan"], mb_layer=True, text="geheim")
+    b = _ws_ann(w["builder"], w["plan"], mb_layer=True, text="offen")
     assert a["zeus_released"] is False
     # Standard: Zeus sieht keine Notiz, auch keine Ebene
     assert _snap_ann_ids(w["zeus"], w["plan"]) & {a["id"], b["id"]} == set()
@@ -149,7 +181,7 @@ def test_zeus_sees_only_released_pins(world):
 
 def test_zeus_live_follows_pin_release(world):
     w = world
-    a = _ws_ann(w["builder"], w["plan"], text="live")
+    a = _ws_ann(w["builder"], w["plan"], mb_layer=True, text="live")
     with w["zeus"].websocket_connect(f"/plans/{w['plan']}/live") as zws:
         _skip_hello(zws)
         with w["builder"].websocket_connect(f"/plans/{w['plan']}/live") as bws:
@@ -179,16 +211,14 @@ def test_zeus_live_follows_pin_release(world):
 
 def test_players_never_see_notes(world):
     w = world
-    a = _ws_ann(w["builder"], w["plan"], text="intern")
+    a = _ws_ann(w["builder"], w["plan"], mb_layer=True, text="intern")
     _rel(w["builder"], w["plan"], a["id"], True)  # nur Zeus
     for who in ("ed", "vw"):
         assert a["id"] not in _snap_ann_ids(w[who], w["plan"])
         assert _notes(w[who], w["plan"]) == []
-    # Editor ohne Missionsbau darf keine Annotation anlegen oder freigeben
-    msg = _ws(w["ed"], w["plan"], type="annotation.create", cid="e", data={"text": "x"})
-    assert msg["type"] == "reject"
+    # Editor ohne Missionsbau darf die Layer-Notiz nicht freigeben
     assert _ws(w["ed"], w["plan"], type="annotation.modify", id=a["id"], data={"zeus_released": False})["type"] == "reject"
-    # Viewer: ebenfalls abgelehnt
+    # Viewer darf nichts anlegen
     msg = _ws(w["vw"], w["plan"], type="annotation.create", cid="v", data={"text": "x"})
     assert msg["type"] == "reject"
     # Live-Broadcast erreicht Spieler nicht
@@ -206,7 +236,7 @@ def test_notes_phase_protected(world):
     w = world
     notes = _notes(w["builder"], w["plan"])[0]["id"]
     r = w["builder"].delete(f"/plans/{w['plan']}/phases/{notes}")
-    assert r.status_code == 400 and "Karten-Notizen" in r.json()["detail"]
+    assert r.status_code == 400 and "Missionsbau-Notizen" in r.json()["detail"]
     # Rolle nicht per API änderbar, Umbenennen erlaubt
     r = w["builder"].patch(f"/plans/{w['plan']}/phases/{notes}", json={"name": "Kartenzettel", "role": None})
     assert r.status_code == 200 and r.json()["role"] == "notes" and r.json()["name"] == "Kartenzettel"
@@ -214,12 +244,12 @@ def test_notes_phase_protected(world):
 
 def test_map_notes_endpoint(world):
     w = world
-    _ws_ann(w["builder"], w["plan"], text="## Zweiter\nrest", world_x=5, world_y=6)
-    a = _ws_ann(w["builder"], w["plan"], text="\n\n# Erster Titel\nrest")
+    _ws_ann(w["builder"], w["plan"], mb_layer=True, text="## Zweiter\nrest", world_x=5, world_y=6)
+    a = _ws_ann(w["builder"], w["plan"], mb_layer=True, text="\n\n# Erster Titel\nrest")
     r = w["builder"].get(f"/projects/{w['pid']}/map-notes")
     assert r.status_code == 200, r.text
     rows = r.json()
-    assert len(rows) == 2
+    assert len(rows) == 2 and all(x["mb"] for x in rows)
     row = next(x for x in rows if x["id"] == a["id"])
     assert row["title"] == "Erster Titel" and row["plan_name"] == "Alpha" and row["plan_id"] == w["plan"]
     assert row["href"] == f"#/plans/{w['plan']}" and row["updated_at"].endswith("Z")

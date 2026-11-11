@@ -5,6 +5,26 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-11-11 – Missionsbau vereinfacht: Stern-Pins, Layer statt Phase, Handbuch neu
+- **Ort markieren (Stern):** Werkzeug in Projekt-Plänen. Erst auf die Karte klicken (Stern steht sofort), dann im Fenster
+  „Was ist hier?“ festlegen: neue **Aufgabe** (mit Zuständig/Fällig/Priorität und Bezug zum Plan), **Haftnotiz**,
+  **Bestehendes verknüpfen** oder **Nur Kartennotiz**. Sterne sind auffällig: **gelb** = für alle, **pink** (pulsierend) = nur
+  Missionsbau. Daneben die verknüpften Ziele, Beschreibung beim Überfahren. Ersetzt das bisherige „Verweis platzieren“
+  (erst Ziel wählen, dann klicken; kaum sichtbarer Chip).
+- **Missionsbau-Notizen sind ein Layer, keine Phase mehr:** Textfelder und Sterne in Projekt-Plänen landen nicht mehr
+  zwangsweise auf der versteckten Ebene „Karten-Notizen“. Missionsbauer wählen im Editor *Sichtbar für: Alle / Nur
+  Missionsbau*; alle anderen setzen normale Notizen in einer Phase (vorher wurden Nicht-Missionsbauer abgelehnt). Der Layer
+  erscheint nicht mehr im Zeitstrahl, sondern im Menü *Layer* („Missionsbau-Notizen & Sterne“, ein-/ausblendbar) und ist für
+  Missionsbauer in jeder Ansicht sichtbar. Live: `annotation.create/modify` mit `mb_layer`; beim Wechsel auf den Layer
+  bekommen alle anderen ein `annotation.delete`.
+- **Zeus-Freigaben einheitlich 72 h** (Phasen und einzelne Notizen; „Unbegrenzt“ per Knopf). Standard serverseitig 48 → 72 h.
+- **Begriffe:** „Ebenen“ → *Karte* (Grundkarte), „Taktische Layer“ → *Layer*, Spieler/Missionsbau heißen Phasen statt „Ebene“.
+- **Zeitstrahl-Leiste entschlackt:** *Marker-Texte* und *Marker-Info* stehen jetzt im Zahnrad unter *Marker-Anzeige*.
+- **Projekt-Reiter „Öffentlich“ ausgeblendet** (Dateiarbeit = Missionsbau); alte Links/Verweise öffnen ihn weiterhin.
+- **Verzeichnis → Auf der Karte** zeigt alle Notizen und Sterne der Projekt-Pläne (Feld `mb` in `GET /projects/{id}/map-notes`).
+- **Handbuch** neu und aufgabenorientiert (Grundprinzip, Abläufe, Nachschlagen); Widersprüche beseitigt (Tastenkürzel,
+  Lineal, globale Phase).
+
 ### 2026-10-31 – Auf Benachrichtigungs-DMs direkt antworten
 - In Discord bei der DM des Bots „Antworten“ nutzen: Der Text landet als Chat-Nachricht bzw. Aufgaben-Kommentar bei der Quelle der
   Benachrichtigung, der Bot bestätigt mit ✅. Nur für verknüpfte Nutzer und nur für Benachrichtigungen mit Antwortmöglichkeit.

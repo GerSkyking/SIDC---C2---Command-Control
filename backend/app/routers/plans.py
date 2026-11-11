@@ -753,7 +753,7 @@ class PhaseBody(BaseModel):
     end_at: datetime | None = None
     player_released: bool | None = None  # Missionsbau-Phase für Spieler freigeben (wirkt wie Base)
     zeus_released: bool | None = None  # Missionsbau-Phase für Zeus freigeben
-    zeus_hours: float | None = None    # Frist in Stunden (None/0 = unbegrenzt); ohne Angabe: 48 h
+    zeus_hours: float | None = None    # Frist in Stunden (None/0 = unbegrenzt); ohne Angabe: 72 h
 
 
 def _phase_out(p: Phase) -> dict:
@@ -852,12 +852,12 @@ def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: CurrentU
         p.end_at = body.end_at
     zeus_changed = False
     if (body.zeus_released or body.player_released) and p.role == NOTES_ROLE:
-        # Karten-Notizen werden nur einzeln (je Pin) für Zeus freigegeben, nie als ganze Ebene.
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Karten-Notizen werden einzeln freigegeben")
+        # Missionsbau-Notizen werden nur einzeln (je Notiz/Stern) für Zeus freigegeben, nie als ganzer Layer.
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Missionsbau-Notizen werden einzeln freigegeben")
     if body.zeus_released is not None and p.plane == "builder":
         p.zeus_released = body.zeus_released
         if body.zeus_released:
-            hours = 48.0 if "zeus_hours" not in body.model_fields_set else body.zeus_hours
+            hours = 72.0 if "zeus_hours" not in body.model_fields_set else body.zeus_hours
             p.zeus_until = now() + timedelta(hours=min(float(hours), 24 * 365)) if hours and hours > 0 else None
         else:
             p.zeus_until = None
@@ -888,7 +888,7 @@ def delete_phase(phase_id: str, plan: EditorPlan, user: CurrentUser, db: DbDep) 
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Phase ist gesperrt und kann nicht gelöscht werden")
     if p.role == NOTES_ROLE:
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Die Ebene „Karten-Notizen“ ist fest und kann nicht gelöscht werden"
+            status.HTTP_400_BAD_REQUEST, "Der Layer „Missionsbau-Notizen“ ist fest und kann nicht gelöscht werden"
         )
     victims = [p.id]
     if p.plane == "player":  # Spieler-Phase löschen → alle Builder-Kinder mit

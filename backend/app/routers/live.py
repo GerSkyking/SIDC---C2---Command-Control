@@ -338,25 +338,40 @@ async def _handle(
         await _reject(ws, msg.get("cid"), f"Keine Berechtigung: {need}")
         return
 
-    # Projekt-Pläne: NEUE Annotationen liegen immer auf der festen Ebene "Karten-Notizen" (Client-Werte
-    # werden ignoriert). MUSS vor der Builder-Gate-Prüfung passieren, damit sie die Ebene trifft.
-    # Bestehende Annotationen behalten ihre Phase: der Client schickt sie beim Verschieben/Skalieren
-    # mit, das darf eine für Spieler sichtbare Notiz nicht still auf die Missionsbau-Ebene heben.
-    if t == "annotation.create":
+    # Projekt-Pläne: Annotationen sind entweder normale Notizen (Phase wie jedes andere Objekt) oder
+    # liegen auf dem Layer "Missionsbau-Notizen" (feste notes-Phase, nur Missionsbau). Den Layer wählt
+    # nur ein Missionsbauer ausdrücklich per ``mb_layer: true``. MUSS vor der Builder-Gate-Prüfung passieren.
+    # Ohne ``mb_layer`` behält eine bestehende Annotation ihre Phase: der Client schickt sie beim
+    # Verschieben/Skalieren mit, das darf eine Notiz nicht still auf eine andere Ebene heben.
+    annot_was_hidden: bool | None = None
+    if t in ("annotation.create", "annotation.move", "annotation.modify"):
         d = msg.get("data")
         if not isinstance(d, dict):
             d = msg["data"] = {}
-        notes_id, created = await run_in_threadpool(_project_notes_phase, plan_id)
-        if notes_id:
-            d["phase_id"] = notes_id
-            d["extra_phase_ids"] = []
-            await _prime_phases(plan_id, [notes_id])
-            if created:
-                await hub.broadcast(plan_id, {"type": "phases.changed"})
-    elif t in ("annotation.move", "annotation.modify") and isinstance(msg.get("data"), dict):
-        if await run_in_threadpool(_plan_has_project, plan_id):
-            msg["data"].pop("phase_id", None)
-            msg["data"].pop("extra_phase_ids", None)
+        want_mb = d.pop("mb_layer", None)
+        in_project = await run_in_threadpool(_plan_has_project, plan_id)
+        if t == "annotation.move":
+            if in_project:
+                d.pop("phase_id", None)
+                d.pop("extra_phase_ids", None)
+        elif in_project and is_builder and want_mb:
+            notes_id, created = await run_in_threadpool(_project_notes_phase, plan_id)
+            if notes_id:
+                d["phase_id"] = notes_id
+                d["extra_phase_ids"] = []
+                await _prime_phases(plan_id, [notes_id])
+                if created:
+                    await hub.broadcast(plan_id, {"type": "phases.changed"})
+        elif in_project and t == "annotation.modify" and want_mb is False and is_builder:
+            # Vom Layer zurück auf eine normale Phase: die notes-Phase selbst ist dafür kein Ziel
+            notes_id, _c = await run_in_threadpool(_project_notes_phase, plan_id)
+            if d.get("phase_id") in (None, "", notes_id):
+                d.pop("phase_id", None)
+                d.pop("extra_phase_ids", None)
+        if t == "annotation.modify" and isinstance(msg.get("id"), str) and "phase_id" in d:
+            old = await run_in_threadpool(_existing_phases, plan_id, t, msg["id"])
+            await _prime_phases(plan_id, old)
+            annot_was_hidden = bool(old) and hb(old[0])
 
     # Nicht-Missionsbauer dürfen keine Objekte auf Builder-Phasen anlegen/ändern.
     if not is_builder and t in (
@@ -454,9 +469,13 @@ async def _handle(
         res = await run_in_threadpool(_update_annotation, plan_id, msg["id"], user.id, fields)
         if res is not None:
             was_open = res.pop("_was_open", False)
+            await _prime_phases(plan_id, [res.get("phase_id")])
             fl = await bflags(res.get("phase_id"))
             if fl["builder_only"] and res.get("zeus_released"):
                 fl["zeus_ok"] = True  # einzeln für Zeus freigegeben
+            if fl["builder_only"] and annot_was_hidden is False:
+                # Notiz wandert auf den Missionsbau-Layer: bei allen anderen verschwinden lassen
+                await hub.broadcast(plan_id, {"type": "annotation.delete", "id": msg["id"]})
             await hub.broadcast(plan_id, {"type": "annotation.upsert", "annotation": res}, **fl)
             if was_open and not res.get("zeus_released") and not fl["zeus_ok"]:
                 # Freigabe zurückgenommen: bei Zeus ausblenden (Missionsbau behält die Notiz)

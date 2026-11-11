@@ -340,8 +340,8 @@ def _title_of(text: str) -> str:
 
 @router.get("/{pid}/map-notes")
 def map_notes(pid: str, user: CurrentUser, db: DbDep) -> list[dict]:
-    """Liste "Auf der Karte": Annotationen der Ebene "Karten-Notizen" aller Pläne des Projekts
-    (nur Missionsbauer; nur Pläne mit Zugriff)."""
+    """Liste "Auf der Karte": alle Kartennotizen und Stern-Pins aller Pläne des Projekts
+    (nur Missionsbauer; nur Pläne mit Zugriff). ``mb`` = liegt auf dem Layer "Missionsbau-Notizen"."""
     _ctx(db, user, pid)
     if not effective_mission_builder(db, user):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Nicht gefunden")
@@ -352,17 +352,17 @@ def map_notes(pid: str, user: CurrentUser, db: DbDep) -> list[dict]:
     if not plans:
         return []
     rows = list(db.execute(
-        select(Annotation, User.display_name, User.username)
-        .join(Phase, Phase.id == Annotation.phase_id)
+        select(Annotation, Phase.role, User.display_name, User.username)
+        .outerjoin(Phase, Phase.id == Annotation.phase_id)
         .outerjoin(User, User.id == Annotation.updated_by)
-        .where(Annotation.plan_id.in_(plans), Phase.role == "notes")
+        .where(Annotation.plan_id.in_(plans))
     ))
     out = []
-    for a, display, username in rows:
+    for a, role, display, username in rows:
         ts = a.updated_at
         out.append({
             "id": a.id, "plan_id": a.plan_id, "plan_name": plans[a.plan_id].name,
-            "text": a.text or "", "title": _title_of(a.text or ""),
+            "text": a.text or "", "title": _title_of(a.text or ""), "mb": role == "notes",
             "world_x": a.world_x, "world_y": a.world_y,
             "zeus_released": annotation_zeus_open(a),
             "zeus_until": (a.zeus_until.isoformat() if a.zeus_until is not None else None)

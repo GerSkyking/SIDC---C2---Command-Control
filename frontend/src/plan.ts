@@ -55,7 +55,7 @@ import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screen
 import { openLightbox } from "./lightbox";
 import { mountImageRail, IMAGE_DND_TYPE } from "./imagerail";
 import { renderPlacementSettings } from "./imagePanel";
-import type { ImagePlacement, PlanImage } from "./api";
+import type { ImagePlacement, PlanImage, ProjectTask } from "./api";
 
 // Bild-URL -> JPEG-DataURL (normalisiert WebP/GIF/PNG für jsPDF).
 async function imgToJpeg(url: string): Promise<string> {
@@ -107,6 +107,11 @@ interface Stroke {
   channel?: string;
 }
 type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text" | "ref";
+/** Standardfrist für Zeus-Freigaben (Phasen und Missionsbau-Notizen), in Stunden. */
+const ZEUS_DEFAULT_H = 72;
+/** Stern-Pin auf der Karte (Farbe per CSS: gelb = für alle, pink = nur Missionsbau). */
+const STAR_SVG =
+  '<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M12 2.2l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
 
 // Touch-Gerät erkannt → "Marker verschieben" als Werkzeug anzeigen (am Desktop genügt die mittlere Maustaste).
 const IS_MOBILE =
@@ -281,7 +286,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const caps = { place: canEdit, move: canEdit, delete: canEdit, draw: canEdit };
   let mode: Mode = "move";
-  let pendingRefCode: string | null = null; // Werkzeug „Verweis platzieren": gewählter Code
   let pending: MarkerTemplate | null = null;
   let is3D = false;
 
@@ -405,12 +409,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const samePlanePhases = (pid: string | null | undefined): PhaseOpt[] => {
     const b = isBuilderPhase(pid);
     return phases
-      .filter((p) => (p.plane === "builder") === b && (actAs !== "zeus" || !b || zeusOpen(p.id)))
+      .filter((p) => !isNotesPhase(p) && (p.plane === "builder") === b && (actAs !== "zeus" || !b || zeusOpen(p.id)))
       .map((p) => ({ id: p.id, name: p.name, builder: p.plane === "builder" }));
   };
   // Phasen, die ich zuordnen darf: Spieler-Phasen, für Missionsbauer alles, für Zeus die freigegebenen
   const selectablePhases = (): PhaseT[] =>
-    phases.filter((p) => p.plane !== "builder" || isMB || zeusOpen(p.id));
+    phases.filter((p) => !isNotesPhase(p) && (p.plane !== "builder" || isMB || zeusOpen(p.id)));
   // Mehrfach-Phasen-Auswahl in einem Container: folgt der gewählten Hauptphase, speichert über set()
   const bindXPhases = (
     host: HTMLElement,
@@ -529,7 +533,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             // Verweise setzen braucht nur der Missionsbau, daher eigene Gruppe; ohne Projekt gesperrt
             (isMB
               ? `<span class="tb-sep"></span>` +
-                iconBtn("link", { id: "tool-ref", title: projectId ? t("tool.ref") : t("tool.refNoProject") })
+                iconBtn("spot", { id: "tool-ref", title: projectId ? t("tool.ref") : t("tool.refNoProject") })
               : "") +
             `<span class="tb-sep"></span>`
           : ""
@@ -1388,6 +1392,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           pendingAnnotCid = null;
           openAnnotEditor(msg.annotation.id, true);
         }
+        if (msg.cid && pendingStarZeus.has(msg.cid)) {
+          const z = pendingStarZeus.get(msg.cid)!;
+          pendingStarZeus.delete(msg.cid);
+          socket.send({ type: "annotation.modify", id: msg.annotation.id, data: z });
+        }
         break;
       }
       case "annotation.delete":
@@ -1712,7 +1721,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
       plane = choice;
     }
-    const briefPhases = phases.filter((p) => (p.plane ?? "player") === plane);
+    const briefPhases = phases.filter((p) => (p.plane ?? "player") === plane && !isNotesPhase(p));
 
     try {
       const { jsPDF } = await import("jspdf");
@@ -2202,7 +2211,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const W = Math.max(200, xOf(dom1));
 
     const players = phases.filter((p) => (p.plane ?? "player") === "player").map((p) => p.id);
-    const builders = phases.filter((p) => p.plane === "builder" && (actAs !== "zeus" || zeusOpen(p.id))).map((p) => p.id);
+    // Missionsbau-Notizen sind ein Layer, keine Phase: nicht im Zeitstrahl
+    const builders = phases
+      .filter((p) => p.plane === "builder" && !isNotesPhase(p) && (actAs !== "zeus" || zeusOpen(p.id)))
+      .map((p) => p.id);
     const rowP = assignRows(players, spans);
     const rowB = assignRows(builders, spans);
     const maxRow = (m: Map<string, number>) => Math.max(0, ...[...m.values()].map((r) => r + 1));
@@ -2270,8 +2282,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ? `<label class="ph-op" title="${t("mb.crossOpacityHint")}">${t("mb.crossOpacity")}` +
           `<input type="range" id="cross-op" min="0" max="100" step="5" value="${crossOpacity}"/><span id="cross-op-v">${crossOpacity}%</span></label>`
         : "") +
-      `<label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" id="lblToggle" ${showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label>` +
-      `<label class="chk" title="${t("map.infoToggle")}"><input type="checkbox" id="infoToggle" ${showMarkerInfo ? "checked" : ""}/> ${t("map.info")}</label>` +
       `</div>`;
 
     timelineEl.innerHTML =
@@ -2393,16 +2403,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       });
     });
 
-    timelineEl.querySelector<HTMLInputElement>("#lblToggle")!.addEventListener("change", (e) => {
-      showUnitAiLabels = (e.target as HTMLInputElement).checked;
-      localStorage.setItem("sidc_labels_on", showUnitAiLabels ? "1" : "0");
-      map.setPaintProperty("marker-unittext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
-      map.setPaintProperty("marker-aitext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
-    });
-    timelineEl.querySelector<HTMLInputElement>("#infoToggle")!.addEventListener("change", (e) => {
-      showMarkerInfo = (e.target as HTMLInputElement).checked;
-      localStorage.setItem("sidc_markerinfo", showMarkerInfo ? "1" : "0");
-    });
     timelineEl.querySelector("#ph-add")?.addEventListener("click", () => void addPlayerPhase());
     timelineEl.querySelector("#player-add")?.addEventListener("click", () => void addPlayerPhase());
     timelineEl.querySelector("#sub-add")?.addEventListener("click", () => void addSubPhase(apid));
@@ -2498,10 +2498,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ? `<span class="nt-zeus"><label class="chk"><input type="checkbox" data-prel ${ph.player_released ? "checked" : ""}/> ${t("phase.playerRelease")}</label>` +
           `<label class="chk"><input type="checkbox" data-zrel ${ph.zeus_released ? "checked" : ""}/> ${t("zeus.release")}</label>` +
           `<label>${t("zeus.hours")}<input type="number" min="0" step="1" data-zhours style="width:4.5rem" value="${
-            ph.zeus_released && ph.zeus_until ? Math.max(1, Math.round((parseUtc(ph.zeus_until) - Date.now()) / 3600e3)) : ""
+            ph.zeus_released && ph.zeus_until
+              ? Math.max(1, Math.round((parseUtc(ph.zeus_until) - Date.now()) / 3600e3))
+              : ph.zeus_released
+                ? ""
+                : String(ZEUS_DEFAULT_H)
           }" placeholder="${t("zeus.unlimited")}" title="${t("zeus.hoursHint")}"/></label>` +
+          `<button type="button" class="zq" data-zq="${ZEUS_DEFAULT_H}">${ZEUS_DEFAULT_H} h</button>` +
           `<button type="button" class="zq" data-zq="">${t("zeus.unlimited")}</button>` +
-          `<button type="button" class="zq" data-zq="72">72 h</button>` +
           (ph.zeus_released && ph.zeus_until
             ? `<span class="muted">${t("zeus.until")} ${fmtInput(new Date(parseUtc(ph.zeus_until)))}</span>`
             : "") +
@@ -2594,7 +2598,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const tabBtn = (p: (typeof phases)[number]) =>
       `<button data-nt="${p.id}" class="${p.id === notesTabId ? "active" : ""}">${isNotesPhase(p) ? "⚑ " : ""}${esc(p.name)}</button>`;
     const playerP = phases.filter((p) => (p.plane ?? "player") !== "builder");
-    const builderP = phases.filter((p) => (p.plane ?? "player") === "builder");
+    const builderP = phases.filter((p) => (p.plane ?? "player") === "builder" && !isNotesPhase(p));
     const addBtn = (attr: string, title: string) =>
       canEdit ? `<button class="notes-tab-add" ${attr} title="${title}">${icon("plus", 11)}</button>` : "";
     nTabs.innerHTML =
@@ -3013,6 +3017,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     void refreshMarkers();
     refreshStrokes();
     redrawMeasure();
+    renderAnnots();
   };
   const saveTac = (): void => {
     try {
@@ -3045,6 +3050,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       TAC_AUTO.map((k) => row("auto:" + k, auto[k], false)).join("") +
       (tacLayers.length || canEdit ? `<div class="tac-sep">${t("tac.custom")}</div>` : "") +
       tacLayers.map((l) => row(l.id, l.name, canEdit)).join("") +
+      (isMB && projectId ? `<div class="tac-sep">${t("mb.builder")}</div>` + row("mbnotes", t("tac.mbNotes"), false) : "") +
       (canEdit
         ? `<div class="tac-new"><input id="tacNewName" maxlength="40" placeholder="${t("tac.new")}"/><button id="tacNewBtn">${t("tac.add")}</button></div>`
         : "") +
@@ -3345,6 +3351,31 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // Zahnrad-Menü → Abschnitt "Karte": Sat-Anpassung, Strassenfarben, Orte-Gruppen (pro Nutzer)
   function renderMapSettings(host: HTMLElement): void {
+    // Anzeige-Optionen der Marker (früher als Häkchen in der Zeitstrahl-Leiste)
+    const disp = document.createElement("div");
+    disp.innerHTML =
+      `<div class="fav-head">${t("map.display")}</div>` +
+      `<div class="layer-row"><label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" data-lbl ${showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label></div>` +
+      `<div class="layer-row"><label class="chk" title="${t("map.infoToggle")}"><input type="checkbox" data-info ${showMarkerInfo ? "checked" : ""}/> ${t("map.info")}</label></div>`;
+    host.appendChild(disp);
+    disp.querySelector<HTMLInputElement>("[data-lbl]")!.addEventListener("change", (e) => {
+      showUnitAiLabels = (e.target as HTMLInputElement).checked;
+      try {
+        localStorage.setItem("sidc_labels_on", showUnitAiLabels ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      map.setPaintProperty("marker-unittext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
+      map.setPaintProperty("marker-aitext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
+    });
+    disp.querySelector<HTMLInputElement>("[data-info]")!.addEventListener("change", (e) => {
+      showMarkerInfo = (e.target as HTMLInputElement).checked;
+      try {
+        localStorage.setItem("sidc_markerinfo", showMarkerInfo ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+    });
     const box = document.createElement("div");
     host.appendChild(box);
     const build = () => {
@@ -3954,7 +3985,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (m !== "erase") eraserRing.hidden = true;
     toolbar.querySelector("#tool-marker")?.classList.toggle("active", m === "place");
     toolbar.querySelector("#tool-ref")?.classList.toggle("active", m === "ref");
-    if (m !== "ref") pendingRefCode = null;
     lineStylePanel.hidden = mvLine.isPinned() ? false : m !== "line";
     if (measureStylePanel) {
       measureStylePanel.hidden = mvMeasure.isPinned() ? false : m !== "measure";
@@ -4004,13 +4034,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   toolbar.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => setMode(b.dataset.mode as Mode)),
   );
-  // „Verweis platzieren": erst Ziel wählen (Auswahlfenster), dann auf die Karte klicken; Esc bricht ab.
-  toolbar.querySelector("#tool-ref")?.addEventListener("click", async () => {
+  // „Ort markieren": erst auf die Karte klicken (Stern erscheint), dann sagen, was dort ist/passieren soll; Esc bricht ab.
+  toolbar.querySelector("#tool-ref")?.addEventListener("click", () => {
     if (!caps.place || !projectId) return;
-    const code = await openRefPicker({ projectId, mode: "insert", isBuilder: isMB });
-    if (!code) return;
     setMode("ref");
-    pendingRefCode = code;
     toast(t("tool.refPlace"), { kind: "info", timeout: 3500 });
   });
 
@@ -4927,8 +4954,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     (!!a.phase_id && !phases.some((x) => x.id === a.phase_id) && !!a.zeus_released);
   const annotOpacity = (a: Annot): number => {
     if (isNotesAnnot(a)) {
+      // Layer „Missionsbau-Notizen“: der Missionsbau sieht ihn in jeder Ansicht (pink markiert, im Layer-Menü abschaltbar)
       if (actAs === "zeus") return annotZeusOpen(a) ? 1 : 0;
-      return isMB && actAs === "builder" ? 1 : 0;
+      return isMB ? tacVis("mbnotes") : 0;
     }
     return multiPhaseOpacity(a.phase_id, a.extra_phase_ids);
   };
@@ -4949,9 +4977,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       /* ignore */
     }
   };
-  // Nur Verknüpfungs-Codes (kein weiterer Text) = Referenz-Pin: erscheint als kompakter Chip.
-  const isRefPin = (s: string): boolean =>
-    !!s.trim() && !s.replace(/\{\{(?:(?:doc|task|plan|note|img):[0-9a-f]{32}|place:[^{}\n]+)\}\}/g, "").trim();
+  // Stern-Pin: die erste Zeile besteht nur aus Verknüpfungs-Codes (darunter optional eine Beschreibung).
+  const REF_CODE_RE = /\{\{(?:(?:doc|task|plan|note|img):[0-9a-f]{32}|place:[^{}\n]+)\}\}/g;
+  const splitStar = (s: string): { head: string; rest: string } | null => {
+    const lines = s.split("\n");
+    const i = lines.findIndex((l) => l.trim());
+    if (i < 0) return null;
+    const head = lines[i];
+    if (!head.match(REF_CODE_RE) || head.replace(REF_CODE_RE, "").trim()) return null;
+    return { head: head.trim(), rest: lines.slice(i + 1).join("\n").trim() };
+  };
   const annotFirstLine = (s: string): string =>
     (s.split("\n").find((l) => l.trim()) ?? "").replace(/^#{1,6}\s+/, "").trim() || t("annot.placeholder");
   // Referenz-Zoom für Notizen ohne eigenen ref_zoom (Altbestand): der Zoom beim
@@ -4975,6 +5010,83 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   }
 
+  // ── Sichtbarkeit einer Notiz/eines Stern-Pins ──
+  // Projekt-Plan + Missionsbau: „Alle" (normale Notiz in einer Phase) oder „Nur Missionsbau" (Layer
+  // Missionsbau-Notizen, optional für Zeus freigegeben). Alle anderen wählen wie gewohnt die Phase.
+  function annotVisHtml(a: Pick<Annot, "phase_id" | "extra_phase_ids" | "zeus_released" | "zeus_until"> & { mb?: boolean }): string {
+    const mb = a.mb ?? isNotesAnnot(a as Annot);
+    const pid = mb ? currentPhaseId : a.phase_id ?? currentPhaseId;
+    const zOpen = annotZeusOpen(a as Annot);
+    const phaseBlock =
+      `<div data-avphase ${mb && isMB && projectId ? "hidden" : ""}>` +
+      `<label style="margin-top:.4rem">${t("phase.assign")}</label>` +
+      `<select data-aphase>${selectablePhases()
+        .map(
+          (ph) =>
+            `<option value="${esc(ph.id)}" ${ph.id === pid ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`,
+        )
+        .join("")}</select>` +
+      `<label style="margin-top:.4rem">${t("phase.extra")}</label>` +
+      `<div data-ax>${phaseMultiHtml("data-xphases", samePlanePhases(pid), mb ? [] : a.extra_phase_ids ?? [], pid)}</div>` +
+      `</div>`;
+    if (!(isMB && projectId)) return phaseBlock;
+    return (
+      `<label style="margin-top:.4rem">${t("annot.visibleFor")}</label>` +
+      `<div class="segmented" data-avis>` +
+      `<button type="button" class="seg-btn ${mb ? "" : "active"}" data-v="all">${t("annot.visAll")}</button>` +
+      `<button type="button" class="seg-btn vis-mb ${mb ? "active" : ""}" data-v="mb">${t("annot.visMb")}</button>` +
+      `</div>` +
+      `<div data-avmb ${mb ? "" : "hidden"}>` +
+      `<p class="muted" style="margin:.3rem 0 0;font-size:.78rem">${t("annot.visMbHint")}</p>` +
+      `<label style="margin-top:.4rem">${t("zeus.release")}</label>` +
+      `<select data-azeus>` +
+      `<option value="off" ${zOpen ? "" : "selected"}>${t("annot.zeusOff")}</option>` +
+      `<option value="keep" ${zOpen ? "selected" : "hidden"}>${t("annot.zeusOn")}${
+        a.zeus_until ? ` (${t("zeus.until")} ${fmtInput(new Date(parseUtc(a.zeus_until)))})` : ""
+      }</option>` +
+      `<option value="${ZEUS_DEFAULT_H}">${ZEUS_DEFAULT_H} h</option>` +
+      `<option value="unl">${t("zeus.unlimited")}</option>` +
+      `</select></div>` +
+      phaseBlock
+    );
+  }
+  function wireAnnotVis(host: HTMLElement): void {
+    const asel = host.querySelector<HTMLSelectElement>("[data-aphase]");
+    asel?.addEventListener("change", () => {
+      host.querySelector<HTMLElement>("[data-ax]")!.innerHTML = phaseMultiHtml(
+        "data-xphases", samePlanePhases(asel.value), readPhaseMulti(host, "data-xphases"), asel.value,
+      );
+    });
+    host.querySelectorAll<HTMLButtonElement>("[data-avis] [data-v]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const mb = b.dataset.v === "mb";
+        host.querySelectorAll("[data-avis] [data-v]").forEach((x) => x.classList.toggle("active", x === b));
+        host.querySelector<HTMLElement>("[data-avmb]")!.hidden = !mb;
+        host.querySelector<HTMLElement>("[data-avphase]")!.hidden = mb;
+      }),
+    );
+  }
+  /** Felder für annotation.create/modify aus dem Sichtbarkeits-Block (``a`` = bisheriger Stand oder null). */
+  function readAnnotVis(host: HTMLElement, a: Annot | null): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    const visBtn = host.querySelector<HTMLElement>("[data-avis] .active");
+    const mb = !!visBtn && visBtn.dataset.v === "mb";
+    if (visBtn) out.mb_layer = mb;
+    if (mb) {
+      const z = host.querySelector<HTMLSelectElement>("[data-azeus]")?.value ?? "off";
+      if (z !== "keep") {
+        out.zeus_released = z !== "off";
+        if (z !== "off" && z !== "unl") out.zeus_hours = Number(z);
+      }
+    } else {
+      const ps = host.querySelector<HTMLSelectElement>("[data-aphase]");
+      out.phase_id = ps?.value || currentPhaseId || null;
+      out.extra_phase_ids = readPhaseMulti(host, "data-xphases");
+      if (a && isNotesAnnot(a) && a.zeus_released) out.zeus_released = false;
+    }
+    return out;
+  }
+
   function openAnnotEditor(id: string, isNew = false): void {
     const a = annots.get(id);
     if (!a || !canEdit) return;
@@ -4983,32 +5095,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     back.innerHTML = `<div class="card" style="width:min(34rem,96vw)">
       <div class="row"><h1 style="flex:1;margin:0">${t("annot.title")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
       <textarea class="notes-edit annot-edit" rows="6" placeholder="${t("annot.hint")}"></textarea>
-      ${
-        projectId
-          ? `<p class="muted annot-notes-hint">⚑ ${t("annot.notesLayer")}</p>` +
-            (isMB
-              ? `<label style="margin-top:.4rem">${t("zeus.release")}</label>
-      <select data-azeus>
-        <option value="off" ${annotZeusOpen(a) ? "" : "selected"}>${t("annot.zeusOff")}</option>
-        <option value="keep" ${annotZeusOpen(a) ? "selected" : "hidden"}>${t("annot.zeusOn")}${
-          a.zeus_until ? ` (${t("zeus.until")} ${fmtInput(new Date(parseUtc(a.zeus_until)))})` : ""
-        }</option>
-        <option value="unl">${t("zeus.unlimited")}</option>
-        <option value="72">72 h</option>
-      </select>`
-              : "")
-          : `<label style="margin-top:.4rem">${t("phase.assign")}</label>
-      <select data-aphase>
-        ${selectablePhases()
-          .map(
-            (ph) =>
-              `<option value="${esc(ph.id)}" ${ph.id === a.phase_id ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`,
-          )
-          .join("")}
-      </select>
-      <label style="margin-top:.4rem">${t("phase.extra")}</label>
-      <div data-ax>${phaseMultiHtml("data-xphases", samePlanePhases(a.phase_id), a.extra_phase_ids ?? [], a.phase_id)}</div>`
-      }
+      ${annotVisHtml(a)}
       <label class="ph-op" style="margin-top:.4rem">${t("annot.width")}
         <input type="range" min="140" max="480" step="10" value="${a.width}" data-w /></label>
       <label class="chk" style="margin-top:.3rem"><input type="checkbox" data-fix ${a.scale_fixed ? "checked" : ""}/> <span>${t("annot.scaleWithMap")}</span></label>
@@ -5026,14 +5113,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const prev = back.querySelector<HTMLDivElement>(".annot-prev")!;
     const wIn = back.querySelector<HTMLInputElement>("[data-w]")!;
     const fixIn = back.querySelector<HTMLInputElement>("[data-fix]")!;
-    {
-      const asel = back.querySelector<HTMLSelectElement>("[data-aphase]");
-      asel?.addEventListener("change", () => {
-        back.querySelector<HTMLElement>("[data-ax]")!.innerHTML = phaseMultiHtml(
-          "data-xphases", samePlanePhases(asel.value), readPhaseMulti(back, "data-xphases"), asel.value,
-        );
-      });
-    }
+    wireAnnotVis(back);
     const upd = () => {
       prev.innerHTML = renderMarkdown(ta.value);
       wireRefs(prev);
@@ -5059,7 +5139,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
       const wantScale = fixIn.checked; // true = mit der Karte mitskalieren
       const sc = annotScale(a);
-      const phaseSel = back.querySelector<HTMLSelectElement>("[data-aphase]"); // fehlt in Projekt-Plänen (feste Ebene)
       const data: Record<string, unknown> = {
         text: ta.value,
         // Wird das Mitskalieren abgeschaltet, aktuelle Bildschirmgröße einfrieren:
@@ -5071,15 +5150,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           !wantScale && a.scale_fixed && a.height ? Math.round(a.height * sc) : a.height ?? 0,
         scale_fixed: wantScale,
       };
-      const zSel = back.querySelector<HTMLSelectElement>("[data-azeus]");
-      if (zSel && zSel.value !== "keep") {
-        data.zeus_released = zSel.value !== "off";
-        if (zSel.value === "72") data.zeus_hours = 72;
-      }
-      if (phaseSel) {
-        data.phase_id = phaseSel.value || currentPhaseId || null;
-        data.extra_phase_ids = readPhaseMulti(back, "data-xphases");
-      }
+      Object.assign(data, readAnnotVis(back, a));
       if (wantScale && (!a.scale_fixed || !a.ref_zoom || a.ref_zoom <= 0))
         data.ref_zoom = map.getZoom(); // aktuelle Größe = natürliche Größe
       socket.send({ type: "annotation.modify", id, data });
@@ -5103,7 +5174,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const r = el0.getBoundingClientRect();
       const lx = (ev.clientX - r.left) / sc;
       const ly = (ev.clientY - r.top) / sc;
-      if (lx > el0.clientWidth - 22 && ly > el0.clientHeight - 22) {
+      if (!el0.classList.contains("annot-star") && lx > el0.clientWidth - 22 && ly > el0.clientHeight - 22) {
         if (!canEdit) return;
         annotResizingId = id;
         const finish = () => {
@@ -5173,16 +5244,28 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     annotsEl.innerHTML = "";
     for (const a of annots.values()) {
       const collapsed = collapsedAnnots.has(a.id);
+      const star = splitStar(a.text);
       const el = document.createElement("div");
-      el.className = "annot" + (collapsed ? " annot-collapsed" : "") + (isRefPin(a.text) ? " annot-ref" : "");
       el.dataset.aid = a.id;
-      el.style.width = `${a.width}px`;
-      if (a.height && !collapsed) el.style.height = `${a.height}px`;
-      else el.style.height = "";
       el.style.opacity = String(annotOpacity(a));
-      const body = collapsed
-        ? `<div class="annot-body">${esc(annotFirstLine(a.text))}</div>`
-        : `<div class="annot-body">${renderMarkdown(a.text || "")}</div>`;
+      let body: string;
+      if (star) {
+        // Stern-Pin: auffälliges Symbol am Ort, daneben die verknüpften Ziele, Beschreibung beim Überfahren
+        el.className = "annot annot-star" + (isNotesAnnot(a) ? " star-mb" : "") + (collapsed ? " annot-collapsed" : "");
+        el.title = isNotesAnnot(a) ? t("star.mbHint") : "";
+        body =
+          `<div class="star-pin">${STAR_SVG}</div>` +
+          (collapsed ? "" : `<div class="annot-body">${renderMarkdown(star.head)}</div>`) +
+          (star.rest && !collapsed ? `<div class="star-desc notes-view">${renderMarkdown(star.rest)}</div>` : "");
+      } else {
+        el.className = "annot" + (collapsed ? " annot-collapsed" : "");
+        el.style.width = `${a.width}px`;
+        if (a.height && !collapsed) el.style.height = `${a.height}px`;
+        else el.style.height = "";
+        body = collapsed
+          ? `<div class="annot-body">${esc(annotFirstLine(a.text))}</div>`
+          : `<div class="annot-body">${renderMarkdown(a.text || "")}</div>`;
+      }
       el.innerHTML =
         body +
         `<div class="annot-tools">` +
@@ -5203,7 +5286,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       });
       el.querySelector("[data-azq]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        socket.send({ type: "annotation.modify", id: a.id, data: { zeus_released: !annotZeusOpen(a) } });
+        const rel = !annotZeusOpen(a);
+        socket.send({ type: "annotation.modify", id: a.id, data: rel ? { zeus_released: true, zeus_hours: ZEUS_DEFAULT_H } : { zeus_released: false } });
       });
       el.querySelector("[data-aedit]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -5597,10 +5681,171 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     });
   }
   /** Referenz-Pin: Annotation, deren Text nur den Verknüpfungs-Code enthält (Ebene = aktive Phase). */
-  function createRefPinAt(pos: [number, number], code: string): void {
-    socket.send({
-      type: "annotation.create",
-      data: { world_x: pos[0], world_y: pos[1], text: code, width: 160, ...(projectId ? {} : { phase_id: currentPhaseId || null }), ref_zoom: map.getZoom() },
+  // ── Stern-Pin: „Ort markieren" → Was ist hier / was soll hier passieren? ──
+  // Der Stern steht sofort auf der Karte (Entwurf), danach legt der Dialog wahlweise eine Aufgabe,
+  // eine Haftnotiz oder einen Verweis auf Bestehendes an. Der Pin selbst ist eine Annotation, deren
+  // erste Zeile nur aus Verknüpfungs-Codes besteht (Rest = Beschreibung).
+  const pendingStarZeus = new Map<string, Record<string, unknown>>();
+  async function openStarDialog(pos: [number, number]): Promise<void> {
+    if (!projectId) return;
+    const pid = projectId;
+    const mbDefault = isMB;
+    const draftEl = document.createElement("div");
+    draftEl.className = `star-pin star-draft ${mbDefault ? "star-mb" : ""}`;
+    draftEl.innerHTML = STAR_SVG;
+    const draft = new maplibregl.Marker({ element: draftEl }).setLngLat(pos).addTo(map);
+    const [proj, assignees] = await Promise.all([
+      api.project(pid).catch(() => null),
+      api.projectAssignees(pid).catch((): { user_id: string; label: string }[] => []),
+    ]);
+    const canProj = !!proj && !proj.archived && (proj.role === "editor" || proj.role === "owner");
+    type Kind = "task" | "note" | "link" | "text";
+    let kind: Kind = canProj ? "task" : "link";
+    let linkCode = "";
+    const back = document.createElement("div");
+    back.className = "edit-modal";
+    back.setAttribute("role", "dialog");
+    back.setAttribute("aria-modal", "true");
+    const kindBtn = (k: Kind, ic: string, ok: boolean): string =>
+      ok
+        ? `<button type="button" class="seg-btn ${k === kind ? "active" : ""}" data-k="${k}">${icon(ic, 14)} ${t("star.kind." + k)}</button>`
+        : "";
+    back.innerHTML = `<div class="card star-dlg" style="width:min(36rem,96vw)">
+      <div class="row"><h1 style="flex:1;margin:0">${t("star.title")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
+      <p class="muted" style="margin:.2rem 0 .5rem">${t("star.intro")}</p>
+      <div class="segmented star-kinds">${kindBtn("task", "check", canProj)}${kindBtn("note", "textbox", canProj)}${kindBtn("link", "link", true)}${kindBtn("text", "notes", true)}</div>
+      ${canProj ? "" : `<p class="muted" style="font-size:.78rem">${t("star.noProjectRole")}</p>`}
+      <div data-klink hidden>
+        <div class="row" style="margin-top:.5rem;gap:.4rem"><button type="button" data-pick>${icon("link", 14)} ${t("star.pickTarget")}</button><span data-picked class="muted">${t("star.nothingPicked")}</span></div>
+      </div>
+      <label style="margin-top:.5rem" data-ltitle>${t("star.what")}</label>
+      <input data-stitle maxlength="200" placeholder="${t("star.whatPh")}"/>
+      <label style="margin-top:.5rem">${t("star.happens")}</label>
+      <textarea data-sdesc rows="4" placeholder="${t("star.happensPh")}"></textarea>
+      <div data-ktask class="row" style="gap:.5rem;margin-top:.5rem;flex-wrap:wrap">
+        <label style="flex:1 1 10rem">${t("star.assignee")}<select data-sas><option value="">—</option>${assignees
+          .map((u) => `<option value="${esc(u.user_id)}">${esc(u.label)}</option>`)
+          .join("")}</select></label>
+        <label style="flex:0 1 9rem">${t("star.due")}<input type="date" data-sdue/></label>
+        <label style="flex:0 1 8rem">${t("star.prio")}<select data-sprio><option value="low">${t("star.prio.low")}</option><option value="normal" selected>${t("star.prio.normal")}</option><option value="high">${t("star.prio.high")}</option></select></label>
+      </div>
+      ${annotVisHtml({ phase_id: currentPhaseId || null, extra_phase_ids: [], zeus_released: false, zeus_until: null, mb: mbDefault })}
+      <div class="row" style="margin-top:.8rem">
+        <button class="primary" data-save style="flex:1">${t("star.create")}</button>
+        <button data-cancel>${t("common.cancel")}</button>
+      </div>
+    </div>`;
+    document.body.appendChild(back);
+    const titleIn = back.querySelector<HTMLInputElement>("[data-stitle]")!;
+    const descIn = back.querySelector<HTMLTextAreaElement>("[data-sdesc]")!;
+    attachMdToolbar(descIn, { projectId: pid, isBuilder: isMB });
+    wireAnnotVis(back);
+    // Entwurfs-Stern färbt sich mit der gewählten Sichtbarkeit
+    back.querySelectorAll<HTMLButtonElement>("[data-avis] [data-v]").forEach((b) =>
+      b.addEventListener("click", () => draftEl.classList.toggle("star-mb", b.dataset.v === "mb")),
+    );
+    const showKind = (): void => {
+      back.querySelectorAll<HTMLButtonElement>("[data-k]").forEach((b) => b.classList.toggle("active", b.dataset.k === kind));
+      back.querySelector<HTMLElement>("[data-ktask]")!.hidden = kind !== "task";
+      back.querySelector<HTMLElement>("[data-klink]")!.hidden = kind !== "link";
+      back.querySelector<HTMLElement>("[data-ltitle]")!.textContent = t(kind === "link" ? "star.whatOptional" : "star.what");
+    };
+    back.querySelectorAll<HTMLButtonElement>("[data-k]").forEach((b) =>
+      b.addEventListener("click", () => {
+        kind = b.dataset.k as Kind;
+        showKind();
+      }),
+    );
+    const pick = async (): Promise<void> => {
+      const code = await openRefPicker({ projectId: pid, mode: "insert", isBuilder: isMB });
+      if (!code) return;
+      linkCode = code;
+      const sp = back.querySelector<HTMLElement>("[data-picked]")!;
+      sp.classList.remove("muted");
+      sp.innerHTML = renderMarkdown(code);
+      wireRefs(sp);
+    };
+    back.querySelector("[data-pick]")!.addEventListener("click", () => void pick());
+    showKind();
+    setTimeout(() => titleIn.focus(), 0);
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape" || document.querySelector(".rp-back")) return;
+      e.stopPropagation();
+      close();
+    };
+    const close = (): void => {
+      draft.remove();
+      back.remove();
+      document.removeEventListener("keydown", onKey, true);
+    };
+    document.addEventListener("keydown", onKey, true);
+    back.addEventListener("mousedown", (e) => e.target === back && close());
+    back.querySelector("[data-x]")!.addEventListener("click", close);
+    back.querySelector("[data-cancel]")!.addEventListener("click", close);
+    const saveBtn = back.querySelector<HTMLButtonElement>("[data-save]")!;
+    saveBtn.addEventListener("click", async () => {
+      const title = titleIn.value.trim();
+      const desc = descIn.value.trim();
+      if (kind !== "link" && !title) {
+        titleIn.focus();
+        toast(t("star.needTitle"), { kind: "error" });
+        return;
+      }
+      if (kind === "link" && !linkCode) {
+        toast(t("star.needTarget"), { kind: "error" });
+        return;
+      }
+      const vis = readAnnotVis(back, null);
+      const mb = vis.mb_layer === true;
+      saveBtn.disabled = true;
+      let text = "";
+      try {
+        if (kind === "task") {
+          const tk = await api.createProjectTask(pid, {
+            title,
+            description: desc,
+            priority: back.querySelector<HTMLSelectElement>("[data-sprio]")!.value as ProjectTask["priority"],
+            assignee_id: back.querySelector<HTMLSelectElement>("[data-sas]")!.value || null,
+            due_date: back.querySelector<HTMLInputElement>("[data-sdue]")!.value || null,
+            plan_id: planId,
+          });
+          text = `{{task:${tk.id}}}`;
+        } else if (kind === "note") {
+          const n = await api.createProjectNote(pid, {
+            text: desc ? `${title}\n\n${desc}` : title,
+            color: mb ? "pink" : "yellow",
+            x: 40 + Math.round(Math.random() * 400),
+            y: 40 + Math.round(Math.random() * 300),
+          });
+          text = `{{note:${n.id}}}`;
+        } else if (kind === "link") {
+          text = [linkCode, title ? `**${title}**` : "", desc].filter(Boolean).join("\n\n");
+        } else {
+          text = [`## ${title}`, desc].filter(Boolean).join("\n\n");
+        }
+      } catch (e) {
+        saveBtn.disabled = false;
+        toastError(e);
+        return;
+      }
+      const ac = cid();
+      const { zeus_released: zRel, zeus_hours: zH, ...visCreate } = vis;
+      socket.send({
+        type: "annotation.create",
+        cid: ac,
+        data: {
+          world_x: pos[0],
+          world_y: pos[1],
+          text,
+          width: kind === "text" ? 240 : 160,
+          ref_zoom: map.getZoom(),
+          ...visCreate,
+        },
+      });
+      // Zeus-Freigabe ist ein Feld von annotation.modify: nach dem Anlegen nachreichen
+      if (mb && zRel) pendingStarZeus.set(ac, { zeus_released: true, zeus_hours: zH });
+      close();
+      if (kind === "task" || kind === "note") toast(t(kind === "task" ? "star.taskDone" : "star.noteDone"), { kind: "success" });
     });
   }
   function createAnnotAt(pos: [number, number]): void {
@@ -5614,7 +5859,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         world_y: pos[1],
         text: "",
         width: 220,
-        ...(projectId ? {} : { phase_id: currentPhaseId || null }), // Projekt-Plan: Server legt auf „Karten-Notizen“
+        phase_id: currentPhaseId || null,
+        // Missionsbau in der Missionsbau-Ansicht: neue Notiz zuerst auf den Layer „Missionsbau-Notizen“ (im Editor änderbar)
+        ...(projectId && isMB && actAs === "builder" ? { mb_layer: true } : {}),
         ref_zoom: map.getZoom(),
       },
     });
@@ -5659,9 +5906,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
 
     if (mode === "ref") {
-      const code = pendingRefCode;
       setMode("move");
-      if (caps.place && code) createRefPinAt([e.lngLat.lng, e.lngLat.lat], code);
+      if (caps.place && projectId) void openStarDialog([e.lngLat.lng, e.lngLat.lat]);
       return;
     }
 

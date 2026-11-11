@@ -1,6 +1,6 @@
 # SIDC – C2 – Funktionsübersicht
 
-Kompakte Übersicht, **was das Tool heute kann** (Stand 2026-10-23). Details und Bedienung: [`HANDBUCH.md`](HANDBUCH.md),
+Kompakte Übersicht, **was das Tool heute kann** (Stand 2026-11-11). Details und Bedienung: [`HANDBUCH.md`](HANDBUCH.md),
 Änderungen: [`../CHANGELOG.md`](../CHANGELOG.md).
 
 ## 1. Plattform
@@ -14,8 +14,8 @@ Kompakte Übersicht, **was das Tool heute kann** (Stand 2026-10-23). Details und
 | Admin | Vollzugriff, Admin-Bereich |
 | Nutzer / Gruppen | Rechte auch über Gruppen; „darf Pläne erstellen" |
 | Plan-ACL viewer / editor / owner | Editor mit Einzelrechten setzen · bewegen · löschen · malen |
-| **Missionsbau** | sieht/bearbeitet die parallele Missionsbau-Ebene der Phasen, ORBAT-Verknüpfung |
-| **Zeus** | arbeitet in Missionsbau-Phasen, die der Missionsbau für ihn freigibt (Standard 48 h oder unbegrenzt) |
+| **Missionsbau** | sieht alles, macht Vorgaben (Missionsbau-Phasen, Projekte, Missionsbau-Notizen & pinke Sterne), ORBAT-Verknüpfung |
+| **Zeus** | arbeitet in Missionsbau-Phasen, die der Missionsbau für ihn freigibt (Standard 72 h oder unbegrenzt) und einzeln freigegebene Missionsbau-Notizen |
 | Marker-Lock | gesperrte Marker nur vom Owner änderbar |
 
 Alle Rechte werden serverseitig je Operation geprüft.
@@ -27,7 +27,7 @@ Alle Rechte werden serverseitig je Operation geprüft.
 
 ## 4. Karte
 - 2D/3D (Terrain), Kompass, „nach Norden", Koordinaten-Grid, Höhenlinien, Höhenpunkte, Orte.
-- Ebenen mit Deckkraft: Sat, Sat (vereinfacht), Gitter, Gebäude, Straßen, Gewässer, Stromleitungen, Bäume, Orte (Karten-Einstellungen pro Nutzer im Zahnrad).
+- Menü **Karte** mit Deckkraft je Ebene: Sat, Sat (vereinfacht), Gitter, Gebäude, Straßen, Gewässer, Stromleitungen, Bäume, Orte (Karten-Einstellungen pro Nutzer im Zahnrad).
 - **ViewCube** unten rechts (TOP + N/S/O/W + Ecken, Ziehen dreht/kippt, Home).
 - Karten-Import per Link, Upload oder Gitea-Quelle; DLC-Zoomstufen; Kartenserver für den lokalen ATAKmaps-Client.
 
@@ -38,9 +38,10 @@ Alle Rechte werden serverseitig je Operation geprüft.
 - Favoriten (inkl. Farbe), Kopieren/Ausschneiden/Einfügen, Undo/Redo.
 - **ORBAT**-Verknüpfung (Stärke, Verluste, Freigabe von Feindmarkern für Spieler).
 
-## 6. Taktische Layer
+## 6. Layer
 - Auto-Layer **BLUFOR / REDFOR / Zivil-GREENFOR / Unbekannt** nach Identität.
 - Eigene Layer pro Plan (anlegen/löschen); Zuordnung bei Markern, Linien, Lineal („Auto" = Auto-Layer).
+- Im Projekt-Plan für den Missionsbau: Layer **Missionsbau-Notizen & Sterne** (phasenunabhängig, nie für Spieler, für Zeus nur einzeln freigegeben).
 - Haken + Deckkraft je Nutzer lokal.
 
 ## 7. Phasen (Zeitstrahl)
@@ -62,16 +63,17 @@ Alle Rechte werden serverseitig je Operation geprüft.
 | Text | T | Markdown-Textfelder auf der Karte (einklappbar, mit Karte skalierbar) |
 | Marker setzen | Leertaste | Position wählen, Wizard; „Platzieren" auch oben im QuickMenü |
 | Favoriten | R | Schnellauswahl gespeicherter Marker |
+| Ort markieren | – | nur Projekt-Pläne: Klick setzt einen **Stern**, danach „Was ist hier?“ → Aufgabe, Haftnotiz, Verknüpfung oder Kartennotiz; gelb = alle, pink = nur Missionsbau |
 
 - Mittlere Maustaste pannt in allen Werkzeugen; Rechtsklick-Menü im Karten-Werkzeug; Panels frei verschiebbar + fixierbar.
-- Tasten sind im Zahnrad pro Nutzer änderbar.
+- Tasten sind im Zahnrad pro Nutzer änderbar; dort auch *Marker-Texte* und *Marker-Info* (Marker-Anzeige).
 
 ## 9. Bilder
 - Bild-Sidebar: hochladen, benennen, Phase zuordnen, Notiz; mehrfach auf der Karte platzierbar (verschieben/skalieren), Lightbox.
 
 ## 10. Zeus-Workflow
 1. Admin setzt „Zeus" an Nutzer oder Gruppe.
-2. Missionsbau öffnet die Phasen-Notizen einer Missionsbau-Phase → „Für Zeus freigeben" (+ Frist in Stunden).
+2. Missionsbau öffnet die Phasen-Notizen einer Missionsbau-Phase → „Für Zeus freigeben" (72 h vorausgewählt, „Unbegrenzt" per Knopf). Einzelne pinke Sterne/Notizen per Auge-Symbol (72 h).
 3. Zeus schaltet im Zeitstrahl auf **Zeus**: sieht Spieler-Inhalt nur zum Ansehen, bearbeitet die freigegebenen Phasen.
 4. Alternativ „Für Spieler freigeben": Inhalt erscheint bei Spielern wie die Base-Phase.
 

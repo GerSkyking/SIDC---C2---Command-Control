@@ -44,7 +44,7 @@ def _ws(c, plan_id, **msg):
 
 
 def _db_ann(plan_id, phase_id, text):
-    """Altbestand: Annotation direkt auf eine beliebige Phase (per Live-Socket liegt sie in Projekt-Plänen immer auf "Karten-Notizen")."""
+    """Altbestand: Annotation direkt auf eine beliebige Phase (ohne Live-Socket)."""
     from app.db import SessionLocal
     from app.models import Annotation, Plan
     from app.services import refs as refs_svc
@@ -113,7 +113,7 @@ def test_rights_plan_acl_and_builder_plane(world):
     bph = next(p for p in b.get(f"/plans/{plan['id']}/phases").json() if p["plane"] == "builder")
     pph = next(p for p in b.get(f"/plans/{plan['id']}/phases").json() if p["plane"] == "player")
     _db_ann(plan["id"], pph["id"], code)  # Altbestand auf der Spieler-Phase
-    _ws_ann(b, plan["id"], text=code, phase_id=bph["id"])  # landet auf "Karten-Notizen" (Missionsbau)
+    _ws_ann(b, plan["id"], text=code, phase_id=bph["id"])  # Missionsbau-Phase (nur Missionsbau)
     assert len(_back(b, pid, "doc", doc["id"])) == 2  # eine Zeile je Annotation
     # Projektmitglieder ohne Plan-ACL sehen keinen Rückverweis
     assert _back(ed, pid, "doc", doc["id"]) == []

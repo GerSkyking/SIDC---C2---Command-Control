@@ -235,7 +235,7 @@ class Phase(Base):
     zeus_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Missionsbau-Phase für Spieler freigegeben: Inhalt erscheint wie die Base-Phase (Phase selbst bleibt verborgen).
     player_released: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    # Feste Rolle: 'notes' = Ebene "Karten-Notizen" (alle Annotationen eines Projekt-Plans), nicht löschbar.
+    # Feste Rolle: 'notes' = Layer "Missionsbau-Notizen" (Projekt-Pläne, Annotationen mit mb_layer), nicht löschbar.
     role: Mapped[str | None] = mapped_column(String(16))
 
 
@@ -320,7 +320,7 @@ class Annotation(Base):
     # friert sie auf Bildschirmgröße ein. ref_zoom = Zoom, bei dem width "natürlich" ist.
     scale_fixed: Mapped[bool] = mapped_column(Boolean, default=False)
     ref_zoom: Mapped[float] = mapped_column(Float, default=0)
-    # Einzelfreigabe für Zeus (nur Annotationen auf der Ebene "Karten-Notizen"; None = unbegrenzt).
+    # Einzelfreigabe für Zeus (nur Annotationen auf dem Layer "Missionsbau-Notizen"; None = unbegrenzt).
     zeus_released: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     zeus_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

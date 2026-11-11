@@ -1,389 +1,314 @@
 # SIDC – C2 – Handbuch
 
-Stand **2026-10-29**. Deckt den aktuellen Funktionsumfang von Backend + Web-Frontend ab.
-Für Architektur/Stufenplan siehe [`../PLAN.md`](../PLAN.md), für Betrieb [`../README.md`](../README.md).
+Stand **2026-11-11**. Das Handbuch ist nach Aufgaben aufgebaut: Teil A erklärt das Grundprinzip, Teil B die typischen
+Abläufe Schritt für Schritt, Teil C ist das Nachschlagewerk. Änderungen stehen im [`CHANGELOG`](../CHANGELOG.md),
+Betrieb/Installation im [`README`](../README.md).
 
 ---
 
-## 0. Neuerungen (Batch „fehler v2")
+# Teil A – Grundprinzip
 
-- **Marker-Baukasten** (`Marker-Baukasten`-Reiter im QuickMenü und im ORBAT-Knoten-Editor):
-  Kategorie/Marker/Identität/Echelon/Modifikatoren als durchsuchbare Dropdowns mit
-  Live-Vorschau + SIDC-Anzeige.
-- **Marker-Text** steht unter dem Symbol; **Icon-Größe** je Marker (25–300 %) im Editor,
-  zusätzlich ein persönlicher Größen-Regler oben rechts (nur für den Betrachter).
-- **Taktische Layer** (Listen-Symbol neben „Ebenen"): BLUFOR / REDFOR / Zivil-GREENFOR / Unbekannt
-  automatisch nach Identität, dazu eigene Layer pro Plan (Editoren legen sie an). Haken + Deckkraft
-  gelten je Nutzer lokal. Eigene Layer werden beim Platzieren, im Bearbeiten-Panel und bei Linien gewählt.
-- **Zeus**: eigene Rolle (Admin → Nutzer/Gruppen). Missionsbauer geben Missionsbau-Phasen für Zeus frei
-  (Standard 48 h, unbegrenzt möglich). Zeus-Ansicht: Spieler-Inhalt nur ansehen + freigegebene Phasen
-  bearbeiten; in Spieler-Phasen wird nichts gesetzt.
-- **Mehrere Phasen**: ein Marker kann zusätzlich in weiteren Phasen derselben Ebene erscheinen.
-- **Textfelder (Notizen)**: Editor öffnet beim Erstellen, leere Felder werden verworfen,
-  Einklappen (nur erste Zeile), „auf Größe fixieren"-Checkbox (skaliert sonst mit dem Zoom),
-  Löschen per Bestätigungs-Checkbox.
-- **Phase-Linien**: grüner Haken am letzten Punkt zum Beenden; im Verschieben-Modus
-  anklicken → Stützpunkte ziehen; bekommen die aktuelle Phase (Missionsbau-tauglich).
-- **Lineal**: mehrsegmentig, Trace-Linie + Gesamtlänge, Rechtsklick beendet, Messlinien
-  bleiben stehen und sind klick-/radier-/editierbar (lokal je Sitzung).
-- **ORBAT**: Zugehörigkeit = 4 Standard-Identitäten (Freund/Feind/Neutral/Unbekannt);
-  Stärke = Maximalstärke + frei editierbare Ist-Stärke; Untergliederung als „+N", Wurzel = Gesamt.
-- **Übersetzungen**: Admin lädt `SIDC_Translations.xlsx` (oder .json) unter Config →
-  Kataloge; ersetzt `#Namen` und liefert die Marker-Hover-Zusatzinfo.
-- **UI**: Panels frei verschiebbar (Griff oben links) + Pin (bleibt offen, Position wird
-  je Browser gemerkt). Eigene Benachrichtigungen/Dialoge statt Browser-Popups.
-  Eigener Zeige-Punkt wird auch bei einem selbst angezeigt.
+## A1. Drei Gruppen
 
----
-
-## 1. Anmeldung & Rollen
-
-- **Lokaler Login** mit Benutzername/Passwort. Erst-Login über `BOOTSTRAP_ADMIN_USER` /
-  `BOOTSTRAP_ADMIN_PASSWORD` aus der `.env`.
-- **OIDC** (optional, per `.env` aktiviert): Button „Mit OIDC anmelden". Unbekannte Nutzer
-  bekommen die Rolle `user`.
-- **Globale Rolle:** `admin` (Vollzugriff, Admin-Bereich) oder `user`.
-- **Session:** signierter HttpOnly-Cookie (`sidc_session`), 7 Tage. Login-Ratelimit
-  (8 Fehlversuche / 60 s pro IP+User).
-
-## 2. Berechtigungen
-
-| Ebene | Bedeutung |
-|---|---|
-| **`can_create_plans`** | Capability auf User **oder** Gruppe – erlaubt das Anlegen von Plänen. |
-| **Plan-ACL `viewer`** | Plan + Marker + Zeichnungen ansehen, nichts ändern. |
-| **Plan-ACL `editor`** | mit vier Einzel-Häkchen: **setzen / bewegen / löschen / malen** (je an/aus). |
-| **Plan-ACL `owner`** | alles + ACL verwalten, Plan umbenennen/klonen/löschen, Versionen wiederherstellen, öffentliche Links. |
-| **Marker-Lock** | Ein gesperrter Marker ist nur vom Plan-`owner` änder-/verschieb-/löschbar. |
-
-Alle Rechte werden **serverseitig** pro WebSocket-Operation geprüft (`live.py` /
-`effective_caps()`), nicht nur im Frontend.
-
-## 3. Pläne organisieren
-
-Die Plan-Liste ist ein **Ordnerbaum**:
-
-- **Ordner & Unterordner** anlegen (`+ Neuer Ordner`, `＋` an einem Ordner = Unterordner),
-  umbenennen (`✎`), löschen (`✕` – der Inhalt rückt eine Ebene nach oben).
-- **Drag & Drop:** Plan oder Ordner auf einen Zielordner ziehen = verschieben; auf
-  „Alle Pläne" ziehen = auf die oberste Ebene. Zyklen werden verhindert.
-- Der Klapp-Zustand der Ordner wird pro Browser gemerkt.
-- Ordner sind eine **globale Organisationsstruktur** (für alle angemeldeten Nutzer sichtbar).
-
-**Plan klonen:** Button `Klonen` an einem Plan → Dialog mit neuem Namen, **Zielordner**
-und Option „Freigaben mitkopieren". Kopiert Phasen (inkl. Notizen), Layer, Marker und
-Zeichnungen.
-
-## 3b. Missionsbau-Projekte
-
-Sidebar → **Missionsbau**. Ein **Projekt** bündelt alles, was für eine Mission gebraucht wird. Projekte lassen sich
-wie Pläne in **Ordnern und Unterordnern** ablegen (Drag & Drop, `+ Neuer Ordner`, Klapp-Zustand pro Browser; ein
-gewählter Ordner ist das Ziel für „Neues Projekt"). Löscht man einen Ordner, rücken seine Inhalte eine Ebene nach oben.
-
-**Rechte**
-- Projekte anlegen: Admin oder Missionsbauer. Der Ersteller ist `owner`.
-- **Mitglieder** (Nutzer oder Gruppen) haben je Projekt die Rolle `viewer` (lesen), `editor` (schreiben) oder `owner`
-  (Mitglieder, Umbenennen, Archivieren, Löschen). Archivierte Projekte sind schreibgeschützt.
-- Der Bereich **Missionsbau** ist zusätzlich nur für Missionsbauer sichtbar – für alle anderen existiert er nicht (404).
-- **Pläne behalten ihre eigene Freigabe:** Der Zugriff auf einen Plan wird wie bisher **pro Plan** über
-  „Zugriff / Freigaben" für Nutzer/Gruppen festgelegt. Die Projektrolle gibt **keine** automatischen Plan-Rechte.
-
-**Tabs**
-| Tab | Inhalt |
-|---|---|
-| **Übersicht** | offene Aufgaben je Person, bald fällige/überfällige Aufgaben, zuletzt geänderte Dateien und Pläne |
-| **Öffentlich** | Dateibaum (Ordner + Markdown-Dateien) für alle Projekt-Mitglieder; Reiter **Bilder** |
-| **Missionsbau** | wie „Öffentlich", aber nur für Missionsbauer |
-| **Pläne** | die Pläne des Projekts (gleiche Baumansicht wie die Plan-Liste); bestehende Pläne lassen sich hierher verschieben oder wieder herauslösen |
-| **Aufgaben** | Kanban (Offen · In Arbeit · Review · Erledigt) mit Zuständigen, Fälligkeit, Priorität und Bezug zu Plan/Datei; Filter „Meine" |
-| **Whiteboard** | farbige Haftnotizen, am Kopf ziehen, Größe ändern, direkt tippen |
-| **Mitglieder** | Nutzer/Gruppen und Rollen |
-
-- **Markdown-Dateien:** Editor mit Vorschau und Formatierungsleiste, `Strg+S` speichert. Ändert jemand die Datei
-  gleichzeitig, wird der Konflikt gemeldet statt überschrieben.
-- **Bilder** lädst du weiter **pro Plan** hoch; sie liegen automatisch im Projekt des Plans – Bilder aus
-  Missionsbau-Phasen im Bereich „Missionsbau", alle anderen in „Öffentlich". Dort lassen sie sich umbenennen, löschen
-  und als Markdown-Link in Dateien einbetten.
-- Aufgaben, Whiteboard und Dateiliste aktualisieren sich alle 5 Sekunden (nicht während du tippst oder ziehst).
-- **Verweise im Plan:** Gehört ein Plan zu einem Projekt, funktionieren `{{…}}`-Verweise auch in Textfeldern und Phasen-Notizen des
-  Plans (Chips; Ziele öffnen in neuem Tab, Orte dieser Karte zoomen zum Ort). Der Knopf „Verweis einfügen" im Editor und das
-  Werkzeug **Verweis platzieren** (Kettenglied in der Werkzeugleiste) setzen einen **Referenz-Pin** – ein kompaktes Textfeld
-  mit nur dem Verweis, in der aktiven Phase (Missionsbau-Phase = nur für Missionsbauer sichtbar). Erwähnt ein Pin eine Datei,
-  Aufgabe usw., erscheint der Plan dort unter „Erwähnt in …".
-- **Karten-Notizen:** In Plänen eines Projekts liegen alle Textfelder und Verweis-Pins automatisch auf der festen Missionsbau-Ebene
-  „Karten-Notizen“ (nicht löschbar, Umbenennen möglich). Sie ist nur für Missionsbauer sichtbar; **Zeus** sieht nur die Notizen, die du **einzeln**
-  freigibst (Auge-Symbol an der Notiz oder Auswahl im Editor: unbegrenzt oder 72 h, jederzeit zurücknehmbar). Spieler sehen sie nie. Die Liste
-  **Auf der Karte** im Projekt zeigt alle Notizen aller Pläne mit Sprung zum Plan.
-- **Speicher** (nur Admin): Admin-Bereich → *Speicher* zeigt je Projekt den belegten Platz für Bilder und Dateien. Der
-  frühere Admin-Reiter „Bilder" entfällt.
-
-**Aktivität, Threads & Chat**
-- **Aktivität** (Projekt-Reiter): oben wer wie aktiv war (Zeitraum wählbar), darunter der Feed „wer hat wann was gemacht".
-  Missionsbau-Einträge sind nur für Missionsbauer sichtbar.
-- **Aufgaben-Thread:** In der Aufgabe unter *Diskussion* Fragen stellen (auch als Betrachter). `@` öffnet die Vorschläge:
-  `@name` (Projektmitglied), `@gruppe`, `@projekt` (alle im Projekt). Erwähnte bekommen eine Benachrichtigung. Der
-  aufklappbare *Verlauf* zeigt alles, was an dieser Aufgabe passiert ist. Eigene Kommentare lassen sich bearbeiten/löschen,
-  Projekt-Eigentümer dürfen jeden löschen.
-- **Chat** (Seitenleiste): Direktnachrichten, freie Gruppen (Ersteller verwaltet Mitglieder) und Chats zu einer bestehenden
-  Gruppe oder einem Projekt (Mitglieder folgen automatisch; in Projekt-Chats spricht `@projekt` alle an). Enter sendet,
-  Umschalt+Enter = neue Zeile. Die Seitenleiste zeigt einen Zähler für Ungelesenes.
-- **System:** feste Unterhaltung oben im Chat mit allen Benachrichtigungen (Erwähnungen, Zuweisungen); ein Klick springt zur
-  Stelle und markiert als gelesen.
-
-**Benachrichtigungen außerhalb der Seite** (Zahnrad → *Benachrichtigungen*): Erwähnungen, Zuweisungen und neue Zugriffe (Plan/Projekt)
-lassen sich zusätzlich an eigene Kanäle schicken – *Discord-Direktnachricht* (entsteht automatisch, sobald dein Discord-Konto verknüpft
-ist; ein Admin kann dafür auch deine Discord-ID eintragen; mit „Antworten“ auf die DM antwortest du direkt – bei Erwähnungen und
-Zuweisungen landet die Antwort im Chat bzw. als Kommentar an der Aufgabe), *Browser/Smartphone (Web-Push)*, *ntfy*,
-*Gotify*, *Matrix*, *Webhook* oder *E-Mail*. Pro Kanal wählst du, welche Arten ankommen, und kannst eine Testnachricht senden.
-Auf dem iPhone funktioniert Web-Push nur, wenn die Seite zum Home-Bildschirm hinzugefügt wurde. Im *System*-Feed kannst du
-mit *Antworten* direkt antworten – die Antwort erscheint im Chat bzw. als Kommentar an der Aufgabe.
-Admin: `PUBLIC_URL` setzen (Links in Nachrichten), für E-Mail `SMTP_*`; Dienste im LAN brauchen `NOTIFY_ALLOW_PRIVATE_HOSTS=true`.
-
-**Discord-Brücke:** Ein Gruppen-Chat kann mit einem Discord-Kanal synchron laufen. Admin: *Admin → Config → Discord-Brücke*, Chat und
-Kanal (aus allen Servern des Bots) wählen und *Verbinden*. Alternativ erzeugt der Chat-Ersteller im Chat-Kopf einen Code und gibt in
-Discord `/c2 link` ein (Befehl aus der Liste wählen, Code in das Feld einfügen – der Befehl lässt sich nicht komplett einfügen). Wer sein Discord-Konto verknüpft (Einstellungen →
-Benachrichtigungen → *Discord-Konto verknüpfen*, dann `/c2 link CODE`), erscheint im Chat mit seinem Namen; andere als
-„Name (Discord)“. Voraussetzung: `BRIDGE_TOKEN` und `DISCORD_TOKEN` stehen in der `.env`; der Dienst `discord-bot` startet
-mit dem Stack (Message Content Intent im Developer Portal aktivieren).
-
-**Feedback von außen (ohne Login):** Der Projekt-Owner schaltet im Reiter *Feedback* die Schnittstelle ein (*Token erzeugen*). Das
-Projekt bekommt dann einen geheimen Link/Token; wer ihn kennt, kann Rückmeldungen einsenden, sonst nichts sehen (nur der Projektname
-wird angezeigt). *Neu erzeugen* macht das alte Token sofort ungültig, *Abschalten* schließt die Schnittstelle. Ein archiviertes
-Projekt nimmt nichts mehr an. Rückmeldungen erscheinen im Reiter *Feedback* (Quelle „extern“) und lassen sich dort bearbeiten oder
-zu einer Aufgabe machen. Grenzen: Titel 200, Text 5000, Name 80 Zeichen; höchstens 10 Einsendungen je IP und 10 Minuten, 60 je
-Projekt und Stunde; höchstens 5000 Rückmeldungen je Projekt. Das Feld `website` ist eine Bot-Falle und muss leer bleiben.
-
-```bash
-# Projektname und erlaubte Arten abfragen
-curl https://c2.example.org/api/public/feedback/<TOKEN>
-# -> {"project":"Op Beispiel","kinds":["bug","idea","praise","other"]}
-
-# Rückmeldung senden (kind: bug | idea | praise | other; name und text optional)
-curl -X POST https://c2.example.org/api/public/feedback/<TOKEN>   -H "Content-Type: application/json"   -d '{"title":"Brücke bei 040/040 fehlt","text":"Im Briefing erwähnt, auf der Karte nicht.","kind":"bug","name":"Max"}'
-# -> 201 {"ok":true}     (404 unbekanntes Token, 410 Projekt archiviert, 429 zu viele Anfragen)
-```
-
-**Plan-Ordner (normale Plan-Liste):** Ordner anlegen darf, wer Pläne erstellen darf. Umbenennen, Verschieben und Löschen
-dürfen Admin und der Ersteller des Ordners (Alt-Ordner ohne Ersteller: Admin und alle, die Pläne erstellen dürfen).
-## 4. Kartenansicht
-
-### 4.1 Werkzeugleiste (links, nur mit Bearbeitungsrecht)
-
-| Icon | Werkzeug | Bedienung |
+| Gruppe | Was sie tut | Was sie sieht |
 |---|---|---|
-| ✋ | **Karte bewegen** | Standard. Schieben/Zoomen. Marker per **gehaltener mittlerer Maustaste** ziehen. |
-| ✥ | **Marker verschieben** | Marker anfassen und ziehen; beim Loslassen server-autoritativ gespeichert. |
-| 👉 | **Zeigen** | Karte fixiert; der eigene Cursor wird anderen Nutzern live angezeigt. |
-| ✏️ | **Linie** | Gerade Segmente klicken. **Rechtsklick**, Doppelklick oder „Linie fertig" beendet. Farbe/Stärke aus dem PhaseLine-Katalog. |
-| 📏 | **Lineal** | 2 Punkte klicken → gestrichelte Linie mit Entfernung (m/km). 3. Klick löscht. |
-| 🧽 | **Radierer** | Klick auf Marker **oder** Linie löscht sofort (braucht Löschrecht). |
-| 📍 | **Marker setzen** | Erst Position auf der Karte klicken, **dann** öffnet der Auswahl-Wizard. Danach direkt platziert. |
-| ★ | **Favoriten** | Persönliche gespeicherte Marker per Klick platzieren / löschen. |
+| **Spieler** | planen selbst auf der Karte: Marker, Linien, Textfelder, Phasen | alles für Spieler – plus das, was der Missionsbau ihnen ausdrücklich freigibt |
+| **Missionsbau** | macht die Vorgaben, plant langfristig (Projekte, Dateien, Aufgaben, Missionsbau-Phasen) und verteilt Arbeit an einzelne Leute | **alles** |
+| **Zeus** | leitet die Mission im Spiel | alles für Spieler (nur ansehen) + die Teile des Missionsbaus, die freigegeben wurden |
 
-**Verbindungs-Marker** (`isMultiPointLine` im Katalog): nach der Auswahl weiter auf die
-Karte klicken für weitere Punkte; **Rechtsklick** beendet die Kette. Zwischen den
-Instanzen wird eine Linie gezogen (`linked_group_id` / `point_index`).
+Wer zu welcher Gruppe gehört, legt der Admin unter *Benutzer & Gruppen* fest (Häkchen **Missionsbau** bzw. **Zeus** an
+Nutzer oder Gruppe). Ohne Häkchen ist man Spieler.
 
-### 4.2 Marker-Wizard
+## A2. Wer sieht was? (auf einen Blick)
 
-- **QuickMenü** (Baum aus `SIDC_QuickMarkerMenuCatalog.json`) **oder** **Katalog**-Browser
-  (nach Kategorie), mit Suche.
-- Pro Marker einstellbar: **Zugehörigkeit** (Unknown / Friend / Neutral / Hostile – ohne
-  „Assumed"), **Echelon** (nur Land-Einheiten), **Richtung** (8 + stationär → Richtungspfeil),
-  **Einheitstext**, **Zusatztext**, **Layer**, **Sperren**, **Zeitstempel**.
-- **Erweitert** (Button, wenn der Marker-Typ Modifikatoren hat): rechte Spalte mit Dropdowns
-  für **Modifikator 1/2**, **HQ / Task Force / Dummy** und **Zustand / Einsatzbereitschaft**
-  aus `SIDC_ModifierCatalog.json`. Die Icon-Vorschau rendert live mit.
+| Inhalt | Spieler | Zeus | Missionsbau |
+|---|---|---|---|
+| Spieler-Phasen und ihre Marker/Linien/Textfelder | ✔ | ✔ (nur ansehen) | ✔ |
+| Missionsbau-Phase | – | nur wenn **für Zeus freigegeben** | ✔ |
+| Missionsbau-Phase **für Spieler freigegeben** | ✔ (erscheint wie Base) | ✔ | ✔ |
+| **Missionsbau-Notizen & pinke Sterne** (Layer) | – | nur einzeln **für Zeus freigegebene** | ✔ |
+| Gelbe Sterne / normale Notizen | ✔ | ✔ | ✔ |
+| Projekt-Bereich *Missionsbau* (Dateien, Bilder) | – | – | ✔ |
 
-### 4.2b Werkzeug-Tastenkürzel & Einstellungen
+Freigaben für Zeus gelten standardmäßig **72 Stunden** (wählbar: andere Frist oder unbegrenzt) und lassen sich jederzeit
+zurücknehmen.
 
-Das **⚙-Menü** (Topbar) enthält die pro Browser gespeicherten Einstellungen. Dort sind
-die **Tastenkürzel für die Werkzeuge** umbelegbar (Standard: `V` bewegen, `M` Marker
-verschieben, `Q` zeigen, `L` Linie, `R` Lineal, `E` Radierer, `P` Marker). Auf eine
-Taste klicken, dann die neue Taste drücken; Esc bricht ab. Das ⚙-Menü hat außerdem den
-Theme-Schalter (Dunkel / Hell / System).
+## A3. Begriffe
 
-### 4.3 Marker bearbeiten
+| Begriff | Bedeutung |
+|---|---|
+| **Plan** | eine Karte mit Markern, Linien, Textfeldern, Bildern – gemeinsam in Echtzeit bearbeitet |
+| **Phase** | ein Zeitabschnitt im Zeitstrahl. Jedes Element gehört zu einer Phase (Standard: die gerade aktive). Es gibt **Spieler-Phasen** (obere Spur) und **Missionsbau-Phasen** (untere Spur, nur Missionsbau) |
+| **Layer** | eine Sichtbarkeits-Gruppe, die du ein-/ausblenden und abdunkeln kannst: automatisch nach Identität (BLUFOR/REDFOR/…), eigene Layer pro Plan und – im Projekt-Plan – **Missionsbau-Notizen & Sterne** |
+| **Karte** | die Grundkarte selbst (Satellit, Gitter, Höhenlinien, Orte …) – im Menü *Karte* |
+| **Projekt** | die Klammer um eine Mission im Bereich *Missionsbau*: Dateien, Pläne, Aufgaben, Whiteboard, Feedback |
+| **Stern** | ein markierter Ort im Plan, der auf etwas im Projekt zeigt (Aufgabe, Haftnotiz, Datei …). **Gelb** = für alle, **pink** = nur Missionsbau |
 
-**Beschriftung:** dauerhaft unter jedem Marker der Name (Einheitstext, sonst der
-Symbol-Name aus dem Katalog) + gesetzte Modifikatoren, durch Komma getrennt.
-**Maus über einen Marker** → Tooltip mit **Ersteller**, **Phase** (ggf. **Layer**) und Aktions-Icons (Löschen / Verschieben / Bearbeiten).
+---
 
-Klick auf einen Marker (Modus „Karte bewegen" oder „Marker verschieben") öffnet ein
-**zentriertes Fenster** (Klick außerhalb oder **Esc** schließt): Einheits-/Zusatztext,
-Icon-Drehung, **Phase**, Sperren, **Erweitert** (Modifikatoren aus dem SIDC gelesen und
-änderbar), **Klonen**, **Als Favorit speichern**, **Löschen**.
+# Teil B – Abläufe
 
-### 4.4 Symbol-Rendering
+## B1. Einen Plan anlegen und teilen
 
-Zwei Wege wie in ATAKmaps:
+1. Sidebar → **Pläne** → Name und Karte wählen → *Erstellen*. Pläne lassen sich in **Ordnern** ablegen (Drag & Drop).
+2. Im Plan oben rechts **Zugriff / Freigaben** (nur Owner): Nutzer oder Gruppen als *Betrachter*, *Bearbeiter* oder
+   *Owner* eintragen. Bearbeiter bekommen vier Einzelrechte: **setzen · bewegen · löschen · malen**.
+3. Optional einen **öffentlichen Link** (nur ansehen, ohne Login, mit Ablaufdatum, widerrufbar) erzeugen.
 
-1. **milsymbol.js** – rendert das Symbol live aus dem SIDC (deckt praktisch alle
-   Affiliation-/Echelon-/Modifier-Kombinationen ab).
-2. **Vorgerendertes PNG** unter `/assets/app6d-icons/<sidc>.png` als Rückfall für die
-   Funktions-IDs, die milsymbol nicht kennt.
-3. Schlägt beides fehl → ein **Ersatzpunkt**, damit der Marker sichtbar/anklickbar bleibt.
+*Klonen* kopiert einen Plan samt Phasen, Layern, Markern und Linien in einen Zielordner (Textfelder/Sterne werden nicht
+mitkopiert).
 
-**Richtungspfeile** an Markern mit `rotation_degrees ≥ 0` (Air- und Boden-Variante wie
-ATAKmaps, als Vektor-Geometrie).
+## B2. Auf der Karte planen
 
-### 4.5 Topbar
+Werkzeugleiste links (nur mit Bearbeitungsrecht). Tasten sind die Standardbelegung, änderbar im Zahnrad.
+
+| Werkzeug | Taste | So geht's |
+|---|---|---|
+| Karte bewegen | `W` | Schieben/Zoomen; Marker anklicken = bearbeiten; mittlere Maustaste zieht Marker |
+| Zeigen | `A` | dein Cursor erscheint bei allen; rechte Maustaste zieht einen Pfeil |
+| Linie | `D` | Punkte klicken, grüner Haken / Rechtsklick / Doppelklick beendet; Farbe, Breite, Phase, Layer im Menü |
+| Marker verschieben | `M` | (v. a. Touch) Marker ziehen |
+| Lineal | `F` | beliebig viele Punkte, Teil- und Gesamtstrecke; Rechtsklick beendet; Messlinien bleiben stehen |
+| Radierer | `S` | löscht alles im Kreis (Größe einstellbar) |
+| Textfeld | `T` | Markdown-Notiz auf die Karte setzen |
+| Marker setzen | `Leertaste` | Position klicken → Marker-Auswahl (QuickMenü, Katalog oder **Marker-Baukasten**) |
+| Favoriten | `R` | gespeicherte Marker per Klick setzen |
+| **Ort markieren** | – | nur in Projekt-Plänen, siehe **B5** |
+
+Außerdem: `Q`/`E` Rückgängig/Wiederholen, `X`/`C`/`V` Ausschneiden/Kopieren/Einfügen, `←`/`→` Phase wechseln,
+`Y` Phasen-Notizen, `N` nach Norden, `Esc` bricht ab bzw. schließt Fenster.
+
+**Marker bearbeiten:** Maus über den Marker zeigt Ersteller, Phase und Layer plus Schnellknöpfe (Löschen · Verschieben ·
+Bearbeiten). Im Bearbeiten-Fenster: Texte, Drehung, Größe, Phase (auch mehrere), Layer, Sperren, Modifikatoren,
+Klonen, Als Favorit speichern.
+
+## B3. Mit Phasen arbeiten
+
+- Der **Zeitstrahl** oben zeigt die Phasen als Balken. Klick wählt eine Phase, Ziehen verschiebt sie, an den Kanten
+  änderst du die Dauer. **+ Phasen** legt eine neue an. Die erste Phase **Base** ist gesperrt.
+- Neue Elemente landen in der **aktiven Phase**. Im Bearbeiten-Fenster lässt sich die Phase ändern; über *Weitere Phasen*
+  erscheint ein Element in mehreren Phasen.
+- **Sichtbarkeit fremder Phasen** (Regler): wie stark Elemente anderer Phasen durchscheinen.
+- **Phasen-Notizen** (`Y` oder Doppelklick auf einen Balken): Markdown-Text je Phase, auch mit Bildern.
+- Wird eine Spieler-Phase gelöscht, bleiben ihre Elemente als „global“ (immer sichtbar) erhalten; Inhalte gelöschter
+  Missionsbau-Phasen werden mitgelöscht.
+
+## B4. Eine Mission bauen (Missionsbau)
+
+1. **Projekt anlegen:** Sidebar → **Missionsbau** → *Neues Projekt*. Du bist Owner. Unter **Mitglieder** holst du
+   Leute oder Gruppen dazu (*Betrachter* lesen, *Bearbeiter* schreiben) – so lagerst du Teile an Einzelne aus.
+2. **Konzept schreiben:** Reiter **Missionsbau** = Dateibaum mit Markdown-Dateien (nur Missionsbau). *Neue Datei* bietet
+   Vorlagen (Missionskonzept, Befehl 5-Absatz, Briefing, Charakter, Fraktion, Ort, Szene). Überschriften mit Uhrzeit
+   (`## 06:30 Anmarsch`, `## T+01:30 Feindkontakt`) erscheinen automatisch in der **Zeitleiste**; der Reiter
+   **Verzeichnis** sortiert die Dateien nach Typ.
+3. **Plan im Projekt anlegen:** Reiter **Pläne** → Plan erstellen. Pläne behalten ihre eigene Freigabe (B1) – die
+   Projektrolle gibt keine Planrechte.
+4. **Orte markieren:** im Plan Werkzeug **Ort markieren** (Kartennadel mit Stern) – siehe **B5**.
+5. **Arbeit verteilen:** Reiter **Aufgaben** (Kanban: Offen · In Arbeit · Review · Erledigt) mit Zuständigen, Fälligkeit,
+   Priorität; Fragen klärst du in der *Diskussion* der Aufgabe (`@name`, `@projekt`).
+6. **Vorgaben im Plan:** Missionsbau-Phasen (untere Spur im Zeitstrahl) enthalten, was nur der Missionsbau sehen soll.
+   Ansicht oben umschalten: **Spieler** (Vorschau wie ein Spieler, nur deine Sterne/Notizen bleiben sichtbar) ·
+   **Missionsbau** · **Zeus**.
+7. **Freigeben:** Missionsbau-Phase → Phasen-Notizen öffnen → *Für Spieler freigeben* (erscheint wie Base) oder
+   *Für Zeus freigeben* (72 h vorausgewählt, *Unbegrenzt* per Knopf). Einzelne pinke Sterne/Notizen gibst du über das
+   **Auge** an der Notiz frei (72 h).
+8. **Stand verfolgen:** **Übersicht** (offene Aufgaben je Person, Fälliges, Meilensteine, Projektstufe
+   Entwurf → Review → Test → Release), **Aktivität**, **Feedback** (auch von außen, siehe C6).
+
+## B5. Orte markieren (Sterne)
+
+So kommen Aufgaben, Notizen und Dateien an einen Ort auf der Karte:
+
+1. Werkzeug **Ort markieren** wählen und **auf die Karte klicken** – der Stern steht sofort.
+2. Im Fenster **„Was ist hier?“** festlegen:
+   - **Aufgabe** – Titel, *Was soll hier passieren?*, Zuständig, Fällig, Priorität. Die Aufgabe entsteht im Projekt
+     (mit Bezug zu diesem Plan).
+   - **Haftnotiz** – landet auf dem Whiteboard des Projekts.
+   - **Bestehendes verknüpfen** – vorhandene Datei, Aufgabe, Plan, Notiz, Bild oder Ort auswählen; optional mit eigener
+     Bezeichnung und Beschreibung.
+   - **Nur Kartennotiz** – ein normales Textfeld, ohne Eintrag im Projekt.
+3. **Sichtbar für:** *Alle (normale Notiz)* → **gelber Stern** in der gewählten Phase · *Nur Missionsbau* → **pinker
+   Stern** auf dem Layer *Missionsbau-Notizen* (phasenunabhängig, Spieler sehen ihn nie, Zeus erst nach Freigabe).
+   Missionsbauer haben *Nur Missionsbau* vorausgewählt; für alle anderen gibt es nur normale Sterne.
+4. *Anlegen*. Aufgaben und Haftnotizen dürfen nur Projekt-Bearbeiter anlegen; alle anderen können verknüpfen oder eine
+   Kartennotiz setzen.
+
+Auf der Karte: Neben dem Stern stehen die verknüpften Ziele – Klick öffnet sie (in einem neuen Tab). Die Beschreibung
+erscheint beim Überfahren, ebenso die Knöpfe Einklappen · Zeus-Freigabe · Bearbeiten · Löschen. Im Projekt zeigt jedes
+Ziel unter **„Erwähnt in …“**, auf welchem Plan es markiert ist, und **Verzeichnis → Auf der Karte** listet alle Sterne
+und Notizen aller Pläne (pink/gelb) mit Sprung an die Stelle. Im Menü **Layer** blendest du *Missionsbau-Notizen &
+Sterne* aus oder ab.
+
+**Textfelder** (`T`) funktionieren genauso: Ein Missionsbauer wählt im Editor *Sichtbar für* (in der
+Missionsbau-Ansicht ist *Nur Missionsbau* vorausgewählt), alle anderen setzen normale Notizen in einer Phase.
+
+## B6. Als Zeus arbeiten
+
+1. Admin setzt das Häkchen **Zeus** an Nutzer oder Gruppe.
+2. Im Plan oben auf **Zeus** umschalten. Spieler-Inhalte siehst du nur zum Ansehen.
+3. Für Zeus freigegebene Missionsbau-Phasen erscheinen in der unteren Spur – dort darfst du bearbeiten. In Spieler-Phasen
+   setzt Zeus nichts.
+4. Einzeln freigegebene pinke Sterne/Notizen siehst du nur (nicht bearbeiten). Abgelaufene Freigaben verschwinden beim
+   nächsten Laden.
+
+## B7. Briefing und Export
+
+- **Briefing-PDF** (Topbar): je Phase eine Seite mit Kartenausschnitt, Phasen-Notizen und Bildern; Missionsbauer wählen
+  *Spieler* oder *Missionsbau*.
+- **Screenshot** (Kamera): nur Karteninhalt, Auflösung/Format wählbar, militärischer DTG unten links.
+- **Präsentationsmodus**: Vollbild ohne Bedienelemente für die Besprechung.
+- Dateien im Projekt: *Als Markdown herunterladen* und *Drucken / PDF*.
+
+## B8. Zusammenarbeit
+
+- **Chat** (Sidebar): Direktnachrichten, Gruppen, Chats zu einer Gruppe oder einem Projekt. Enter sendet,
+  Umschalt+Enter = neue Zeile. Oben die feste Unterhaltung **System** mit allen Benachrichtigungen.
+- **Benachrichtigungen außerhalb der Seite** (Zahnrad → *Benachrichtigungen*): Erwähnungen, Zuweisungen und neue Zugriffe
+  an *Discord-DM*, *Web-Push*, *ntfy*, *Gotify*, *Matrix*, *Webhook* oder *E-Mail*. Pro Kanal wählbar, welche Arten
+  ankommen; *Testnachricht* prüft den Kanal. Auf Discord-DMs lässt sich direkt antworten. Web-Push auf dem iPhone nur,
+  wenn die Seite zum Home-Bildschirm hinzugefügt wurde.
+- **Discord-Brücke:** Ein Gruppen-Chat läuft synchron mit einem Discord-Kanal (Admin → Config → *Discord-Brücke*, oder
+  Code aus dem Chat-Kopf mit `/c2 link` in Discord).
+
+---
+
+# Teil C – Nachschlagen
+
+## C1. Rechte im Detail
+
+| Recht | Bedeutung |
+|---|---|
+| Rolle `admin` / `user` | Admin hat Vollzugriff und den Admin-Bereich |
+| **Pläne erstellen** | Häkchen an Nutzer oder Gruppe |
+| **Missionsbau** / **Zeus** | Häkchen an Nutzer oder Gruppe (siehe A1) |
+| Plan `viewer` | ansehen |
+| Plan `editor` | Einzelrechte setzen · bewegen · löschen · malen |
+| Plan `owner` | alles + Freigaben, Umbenennen, Klonen, Löschen, Versionen wiederherstellen, öffentliche Links |
+| Projekt `viewer` / `editor` / `owner` | lesen / schreiben (Dateien, Aufgaben, Whiteboard) / zusätzlich Mitglieder, Archivieren, Löschen |
+| Marker-Sperre | gesperrte Marker ändert/löscht nur der Plan-Owner; sperren und entsperren darf, wer bewegen darf |
+
+Alle Rechte prüft der Server bei jeder Aktion. Plan-Ordner: anlegen darf, wer Pläne erstellen darf; umbenennen, verschieben,
+löschen der Ersteller und der Admin. Archivierte Projekte sind schreibgeschützt.
+
+## C2. Topbar im Plan
 
 | Element | Funktion |
 |---|---|
-| **3D** | Kippen an/aus. In 2D lässt sich die Karte nur **drehen**, nicht kippen (`maxPitch 0`). Terrain bleibt für die Höhenanzeige aktiv. |
-| **↑ Kompass** | Zeigt Norden (dreht mit dem Kartenwinkel). Klick = Karte nach Norden ausrichten. |
-| **📅 Datum/Zeit** | Für den Screenshot-Zeitstempel. Leer = aktuelle Zeit. |
-| **📷 Screenshot** | PNG **nur mit Karteninhalt** (Sat/Grid + Orte + Marker + Zeichnungen + Pfeile + Grid-Beschriftung), keine Bedienelemente, kein MapLibre-Logo. Unten links ein militärischer DTG `DDHHMMZ MMM YY`. Dateiname `<Plan>_<Phase>_<DDMMYYYY-HHMMSS>.png`. |
-| **Layer** | Eigener taktischer Layer (optional). |
-| **Zeitstrahl** | Phasen – siehe 4.6. |
-| **🗒️ Notizen** | Phasen-Notizfenster – siehe 4.7. |
-| **Karten-Sprache** | 13 Sprachen für die Orts-Labels auf der Karte (separat von der UI-Sprache). |
-| **☰ Ebenen** | Sat / Grid / Terrain, **Höhenlinien**, **Höhenpunkte** und die Orts-Gruppen einzeln ein-/ausblenden; je Ebene ein **Deckkraft-Regler** (0–100 %, pro Browser gespeichert). Zusätzlich: **Sat (vereinfacht)**, Regler für Helligkeit/Kontrast/Sättigung des Sat-Bilds und **Straßenfarben** (Hauptstraße, Nebenstraße, Wege). |
-| **🕑 Versionen** | Versionsverlauf – siehe 4.8. |
-| **? Hilfe** | Overlay mit Werkzeugen, Topbar und Tastenkürzeln (DE/EN). |
-| **Freigaben** (nur Owner) | Öffentliche Links + ACL – siehe 5 und 6. |
-| **Cursor-HUD** (rechts) | X / Y (Welt-Koordinaten via Kalibrierung) + Höhe (aus dem Terrain-DEM, auch in 2D). |
-| **Koordinaten-Grid** | Linien aus `grid.mbtiles`, X/Y-Beschriftung an den Bildschirmrändern, mehrstufig (10/100/1000/10000 m), mitlaufend beim Pan/Zoom, horizon-sicher bei Pitch – wie ATAKmaps. |
-| **Höhenlinien / Höhenpunkte** | Zwei Terrain-Ebenen aus der Heightmap (`contours.geojson` / `peaks.geojson` im Mappack, standardmäßig **aus**). Höhenlinien alle 10 m, jede 5. Linie (50 m) fett + beschriftet. Höhenpunkte = lokal dominante Erhebungen mit Höhe; `▲ NNN m`, Farbe nach Typ (Kuppe/Grat/Plateau/dominanter Gipfel). |
+| **3D** | Kippen an/aus (in 2D nur drehen) |
+| **Lock Rotation** / **↑** | Drehung sperren / nach Norden ausrichten |
+| **Datum/Zeit** | Zeitstempel für Screenshot und Briefing (leer = jetzt) |
+| **Kamera** | Screenshot |
+| **Briefing** | PDF-Export |
+| **Kartensprache** | Sprache der Ortsnamen (13 Sprachen) |
+| **Präsentation**, **Versionen**, **Hilfe** | Vollbild · Versionsverlauf (sichern/wiederherstellen) · Kurzhilfe |
+| **Zahnrad** | Einstellungen (siehe C4) |
+| **Zugriff / Freigaben** | Freigaben und öffentliche Links (Owner) |
+| Cursor-Anzeige rechts | X/Y-Koordinate und Höhe unter dem Mauszeiger |
+| **UI Scale** | Marker- und Textgröße nur für dich |
 
-### 4.6 Phasen (Zeitstrahl)
+Unter der Topbar liegt der **Zeitstrahl** (B3) mit Phasen-Notizen, Zoom, Ansicht Spieler/Missionsbau/Zeus und den
+Reglern *Sichtbarkeit fremder Phasen* und *Transparenz Spieler ↔ Missionsbau*.
 
-- Beim Anlegen eines Plans entsteht die Standard-Phase **„Base"**.
-- Phasen wählen (Chip), **`+`** anlegen, **`✕`** löschen (Marker der Phase werden dann „global").
-- Jeder Marker gehört zu **einer Phase** (`phase_id`) oder ist **global** (`NULL`, immer sichtbar).
-  Neue Marker landen in der aktiven Phase; im Bearbeiten-Fenster umstellbar.
-- **Regler „Sichtbarkeit fremder Phasen"** (0–100 %, 5er-Schritte): Marker, die nicht zur
-  aktiven Phase gehören, werden entsprechend transparent gezeichnet. Wert bleibt pro Browser.
+## C3. Menüs *Karte* und *Layer* (Werkzeugleiste)
 
-### 4.7 Phasen-Notizen
+- **Karte:** Satellit (auch vereinfacht), Gitter, Gebäude, Straßen, Gewässer, Stromleitungen, Bäume, Orte, Höhenlinien
+  (alle 10 m), Höhenpunkte – je mit Deckkraft-Regler.
+- **Layer:** BLUFOR / REDFOR / Zivil-GREENFOR / Unbekannt (automatisch nach Identität), eigene Layer des Plans
+  (Bearbeiter legen sie an und ordnen Marker/Linien/Messlinien zu) und im Projekt-Plan für den Missionsbau
+  *Missionsbau-Notizen & Sterne*. Haken und Deckkraft gelten nur für dich.
+- **ViewCube** unten rechts: Ansicht von oben / N / S / O / W, Ziehen dreht und kippt.
 
-- **🗒️**-Button öffnet ein **frei verschiebbares Fenster** (Position pro Browser gemerkt),
-  Kopfzeile zum Ziehen, **✕** schließt, **🗒️** holt es zurück.
-- **Ein Reiter je Phase.** Beim Phasenwechsel wird automatisch der Reiter dieser Phase aktiv;
-  der Text der vorigen Phase bleibt gespeichert.
-- **Markdown** (Überschriften, `**fett**` / `*kursiv*` / `` `code` ``, Listen, `>` Zitat,
-  Links, `---`) mit Live-Vorschau. Auto-Speichern (leicht verzögert). Viewer sehen nur-lesend.
+## C4. Einstellungen (Zahnrad)
 
-### 4.8 Versionsverlauf
+Theme (Dunkel/Hell/System), Sprache, Tastenkürzel (Taste anklicken, neue Taste drücken, `Esc` bricht ab),
+Topbar-Größe, **Marker-Anzeige** (*Marker-Texte anzeigen*, *Ausführliche Marker-Info beim Überfahren*),
+Satellitenbild (Helligkeit/Kontrast/Sättigung), Straßenfarben, Benachrichtigungen, API-Tokens.
 
-- **🕑**-Button öffnet die Liste: **Bezeichnung · Datum · Autor · Anzahl Marker/Linien**.
-- **Editoren** können den aktuellen Stand mit Bezeichnung **sichern**.
-- **Owner** können je Eintrag **Wiederherstellen** – der aktuelle Stand wird **vorher
-  automatisch als Sicherungs-Version** gespeichert, dann setzt der Plan auf den gewählten
-  Stand zurück (Seite lädt neu).
+## C5. Projekt-Reiter
 
-## 5. Öffentliche Freigaben
+| Reiter | Inhalt |
+|---|---|
+| **Übersicht** | Stufe, Meilensteine, offene/fällige Aufgaben je Person, zuletzt Geändertes, neues Feedback |
+| **Aktivität** | wer wann was gemacht hat |
+| **Missionsbau** | Dateibaum + Markdown-Editor (`Strg+S` speichert, Konflikte werden gemeldet), Kommentare, Versionen, Bilder |
+| **Verzeichnis** | Dateien nach Typ (Personen, Fraktionen, Orte, Szenen …) und **Auf der Karte** (alle Sterne/Notizen) |
+| **Zeitleiste** | alle Überschriften mit Zeitangabe aus allen Dateien |
+| **Pläne** | Pläne des Projekts (Ordner, Drag & Drop, bestehende Pläne hierher verschieben) |
+| **Aufgaben** | Kanban mit Diskussion und Verlauf |
+| **Feedback** | Rückmeldungen (intern und extern), zu Aufgabe machen |
+| **Whiteboard** | Haftnotizen |
+| **Mitglieder** | Nutzer/Gruppen und Rollen |
 
-Owner erzeugt unter **Freigaben** einen Token-Link (optional mit Ablaufdatum, widerrufbar).
-Aufruf über `#/p/<token>` – **nur Ansehen**, ohne Login: Karte, Marker, Zeichnungen, Orte,
-Live-Updates über einen Empfangs-WebSocket.
+**Verknüpfungs-Codes:** Überall in Markdown lassen sich `{{doc:…}}`, `{{task:…}}`, `{{plan:…}}`, `{{note:…}}`,
+`{{img:…}}` und `{{place:Karte:Ort}}` einsetzen (Knopf *Verweis einfügen* in der Formatierungsleiste oder *Code kopieren*
+am Ziel). Sie erscheinen als Chip mit dem aktuellen Namen; nicht sichtbare Ziele als grauer Chip. Die Suche im
+Projektkopf (`/`) findet Titel und Inhalte.
 
-## 6. Admin-Bereich
+Ältere Projekte mit Dateien im früheren Bereich *Öffentlich* behalten diese; sie bleiben über Verweise, Verzeichnis und
+Zeitleiste erreichbar.
 
-Kategorisiert über die Sidebar: **Benutzer & Gruppen**, **Log**, **Speicher**, **Config**
-(`#/admin/users` · `/log` · `/storage` · `/config`).
+## C6. Feedback von außen (ohne Login)
 
-- **SIDC-Kataloge hochladen** (Format 1:1 wie ingame `LocalMapData`), persistent im
-  `uploads`-Volume:
-  `SIDC_AllMarkersCatalog.json`, `SIDC_QuickMarkerMenuCatalog.json`,
-  `SIDC_PhaseLineStyleCatalog.json`, `SIDC_ModifierCatalog.json`.
-  Upload als roher `application/json`-Body (kein Multipart) – bei sehr großen Dateien ggf.
-  im NPM `client_max_body_size` erhöhen.
-- **Karten**: Import per **Download-Link**, **Direkt-Upload** oder **aus einer
-  Gitea-Quelle** (Limit per `MAP_IMPORT_MAX_MB`), gestreamt auf Platte. Button
-  **Aktualisieren** = neue ZIP für eine bestehende Karte hochladen. „Vom Link" = erneut
-  vom hinterlegten Link laden. Löschen. DLC-Zoomstufen
-  (`mbtiles/dlc/<layer>_z<N>.mbtiles`) werden für Zoom über die Basis-maxzoom hinaus
-  ausgeliefert.
-- **Karten-Quellen (Gitea)**: unter „Karten" die Repo-URL eintragen (z. B.
-  `https://git.jensr.de/root/ReforgerMapData`). „Dateien" listet die `*.zip` im Repo-Root
-  über die Gitea-API; je Datei ID + Anzeigename eintragen → **Importieren**. Für private
-  Repos kann optional ein Token hinterlegt werden (wird nur an den konfigurierten Host
-  geschickt). Kein Zwischenspeichern – das Backend streamt direkt vom Repo.
-- **Lokale Benutzer**: anlegen, Rolle, `can_create_plans`, aktiv/deaktiviert,
-  Passwort-Reset, löschen.
-- **Gruppen**: anlegen, Mitglieder verwalten, `can_create_plans` je Gruppe.
-- **Log**: Login-Versuche + alle wichtigen Aktionen (Karte/Plan/ACL/Katalog/Version…),
-  Filter nach Aktion und Benutzer, lädt beim Öffnen die letzten 20 Ereignisse.
-- **Service neu starten**: Button (SIGTERM → Docker-Restart).
+Der Projekt-Owner schaltet im Reiter *Feedback* die Schnittstelle ein (*Token erzeugen*). Wer den Link kennt, kann
+Rückmeldungen einsenden und sieht nur den Projektnamen. *Neu erzeugen* macht das alte Token ungültig, *Abschalten*
+schließt die Schnittstelle, archivierte Projekte nehmen nichts an. Grenzen: Titel 200, Text 5000, Name 80 Zeichen;
+10 Einsendungen je IP und 10 Minuten, 60 je Projekt und Stunde, höchstens 5000 je Projekt. Das Feld `website` ist eine
+Bot-Falle und muss leer bleiben. Hinweis: Die Sicherheitsrichtlinie der App verbietet das Einbetten per `<iframe>`; dafür
+braucht die Route `#/feedback/<token>` eine Ausnahme im Proxy.
 
-## 7. Karten-Pakete (`*_mappack_v*.zip`)
+```bash
+curl https://c2.example.org/api/public/feedback/<TOKEN>
+# -> {"project":"Op Beispiel","kinds":["bug","idea","praise","other"]}
+curl -X POST https://c2.example.org/api/public/feedback/<TOKEN> -H "Content-Type: application/json" \
+  -d '{"title":"Brücke bei 040/040 fehlt","text":"Im Briefing erwähnt, auf der Karte nicht.","kind":"bug","name":"Max"}'
+# -> 201 {"ok":true}   (404 unbekanntes Token, 410 Projekt archiviert, 429 zu viele Anfragen)
+```
 
-Alles Fertige liegt im Pack – beide Konsumenten (ATAKmaps-Viewer **und** SIDC-C2) zeigen
-nur an, es wird **nichts pro Tool verarbeitet**:
+## C7. Admin-Bereich
+
+Sidebar: **Benutzer & Gruppen**, **Log**, **Speicher**, **Config**.
+
+- **Benutzer & Gruppen:** anlegen, Rolle, *Pläne erstellen*, *Missionsbau*, *Zeus*, aktiv/deaktiviert, Passwort-Reset,
+  Discord-ID, löschen; Gruppen mit Mitgliedern und denselben Häkchen.
+- **Log:** Login-Versuche und alle wichtigen Aktionen, filterbar.
+- **Speicher:** belegter Platz je Projekt (Bilder, Dateien).
+- **Config:** SIDC-Kataloge hochladen (`SIDC_AllMarkersCatalog.json`, `SIDC_QuickMarkerMenuCatalog.json`,
+  `SIDC_PhaseLineStyleCatalog.json`, `SIDC_ModifierCatalog.json`, Übersetzungen `SIDC_Translations.xlsx`),
+  **Karten** importieren (Download-Link, Direkt-Upload oder Gitea-Quelle; *Aktualisieren* lädt eine neue ZIP),
+  Discord-Brücke, Service-Neustart.
+
+## C8. Karten-Pakete (`*_mappack_v*.zip`)
 
 ```
 mappack.json                     (optional Manifest)
 calibration.json                 (Ursprung + Skalierung)
 mbtiles/sat.mbtiles              (Pflicht)
-mbtiles/terrain.mbtiles          (optional, für 3D + Höhenanzeige)
+mbtiles/terrain.mbtiles          (optional, 3D + Höhenanzeige)
 mbtiles/grid.mbtiles             (optional, Koordinatengitter)
 mbtiles/dlc/<layer>_z<N>.mbtiles (optional, hochauflösende Zoomstufen)
-topo.geojson                     (optional, Straßen/Wege – Anzeige derzeit deaktiviert)
-locations.json                   (optional, benannte Orte, nach baseType gruppiert)
-contours.geojson                 (optional, Höhenlinien alle 10 m)
-peaks.geojson                    (optional, dominante Höhenpunkte)
+topo.geojson                     (optional, Straßen/Wege)
+locations.json                   (optional, benannte Orte)
+contours.geojson / peaks.geojson (optional, Höhenlinien / Höhenpunkte)
 ```
 
-`topo.geojson` und `locations.json` werden **einmalig im ATAKmaps-Importer** erzeugt
-(`pipeline/topo_convert.py`, `pipeline/locations_convert.py`) und ins Pack gelegt.
-`contours.geojson` / `peaks.geojson` entstehen beim **Heightmap-Import**
-(`pipeline/terrain_features.py`): Höhenlinien per Marching-Squares auf einem 2‑m‑Raster,
-Höhenpunkte per lokaler Prominenz (Bottleneck-Suche im 300‑m‑Radius auf 4‑m‑Raster) mit
-hartem Prominenz-Cutoff (20 m) und räumlichem NMS (250 m). Nur `numpy`/`scipy`.
-Die Parameter (Linienabstand, Fett-Intervall, min. Prominenz/Abstand/Suchradius,
-Arbeitsraster) stehen im Importer direkt bei „Heightmap CSV". Button
-**„Nur Höhenlinien / Höhenpunkte neu berechnen"** justiert nach, ohne neu zu kacheln;
-danach Mappack neu exportieren und in C2 hochladen.
-**Wichtig:** Ältere Packs enthalten evtl. noch die rohe `mapLocations_locations.json` –
-Backend/Viewer brauchen die **verarbeitete** `locations.json` (Import-Tab
-„Verarbeiten & einpflegen", dann Export).
+Alles wird im ATAKmaps-Importer vorberechnet; C2 zeigt nur an. Ältere Packs mit roher `mapLocations_locations.json`
+müssen im Importer verarbeitet und neu exportiert werden.
 
-### 7.1 Kartenserver für den lokalen ATAKmaps-Client
+**Kartenserver für den lokalen ATAKmaps-Client:** Zahnrad → *API-Tokens* → Token erstellen (wird nur einmal angezeigt);
+in ATAKmaps unter *Kartenserver* Adresse und Token eintragen. Ein Token gibt nur Lesezugriff auf Kartendaten, nichts
+sonst; Widerrufen sperrt sofort. Neu importierte Karten verwirft der Client beim nächsten Abgleich aus dem Cache.
 
-C2 kann als **Kartenquelle für ATAKmaps** dienen (Spieler-/Client-Version). Nutzer müssen dann keine
-Kartenpakete selbst installieren; SIDC-Marker, Live-Position und Kalibrierung bleiben komplett lokal.
+## C9. SIDC – Kurzreferenz
 
-**Ablauf**
-1. **Nutzer:** *Einstellungen (Zahnrad) → API-Tokens → Token erstellen*, Token kopieren
-   (wird nur einmal angezeigt).
-2. **ATAKmaps:** Setup-GUI → Reiter **Kartenserver** → Name, Adresse (`https://…`) und Token eintragen →
-   „Speichern & verbinden".
+30-stelliger Code, im Client zusammengesetzt:
 
-**Regeln**
-- Alle angemeldeten Nutzer dürfen alle Karten laden; es gibt keine Kartenrechte pro Nutzer.
-- Ein Token gibt nur Lesezugriff auf Kartendaten (`maps:read`): Kartenliste, Kacheln, style.json,
-  Topo/Orte/Höhenlinien/Höhenpunkte. Pläne, Marker, Zeichnungen, Nutzerdaten und Verwaltung sind
-  über Tokens nicht erreichbar; ATAKmaps sendet nichts an C2 außer `GET`-Anfragen.
-- Was C2 an Kartenqualität hat (importierte Basiskarte, ggf. DLC), bekommt der Client; lokal
-  installierte Karten/DLC haben dort Vorrang und ergänzen z. B. höhere Zoomstufen.
-- Wird ein Token widerrufen, verliert der Client sofort den Zugriff; bereits geladene Kacheln
-  bleiben im lokalen Cache nutzbar.
-- Wird eine Karte in C2 neu importiert, verwirft der Client beim nächsten Abgleich seinen Cache
-  dieser Karte (Vergleich über `imported_at`).
-
-## 8. Tastenkürzel
-
-| Taste | Wirkung |
-|---|---|
-| **Esc** | Werkzeug zurück auf „Karte bewegen" / offenes Fenster schließen. |
-| **Rechtsklick** | Laufende Linie oder Verbindungs-Marker-Kette beenden. |
-| **Mittlere Maustaste ziehen** | Marker verschieben (im Karten-Modus). |
-| **Doppelklick** | Bei aktiver Linie: Linie beenden. |
-
-## 9. SIDC – Kurzreferenz
-
-30-stelliger Code. Client-seitig gespleißt (Katalog trägt Platzhalter):
-
-| 0-idx | Feld | gesetzt durch |
+| Stelle (0-basiert) | Feld | gesetzt durch |
 |---|---|---|
-| 3 | Standard Identity (Zugehörigkeit) | `withAffiliation` |
+| 3 | Zugehörigkeit (Identität) | Marker-Auswahl |
 | 6 | Status / Zustand | Modifikator 4 |
 | 7 | HQ / Task Force / Dummy | Modifikator 3 |
-| 8–9 | Amplifier / Echelon | `withAffiliationAndEchelon` (nur Land-Einheiten) |
-| 10–15 | Entity / Typ / Subtyp (Haupticon) | Katalog |
-| 16–17 | Modifikator 1 | Advanced-Menü |
-| 18–19 | Modifikator 2 | Advanced-Menü |
+| 8–9 | Echelon | nur Land-Einheiten |
+| 10–15 | Haupticon (Entity/Typ/Subtyp) | Katalog |
+| 16–17 / 18–19 | Modifikator 1 / 2 | *Erweitert* |
 
-`subCategory` des Katalog-Eintrags → Schlüssel in `SIDC_ModifierCatalog.json`.
+Symbole rendert milsymbol.js; fehlt eine Funktion, greift ein vorgerendertes PNG, sonst ein Ersatzpunkt.

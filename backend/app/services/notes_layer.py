@@ -1,7 +1,8 @@
-"""Feste Missionsbau-Ebene "Karten-Notizen" in Projekt-Plänen.
+"""Fester Layer "Missionsbau-Notizen" in Projekt-Plänen.
 
-Jede Annotation (Textfeld/Verweis-Pin) eines Plans mit ``project_id`` liegt auf der Phase mit
-``role == "notes"``: Ebene ``builder`` (Spieler sehen sie nie). Zeus sieht sie erst, wenn ein
+Technisch eine Phase mit ``role == "notes"`` (Ebene ``builder``, Spieler sehen sie nie), in der UI aber
+ein Layer, keine Phase: Ein Missionsbauer legt Notizen/Stern-Pins ausdrücklich darauf (``mb_layer``);
+alle anderen Annotationen eines Projekt-Plans sind normale Notizen in ihrer Phase. Zeus sieht sie erst, wenn ein
 Missionsbauer sie freigibt (``zeus_released``, wie jede Builder-Phase). ``parent_id`` bleibt
 leer — eine an die gesperrte Base-Phase gehängte Builder-Phase wäre sonst die für ALLE sichtbare
 "Spiegel"-Phase. Committet nicht (läuft in der Transaktion des Aufrufers).
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 from ..models import Annotation, Phase, Plan, now
 
 NOTES_ROLE = "notes"
-NOTES_NAME = "Karten-Notizen"
+NOTES_NAME = "Missionsbau-Notizen"
 
 
 def annotation_zeus_open(a: Annotation, t_now=None) -> bool:

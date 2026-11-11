@@ -267,6 +267,8 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
          </span>
        </div>
        <nav class="proj-tabs" role="tablist" aria-label="${esc(project.name)}">${tabs
+         // „Öffentlich" ist kein eigener Reiter mehr (Dateiarbeit = Missionsbau); alte Links/Verweise öffnen ihn weiterhin
+         .filter((x) => x.id !== "public" || tab === "public")
          .map(
            (x) =>
              `<a role="tab" class="proj-tab ${x.id === tab ? "active" : ""}" aria-selected="${x.id === tab}" href="#/projects/${id}/${x.id}" title="${t(x.key + "Hint")}">${icon(x.ic, 15)}<span>${t(x.key)}</span>${x.id === "feedback" ? '<span class="proj-tab-badge" hidden></span>' : ""}</a>`,
