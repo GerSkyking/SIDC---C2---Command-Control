@@ -117,10 +117,14 @@ Klonen, Als Favorit speichern.
 
 ## B5. Orte markieren (Sterne)
 
-So kommen Aufgaben, Notizen und Dateien an einen Ort auf der Karte:
+So kommen Orte, Personen, Aufgaben, Notizen und Dateien an einen Ort auf der Karte. Das Werkzeug gibt es nur für den
+Missionsbau und nur in Plänen, die zu einem Projekt gehören.
 
 1. Werkzeug **Ort markieren** wählen und **auf die Karte klicken** – der Stern steht sofort.
 2. Im Fenster **„Was ist hier?“** festlegen:
+   - **Neu im Verzeichnis** – *Ort* (vorausgewählt), *Charakter*, *Fraktion*, *Szene*, *Missionskonzept*,
+     *Befehl (5-Absatz)*, *Briefing* oder *Sonstiges*: Name und Beschreibung eingeben, daraus wird eine Datei aus der
+     passenden Vorlage im Bereich Missionsbau, die sofort im **Verzeichnis** einsortiert ist und auf den Plan verweist.
    - **Aufgabe** – Titel, *Was soll hier passieren?*, Zuständig, Fällig, Priorität. Die Aufgabe entsteht im Projekt
      (mit Bezug zu diesem Plan).
    - **Haftnotiz** – landet auf dem Whiteboard des Projekts.
@@ -129,12 +133,13 @@ So kommen Aufgaben, Notizen und Dateien an einen Ort auf der Karte:
    - **Nur Kartennotiz** – ein normales Textfeld, ohne Eintrag im Projekt.
 3. **Sichtbar für:** *Alle (normale Notiz)* → **gelber Stern** in der gewählten Phase · *Nur Missionsbau* → **pinker
    Stern** auf dem Layer *Missionsbau-Notizen* (phasenunabhängig, Spieler sehen ihn nie, Zeus erst nach Freigabe).
-   Missionsbauer haben *Nur Missionsbau* vorausgewählt; für alle anderen gibt es nur normale Sterne.
-4. *Anlegen*. Aufgaben und Haftnotizen dürfen nur Projekt-Bearbeiter anlegen; alle anderen können verknüpfen oder eine
-   Kartennotiz setzen.
+   *Nur Missionsbau* ist vorausgewählt.
+4. *Anlegen*. Neues (Verzeichnis-Eintrag, Aufgabe, Haftnotiz) braucht Bearbeiter-Recht im Projekt; fehlt es, sind die
+   Knöpfe gesperrt und der Dialog sagt, warum (z. B. „nicht im Projekt eingetragen“).
 
 Auf der Karte: Neben dem Stern stehen die verknüpften Ziele – Klick öffnet sie (in einem neuen Tab). Die Beschreibung
-erscheint beim Überfahren, ebenso die Knöpfe Einklappen · Zeus-Freigabe · Bearbeiten · Löschen. Im Projekt zeigt jedes
+erscheint beim Überfahren. Darüber erscheinen die Knöpfe Einklappen · Zeus-Freigabe · Bearbeiten · Löschen; sie bleiben
+nach dem Verlassen kurz stehen, damit du sie auch beim eingeklappten Stern erreichst. Im Projekt zeigt jedes
 Ziel unter **„Erwähnt in …“**, auf welchem Plan es markiert ist, und **Verzeichnis → Auf der Karte** listet alle Sterne
 und Notizen aller Pläne (pink/gelb) mit Sprung an die Stelle. Im Menü **Layer** blendest du *Missionsbau-Notizen &
 Sterne* aus oder ab.

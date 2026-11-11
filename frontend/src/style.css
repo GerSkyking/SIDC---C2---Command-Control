@@ -578,7 +578,18 @@ a { color: var(--accent); }
 .star-desc { grid-column: 2; display: none; margin-top: 0.25rem; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-sm); box-shadow: var(--shadow); padding: 0.35rem 0.5rem; max-width: 300px; white-space: normal; }
 .annot-star:hover .star-desc { display: block; }
-.annot-star .annot-tools { top: -1.6rem; right: auto; left: 30px; }
+/* Knöpfe direkt über dem Stern (auch eingeklappt erreichbar), mit unsichtbarer Brücke nach unten und
+   verzögertem Ausblenden – so verliert man sie beim Hinüberfahren nicht. */
+.annot-star .annot-tools { display: flex; top: auto; bottom: calc(100% + 4px); right: auto; left: -4px;
+  padding: 0.15rem; border: 1px solid var(--border); box-shadow: var(--shadow); z-index: 2;
+  visibility: hidden; opacity: 0; transition: opacity 0.15s ease, visibility 0s linear 0.6s; }
+.annot-star .annot-tools::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 10px; }
+.annot-star:hover .annot-tools, .annot-star:focus-within .annot-tools { visibility: visible; opacity: 1; transition-delay: 0s; }
+.annot-star .annot-tools .icon-btn { width: 1.9rem; height: 1.9rem; }
+.annot-star:hover { z-index: 3; }
+.star-why { display: flex; gap: 0.35rem; align-items: flex-start; margin: 0.4rem 0 0; font-size: 0.78rem;
+  color: var(--muted); background: var(--surface-2); border-radius: var(--r-sm); padding: 0.35rem 0.5rem; }
+.star-dlg .seg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .seg-btn.vis-mb.active { background: var(--star-mb); border-color: var(--star-mb); color: #fff; }
 .star-kinds { flex-wrap: wrap; }
 .annot-tools { position: absolute; top: 2px; right: 2px; display: none; gap: 0.2rem;
@@ -1754,3 +1765,5 @@ button.stg-b:hover:not(:disabled) { border-color: var(--accent); }
 .star-dlg .seg-btn { display: inline-flex; align-items: center; gap: 0.3rem; }
 .star-dlg [data-avis], .edit-modal [data-avis] { display: flex; margin-top: 0.2rem; }
 .star-dlg [data-avis] .seg-btn, .edit-modal [data-avis] .seg-btn { flex: 1; }
+.star-sec { margin: 0.55rem 0 0.2rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.star-dlg [hidden] { display: none !important; }

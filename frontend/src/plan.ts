@@ -48,6 +48,7 @@ import { renderMarkdown } from "./md";
 import { attachMdToolbar } from "./mdtoolbar";
 import { wireRefChips, type WireOpts } from "./projectRefs";
 import { openRefPicker } from "./refPicker";
+import { DOC_TYPE_ICON, type DocType, templateContent } from "./projectTemplates";
 import { esc } from "./esc";
 import { initNavCube } from "./navcube";
 import { wireScaleBox } from "./scalebox";
@@ -5699,28 +5700,42 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       api.projectAssignees(pid).catch((): { user_id: string; label: string }[] => []),
     ]);
     const canProj = !!proj && !proj.archived && (proj.role === "editor" || proj.role === "owner");
-    type Kind = "task" | "note" | "link" | "text";
-    let kind: Kind = canProj ? "task" : "link";
+    // Warum nichts Neues angelegt werden kann: kein Projekt-Mitglied (Plan nur per Plan-Freigabe), nur Betrachter, archiviert
+    const whyNot = canProj ? "" : !proj ? t("star.notMember") : proj.archived ? t("star.archived") : t("star.noProjectRole");
+    const docSpace: "builder" | "public" = proj?.is_builder ? "builder" : "public";
+    type Kind = "task" | "note" | "doc" | "link" | "text";
+    // Neu im Verzeichnis: dieselben Kategorien wie im Projekt-Reiter „Verzeichnis“ (Ort vorausgewählt)
+    const DIR_KINDS: DocType[] = ["place", "character", "faction", "scene", "mission", "opord", "briefing", ""];
+    let docType: DocType = "place";
+    // Ohne Projekt-Mitgliedschaft liefert auch die Projektsuche nichts: dann bleibt nur die Kartennotiz
+    let kind: Kind = canProj ? "doc" : proj ? "link" : "text";
     let linkCode = "";
     const back = document.createElement("div");
     back.className = "edit-modal";
     back.setAttribute("role", "dialog");
     back.setAttribute("aria-modal", "true");
+    const lockAttr = (ok: boolean): string => (ok ? "" : `disabled title="${esc(whyNot)}"`);
     const kindBtn = (k: Kind, ic: string, ok: boolean): string =>
-      ok
-        ? `<button type="button" class="seg-btn ${k === kind ? "active" : ""}" data-k="${k}">${icon(ic, 14)} ${t("star.kind." + k)}</button>`
-        : "";
-    back.innerHTML = `<div class="card star-dlg" style="width:min(36rem,96vw)">
+      `<button type="button" class="seg-btn" data-k="${k}" ${lockAttr(ok)}>${icon(ic, 14)} ${t("star.kind." + k)}</button>`;
+    const dirBtn = (ty: DocType): string =>
+      `<button type="button" class="seg-btn" data-k="doc" data-dt="${ty}" ${lockAttr(canProj)}>${icon(ty ? DOC_TYPE_ICON[ty] : "notes", 14)} ${
+        ty ? t("dt." + ty) : t("star.dt.other")
+      }</button>`;
+    back.innerHTML = `<div class="card star-dlg" style="width:min(38rem,96vw)">
       <div class="row"><h1 style="flex:1;margin:0">${t("star.title")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
       <p class="muted" style="margin:.2rem 0 .5rem">${t("star.intro")}</p>
-      <div class="segmented star-kinds">${kindBtn("task", "check", canProj)}${kindBtn("note", "textbox", canProj)}${kindBtn("link", "link", true)}${kindBtn("text", "notes", true)}</div>
-      ${canProj ? "" : `<p class="muted" style="font-size:.78rem">${t("star.noProjectRole")}</p>`}
+      <div class="star-sec">${t("star.secDir")}</div>
+      <div class="segmented star-kinds">${DIR_KINDS.map(dirBtn).join("")}</div>
+      <div class="star-sec">${t("star.secMore")}</div>
+      <div class="segmented star-kinds">${kindBtn("task", "check", canProj)}${kindBtn("note", "textbox", canProj)}${kindBtn("link", "link", !!proj)}${kindBtn("text", "edit", true)}</div>
+      ${canProj ? "" : `<p class="star-why">${icon("lock", 13)} ${esc(whyNot)}</p>`}
+      <p data-kdoc hidden class="muted" style="margin:.4rem 0 0;font-size:.78rem">${t(docSpace === "builder" ? "star.docBuilder" : "star.docPublic")}</p>
       <div data-klink hidden>
         <div class="row" style="margin-top:.5rem;gap:.4rem"><button type="button" data-pick>${icon("link", 14)} ${t("star.pickTarget")}</button><span data-picked class="muted">${t("star.nothingPicked")}</span></div>
       </div>
       <label style="margin-top:.5rem" data-ltitle>${t("star.what")}</label>
       <input data-stitle maxlength="200" placeholder="${t("star.whatPh")}"/>
-      <label style="margin-top:.5rem">${t("star.happens")}</label>
+      <label style="margin-top:.5rem" data-ldesc>${t("star.happens")}</label>
       <textarea data-sdesc rows="4" placeholder="${t("star.happensPh")}"></textarea>
       <div data-ktask class="row" style="gap:.5rem;margin-top:.5rem;flex-wrap:wrap">
         <label style="flex:1 1 10rem">${t("star.assignee")}<select data-sas><option value="">—</option>${assignees
@@ -5745,14 +5760,22 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       b.addEventListener("click", () => draftEl.classList.toggle("star-mb", b.dataset.v === "mb")),
     );
     const showKind = (): void => {
-      back.querySelectorAll<HTMLButtonElement>("[data-k]").forEach((b) => b.classList.toggle("active", b.dataset.k === kind));
+      back
+        .querySelectorAll<HTMLButtonElement>("[data-k]")
+        .forEach((b) => b.classList.toggle("active", b.dataset.k === kind && (kind !== "doc" || b.dataset.dt === docType)));
       back.querySelector<HTMLElement>("[data-ktask]")!.hidden = kind !== "task";
       back.querySelector<HTMLElement>("[data-klink]")!.hidden = kind !== "link";
-      back.querySelector<HTMLElement>("[data-ltitle]")!.textContent = t(kind === "link" ? "star.whatOptional" : "star.what");
+      back.querySelector<HTMLElement>("[data-kdoc]")!.hidden = kind !== "doc";
+      back.querySelector<HTMLElement>("[data-ltitle]")!.textContent = t(
+        kind === "link" ? "star.whatOptional" : kind === "doc" ? "star.name" : "star.what",
+      );
+      // Bei Verzeichnis-Einträgen (Person, Ort …) ist es eine Beschreibung, bei Aufgaben/Notizen der Auftrag
+      back.querySelector<HTMLElement>("[data-ldesc]")!.textContent = t(kind === "doc" ? "star.describe" : "star.happens");
     };
     back.querySelectorAll<HTMLButtonElement>("[data-k]").forEach((b) =>
       b.addEventListener("click", () => {
         kind = b.dataset.k as Kind;
+        if (kind === "doc") docType = (b.dataset.dt ?? "") as DocType;
         showKind();
       }),
     );
@@ -5818,6 +5841,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             y: 40 + Math.round(Math.random() * 300),
           });
           text = `{{note:${n.id}}}`;
+        } else if (kind === "doc") {
+          // Neue Datei aus Vorlage; die Beschreibung landet unter der Vorlage, der Plan als Verweis darunter
+          const ty = docType;
+          const content =
+            templateContent(ty, title).trimEnd() + (desc ? `\n\n${desc}` : "") + `\n\n---\n${t("star.docOnMap")} {{plan:${planId}}}\n`;
+          const d = await api.createProjectDoc(pid, { space: docSpace, kind: "doc", name: title, content, doc_type: ty });
+          text = `{{doc:${d.id}}}`;
         } else if (kind === "link") {
           text = [linkCode, title ? `**${title}**` : "", desc].filter(Boolean).join("\n\n");
         } else {
@@ -5845,7 +5875,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       // Zeus-Freigabe ist ein Feld von annotation.modify: nach dem Anlegen nachreichen
       if (mb && zRel) pendingStarZeus.set(ac, { zeus_released: true, zeus_hours: zH });
       close();
-      if (kind === "task" || kind === "note") toast(t(kind === "task" ? "star.taskDone" : "star.noteDone"), { kind: "success" });
+      if (kind === "task" || kind === "note" || kind === "doc")
+        toast(t(kind === "task" ? "star.taskDone" : kind === "note" ? "star.noteDone" : "star.docDone"), { kind: "success" });
     });
   }
   function createAnnotAt(pos: [number, number]): void {

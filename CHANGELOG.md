@@ -5,6 +5,14 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-11-12 – Stern-Dialog: Verzeichnis-Einträge direkt im Plan, Hover-Knöpfe erreichbar
+- „Was ist hier?“ hat oben **Neu im Verzeichnis**: Ort (vorausgewählt), Charakter, Fraktion, Szene, Missionskonzept, Befehl,
+  Briefing, Sonstiges. Daraus entsteht eine Datei aus der passenden Vorlage im Bereich Missionsbau (Typ gesetzt, also sofort im
+  Verzeichnis), mit Beschreibung und Verweis auf den Plan; der Stern verlinkt die Datei. Darunter *Weiteres*: Aufgabe,
+  Haftnotiz, Bestehendes verknüpfen, Nur Kartennotiz.
+- Fehlt das Projekt-Recht (z. B. Plan-Zugriff ohne Projekt-Mitgliedschaft), sind die Knöpfe gesperrt statt unsichtbar, mit Grund.
+- Hover-Knöpfe am Stern sitzen direkt über dem Stern und blenden verzögert aus – auch eingeklappt erreichbar.
+
 ### 2026-11-11 – Missionsbau vereinfacht: Stern-Pins, Layer statt Phase, Handbuch neu
 - **Ort markieren (Stern):** Werkzeug in Projekt-Plänen. Erst auf die Karte klicken (Stern steht sofort), dann im Fenster
   „Was ist hier?“ festlegen: neue **Aufgabe** (mit Zuständig/Fällig/Priorität und Bezug zum Plan), **Haftnotiz**,
