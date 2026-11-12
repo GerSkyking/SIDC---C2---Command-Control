@@ -138,6 +138,14 @@ export interface Cmd {
 export type Span = { s: number; e: number };
 export type LngLat2 = [number, number];
 
+/** Kartenort aus locations.json (siehe layers.ts). */
+export interface PlaceInfo {
+  name: string;
+  names: string[];
+  lng: number;
+  lat: number;
+}
+
 /** Karten-Klick eines Werkzeugs (nach der gemeinsamen Linien-Auswahl, siehe interaction.ts). */
 export interface ToolHandlers {
   click?: (e: maplibregl.MapMouseEvent) => void;
@@ -181,8 +189,13 @@ export interface PlanUi {
   repaintNotesTimes: () => void;
   // layers.ts
   flyToPlace: (mid: string, name: string) => boolean;
+  /** Kartenorte (für die Suche): Anzeigename, alle Sprachvarianten, Position. */
+  listPlaces: () => PlaceInfo[];
   belowTopbar: () => number;
   placeNextToTool: (panel: HTMLElement, btn: HTMLElement) => void;
+  // tactical.ts
+  /** Taktischen Layer (auto:<x>, Layer-ID oder "mbnotes") sichtbar schalten. */
+  showTacLayer: (key: string) => void;
   // orbatPanel.ts
   ensureOrbatCache: () => Promise<void>;
   // grid.ts
@@ -261,8 +274,10 @@ export function createUi(): PlanUi {
     toggleNotesWin: noop,
     repaintNotesTimes: noop,
     flyToPlace: () => false,
+    listPlaces: () => [],
     belowTopbar: () => 54,
     placeNextToTool: noop,
+    showTacLayer: noop,
     ensureOrbatCache: noopAsync,
     updateGrid: noop,
     setMode: noop,

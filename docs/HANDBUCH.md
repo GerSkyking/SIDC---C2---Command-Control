@@ -78,6 +78,14 @@ Werkzeugleiste links (nur mit Bearbeitungsrecht). Tasten sind die Standardbelegu
 Außerdem: `Q`/`E` Rückgängig/Wiederholen, `X`/`C`/`V` Ausschneiden/Kopieren/Einfügen, `←`/`→` Phase wechseln,
 `Y` Phasen-Notizen, `N` nach Norden, `Esc` bricht ab bzw. schließt Fenster.
 
+**Im Plan suchen:** Lupe in der Topbar oder `Strg+F` bzw. `/`. Gesucht wird beim Tippen in Markern (Beschriftung,
+Zusatztext, Symbolname), Notizen und Sternen (auch verknüpfte Orte/Titel), benannten Linien/Flächen, Kartenbildern
+(Name, Notiz), Ortsnamen der Karte und Phasen – Groß/klein egal, Umlaute tolerant (`mueller` = `müller` = `muller`).
+Pfeiltasten + `Enter` oder Klick: die Karte fliegt hin und der Treffer leuchtet ~3 s auf. Liegt er in einer anderen
+Phase, wechselt die Ansicht dorthin; liegt er in einem ausgeblendeten Layer, wird der Layer wieder eingeblendet (beides
+steht vorher in der Trefferliste). Gefunden wird nur, was deine aktuelle Ansicht (Spieler/Missionsbau/Zeus) zeigen darf.
+`Esc` leert bzw. schließt. Funktioniert auch mit Nur-Lese-Zugriff und am Handy.
+
 **Marker bearbeiten:** Maus über den Marker zeigt Ersteller, Phase und Layer plus Schnellknöpfe (Löschen · Verschieben ·
 Bearbeiten). Im Bearbeiten-Fenster: Texte, Drehung, Größe, Phase (auch mehrere), Layer, Sperren, Modifikatoren,
 Klonen, Als Favorit speichern.
@@ -212,6 +220,7 @@ löschen der Ersteller und der Admin. Archivierte Projekte sind schreibgeschütz
 | **Kamera** | Screenshot |
 | **Briefing** | PDF-Export |
 | **Kartensprache** | Sprache der Ortsnamen (13 Sprachen) |
+| **Lupe** | Im Plan suchen (`Strg+F` oder `/`, siehe B2) |
 | **Präsentation**, **Versionen**, **Hilfe** | Vollbild · Versionsverlauf (sichern/wiederherstellen) · Kurzhilfe |
 | **Zahnrad** | Einstellungen (siehe C4) |
 | **Zugriff / Freigaben** | Freigaben und öffentliche Links (Owner) |

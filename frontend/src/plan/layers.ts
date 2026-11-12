@@ -15,7 +15,7 @@ import { esc } from "../esc";
 import { t } from "../i18n";
 import { makeMovable } from "../movable";
 import { getMapPrefs, registerSettingsSection, saveMapPrefs } from "../settings";
-import type { PlanCtx } from "./ctx";
+import type { PlaceInfo, PlanCtx } from "./ctx";
 
 export async function initLayers(ctx: PlanCtx): Promise<void> {
   const { map, root, planId, mapId, baseLayerVisible, strokesLayer } = ctx;
@@ -144,6 +144,21 @@ export async function initLayers(ctx: PlanCtx): Promise<void> {
         }
     return false;
   }
+  // Alle Orte der Karte für die Plan-Suche (auch ausgeblendete Orte-Gruppen), je Ort einmal.
+  ctx.ui.listPlaces = (): PlaceInfo[] => {
+    const out: PlaceInfo[] = [];
+    const seen = new Set<string>();
+    for (const g of locData?.groups ?? [])
+      for (const it of g.items) {
+        const names = [...new Set(Object.values(it.names).map((n) => n.trim()).filter(Boolean))];
+        const name = (it.names[mapLang] || it.names.en_us || names[0] || "").trim();
+        const key = `${name}|${it.lon.toFixed(5)}|${it.lat.toFixed(5)}`;
+        if (!name || seen.has(key)) continue;
+        seen.add(key);
+        out.push({ name, names, lng: it.lon, lat: it.lat });
+      }
+    return out;
+  };
 
   map.on("load", async () => {
     // Map-Locations  (Topo/Straßen-Overlay ist derzeit deaktiviert)

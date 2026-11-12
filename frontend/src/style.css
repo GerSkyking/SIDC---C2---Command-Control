@@ -1775,3 +1775,46 @@ button.stg-b:hover:not(:disabled) { border-color: var(--accent); }
 .area-bar .area-del { color: var(--danger); }
 .star-area-chk { margin-top: 0.6rem; }
 .area-bar[hidden] { display: none; }
+
+/* ── Suche im Plan (plan/search.ts) ─────────────────────────────────────── */
+.psearch { position: absolute; top: calc(var(--topbar-h, 48px) + 8px); right: 12px; z-index: 40;
+  width: min(26rem, calc(100vw - 24px)); background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); overflow: hidden; }
+.psearch[hidden] { display: none; }
+.psearch-row { display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.4rem 0.35rem 0.6rem; }
+.psearch-row > svg { flex: none; opacity: 0.7; }
+.psearch-row input { flex: 1; min-width: 0; border: none; background: transparent; padding: 0.35rem 0.2rem; outline: none; color: var(--fg); }
+.psearch-row input::-webkit-search-cancel-button { display: none; }
+.psearch-list { max-height: min(60vh, 26rem); overflow-y: auto; border-top: 1px solid var(--border); }
+.psearch-list[hidden] { display: none; }
+.psearch-item { display: flex; align-items: center; gap: 0.55rem; padding: 0.4rem 0.65rem; cursor: pointer; }
+.psearch-item:hover { background: var(--elevated); }
+.psearch-item.sel { background: var(--accent); color: var(--accent-fg); }
+.psearch-item.sel .psearch-sub { color: inherit; opacity: 0.85; }
+.psearch-ic { flex: none; display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--surface-2); color: var(--fg); }
+.psearch-txt { display: flex; flex-direction: column; min-width: 0; }
+.psearch-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.psearch-sub { font-size: 0.74rem; color: var(--muted, #9aa); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.psearch-item.other .psearch-name { font-style: italic; }
+.psearch-empty { padding: 0.6rem 0.75rem; font-size: 0.85rem; }
+/* Hervorhebung des gewählten Treffers: pulsierender Doppel-Ring (MapLibre-Marker) */
+.psearch-ring { width: 0; height: 0; pointer-events: none; }
+.psearch-ring span { position: absolute; left: -26px; top: -26px; width: 52px; height: 52px; border-radius: 50%;
+  border: 3px solid #ffe14d; box-shadow: 0 0 12px 2px rgba(255, 225, 77, 0.7), inset 0 0 8px rgba(255, 225, 77, 0.5);
+  animation: psearch-pulse 1s ease-out 3; opacity: 0; }
+.psearch-ring span + span { animation-delay: 0.5s; }
+.psearch-ring.place span { border-color: #4dd2ff; box-shadow: 0 0 12px 2px rgba(77, 210, 255, 0.7); }
+@keyframes psearch-pulse { 0% { transform: scale(0.35); opacity: 1; } 80% { opacity: 0.8; } 100% { transform: scale(1.6); opacity: 0; } }
+/* Notiz/Stern/Bild leuchtet kurz auf */
+.annot.psearch-flash, .pimg.psearch-flash { animation: psearch-flash 1s ease-in-out 3; }
+@keyframes psearch-flash { 0%, 100% { filter: none; } 50% { filter: drop-shadow(0 0 10px #ffe14d) drop-shadow(0 0 4px #ffe14d); } }
+@media (prefers-reduced-motion: reduce) {
+  .psearch-ring span { animation-duration: 3s; animation-iteration-count: 1; }
+  .annot.psearch-flash, .pimg.psearch-flash { animation: none; outline: 3px solid #ffe14d; }
+}
+@media (max-width: 760px) {
+  /* Handy: Suche bleibt in der eingeklappten Topbar erreichbar */
+  #app > .topbar:has(#tbMore) > #planSearchBtn { display: inline-grid; place-items: center; order: 0; }
+  .psearch { left: 8px; right: 8px; width: auto; }
+  .psearch-item { padding: 0.55rem 0.65rem; }
+}

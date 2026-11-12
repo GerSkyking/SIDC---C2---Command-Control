@@ -158,7 +158,7 @@ function keybindSection(): string {
     .map((r) => `<li><kbd>${esc(r.key)}</kbd> – ${esc(r.label)}</li>`)
     .join("");
   return `<h4>${en ? "Your keybinds (tools)" : "Deine Tastenbelegung (Werkzeuge)"}</h4>
-    <ul class="help-keys">${rows}</ul>
+    <ul class="help-keys">${rows}<li>${esc(t("search.helpKey"))}</li></ul>
     <p class="muted" style="font-size:.78rem">${en ? "Ctrl+Z / Ctrl+Y also undo/redo. Change the keys under the gear icon." : "Strg+Z / Strg+Y machen ebenfalls rückgängig/wiederholen. Änderbar unter dem Zahnrad."}</p>`;
 }
 

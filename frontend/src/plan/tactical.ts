@@ -91,6 +91,14 @@ export function initTactical(ctx: PlanCtx): void {
       if (e.key === "Enter") void create();
     });
   }
+  // Suche: Treffer in einem ausgeblendeten Layer → Layer wieder einblenden (Deckkraft 0 → 100 %)
+  ctx.ui.showTacLayer = (key: string): void => {
+    const st = tacState[key] ?? {};
+    tacState[key] = { ...st, on: true, op: st.op ? st.op : 100 };
+    saveTac();
+    if (!tacPanel.hidden) buildTacPanel();
+    applyTac();
+  };
   tacBtn.addEventListener("click", () => {
     tacPanel.hidden = !tacPanel.hidden;
     if (!tacPanel.hidden) {

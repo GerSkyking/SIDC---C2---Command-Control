@@ -5,6 +5,17 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-11-12 – Suche im Plan
+- Lupe in der Topbar (auch am Handy sichtbar), `Strg+F` oder `/` öffnet, `Esc` schließt. Entprellt beim Tippen werden
+  Marker (Beschriftung, Zusatztext, Symbolname), Notizen und Stern-Pins (inkl. Ort-/Bild-Verweise und aufgelöster
+  Chip-Titel), benannte Linien/Flächen (`strokes.name`), Kartenbilder (Name/Datei/Notiz), Kartenorte und Phasen durchsucht.
+  Groß/klein egal, Umlaute tolerant (ä ≈ ae ≈ a), Ranking Textanfang > Wortanfang > Teiltreffer.
+- Ergebnisliste mit Typ-Icon, Name und Phase/Layer; Pfeiltasten/Enter/Klick. Auswahl: `flyTo` (Punkt) bzw. `fitBounds`
+  (Linie/Fläche/Bereich), danach ~3 s pulsierender Ring bzw. aufleuchtender Umriss; Notizen/Bilder blinken zusätzlich.
+- Sichtbarkeit: nur was die aktuelle Ansicht (Spieler/Missionsbau/Zeus, Freigaben, Rechte) zeigen darf. Treffer aus
+  anderer Phase → vorher Phasenwechsel; Treffer in ausgeblendetem taktischem Layer → Layer wird eingeblendet (Hinweis).
+- Kürzel-Hilfe ergänzt. Neues Modul `frontend/src/plan/search.ts`; Hooks `listPlaces` (layers.ts), `showTacLayer` (tactical.ts).
+
 ### 2026-11-12 – Bereich um einen Stern
 - Stern-Pins bekommen optional einen **Bereich**: beim Anlegen per Häkchen *Danach Bereich zeichnen* oder über den Knopf
   *Bereich* am Stern. Linksklicks setzen Ecken; Klick auf den Startpunkt schließt die Fläche (schraffiert, Füllung 25 %,

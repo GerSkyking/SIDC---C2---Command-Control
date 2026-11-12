@@ -50,6 +50,7 @@ import { initAreas } from "./plan/areas";
 import { initAnnots } from "./plan/annots";
 import { initImages } from "./plan/images";
 import { initStarDialog } from "./plan/starDialog";
+import { initSearch } from "./plan/search";
 export async function openPlanView(root: HTMLElement, planId: string, me: Me): Promise<void> {
   const snap = await api.snapshot(planId);
   const mapId: string = snap.plan.map_id;
@@ -246,6 +247,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <div id="timeline" class="timeline"></div>
       <select id="maplang" title="${t("map.lang")}"></select>
       <span class="grow"></span>
+      ${iconBtn("search", { id: "planSearchBtn", title: t("search.openKey") })}
       <span class="presence" id="presence"></span>
       ${iconBtn("present", { id: "present", title: t("present.start") })}
       ${iconBtn("versions", { id: "versions", title: t("versions.open") })}
@@ -449,6 +451,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   initTactical(ctx);
   initOrbatPanel(ctx);
   initGrid(ctx);
+  initSearch(ctx); // auch für Nur-Lesen-Zugriff
 
   if (!canEdit) return;
 
