@@ -164,6 +164,7 @@ export interface PlanUi {
   doRedo: () => void;
   // hud.ts
   resetPointer: () => void;
+  sampleElevation: (lng: number, lat: number) => number | null;
   // timeline.ts
   renderTimeline: () => void;
   applyPhase: () => void;
@@ -198,6 +199,8 @@ export interface PlanUi {
   finishLine: () => void;
   cancelLine: () => void;
   refreshLineDraft: () => void;
+  renderMeasureX: () => void;
+  renderLineX: () => void;
   // markers.ts
   placeMarker: (pos: LngLat2, tpl: MarkerTemplate) => void;
   startPlaceAt: (pos: LngLat2) => void;
@@ -244,6 +247,7 @@ export function createUi(): PlanUi {
     doUndo: noop,
     doRedo: noop,
     resetPointer: noop,
+    sampleElevation: () => null,
     renderTimeline: noop,
     applyPhase: noop,
     selectPhase: noop,
@@ -271,6 +275,8 @@ export function createUi(): PlanUi {
     finishLine: noop,
     cancelLine: noop,
     refreshLineDraft: noop,
+    renderMeasureX: noop,
+    renderLineX: noop,
     placeMarker: noop,
     startPlaceAt: noop,
     openEditPanel: noopAsync,
