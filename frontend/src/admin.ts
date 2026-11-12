@@ -139,10 +139,10 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
      <div class="row">
        <input id="nu-name" placeholder="${t("auth.username")}" />
        <input id="nu-pw" type="password" placeholder="${t("auth.password")} (min. 12)" />
-       <select id="nu-role"><option value="user">user</option><option value="admin">admin</option></select>
-       <label><input type="checkbox" id="nu-ccp" /> ${t("admin.canCreatePlans")}</label>
-       <label><input type="checkbox" id="nu-mb" /> ${t("admin.missionBuilder")}</label>
-       <label><input type="checkbox" id="nu-zeus" /> ${t("admin.zeus")}</label>
+       <select id="nu-role" title="${t("tip.admin.role")}"><option value="user">user</option><option value="admin">admin</option></select>
+       <label title="${t("tip.admin.ccp")}"><input type="checkbox" id="nu-ccp" /> ${t("admin.canCreatePlans")}</label>
+       <label title="${t("tip.admin.mb")}"><input type="checkbox" id="nu-mb" /> ${t("admin.missionBuilder")}</label>
+       <label title="${t("tip.admin.zeus")}"><input type="checkbox" id="nu-zeus" /> ${t("admin.zeus")}</label>
        <button class="primary" id="nu-add">${t("common.create")}</button>
      </div>
 
@@ -151,9 +151,9 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
      <table><tbody>${groups.map((g) => groupRow(g, users)).join("")}</tbody></table>
      <div class="row">
        <input id="ng-name" placeholder="${t("admin.groupName")}" />
-       <label><input type="checkbox" id="ng-ccp" /> ${t("admin.canCreatePlans")}</label>
-       <label><input type="checkbox" id="ng-mb" /> ${t("admin.missionBuilder")}</label>
-       <label><input type="checkbox" id="ng-zeus" /> ${t("admin.zeus")}</label>
+       <label title="${t("tip.admin.ccp")}"><input type="checkbox" id="ng-ccp" /> ${t("admin.canCreatePlans")}</label>
+       <label title="${t("tip.admin.mb")}"><input type="checkbox" id="ng-mb" /> ${t("admin.missionBuilder")}</label>
+       <label title="${t("tip.admin.zeus")}"><input type="checkbox" id="ng-zeus" /> ${t("admin.zeus")}</label>
        <button class="primary" id="ng-add">${t("common.create")}</button>
      </div>`,
     t("admin.usersGroups"),
@@ -267,24 +267,24 @@ function postShell(app: HTMLElement): void {
 
 function userRow(u: AdminUser, discordId?: string): string {
   return `<tr data-u="${u.id}">
-    <td><strong>${esc(u.username)}</strong> ${u.is_local ? "" : '<span class="badge">OIDC</span>'}
-        <span class="badge">${esc(u.role)}</span> ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}
+    <td><strong>${esc(u.username)}</strong> ${u.is_local ? "" : '<span class="badge" title="${t("tip.admin.oidc")}">OIDC</span>'}
+        <span class="badge" title="${t("tip.admin.role")}">${esc(u.role)}</span> ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}
         ${u.display_name ? `<div class="muted" style="font-size:.8rem">${esc(u.display_name)}</div>` : ""}</td>
     <td>
       <details class="admin-drop">
-        <summary>${t("admin.rights")}</summary>
+        <summary title="${t("tip.admin.rights")}">${t("admin.rights")}</summary>
         <div class="drop-body">
-          <label class="chk"><input type="checkbox" data-ur="active" ${u.is_active ? "checked" : ""}/> ${t("admin.active")}</label>
-          <label class="chk"><input type="checkbox" data-ur="ccp" ${u.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
-          <label class="chk"><input type="checkbox" data-ur="mb" ${u.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
-          <label class="chk"><input type="checkbox" data-ur="zeus" ${u.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
+          <label class="chk" title="${t("tip.admin.active")}"><input type="checkbox" data-ur="active" ${u.is_active ? "checked" : ""}/> ${t("admin.active")}</label>
+          <label class="chk" title="${t("tip.admin.ccp")}"><input type="checkbox" data-ur="ccp" ${u.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
+          <label class="chk" title="${t("tip.admin.mb")}"><input type="checkbox" data-ur="mb" ${u.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
+          <label class="chk" title="${t("tip.admin.zeus")}"><input type="checkbox" data-ur="zeus" ${u.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
           <label class="chk-lbl">${t("settings.displayName")}
             <input data-uname maxlength="64" value="${esc(u.display_name ?? "")}" /></label>
         </div>
       </details>
     </td>
-    <td><button data-dc title="${esc(discordId ?? "")}">Discord${discordId ? " ✓" : ""}</button>
-        ${u.is_local ? `<button data-reset>${t("admin.passwordShort")}</button>` : ""}
+    <td><button data-dc title="${discordId ? esc(t("tip.admin.discordOn").replace("{id}", discordId)) : t("tip.admin.discordOff")}">Discord${discordId ? " ✓" : ""}</button>
+        ${u.is_local ? `<button data-reset title="${t("tip.admin.pwReset")}">${t("admin.passwordShort")}</button>` : ""}
         <button class="icon-btn" data-del title="${t("common.delete")}">${icon("x", 16)}</button></td>
   </tr>`;
 }
@@ -294,17 +294,17 @@ function groupRow(g: AdminGroup, users: AdminUser[]): string {
     <td><strong>${esc(g.name)}</strong></td>
     <td>
       <details class="admin-drop">
-        <summary>${t("admin.rights")}</summary>
+        <summary title="${t("tip.admin.rights")}">${t("admin.rights")}</summary>
         <div class="drop-body">
-          <label class="chk"><input type="checkbox" data-gr="ccp" ${g.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
-          <label class="chk"><input type="checkbox" data-gr="mb" ${g.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
-          <label class="chk"><input type="checkbox" data-gr="zeus" ${g.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
+          <label class="chk" title="${t("tip.admin.ccp")}"><input type="checkbox" data-gr="ccp" ${g.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
+          <label class="chk" title="${t("tip.admin.mb")}"><input type="checkbox" data-gr="mb" ${g.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
+          <label class="chk" title="${t("tip.admin.zeus")}"><input type="checkbox" data-gr="zeus" ${g.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
         </div>
       </details>
     </td>
     <td>
       <details class="admin-drop mem-drop">
-        <summary>${t("admin.members")} (${g.member_ids.length})</summary>
+        <summary title="${t("tip.admin.members")}">${t("admin.members")} (${g.member_ids.length})</summary>
         <div class="drop-body drop-grid">
           ${users
             .map(

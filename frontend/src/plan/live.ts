@@ -23,7 +23,7 @@ export function initLive(ctx: PlanCtx): void {
   const presenceEl = root.querySelector<HTMLSpanElement>("#presence")!;
   const names = new Map<string, string>();
   const renderPresence = () =>
-    (presenceEl.innerHTML = [...names.values()].map((n) => `<span class="badge">${esc(n)}</span>`).join(""));
+    (presenceEl.innerHTML = [...names.values()].map((n) => `<span class="badge" title="${t("tip.live.presence")}">${esc(n)}</span>`).join(""));
 
   socket.on((msg: WsMessage) => {
     switch (msg.type) {

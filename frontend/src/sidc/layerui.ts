@@ -24,7 +24,7 @@ const esc = (s: string): string =>
 
 export function layerSelectHtml(attr: string, layers: LayerOpt[], selected: string | null | undefined): string {
   return (
-    `<select ${attr}><option value="">${t("tac.autoOpt")}</option>` +
+    `<select ${attr} title="${t("tip.draw.layer")}" aria-label="${t("wiz.layer")}"><option value="">${t("tac.autoOpt")}</option>` +
     layers.map((l) => `<option value="${esc(l.id)}" ${l.id === selected ? "selected" : ""}>${esc(l.name)}</option>`).join("") +
     `</select>`
   );
@@ -36,7 +36,7 @@ export function phaseMultiHtml(attr: string, phases: PhaseOpt[], selected: strin
   if (!list.length) return `<span class="muted">—</span>`;
   const n = selected.filter((id) => list.some((p) => p.id === id)).length;
   return (
-    `<details class="ph-multi" ${attr}><summary>${n ? t("phase.extraCount").replace("{n}", String(n)) : t("phase.extraNone")}</summary>` +
+    `<details class="ph-multi" ${attr}><summary title="${t("tip.draw.extra")}">${n ? t("phase.extraCount").replace("{n}", String(n)) : t("phase.extraNone")}</summary>` +
     `<div class="ph-multi-body">` +
     list
       .map(

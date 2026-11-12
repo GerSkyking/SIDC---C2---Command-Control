@@ -118,7 +118,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     <div class="topbar">
       <a href="#/" title="${t("nav.back")}">${icon("back")}</a>
       <strong>${esc(snap.plan.name)}</strong>
-      <span class="badge">${t("plan.public")}</span>
+      <span class="badge" title="${t("tip.pub.badge")}">${t("plan.public")}</span>
       <button id="t3d" title="${t("map.threeD")}">3D</button>
       ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") })}
       <span class="shot-wrap">${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}${shotOptsMarkup()}</span>
@@ -146,7 +146,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       <button type="button" class="mk-scale-head" title="${t("scale.toggle")}"><span>${t("scale.title")}</span><span class="chev">▾</span></button>
       <div class="mk-scale-row" title="${t("marker.scaleLocal")}">
         ${icon("marker", 13)}
-        <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
+        <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" aria-label="${t("marker.scaleLocal")}" />
         <span id="mkScaleV">${Math.round(personalScale * 100)}%</span>
       </div>
     </div>
@@ -315,7 +315,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     for (const k of enfusionPresent) ents.push([k, t(`layers.${k}`)]);
     for (const [name, label] of ents)
       rows.push(
-        `<div class="layer-row"><label><input type="checkbox" data-base="${name}" ${
+        `<div class="layer-row"><label${name === "sat" || name === "grid" ? ` title="${t("tip.layers." + name)}"` : ""}><input type="checkbox" data-base="${name}" ${
           baseVisible[name] !== false ? "checked" : ""
         }/> ${label}</label></div>`,
       );
@@ -725,14 +725,14 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     }
     timelineEl.innerHTML =
       `<span class="ph-label">${t("phase.heading")}:</span>` +
-      `<span class="ph-chip ${currentPhaseId === "" ? "active" : ""}"><button data-ph="">${t("phase.global")}</button></span>` +
+      `<span class="ph-chip ${currentPhaseId === "" ? "active" : ""}"><button data-ph="" title="${t("tip.pub.global")}">${t("phase.global")}</button></span>` +
       phases
         .map((p) => {
           const time = p.start_at ? ` <span class="muted">${fmtT(p.start_at)}${p.end_at ? "–" + fmtT(p.end_at) : ""}</span>` : "";
           return `<span class="ph-chip ${p.id === currentPhaseId ? "active" : ""}${p.plane === "builder" ? " ph-sub" : ""}"><button data-ph="${esc(p.id)}">${p.plane === "builder" ? "⚑ " : ""}${esc(p.name)}${time}</button></span>`;
         })
         .join("") +
-      `<label class="ph-op">${t("phase.outOpacity")}<input type="range" id="ph-op" min="0" max="100" step="5" value="${outOpacity}"/><span id="ph-op-v">${outOpacity}%</span></label>`;
+      `<label class="ph-op" title="${t("phase.outOpacityHint")}">${t("phase.outOpacity")}<input type="range" id="ph-op" min="0" max="100" step="5" value="${outOpacity}"/><span id="ph-op-v">${outOpacity}%</span></label>`;
     timelineEl.querySelectorAll<HTMLButtonElement>("[data-ph]").forEach((b) =>
       b.addEventListener("click", () => {
         currentPhaseId = b.dataset.ph!;

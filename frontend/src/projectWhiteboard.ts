@@ -345,7 +345,7 @@ export function mountWhiteboard(host: HTMLElement, ctx: ProjCtx): void {
       back.className = "edit-modal";
       back.innerHTML = `<div class="card stack" style="width:min(26rem,94vw)">
         <h1 style="margin:0;font-size:1.05rem"></h1>
-        <select data-sel size="${Math.min(10, Math.max(4, options.length))}" style="width:100%">${options
+        <select data-sel size="${Math.min(10, Math.max(4, options.length))}" style="width:100%" aria-label="${esc(title)}">${options
           .map((o) => `<option value="${esc(o.value)}" ${o.value === current ? "selected" : ""}>${esc(o.label)}</option>`)
           .join("")}</select>
         ${options.length ? "" : `<p class="muted" style="margin:0">${t("proj.wb.pickEmpty")}</p>`}

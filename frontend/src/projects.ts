@@ -245,8 +245,8 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
 
   const crumbs = `<a class="proj-back icon-btn" href="#/projects" title="${t("proj.backToList")}" aria-label="${t("proj.backToList")}">${icon("back", 18)}</a>
     <strong class="proj-title" title="${esc(project.name)}">${esc(project.name)}</strong>
-    <span class="badge">${esc(t("proj.role." + project.role))}</span>
-    ${project.archived ? `<span class="badge">${t("proj.archived")}</span>` : ""}`;
+    <span class="badge" title="${t("tip.proj.role")}">${esc(t("proj.role." + project.role))}</span>
+    ${project.archived ? `<span class="badge" title="${t("tip.proj.archived")}">${t("proj.archived")}</span>` : ""}`;
 
   app.innerHTML = shell(
     me,

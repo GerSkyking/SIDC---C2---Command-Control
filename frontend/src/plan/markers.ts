@@ -344,13 +344,13 @@ export function initMarkers(ctx: PlanCtx): void {
     };
     const advHtml =
       modDefs && ["modifier1", "modifier2", "modifier3", "modifier4"].some((g) => (modDefs[g] ?? []).length)
-        ? `<details class="edit-adv"><summary>${t("wiz.advanced")}</summary>` +
+        ? `<details class="edit-adv"><summary title="${t("tip.mk.mods")}">${t("wiz.advanced")}</summary>` +
           ["modifier1", "modifier2", "modifier3", "modifier4"]
             .filter((g) => (modDefs[g] ?? []).length)
             .map((g) => {
               const key = MOD_KEY[g];
               const cur = curMods[key] ?? 0;
-              return `<label>${MOD_LBL[g]}</label><select data-mod="${key}"><option value="0">—</option>${modDefs[g]
+              return `<label>${MOD_LBL[g]}</label><select data-mod="${key}" aria-label="${MOD_LBL[g]}"><option value="0">—</option>${modDefs[g]
                 .map((o) => `<option value="${o.code}" ${o.code === cur ? "selected" : ""}>${esc(o.description)}</option>`)
                 .join("")}</select>`;
             })
@@ -360,17 +360,17 @@ export function initMarkers(ctx: PlanCtx): void {
 
     p.innerHTML = `
       <div class="fav-head"><img class="edit-ico" src="${esc(iconSrc(m.sidc))}" width="26" height="26" data-hide-on-error/> ${t("marker.heading")}</div>
-      <label>${t("marker.unitText")}</label><input data-unit value="${esc(m.unit_text)}" />
-      <label>${t("marker.aiText")}</label><input data-ai value="${esc(m.ai_text)}" />
-      <label>${t("marker.iconRot")}</label><input data-rot type="number" value="${m.icon_rotation || 0}" />
+      <label>${t("marker.unitText")}</label><input data-unit value="${esc(m.unit_text)}" aria-label="${t("marker.unitText")}" title="${t("tip.mk.unit")}" />
+      <label>${t("marker.aiText")}</label><input data-ai value="${esc(m.ai_text)}" aria-label="${t("marker.aiText")}" title="${t("tip.mk.ai")}" />
+      <label>${t("marker.iconRot")}</label><input data-rot type="number" value="${m.icon_rotation || 0}" aria-label="${t("marker.iconRot")}" title="${t("tip.mk.rot")}" />
       <label>${isTextMarker(m.sidc) ? t("marker.textColor") : t("marker.color")}</label>
-      <div class="row"><input type="color" data-tint value="${esc(m.tint || (isTextMarker(m.sidc) ? "#e6e9ee" : "#000000"))}" />
-        <button type="button" data-tint-reset>${t("marker.colorReset")}</button></div>
-      <label class="ph-op">${t("marker.scale")}
+      <div class="row"><input type="color" data-tint value="${esc(m.tint || (isTextMarker(m.sidc) ? "#e6e9ee" : "#000000"))}" aria-label="${isTextMarker(m.sidc) ? t("marker.textColor") : t("marker.color")}" />
+        <button type="button" data-tint-reset title="${t("tip.mk.colorReset")}">${t("marker.colorReset")}</button></div>
+      <label class="ph-op" title="${t("tip.mk.scale")}">${t("marker.scale")}
         <input type="range" min="25" max="300" step="5" data-mscale value="${Math.round((m.scale ?? 1) * 100)}" />
         <span data-mscalev>${Math.round((m.scale ?? 1) * 100)}%</span></label>
       <label>${t("phase.assign")}</label>
-      <select data-phase>
+      <select data-phase title="${t("tip.draw.phase")}" aria-label="${t("phase.assign")}">
         ${selectablePhases()
           .map(
             (ph) =>
@@ -381,25 +381,25 @@ export function initMarkers(ctx: PlanCtx): void {
       <label>${t("phase.extra")}</label>
       ${phaseMultiHtml("data-xphases", samePlanePhases(m.phase_id), m.extra_phase_ids ?? [], m.phase_id)}
       <label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", ctx.tacLayers, m.layer_id)}
-      <label class="chk"><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> <span>${t("marker.locked")}</span></label>
+      <label class="chk" title="${t("tip.mk.lock")}"><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> <span>${t("marker.locked")}</span></label>
       ${
         isMB
           ? `<label>${t("orbat.nodeLink")}</label>
-             <select data-onode>
+             <select data-onode title="${t("tip.mk.onode")}" aria-label="${t("orbat.nodeLink")}">
                <option value="">${t("orbat.nodeNone")}</option>
                ${orbatNodeOpts
                  .map((o) => `<option value="${esc(o.id)}" ${o.id === m.orbat_node_id ? "selected" : ""}>${esc(o.label)}</option>`)
                  .join("")}
              </select>
              <label>${t("orbat.markerStrength")}</label>
-             <input data-ostr type="number" min="1" value="${m.orbat_strength ?? 1}" />`
+             <input data-ostr type="number" min="1" value="${m.orbat_strength ?? 1}" aria-label="${t("orbat.markerStrength")}" title="${t("tip.mk.ostr")}" />`
           : ""
       }
       ${advHtml}
       <div class="row">
         <button class="primary" data-apply>${t("common.apply")}</button>
-        <button data-fav>${t("fav.add")}</button>
-        <button data-clone>${t("marker.clone")}</button>
+        <button data-fav title="${t("tip.mk.fav")}">${t("fav.add")}</button>
+        <button data-clone title="${t("tip.mk.clone")}">${t("marker.clone")}</button>
         <button class="danger" data-del>${icon("trash", 14)} ${t("common.delete")}</button>
       </div>`;
     back.appendChild(p);

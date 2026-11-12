@@ -27,18 +27,18 @@ export function configHtml(
 ): string {
   return `
     <div class="row"><h2 style="margin:0">${t("admin.maps")}</h2><span class="grow"></span>
-      <button id="restart">${t("admin.restart")}</button></div>
+      <button id="restart" title="${t("tip.cfg.restart")}">${t("admin.restart")}</button></div>
     <table><tbody>
       ${maps
         .map(
           (m) => `<tr>
             <td>${esc(m.name)} <span class="muted">${esc(m.id)}</span></td>
-            <td><span class="badge">${esc(m.status)}</span></td>
+            <td><span class="badge" title="${t("tip.cfg.mapStatus")}">${esc(m.status)}</span></td>
             <td class="muted">${esc(m.error ?? "")}</td>
             <td>
               <input type="file" accept=".zip" data-upd="${esc(m.id)}" style="display:none" />
-              <button data-updbtn="${esc(m.id)}">${t("admin.update")}</button>
-              <button data-reimport="${esc(m.id)}">${t("admin.fromLink")}</button>
+              <button data-updbtn="${esc(m.id)}" title="${t("tip.cfg.mapUpdate")}">${t("admin.update")}</button>
+              <button data-reimport="${esc(m.id)}" title="${t("tip.cfg.mapReimport")}">${t("admin.fromLink")}</button>
               <button class="icon-btn" data-delmap="${esc(m.id)}" title="${t("common.delete")}">${icon("trash", 16)}</button>
             </td>
           </tr>`,
@@ -64,8 +64,8 @@ export function configHtml(
       ${sources
         .map(
           (s) => `<div class="row src-row" data-src="${esc(s.id)}">
-            <span class="grow"><strong>${esc(s.name)}</strong> <span class="muted">${esc(s.base_url)}/${esc(s.repo)}${s.has_token ? " 🔑" : ""}</span></span>
-            <button data-src-files="${esc(s.id)}">${t("src.browse")}</button>
+            <span class="grow"><strong>${esc(s.name)}</strong> <span class="muted">${esc(s.base_url)}/${esc(s.repo)}${s.has_token ? ` <span title="${t("tip.cfg.srcToken")}">🔑</span>` : ""}</span></span>
+            <button data-src-files="${esc(s.id)}" title="${t("tip.cfg.srcBrowse")}">${t("src.browse")}</button>
             <button class="icon-btn" data-src-del="${esc(s.id)}" title="${t("common.delete")}">${icon("trash", 16)}</button>
           </div>
           <div class="src-files" data-src-files-for="${esc(s.id)}"></div>`,
@@ -73,7 +73,7 @@ export function configHtml(
         .join("")}
       <div class="row">
         <input id="src-url" placeholder="${t("src.urlPlaceholder")}" style="flex:1" />
-        <input id="src-token" type="password" placeholder="${t("src.token")}" style="width:11rem" />
+        <input id="src-token" type="password" placeholder="${t("src.token")}" title="${t("tip.cfg.srcTokenIn")}" style="width:11rem" />
         <button id="src-add">${t("src.add")}</button>
       </div>
     </div>
@@ -221,7 +221,7 @@ export function wireConfig(root: HTMLElement, reload: () => void): void {
                       ? `<input data-sf-id="${i}" value="${guessId}" placeholder="map-id" style="width:8rem" />
                          <input data-sf-name="${i}" value="${guessId}" placeholder="Name" style="width:9rem" />
                          <button class="primary" data-sf-map="${i}" data-path="${esc(f.path)}">${t("src.importAsMap")}</button>`
-                      : `<select data-sf-cat="${i}">${catOpts.replace(
+                      : `<select data-sf-cat="${i}" title="${t("tip.cfg.sfCat")}" aria-label="${t("tip.cfg.sfCat")}">${catOpts.replace(
                           `value="${guessCat}"`,
                           `value="${guessCat}" selected`,
                         )}</select>

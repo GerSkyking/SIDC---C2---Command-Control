@@ -58,7 +58,7 @@ export async function openAclEditor(
             .map(
               (r, i) => `<tr>
                 <td>${esc(nameOf(r.subject_type, r.subject_id))}</td>
-                <td><select data-i="${i}" data-f="level">
+                <td><select data-i="${i}" data-f="level" title="${t("tip.acl.level")}">
                   ${(["viewer", "editor", "owner"] as const)
                     .map((l) => `<option value="${l}" ${l === r.level ? "selected" : ""}>${t("acl.role." + l)}</option>`)
                     .join("")}
@@ -66,7 +66,7 @@ export async function openAclEditor(
                 ${(["can_place", "can_move", "can_delete", "can_draw"] as const)
                   .map(
                     (f) =>
-                      `<td><input type="checkbox" data-i="${i}" data-f="${f}" ${r[f] ? "checked" : ""} ${
+                      `<td><input type="checkbox" data-i="${i}" data-f="${f}" title="${t("tip.acl." + f)}" aria-label="${t("tip.acl." + f)}" ${r[f] ? "checked" : ""} ${
                         r.level === "editor" ? "" : "disabled"
                       }/></td>`,
                   )
@@ -77,7 +77,7 @@ export async function openAclEditor(
             .join("")}
           </tbody></table>
           <div class="row" style="margin-top:.6rem">
-            <select data-add>
+            <select data-add title="${t("tip.acl.add")}">
               <option value="">${t("acl.addSubject")}</option>
               ${candidates
                 .filter((c) => !rows.some((r) => r.subject_type === c.subject_type && r.subject_id === c.subject_id))
@@ -148,8 +148,8 @@ export async function openAclEditor(
     const box = backdrop.querySelector<HTMLDivElement>("#shares");
     if (!box) return;
     const shares = (await api.planShares(planId)).filter((s) => !s.revoked);
-    const badge = (on: boolean | undefined, txt: string) =>
-      on ? `<span class="badge" style="background:var(--accent-weak)">${txt}</span>` : "";
+    const badge = (on: boolean | undefined, txt: string, tip: string) =>
+      on ? `<span class="badge" style="background:var(--accent-weak)" title="${tip}">${txt}</span>` : "";
     box.innerHTML = shares.length
       ? shares
           .map((s) => {
@@ -162,12 +162,12 @@ export async function openAclEditor(
             return `<div class="sh-item">
               <div class="row">
                 <strong class="grow">${esc(s.label || t("acl.linkUnnamed"))}</strong>
-                ${badge(s.can_point, t("tool.point"))}${badge(s.can_move, t("tool.markermove"))}${badge(s.can_edit, t("common.rename"))}${badge(s.include_builder, "⚑")}
-                <span class="muted">${scope}</span>
-                <button class="icon-btn" data-edit="${s.token}" title="${t("common.rename")}">${icon("edit", 14)}</button>
+                ${badge(s.can_point, t("tool.point"), t("tip.share.point"))}${badge(s.can_move, t("tool.markermove"), t("tip.share.move"))}${badge(s.can_edit, t("common.rename"), t("tip.share.edit"))}${badge(s.include_builder, "⚑", t("tip.share.builder"))}
+                <span class="muted" title="${t("tip.share.scope")}">${scope}</span>
+                <button class="icon-btn" data-edit="${s.token}" title="${t("tip.share.editLink")}">${icon("edit", 14)}</button>
                 <button class="icon-btn" data-revoke="${s.token}" title="${t("acl.revoke")}">${icon("x", 14)}</button>
               </div>
-              <div class="row"><input readonly value="${esc(url)}" style="flex:1" data-select-on-click />
+              <div class="row"><input readonly value="${esc(url)}" style="flex:1" data-select-on-click title="${t("tip.share.url")}" />
                 <button data-copy="${url}">${t("acl.copy")}</button></div>
             </div>`;
           })
@@ -210,21 +210,21 @@ export async function openAclEditor(
     host.innerHTML = `<div class="sh-form">
       <label class="chk-lbl">${t("acl.linkLabel")}<input data-f="label" value="${esc(g(s?.label))}"/></label>
       <div class="row">
-        <label class="chk"><input type="checkbox" data-f="can_point" ${s ? (s.can_point ? "checked" : "") : "checked"}/> ${t("tool.point")}</label>
-        <label class="chk"><input type="checkbox" data-f="can_move" ${s?.can_move ? "checked" : ""}/> ${t("tool.markermove")}</label>
-        <label class="chk"><input type="checkbox" data-f="can_edit" ${s?.can_edit ? "checked" : ""}/> ${t("common.rename")}</label>
-        ${isMB ? `<label class="chk"><input type="checkbox" data-f="include_builder" ${s?.include_builder ? "checked" : ""}/> ${t("mb.builder")}</label>` : ""}
+        <label class="chk" title="${t("tip.share.point")}"><input type="checkbox" data-f="can_point" ${s ? (s.can_point ? "checked" : "") : "checked"}/> ${t("tool.point")}</label>
+        <label class="chk" title="${t("tip.share.move")}"><input type="checkbox" data-f="can_move" ${s?.can_move ? "checked" : ""}/> ${t("tool.markermove")}</label>
+        <label class="chk" title="${t("tip.share.edit")}"><input type="checkbox" data-f="can_edit" ${s?.can_edit ? "checked" : ""}/> ${t("common.rename")}</label>
+        ${isMB ? `<label class="chk" title="${t("tip.share.builder")}"><input type="checkbox" data-f="include_builder" ${s?.include_builder ? "checked" : ""}/> ${t("mb.builder")}</label>` : ""}
       </div>
       <label class="chk-lbl">${t("acl.linkDays")}<input type="number" min="0" data-f="expires_days" placeholder="∞"/></label>
       <fieldset class="sh-scope">
         <legend>${t("acl.scope")}</legend>
-        <label class="chk"><input type="radio" name="shsc" value="all" ${!s?.phase_ids?.length && !s?.date_from && !s?.date_to ? "checked" : ""}/> ${t("acl.allPhases")}</label>
-        <label class="chk"><input type="radio" name="shsc" value="phases" ${s?.phase_ids?.length ? "checked" : ""}/> ${t("acl.pickPhases")}</label>
+        <label class="chk" title="${t("tip.share.scopeAll")}"><input type="radio" name="shsc" value="all" ${!s?.phase_ids?.length && !s?.date_from && !s?.date_to ? "checked" : ""}/> ${t("acl.allPhases")}</label>
+        <label class="chk" title="${t("tip.share.scopePhases")}"><input type="radio" name="shsc" value="phases" ${s?.phase_ids?.length ? "checked" : ""}/> ${t("acl.pickPhases")}</label>
         <div data-scope="phases" class="sh-phases">${phaseChecks(!!s?.include_builder)}</div>
-        <label class="chk"><input type="radio" name="shsc" value="date" ${s?.date_from || s?.date_to ? "checked" : ""}/> ${t("acl.dateRange")}</label>
+        <label class="chk" title="${t("tip.share.scopeDate")}"><input type="radio" name="shsc" value="date" ${s?.date_from || s?.date_to ? "checked" : ""}/> ${t("acl.dateRange")}</label>
         <div data-scope="date" class="row">
-          <input type="datetime-local" data-f="date_from" value="${g(s?.date_from).slice(0, 16)}"/>
-          <input type="datetime-local" data-f="date_to" value="${g(s?.date_to).slice(0, 16)}"/>
+          <input type="datetime-local" data-f="date_from" title="${t("tip.share.from")}" aria-label="${t("tip.share.from")}" value="${g(s?.date_from).slice(0, 16)}"/>
+          <input type="datetime-local" data-f="date_to" title="${t("tip.share.to")}" aria-label="${t("tip.share.to")}" value="${g(s?.date_to).slice(0, 16)}"/>
         </div>
       </fieldset>
       <div class="row"><button class="primary" data-shsave>${t("common.save")}</button>

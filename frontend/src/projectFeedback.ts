@@ -307,10 +307,10 @@ function mountExternal(box: HTMLElement, ctx: ProjCtx): void {
         <button data-copy="link">${icon("clone", 14)} ${t("fb.ext.copyLink")}</button>
       </div>
       <div class="row fb-ext-acts">
-        <button data-copy="curl">${icon("clone", 14)} ${t("fb.ext.copyCurl")}</button>
+        <button data-copy="curl" title="${t("tip.fb.curl")}">${icon("clone", 14)} ${t("fb.ext.copyCurl")}</button>
         <span class="grow"></span>
-        <button data-regen>${icon("redo", 14)} ${t("fb.ext.regen")}</button>
-        <button class="danger" data-off>${t("fb.ext.disable")}</button>
+        <button data-regen title="${t("tip.fb.regen")}">${icon("redo", 14)} ${t("fb.ext.regen")}</button>
+        <button class="danger" data-off title="${t("tip.fb.off")}">${t("fb.ext.disable")}</button>
       </div>
 `;
     const texts: Record<string, string> = { link, curl };

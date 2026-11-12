@@ -82,7 +82,7 @@ export function renderImageSettings(host: HTMLElement, img: PlanImage, ctx: ImgP
     .join("");
 
   host.innerHTML = `
-    <label class="is-lbl">${t("phase.assign")}<select data-is-phase>${phaseOptions(ctx.phases, ctx.isMB, img.phase_id)}</select></label>
+    <label class="is-lbl" title="${t("tip.img.phase")}">${t("phase.assign")}<select data-is-phase>${phaseOptions(ctx.phases, ctx.isMB, img.phase_id)}</select></label>
     <label class="is-lbl">${t("img.note")}</label>
     <textarea class="is-note" data-is-note placeholder="${t("img.noteHint")}">${esc(img.note || "")}</textarea>
     <div class="is-note-prev" data-is-noteprev>${renderMarkdown(img.note || "")}</div>
@@ -141,7 +141,7 @@ export function renderImageSettings(host: HTMLElement, img: PlanImage, ctx: ImgP
   host.querySelector("[data-is-del]")!.addEventListener("click", () => {
     const actions = host.querySelector<HTMLElement>("[data-is-actions]")!;
     actions.innerHTML =
-      `<label class="ir-delok"><input type="checkbox" data-is-delok/> ${t("common.delete")}</label>` +
+      `<label class="ir-delok" title="${t("tip.common.delConfirm")}"><input type="checkbox" data-is-delok/> ${t("common.delete")}</label>` +
       `<button class="icon-btn" data-is-delcancel title="${t("common.cancel")}">${icon("back", 12)}</button>`;
     actions.querySelector("[data-is-delok]")!.addEventListener("change", () => {
       ctx.send({ type: "image.delete", id: img.id });
@@ -167,8 +167,8 @@ export interface PlacementPanelCtx {
  * das Bild selbst — das kann weiterhin in anderen Phasen platziert sein). */
 export function renderPlacementSettings(host: HTMLElement, placement: PlacementLike, ctx: PlacementPanelCtx): void {
   host.innerHTML = `
-    <label class="is-lbl">${t("phase.assign")}<select data-ps-phase>${phaseOptions(ctx.phases, ctx.isMB, placement.phase_id)}</select></label>
-    <label class="ir-chk"><input type="checkbox" data-ps-scale ${placement.scale_fixed ? "checked" : ""}/> ${t("img.scaleWithMap")}</label>
+    <label class="is-lbl" title="${t("tip.img.placePhase")}">${t("phase.assign")}<select data-ps-phase>${phaseOptions(ctx.phases, ctx.isMB, placement.phase_id)}</select></label>
+    <label class="ir-chk" title="${t("tip.img.scale")}"><input type="checkbox" data-ps-scale ${placement.scale_fixed ? "checked" : ""}/> ${t("img.scaleWithMap")}</label>
     <div class="is-foot">
       <span class="grow"></span>
       <div class="is-foot-actions" data-ps-actions>
@@ -196,7 +196,7 @@ export function renderPlacementSettings(host: HTMLElement, placement: PlacementL
   host.querySelector("[data-ps-del]")!.addEventListener("click", () => {
     const actions = host.querySelector<HTMLElement>("[data-ps-actions]")!;
     actions.innerHTML =
-      `<label class="ir-delok"><input type="checkbox" data-ps-delok/> ${t("common.delete")}</label>` +
+      `<label class="ir-delok" title="${t("tip.common.delConfirm")}"><input type="checkbox" data-ps-delok/> ${t("common.delete")}</label>` +
       `<button class="icon-btn" data-ps-delcancel title="${t("common.cancel")}">${icon("back", 12)}</button>`;
     actions.querySelector("[data-ps-delok]")!.addEventListener("change", () => {
       ctx.send({ type: "placement.delete", id: placement.id });

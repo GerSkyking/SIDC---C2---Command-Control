@@ -71,18 +71,18 @@ export function mountNotifySettings(host: HTMLElement): void {
                 (c) => `<div class="ntf-i" data-id="${esc(c.id)}">
                   <div class="ntf-h"><strong>${esc(c.name)}</strong> <span class="muted">${esc(typeLabel(c.type))}</span>
                     <span class="grow"></span>
-                    <label class="ntf-k"><input type="checkbox" data-en ${c.enabled ? "checked" : ""} /> ${t("ntf.enabled")}</label></div>
+                    <label class="ntf-k" title="${t("tip.ntf.enabled")}"><input type="checkbox" data-en ${c.enabled ? "checked" : ""} /> ${t("ntf.enabled")}</label></div>
                   <div class="ntf-kinds">${kindBoxes(c.kinds, "k" + c.id)}</div>
                   ${c.last_error ? `<div class="error" style="font-size:.78rem">${esc(c.last_error)}</div>` : c.last_ok_at ? `<div class="muted" style="font-size:.75rem">${t("ntf.lastOk")}</div>` : ""}
-                  <div class="row" style="gap:.4rem"><button data-test>${t("ntf.test")}</button><button data-save>${t("common.save")}</button><button class="danger" data-del>${t("common.delete")}</button></div>
+                  <div class="row" style="gap:.4rem"><button data-test title="${t("tip.ntf.test")}">${t("ntf.test")}</button><button data-save title="${t("tip.ntf.save")}">${t("common.save")}</button><button class="danger" data-del>${t("common.delete")}</button></div>
                 </div>`,
               )
               .join("")
           : `<p class="muted" style="font-size:.82rem">${t("ntf.none")}</p>`
       }</div>
       <div class="row" style="gap:.4rem;margin-top:.5rem;flex-wrap:wrap">
-        ${pushSupported() ? `<button data-push>${t("ntf.addPush")}</button>` : `<span class="muted" style="font-size:.78rem">${t("ntf.pushUnsupported")}</span>`}
-        <select id="ntf-type">${formTypes.map((x) => `<option value="${esc(x.type)}" ${x.available ? "" : "disabled"}>${esc(x.label)}${x.available ? "" : " – " + t("ntf.unavailable")}</option>`).join("")}</select>
+        ${pushSupported() ? `<button data-push title="${t("tip.ntf.push")}">${t("ntf.addPush")}</button>` : `<span class="muted" style="font-size:.78rem">${t("ntf.pushUnsupported")}</span>`}
+        <select id="ntf-type" title="${t("tip.ntf.type")}" aria-label="${t("tip.ntf.type")}">${formTypes.map((x) => `<option value="${esc(x.type)}" ${x.available ? "" : "disabled"}>${esc(x.label)}${x.available ? "" : " – " + t("ntf.unavailable")}</option>`).join("")}</select>
         <button data-add>${t("ntf.add")}</button>
       </div>
       <div id="ntf-form"></div>

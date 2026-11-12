@@ -558,7 +558,7 @@ export function mountDocs(host: HTMLElement, ctx: ProjCtx, space: ProjectSpace):
           cf.hidden = !v;
           if (!v) return;
           cf.innerHTML = `<span>${icon("lock", 14)} ${t("proj.docs.conflict")}</span>
-            <button data-o>${t("proj.docs.conflictMine")}</button><button data-l>${t("proj.docs.conflictTheirs")}</button>`;
+            <button data-o title="${t("tip.doc.mine")}">${t("proj.docs.conflictMine")}</button><button data-l title="${t("tip.doc.theirs")}">${t("proj.docs.conflictTheirs")}</button>`;
           cf.querySelector("[data-o]")!.addEventListener("click", () => void save(true));
           cf.querySelector("[data-l]")!.addEventListener("click", async () => {
             try {

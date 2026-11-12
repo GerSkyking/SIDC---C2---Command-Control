@@ -171,18 +171,18 @@ export async function openWizard(
         <div class="wiz-aff">${AFFILIATIONS.map(
           (a) => `<button data-aff="${a.digit}" class="${a.digit === aff ? "active" : ""}">${a.label}</button>`,
         ).join("")}</div>
-        <label>${t("wiz.echelon")}</label><select data-echelon>${AMPLIFIERS.map(
+        <label>${t("wiz.echelon")}</label><select data-echelon aria-label="${t("wiz.echelon")}" title="${t("tip.wiz.echelon")}">${AMPLIFIERS.map(
           (m) => `<option value="${m.digits}" ${m.digits === echelon ? "selected" : ""}>${m.label}</option>`,
         ).join("")}</select>
         ${
           btn?.needsDirection !== false
-            ? `<label>${t("wiz.direction")}</label><div class="wiz-dir">${DIRECTIONS.map(
+            ? `<label>${t("wiz.direction")}</label><div class="wiz-dir" title="${t("tip.wiz.dir")}">${DIRECTIONS.map(
                 (d) => `<button data-dir="${d.degrees}" class="${d.degrees === dir ? "active" : ""}">${d.label}</button>`,
               ).join("")}</div>`
             : ""
         }
-        <label>${t("wiz.unitText")}</label><input data-unit maxlength="60" />
-        <label>${t("wiz.aiText")}</label><input data-ai maxlength="120" />
+        <label>${t("wiz.unitText")}</label><input data-unit maxlength="60" aria-label="${t("wiz.unitText")}" title="${t("tip.mk.unit")}" />
+        <label>${t("wiz.aiText")}</label><input data-ai maxlength="120" aria-label="${t("wiz.aiText")}" title="${t("tip.mk.ai")}" />
         ${
           ctx.layers
             ? `<label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", ctx.layers, ctx.layerId)}`
@@ -194,11 +194,11 @@ export async function openWizard(
             : ""
         }
         <label>${t("marker.color")}</label>
-        <div class="row"><input type="color" data-tint value="${tint || "#000000"}" />
-          <button type="button" data-tint-reset>${t("marker.colorReset")}</button></div>
+        <div class="row"><input type="color" data-tint value="${tint || "#000000"}" aria-label="${t("marker.color")}" />
+          <button type="button" data-tint-reset title="${t("tip.mk.colorReset")}">${t("marker.colorReset")}</button></div>
         <div class="wiz-flags">
-          <label><input type="checkbox" data-lock ${entry.defaultLocked ? "checked" : ""}/> ${t("wiz.locked")}</label>
-          <label><input type="checkbox" data-ts ${entry.defaultTimestampVisible !== false ? "checked" : ""}/> ${t("wiz.timestamp")}</label>
+          <label title="${t("tip.wiz.lock")}"><input type="checkbox" data-lock ${entry.defaultLocked ? "checked" : ""}/> ${t("wiz.locked")}</label>
+          <label title="${t("tip.wiz.ts")}"><input type="checkbox" data-ts ${entry.defaultTimestampVisible !== false ? "checked" : ""}/> ${t("wiz.timestamp")}</label>
         </div>
         ${modDefs ? `<button class="wiz-adv-toggle">${advOpen ? "▾" : "▸"} ${t("wiz.advanced")}</button>` : ""}
         <button class="primary wiz-place">${t("wiz.place")}</button>

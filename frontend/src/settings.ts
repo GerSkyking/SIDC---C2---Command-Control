@@ -251,7 +251,7 @@ export function openSettings(): void {
     HOT_ORDER.map(
       (a) => `<div class="set-row">
         <span>${LABEL[a]}</span>
-        <button class="kb-key" data-kb="${a}">${keyLabel(binds[a])}</button>
+        <button class="kb-key" data-kb="${a}" title="${t("tip.set.kbKey")}">${keyLabel(binds[a])}</button>
       </div>`,
     ).join("");
 
@@ -265,14 +265,14 @@ export function openSettings(): void {
     <h4>${t("theme.label")}</h4>
     ${themeSwitch()}
     <h4>${t("settings.topbarScale")}</h4>
-    <div class="row"><input type="range" id="set-tb" min="70" max="160" step="5" value="${Math.round(getTopbarScale() * 100)}" style="flex:1" />
+    <div class="row"><input type="range" id="set-tb" min="70" max="160" step="5" value="${Math.round(getTopbarScale() * 100)}" style="flex:1" title="${t("tip.set.topbar")}" aria-label="${t("settings.topbarScale")}" />
       <span id="set-tbv" class="muted">${Math.round(getTopbarScale() * 100)}%</span></div>
     <div id="setExtra"></div>
     <h4>${t("settings.keybinds")}</h4>
     <p class="muted">${t("settings.keybindsHint")}</p>
     <div id="kbRows">${rows()}</div>
     <div class="row" style="margin-top:.8rem">
-      <button data-reset>${t("settings.reset")}</button>
+      <button data-reset title="${t("tip.set.kbReset")}">${t("settings.reset")}</button>
     </div>
     <h4>${t("ntf.title")}</h4>
     <div id="notifyBox"></div>
@@ -281,7 +281,7 @@ export function openSettings(): void {
     <div id="tokBox"></div>
     <div class="row" style="gap:.4rem;margin-top:.4rem">
       <input id="tok-name" maxlength="64" placeholder="${esc(t("tok.name"))}" style="flex:1" />
-      <select id="tok-days">
+      <select id="tok-days" title="${t("tip.set.tokDays")}" aria-label="${t("tip.set.tokDays")}">
         <option value="">${t("tok.never")}</option>
         <option value="30">30 ${t("tok.days")}</option>
         <option value="90">90 ${t("tok.days")}</option>
@@ -291,7 +291,7 @@ export function openSettings(): void {
     </div>
     <h4>${t("settings.myData")}</h4>
     <div class="row" style="gap:.5rem">
-      <button data-export>${icon("download", 16)} ${t("settings.exportData")}</button>
+      <button data-export title="${t("tip.set.export")}">${icon("download", 16)} ${t("settings.exportData")}</button>
       <button class="danger" data-delacc>${t("settings.deleteAccount")}</button>
     </div>
     <div class="row" style="margin-top:.6rem;gap:.8rem">

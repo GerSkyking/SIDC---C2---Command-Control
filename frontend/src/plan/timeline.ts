@@ -321,13 +321,14 @@ export function initTimeline(ctx: PlanCtx): void {
       return (
         `<div class="tl-bar ${id === ctx.currentPhaseId ? "active" : ""} ${explicit ? "" : "tl-auto"} ${fixedRole ? "tl-notes" : ""}" ` +
         `data-pick="${id}" data-plane="${plane}" style="left:${left}px;width:${w}px;top:${row * 26}px" ` +
-        `title="${esc0(p.name)} · ${fixedRole ? t("notes.layerHint") : durTxt}">` +
-        (canEdit && (plane === "player" || isMB) && !fixedRole ? `<span class="tl-edge tl-edge-l" data-edge="l" data-id="${id}"></span>` : "") +
+        `title="${esc0(p.name)} · ${fixedRole ? t("notes.layerHint") : durTxt}
+${t("tip.tl.bar")}${canEdit && (plane === "player" || isMB) && !fixedRole ? " · " + t("tip.tl.barDrag") : ""}">` +
+        (canEdit && (plane === "player" || isMB) && !fixedRole ? `<span class="tl-edge tl-edge-l" data-edge="l" data-id="${id}" title="${t("tip.tl.edgeL")}"></span>` : "") +
         (plane === "builder" && isMB && zeusOpen(id) ? `<span class="tl-zeus" title="${t("zeus.badge")}">Z</span>` : fixedRole && isMB ? `<span class="tl-zeus tl-zeus-off" title="${t("zeus.statusOff")}">Z</span>` : "") +
         (p.locked ? `<span class="tl-lock" title="${t("phase.lockedHint")}">${icon("lock", 10)}</span>` : "") +
         `<span class="tl-bar-name">${fixedRole ? "⚑ " : ""}${esc0(p.name)}</span>` +
         (canEdit && (plane === "player" || isMB) && !fixedRole
-          ? `<span class="tl-edge tl-edge-r" data-edge="r" data-id="${id}"></span>` +
+          ? `<span class="tl-edge tl-edge-r" data-edge="r" data-id="${id}" title="${t("tip.tl.edgeR")}"></span>` +
             (p.locked
               ? ""
               : `<button class="tl-del" data-del="${id}" title="${t("common.delete")}">${icon("x", 12)}</button>`)
@@ -352,18 +353,18 @@ export function initTimeline(ctx: PlanCtx): void {
       `<button class="icon-btn" id="ph-notes" title="${t("notes.open") + hk("notes")}">${icon("notes", 16)}</button>` +
       `<span class="tl-zoom"><button id="tl-zout" title="${t("tl.zoomOut")}">${icon("minus", 14)}</button><button id="tl-zin" title="${t("tl.zoomIn")}">${icon("plus", 14)}</button></span>` +
       (isMB || canZeus
-        ? `<span class="segmented mb-actas">` +
-          `<button class="seg-btn ${ctx.actAs === "player" ? "active" : ""}" data-as="player">${t("mb.player")}</button>` +
-          (isMB ? `<button class="seg-btn ${ctx.actAs === "builder" ? "active" : ""}" data-as="builder">${t("mb.builder")}</button>` : "") +
-          (canZeus ? `<button class="seg-btn ${ctx.actAs === "zeus" ? "active" : ""}" data-as="zeus">${t("mb.zeus")}</button>` : "") +
+        ? `<span class="segmented mb-actas" role="group" aria-label="${t("mb.actAs")}">` +
+          `<button class="seg-btn ${ctx.actAs === "player" ? "active" : ""}" data-as="player" title="${t("tip.actAs.player")}">${t("mb.player")}</button>` +
+          (isMB ? `<button class="seg-btn ${ctx.actAs === "builder" ? "active" : ""}" data-as="builder" title="${t("tip.actAs.builder")}">${t("mb.builder")}</button>` : "") +
+          (canZeus ? `<button class="seg-btn ${ctx.actAs === "zeus" ? "active" : ""}" data-as="zeus" title="${t("tip.actAs.zeus")}">${t("mb.zeus")}</button>` : "") +
           `</span>`
         : "") +
       (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+ ${t("phase.heading")}</button>` : "") +
       `<label class="ph-op" title="${t("phase.outOpacityHint")}">${t("phase.outOpacity")}` +
-      `<input type="range" id="ph-op" min="0" max="100" step="5" value="${ctx.outOpacity}"/><span id="ph-op-v">${ctx.outOpacity}%</span></label>` +
+      `<input type="range" id="ph-op" min="0" max="100" step="5" value="${ctx.outOpacity}" aria-label="${t("phase.outOpacity")}"/><span id="ph-op-v">${ctx.outOpacity}%</span></label>` +
       (isMB
         ? `<label class="ph-op" title="${t("mb.crossOpacityHint")}">${t("mb.crossOpacity")}` +
-          `<input type="range" id="cross-op" min="0" max="100" step="5" value="${ctx.crossOpacity}"/><span id="cross-op-v">${ctx.crossOpacity}%</span></label>`
+          `<input type="range" id="cross-op" min="0" max="100" step="5" value="${ctx.crossOpacity}" aria-label="${t("mb.crossOpacity")}"/><span id="cross-op-v">${ctx.crossOpacity}%</span></label>`
         : "") +
       `</div>`;
 
@@ -373,13 +374,13 @@ export function initTimeline(ctx: PlanCtx): void {
       `<div class="tl-scroll"><div class="tl-canvas" style="width:${W}px">` +
       `<div class="tl-lane tl-player" style="height:${laneH(maxRow(rowP))}px">` +
       players.map((id) => bar(id, "player", rowP.get(id) ?? 0)).join("") +
-      (canEdit ? `<button id="player-add" class="tl-subadd" title="${t("phase.add")}">+</button>` : "") +
+      (canEdit ? `<button id="player-add" class="tl-subadd" title="${t("phase.add")}" aria-label="${t("phase.add")}">+</button>` : "") +
       `</div>` +
       `<div class="tl-ruler">${ticks.join("")}</div>` +
       (isMB || ctx.actAs === "zeus"
         ? `<div class="tl-lane tl-builder" style="height:${laneH(maxRow(rowB))}px">` +
           builders.map((id) => bar(id, "builder", rowB.get(id) ?? 0)).join("") +
-          (canEdit && isMB ? `<button id="sub-add" class="tl-subadd" title="${t("mb.subPhase")}">+</button>` : "") +
+          (canEdit && isMB ? `<button id="sub-add" class="tl-subadd" title="${t("tip.tl.subAdd")}" aria-label="${t("tip.tl.subAdd")}">+</button>` : "") +
           `</div>`
         : "") +
       `</div></div></div>`;

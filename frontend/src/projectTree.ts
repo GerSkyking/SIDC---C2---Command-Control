@@ -196,8 +196,8 @@ export function renderProjectTree(
         : `<span class="tree-grip tree-grip-off"></span>`) +
       `<span class="tree-ico">${icon("compass", 16)}</span>` +
       `<a href="#/projects/${esc(p.id)}" class="tree-name" title="${esc(t("proj.open"))}: ${esc(p.name)}">${esc(p.name)}</a>` +
-      `<span class="badge">${esc(t("proj.role." + p.role))}</span>` +
-      (p.archived ? `<span class="badge">${t("proj.archived")}</span>` : "") +
+      `<span class="badge" title="${t("tip.proj.role")}">${esc(t("proj.role." + p.role))}</span>` +
+      (p.archived ? `<span class="badge" title="${t("tip.proj.archived")}">${t("proj.archived")}</span>` : "") +
       `<span class="tree-desc muted" title="${esc(p.description)}">${esc(p.description)}</span>` +
       `<span class="tree-stats">` +
       `<span title="${t("proj.stat.plans")}">${icon("map", 13)} ${p.plan_count}</span>` +

@@ -230,7 +230,7 @@ export function renderPlanTree(
       `<span class="tree-grip" title="${t("folder.dragHandle")}">${icon("drag", 14)}</span>` +
       `<img class="tree-thumb" src="/plans/${p.id}/thumbnail" alt="" data-hide-on-error="none" />` +
       `<a href="#/plans/${p.id}" class="tree-name" title="${t("plans.open")}">${esc(p.name)}</a>` +
-      `<span class="badge">${p.level}</span>` +
+      `<span class="badge" title="${t("tip.plan.level")}">${p.level}</span>` +
       (opts.mapName ? `<span class="tree-map" title="${t("plans.map")}">${icon("map", 12)} ${esc(opts.mapName(p.map_id))}</span>` : "") +
       `<span class="tree-actions">` +
       (pid ? copyBtn("plan", p.id, "icon-btn", 16) : "") +
@@ -305,7 +305,7 @@ export function renderPlanTree(
         `<span class="tree-grip tree-grip-off"></span>` +
         `<img class="tree-thumb" src="/plans/${p.id}/thumbnail" alt="" data-hide-on-error="none" />` +
         `<a href="#/plans/${p.id}" class="tree-name" title="${t("plans.open")}">${esc(p.name)}</a>` +
-        `<span class="badge">${p.level}</span>` +
+        `<span class="badge" title="${t("tip.plan.level")}">${p.level}</span>` +
         (opts.mapName ? `<span class="tree-map" title="${t("plans.map")}">${icon("map", 12)} ${esc(opts.mapName(p.map_id))}</span>` : "") +
         `<span class="tree-actions">` +
         (p.level === "owner"
@@ -498,7 +498,7 @@ function cloneDialog(
         <option value="">${t("folder.root")}</option>
         ${folders.map((f) => `<option value="${f.id}" ${f.id === p.folder_id ? "selected" : ""}>${esc(path(f))}</option>`).join("")}
       </select>
-      <label><input type="checkbox" id="cl-acl" /> ${t("plans.cloneAcl")}</label>
+      <label title="${t("tip.plan.cloneAcl")}"><input type="checkbox" id="cl-acl" /> ${t("plans.cloneAcl")}</label>
       <div class="row">
         <button class="primary" id="cl-go">${t("plans.clone")}</button>
         <button id="cl-x">${t("common.cancel")}</button>

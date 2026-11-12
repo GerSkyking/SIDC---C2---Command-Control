@@ -51,9 +51,9 @@ export function initStarDialog(ctx: PlanCtx): void {
     back.setAttribute("aria-modal", "true");
     const lockAttr = (ok: boolean): string => (ok ? "" : `disabled title="${esc(whyNot)}"`);
     const kindBtn = (k: Kind, ic: string, ok: boolean): string =>
-      `<button type="button" class="seg-btn" data-k="${k}" ${lockAttr(ok)}>${icon(ic, 14)} ${t("star.kind." + k)}</button>`;
+      `<button type="button" class="seg-btn" data-k="${k}" ${ok ? `title="${t("tip.star." + k)}"` : lockAttr(ok)}>${icon(ic, 14)} ${t("star.kind." + k)}</button>`;
     const dirBtn = (ty: DocType): string =>
-      `<button type="button" class="seg-btn" data-k="doc" data-dt="${ty}" ${lockAttr(canProj)}>${icon(ty ? DOC_TYPE_ICON[ty] : "notes", 14)} ${
+      `<button type="button" class="seg-btn" data-k="doc" data-dt="${ty}" ${canProj ? `title="${t("tip.star.doc")}"` : lockAttr(canProj)}>${icon(ty ? DOC_TYPE_ICON[ty] : "notes", 14)} ${
         ty ? t("dt." + ty) : t("star.dt.other")
       }</button>`;
     back.innerHTML = `<div class="card star-dlg" style="width:min(38rem,96vw)">

@@ -76,7 +76,7 @@ export function initAnnots(ctx: PlanCtx): void {
     const phaseBlock =
       `<div data-avphase ${mb && isMB && projectId ? "hidden" : ""}>` +
       `<label style="margin-top:.4rem">${t("phase.assign")}</label>` +
-      `<select data-aphase>${selectablePhases()
+      `<select data-aphase title="${t("tip.draw.phase")}" aria-label="${t("phase.assign")}">${selectablePhases()
         .map(
           (ph) =>
             `<option value="${esc(ph.id)}" ${ph.id === pid ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`,
@@ -88,14 +88,14 @@ export function initAnnots(ctx: PlanCtx): void {
     if (!(isMB && projectId)) return phaseBlock;
     return (
       `<label style="margin-top:.4rem">${t("annot.visibleFor")}</label>` +
-      `<div class="segmented" data-avis>` +
-      `<button type="button" class="seg-btn ${mb ? "" : "active"}" data-v="all">${t("annot.visAll")}</button>` +
-      `<button type="button" class="seg-btn vis-mb ${mb ? "active" : ""}" data-v="mb">${t("annot.visMb")}</button>` +
+      `<div class="segmented" data-avis role="group" aria-label="${t("annot.visibleFor")}">` +
+      `<button type="button" class="seg-btn ${mb ? "" : "active"}" data-v="all" title="${t("tip.annot.visAll")}">${t("annot.visAll")}</button>` +
+      `<button type="button" class="seg-btn vis-mb ${mb ? "active" : ""}" data-v="mb" title="${t("annot.visMbHint")}">${t("annot.visMb")}</button>` +
       `</div>` +
       `<div data-avmb ${mb ? "" : "hidden"}>` +
       `<p class="muted" style="margin:.3rem 0 0;font-size:.78rem">${t("annot.visMbHint")}</p>` +
       `<label style="margin-top:.4rem">${t("zeus.release")}</label>` +
-      `<select data-azeus>` +
+      `<select data-azeus title="${t("tip.annot.zeus")}" aria-label="${t("zeus.release")}">` +
       `<option value="off" ${zOpen ? "" : "selected"}>${t("annot.zeusOff")}</option>` +
       `<option value="keep" ${zOpen ? "selected" : "hidden"}>${t("annot.zeusOn")}${
         a.zeus_until ? ` (${t("zeus.until")} ${fmtInput(new Date(parseUtc(a.zeus_until)))})` : ""
@@ -381,7 +381,7 @@ export function initAnnots(ctx: PlanCtx): void {
         ev.stopPropagation();
         const tools = el.querySelector<HTMLElement>(".annot-tools")!;
         tools.innerHTML =
-          `<label class="annot-delok"><input type="checkbox" data-adok/> ${t("common.delete")}</label>` +
+          `<label class="annot-delok" title="${t("tip.common.delConfirm")}"><input type="checkbox" data-adok/> ${t("common.delete")}</label>` +
           `<button class="icon-btn" data-adcancel title="${t("common.cancel")}">${icon("back", 12)}</button>`;
         tools.querySelector("[data-adok]")!.addEventListener("change", () =>
           socket.send({ type: "annotation.delete", id: a.id }),

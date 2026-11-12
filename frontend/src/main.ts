@@ -306,8 +306,8 @@ async function renderTrash(): Promise<void> {
               .map(
                 (p) => `<tr data-p="${p.id}">
                   <td>${esc(p.name)}</td>
-                  <td><button data-restore>${t("trash.restore")}</button>
-                      <button class="danger" data-purge>${t("trash.purge")}</button></td>
+                  <td><button data-restore title="${t("tip.trash.restore")}">${t("trash.restore")}</button>
+                      <button class="danger" data-purge title="${t("tip.trash.purge")}">${t("trash.purge")}</button></td>
                 </tr>`,
               )
               .join("")}</tbody></table>`

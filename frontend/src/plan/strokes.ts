@@ -400,7 +400,7 @@ export function initStrokes(ctx: PlanCtx): void {
     back.className = "edit-modal area-name-dlg";
     back.innerHTML = `<div class="card" style="width:min(24rem,96vw)">
       <div class="row"><h1 style="flex:1;margin:0">${t("line.edit")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
-      <label class="chk-lbl">${t("phase.assign")}
+      <label class="chk-lbl" title="${t("tip.draw.phase")}">${t("phase.assign")}
         <select data-sphase>
           ${selectablePhases()
             .map(

@@ -69,8 +69,8 @@ export function initExport(ctx: PlanCtx): void {
       back.innerHTML = `<div class="card stack" style="width:min(22rem,94vw)">
         <h1 style="margin:0;font-size:1.05rem">${t("briefing.planeTitle")}</h1>
         <div class="row" style="gap:.5rem">
-          <button class="primary" data-pl="player" style="flex:1">${t("mb.player")}</button>
-          <button data-pl="builder" style="flex:1">${t("mb.builder")}</button>
+          <button class="primary" data-pl="player" style="flex:1" title="${t("tip.brief.player")}">${t("mb.player")}</button>
+          <button data-pl="builder" style="flex:1" title="${t("tip.brief.builder")}">${t("mb.builder")}</button>
         </div>
         <button data-pl="" class="muted">${t("common.cancel")}</button>
       </div>`;

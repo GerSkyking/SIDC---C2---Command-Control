@@ -32,7 +32,7 @@ export function initTactical(ctx: PlanCtx): void {
     const row = (key: string, label: string, del: boolean): string => {
       const st = tacState[key] ?? {};
       return (
-        `<div class="layer-row"><label><input type="checkbox" data-tk="${esc(key)}" ${st.on === false ? "" : "checked"}/> ${esc(label)}</label>` +
+        `<div class="layer-row"><label title="${t("tip.tac.toggle")}"><input type="checkbox" data-tk="${esc(key)}" ${st.on === false ? "" : "checked"}/> ${esc(label)}</label>` +
         `<input type="range" min="0" max="100" step="5" value="${st.op ?? 100}" data-to="${esc(key)}" title="${t("layers.opacityHint")}"/>` +
         (del
           ? `<button class="icon-btn" style="color:var(--danger)" data-tdel="${esc(key)}" title="${t("common.delete")}">${icon("trash", 14)}</button>`
@@ -48,13 +48,13 @@ export function initTactical(ctx: PlanCtx): void {
     };
     tacPanel.innerHTML =
       `<div class="fav-head">${t("tac.heading")}</div>` +
-      `<div class="tac-sep">${t("tac.auto")}</div>` +
+      `<div class="tac-sep" title="${t("tip.tac.auto")}">${t("tac.auto")}</div>` +
       TAC_AUTO.map((k) => row("auto:" + k, auto[k], false)).join("") +
       (ctx.tacLayers.length || canEdit ? `<div class="tac-sep">${t("tac.custom")}</div>` : "") +
       ctx.tacLayers.map((l) => row(l.id, l.name, canEdit)).join("") +
       (isMB && projectId ? `<div class="tac-sep">${t("mb.builder")}</div>` + row("mbnotes", t("tac.mbNotes"), false) : "") +
       (canEdit
-        ? `<div class="tac-new"><input id="tacNewName" maxlength="40" placeholder="${t("tac.new")}"/><button id="tacNewBtn">${t("tac.add")}</button></div>`
+        ? `<div class="tac-new"><input id="tacNewName" maxlength="40" placeholder="${t("tac.new")}"/><button id="tacNewBtn" title="${t("tip.tac.add")}">${t("tac.add")}</button></div>`
         : "") +
       `<div class="muted" style="font-size:.72rem;margin-top:.4rem">${t("tac.hint")}</div>`;
     tacPanel.querySelectorAll<HTMLInputElement>("[data-tk]").forEach((cb) =>

@@ -17,6 +17,13 @@ import { makeMovable } from "../movable";
 import { getMapPrefs, registerSettingsSection, saveMapPrefs } from "../settings";
 import type { PlaceInfo, PlanCtx } from "./ctx";
 
+// Tooltips für Basis-Ebenen, deren Name allein wenig sagt (übrige Ebenen erklären sich selbst)
+const BASE_TIPS: Record<string, string> = {
+  sat: "tip.layers.sat",
+  grid: "tip.layers.grid",
+  terrain: "tip.layers.terrain",
+};
+
 export async function initLayers(ctx: PlanCtx): Promise<void> {
   const { map, root, planId, mapId, baseLayerVisible, strokesLayer } = ctx;
   const { unitAiOpacityExpr } = ctx.model;
@@ -336,7 +343,7 @@ export async function initLayers(ctx: PlanCtx): Promise<void> {
     // name -> (Anzeigename, Deckkraft-Regler?)
     const entries: [string, string, boolean][] = [];
     for (const ly of ["sat", "grid", "terrain"])
-      if (map.getLayer(ly)) entries.push([ly, ly, ly !== "terrain"]);
+      if (map.getLayer(ly)) entries.push([ly, t(`layers.${ly}`), ly !== "terrain"]); // Anzeigename übersetzt (vorher Rohname „sat“/„grid“)
     if (hasContours) entries.push(["contours", t("layers.contours"), true]);
     if (hasPeaks) entries.push(["peaks", t("layers.peaks"), true]);
     for (const k of enfusionPresent) entries.push([k, t(`layers.${k}`), true]);
@@ -348,7 +355,7 @@ export async function initLayers(ctx: PlanCtx): Promise<void> {
         ? `<input type="range" min="0" max="100" step="5" value="${Math.round(opac(name) * 100)}" data-op="${esc(name)}" title="${t("layers.opacityHint")}"/>`
         : "";
       rows.push(
-        `<div class="layer-row"><label><input type="checkbox" data-base="${esc(name)}" ${on ? "checked" : ""}/> ${label}</label>${slider}</div>`,
+        `<div class="layer-row"><label${BASE_TIPS[name] ? ` title="${t(BASE_TIPS[name])}"` : ""}><input type="checkbox" data-base="${esc(name)}" ${on ? "checked" : ""}/> ${label}</label>${slider}</div>`,
       );
     }
     layersPanel.innerHTML = rows.join("");
@@ -400,31 +407,31 @@ export async function initLayers(ctx: PlanCtx): Promise<void> {
       const rows: string[] = [];
       if (map.getLayer("sat")) {
         const sl = (k: keyof typeof satAdj, label: string) =>
-          `<div class="layer-row"><label>${label}</label><input type="range" min="-100" max="100" step="5" value="${esc(String(satAdj[k]))}" data-sat="${k}"/></div>`;
+          `<div class="layer-row" title="${t("tip.layers.perUser")}"><label>${label}</label><input type="range" min="-100" max="100" step="5" value="${esc(String(satAdj[k]))}" data-sat="${k}" aria-label="${label}"/></div>`;
         rows.push(
           `<div class="fav-head">${t("layers.satAdjust")}</div>`,
           sl("brightness", t("layers.brightness")),
           sl("contrast", t("layers.contrast")),
           sl("saturation", t("layers.saturation")),
-          `<div class="layer-row"><button type="button" data-sat-reset>${t("layers.reset")}</button></div>`,
+          `<div class="layer-row"><button type="button" data-sat-reset title="${t("tip.layers.satReset")}">${t("layers.reset")}</button></div>`,
         );
       }
       if (enfusionPresent.includes("roads")) {
         const cp = (k: keyof RoadColors, label: string) =>
-          `<div class="layer-row"><label>${label}</label><input type="color" value="${esc(String(roadColors[k]))}" data-road="${k}"/></div>`;
+          `<div class="layer-row" title="${t("tip.layers.perUser")}"><label>${label}</label><input type="color" value="${esc(String(roadColors[k]))}" data-road="${k}" aria-label="${label}"/></div>`;
         rows.push(
           `<div class="fav-head">${t("layers.roadColors")}</div>`,
           cp("main", t("layers.roadMain")),
           cp("secondary", t("layers.roadSecondary")),
           cp("path", t("layers.roadPath")),
-          `<div class="layer-row"><button type="button" data-road-reset>${t("layers.reset")}</button></div>`,
+          `<div class="layer-row"><button type="button" data-road-reset title="${t("tip.layers.roadReset")}">${t("layers.reset")}</button></div>`,
         );
       }
       if (locData) {
         rows.push(`<div class="fav-head">${t("layers.places")}</div>`);
         for (const g of locData.groups)
           rows.push(
-            `<label class="chk"><input type="checkbox" data-group="${esc(g.key)}" ${groupVisible.get(g.key) !== false ? "checked" : ""}/> ${esc(g.label)} <span class="muted">${g.items.length}</span></label>`,
+            `<label class="chk" title="${t("tip.layers.placeGroup")}"><input type="checkbox" data-group="${esc(g.key)}" ${groupVisible.get(g.key) !== false ? "checked" : ""}/> ${esc(g.label)} <span class="muted">${g.items.length}</span></label>`,
           );
       }
       box.innerHTML = rows.length ? `<h4>${t("settings.map")}</h4>${rows.join("")}` : "";

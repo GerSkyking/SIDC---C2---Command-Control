@@ -63,18 +63,18 @@ export function initPhaseNotes(ctx: PlanCtx): void {
       raw ? fmtInput(parseNaive(raw)) : fb != null ? fmtInput(new Date(fb)) : "";
     nTimes.innerHTML =
       `<label class="nt-name">${t("common.name")}<input data-nname ${canEdit && !isNotesPhase(ph) ? "" : "disabled"} value="${esc0(ph.name)}"/></label>` +
-      `<label>${t("phase.start")}<input type="datetime-local" data-nstart ${canEdit && !isNotesPhase(ph) ? "" : "disabled"} value="${val(ph.start_at, sp?.s)}"/></label>` +
-      `<label>${t("phase.end")}<input type="datetime-local" data-nend ${canEdit && !isNotesPhase(ph) ? "" : "disabled"} value="${val(ph.end_at, sp?.e)}"/></label>` +
+      `<label title="${t("tip.ph.times")}">${t("phase.start")}<input type="datetime-local" data-nstart ${canEdit && !isNotesPhase(ph) ? "" : "disabled"} value="${val(ph.start_at, sp?.s)}"/></label>` +
+      `<label title="${t("tip.ph.times")}">${t("phase.end")}<input type="datetime-local" data-nend ${canEdit && !isNotesPhase(ph) ? "" : "disabled"} value="${val(ph.end_at, sp?.e)}"/></label>` +
       (ph.start_at || ph.end_at
-        ? `<button data-ntclear title="${t("common.reset")}">${icon("x", 12)}</button>`
-        : `<span class="muted">(auto)</span>`) +
+        ? `<button data-ntclear title="${t("tip.ph.clear")}" aria-label="${t("tip.ph.clear")}">${icon("x", 12)}</button>`
+        : `<span class="muted" title="${t("tip.ph.auto")}">(auto)</span>`) +
       (isNotesPhase(ph)
         ? `<span class="nt-notes-info">⚑ ${t("notes.layerHint")}</span>` +
           (isMB ? `<span class="nt-zbadge" role="status">${t("notes.perPin")}</span>` : "")
         : "") +
       (isMB && canEdit && ph.plane === "builder" && !isNotesPhase(ph)
-        ? `<span class="nt-zeus"><label class="chk"><input type="checkbox" data-prel ${ph.player_released ? "checked" : ""}/> ${t("phase.playerRelease")}</label>` +
-          `<label class="chk"><input type="checkbox" data-zrel ${ph.zeus_released ? "checked" : ""}/> ${t("zeus.release")}</label>` +
+        ? `<span class="nt-zeus"><label class="chk" title="${t("tip.ph.playerRel")}"><input type="checkbox" data-prel ${ph.player_released ? "checked" : ""}/> ${t("phase.playerRelease")}</label>` +
+          `<label class="chk" title="${t("tip.ph.zeusRel")}"><input type="checkbox" data-zrel ${ph.zeus_released ? "checked" : ""}/> ${t("zeus.release")}</label>` +
           `<label>${t("zeus.hours")}<input type="number" min="0" step="1" data-zhours style="width:4.5rem" value="${
             ph.zeus_released && ph.zeus_until
               ? Math.max(1, Math.round((parseUtc(ph.zeus_until) - Date.now()) / 3600e3))
@@ -82,8 +82,8 @@ export function initPhaseNotes(ctx: PlanCtx): void {
                 ? ""
                 : String(ZEUS_DEFAULT_H)
           }" placeholder="${t("zeus.unlimited")}" title="${t("zeus.hoursHint")}"/></label>` +
-          `<button type="button" class="zq" data-zq="${ZEUS_DEFAULT_H}">${ZEUS_DEFAULT_H} h</button>` +
-          `<button type="button" class="zq" data-zq="">${t("zeus.unlimited")}</button>` +
+          `<button type="button" class="zq" data-zq="${ZEUS_DEFAULT_H}" title="${t("tip.ph.zq").replace("{h}", String(ZEUS_DEFAULT_H))}">${ZEUS_DEFAULT_H} h</button>` +
+          `<button type="button" class="zq" data-zq="" title="${t("tip.ph.zqInf")}">${t("zeus.unlimited")}</button>` +
           (ph.zeus_released && ph.zeus_until
             ? `<span class="muted">${t("zeus.until")} ${fmtInput(new Date(parseUtc(ph.zeus_until)))}</span>`
             : "") +

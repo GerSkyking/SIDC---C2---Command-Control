@@ -5,6 +5,17 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-11-12 – Tooltips/Bedienhilfen
+- Durchgang durch die ganze Oberfläche: Häkchen, Regler, Auswahlfelder, Segment-Umschalter und Badges, deren Zweck
+  nicht aus der Beschriftung hervorgeht, haben jetzt einen kurzen Tooltip (`title`, bei unbeschrifteten Feldern
+  zusätzlich `aria-label`). Schwerpunkte: Plan-Freigaben und öffentliche Links (Rechte, `include_builder`, Eingrenzung),
+  Admin-Rollen (aktiv/Missionsbau/Zeus), Zahnrad-Einstellungen (Sat-Anpassung, Straßenfarben, Orte, Benachrichtigungen,
+  Tokens), Zeitstrahl (Spieler/Missionsbau/Zeus, Phasenbalken und -ränder), Phasen-Freigabe für Spieler/Zeus inkl.
+  Schnellknöpfe, Marker-/Linien-/Notiz-Dialoge, Stern-Dialog, ORBAT (Spieler-Freigabe, Rechte), Chat, Projekt-Badges.
+- 144 neue i18n-Schlüssel (`tip.*`, DE/EN). Basis-Ebenen „sat“/„grid“ im Ebenen-Panel des Editors zeigen jetzt den
+  übersetzten Namen (Satellit/Raster) wie schon die öffentliche Ansicht.
+- Freigabe-Link „bearbeiten“-Knopf und ORBAT-„bearbeiten“-Knopf hießen im Tooltip fälschlich „Umbenennen“.
+
 ### 2026-11-12 – Suche im Plan
 - Lupe in der Topbar (auch am Handy sichtbar), `Strg+F` oder `/` öffnet, `Esc` schließt. Entprellt beim Tippen werden
   Marker (Beschriftung, Zusatztext, Symbolname), Notizen und Stern-Pins (inkl. Ort-/Bild-Verweise und aufgelöster

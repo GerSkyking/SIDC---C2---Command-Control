@@ -58,7 +58,7 @@ export async function renderChat(app: HTMLElement, me: Me, selIn?: string): Prom
       `<button class="chat-row${sel === id ? " sel" : ""}" data-id="${esc(id)}">
         <span class="chat-ic">${ic}</span>
         <span class="chat-meta"><strong>${esc(name)}</strong><span class="muted">${esc(sub)}</span></span>
-        <span class="chat-side-r"><span class="muted chat-time">${esc(time)}</span>${unread ? `<span class="ubadge">${unread > 99 ? "99+" : unread}</span>` : ""}</span></button>`;
+        <span class="chat-side-r"><span class="muted chat-time">${esc(time)}</span>${unread ? `<span class="ubadge" title="${t("tip.chat.unread")}">${unread > 99 ? "99+" : unread}</span>` : ""}</span></button>`;
     listEl.innerHTML =
       row(SYSTEM, icon("audit", 18), t("chat.system"), t("chat.systemSub"), sysUnread) +
       convs
@@ -297,7 +297,7 @@ function mountSystem(host: HTMLElement, changed: () => void, back: () => void): 
   host.innerHTML = `
     <header class="chat-head"><button class="icon-btn chat-back" title="${t("nav.back")}" aria-label="${t("nav.back")}">${icon("back", 18)}</button>
       <strong class="grow">${t("chat.system")}</strong>
-      <button data-all>${t("chat.markAll")}</button><button data-clear>${t("chat.clearRead")}</button></header>
+      <button data-all title="${t("tip.chat.markAll")}">${t("chat.markAll")}</button><button data-clear title="${t("tip.chat.clearRead")}">${t("chat.clearRead")}</button></header>
     <div class="chat-msgs sys"></div>`;
   const list = host.querySelector<HTMLElement>(".chat-msgs")!;
   host.querySelector(".chat-back")!.addEventListener("click", back);
@@ -420,8 +420,8 @@ async function openNewDialog(done: (cid: string) => Promise<void>): Promise<void
   back.innerHTML = `<div class="card stack" style="width:min(30rem,94vw);max-height:90vh;overflow:auto">
     <h1 style="margin:0;font-size:1.05rem">${t("chat.new")}</h1>
     <div class="segmented" role="tablist">
-      <button data-tab="dm" class="seg-btn active">${t("chat.tab.dm")}</button><button data-tab="group" class="seg-btn">${t("chat.tab.group")}</button>
-      <button data-tab="src" class="seg-btn">${t("chat.tab.src")}</button></div>
+      <button data-tab="dm" class="seg-btn active" title="${t("tip.chat.tabDm")}">${t("chat.tab.dm")}</button><button data-tab="group" class="seg-btn" title="${t("tip.chat.tabGroup")}">${t("chat.tab.group")}</button>
+      <button data-tab="src" class="seg-btn" title="${t("chat.srcHint")}">${t("chat.tab.src")}</button></div>
     <div data-pane="dm"><input id="nq" placeholder="${esc(t("chat.search"))}" /><div class="chat-pick" id="nList"></div></div>
     <div data-pane="group" hidden><input id="gn" maxlength="80" placeholder="${esc(t("chat.groupName"))}" />
       <div class="chat-pick" id="gList">${data.users.map((u) => `<label><input type="checkbox" value="${esc(u.id)}" /> ${esc(u.label)} <span class="muted">@${esc(u.username)}</span></label>`).join("")}</div></div>
@@ -501,7 +501,7 @@ async function openMembersDialog(conv: ChatConversation, left: () => Promise<voi
     <ul class="chat-members">${members
       .map((m) => `<li>${esc(m.label)}${m.is_owner ? ` <span class="muted">(${t("chat.owner")})</span>` : ""}${own && !m.is_owner ? ` <button class="icon-btn" data-rm="${esc(m.user_id)}" title="${t("common.delete")}">${icon("x", 12)}</button>` : ""}</li>`)
       .join("")}</ul>
-    ${own && data ? `<label class="muted">${t("chat.addMember")}</label><select id="mAdd"><option value="">–</option>${data.users.filter((u) => !have.has(u.id)).map((u) => `<option value="${esc(u.id)}">${esc(u.label)}</option>`).join("")}</select>` : ""}
+    ${own && data ? `<label class="muted">${t("chat.addMember")}</label><select id="mAdd" aria-label="${t("chat.addMember")}" title="${t("tip.chat.addMember")}"><option value="">–</option>${data.users.filter((u) => !have.has(u.id)).map((u) => `<option value="${esc(u.id)}">${esc(u.label)}</option>`).join("")}</select>` : ""}
     <div class="row" style="justify-content:space-between">
       ${conv.kind === "group" && !conv.source_type ? `<button class="danger" data-leave>${t("chat.leave")}</button>` : "<span></span>"}
       <span class="row">${own ? `<button data-rename>${t("chat.rename")}</button>` : ""}<button data-c>${t("common.close")}</button></span></div></div>`;

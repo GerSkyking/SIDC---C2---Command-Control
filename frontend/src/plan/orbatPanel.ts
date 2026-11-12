@@ -101,7 +101,7 @@ export function initOrbatPanel(ctx: PlanCtx): void {
         )
         .join("") +
       (isMB && avail.length
-        ? `<div class="row" style="margin-top:.5rem"><select id="orb-pick">${avail
+        ? `<div class="row" style="margin-top:.5rem"><select id="orb-pick" title="${t("tip.orb.pick")}" aria-label="${t("tip.orb.pick")}">${avail
             .filter((a) => !linked.some((l) => l.id === a.id))
             .map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`)
             .join("")}</select><button id="orb-link">${t("orbat.addToPlan")}</button></div>`

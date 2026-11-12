@@ -253,7 +253,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ${iconBtn("versions", { id: "versions", title: t("versions.open") })}
       ${iconBtn("help", { id: "help", title: t("help.open") })}
       ${iconBtn("settings", { id: "settingsBtn", title: t("settings.open") })}
-      ${myPlan?.level === "owner" ? `<button id="acl">${t("plans.shares")}</button>` : ""}
+      ${myPlan?.level === "owner" ? `<button id="acl" title="${t("plans.sharesHint")}">${t("plans.shares")}</button>` : ""}
       ${themeSwitch()}
       ${iconBtn("logout", { id: "logoutBtn", title: t("auth.logout") })}
       ${iconBtn("menu", { id: "tbMore", title: t("topbar.more") })}
@@ -293,11 +293,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <label>${t("line.color")}</label>
              <div id="lc" class="line-colors"></div>
              <label>${t("line.width")}</label>
-             <select id="lw">${lineWidths
+             <select id="lw" aria-label="${t("line.width")}">${lineWidths
                .map((w) => `<option value="${w.width}" ${w.width === ctx.lineWidth ? "selected" : ""}>${w.width}</option>`)
                .join("")}</select>
              <label>${t("phase.assign")}</label>
-             <select id="lPhase">
+             <select id="lPhase" aria-label="${t("phase.assign")}" title="${t("tip.draw.phase")}">
                ${selectablePhases()
                  .map((ph) => `<option value="${esc(ph.id)}">${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`)
                  .join("")}
@@ -305,7 +305,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <label>${t("phase.extra")}</label>
              <div id="lXph"></div>
              <label>${t("wiz.layer")}</label>
-             <select id="lLayer"></select>
+             <select id="lLayer" aria-label="${t("wiz.layer")}" title="${t("tip.draw.layer")}"></select>
              <button class="primary" id="lineFinish">${t("line.finish")}</button>
              <p class="muted" style="margin:.35rem 0 0;font-size:.72rem">${t("line.rmbHint")}</p>
           <p class="muted" style="margin:.2rem 0 0;font-size:.72rem">${t("line.closeHint")}</p>
@@ -313,7 +313,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
            <div class="line-style" id="measureStyle" hidden>
              <div class="fav-head">${t("tool.measure").split(" – ")[0]}</div>
              <label>${t("phase.assign")}</label>
-             <select id="mPhase">
+             <select id="mPhase" aria-label="${t("phase.assign")}" title="${t("tip.draw.phase")}">
                ${selectablePhases()
                  .map((ph) => `<option value="${esc(ph.id)}">${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`)
                  .join("")}
@@ -321,7 +321,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <label>${t("phase.extra")}</label>
              <div id="mXph"></div>
              <label>${t("wiz.layer")}</label>
-             <select id="mLayer"></select>
+             <select id="mLayer" aria-label="${t("wiz.layer")}" title="${t("tip.draw.layer")}"></select>
            </div>`
         : ""
     }
@@ -330,12 +330,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <button type="button" class="mk-scale-head" title="${t("scale.toggle")}"><span>${t("scale.title")}</span><span class="chev">▾</span></button>
       <div class="mk-scale-row" title="${t("marker.scaleLocal")}">
         ${icon("marker", 13)}
-        <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(ctx.personalScale * 100)}" />
+        <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(ctx.personalScale * 100)}" aria-label="${t("marker.scaleLocal")}" />
         <span id="mkScaleV">${Math.round(ctx.personalScale * 100)}%</span>
       </div>
       <div class="mk-scale-row" title="${t("marker.textScaleLocal")}">
         ${icon("textbox", 13)}
-        <input type="range" id="mkTextScaleIn" min="25" max="300" step="5" value="${Math.round(ctx.textScale * 100)}" />
+        <input type="range" id="mkTextScaleIn" min="25" max="300" step="5" value="${Math.round(ctx.textScale * 100)}" aria-label="${t("marker.textScaleLocal")}" />
         <span id="mkTextScaleV">${Math.round(ctx.textScale * 100)}%</span>
       </div>
     </div>
@@ -346,7 +346,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     <div class="eraser-panel" id="eraserPanel" hidden>
       <div class="fav-head">${t("tool.erase").split(" – ")[0]}</div>
       <label>${t("erase.size")}</label>
-      <input type="range" id="eraserSize" min="8" max="150" step="1" />
+      <input type="range" id="eraserSize" min="8" max="150" step="1" aria-label="${t("erase.size")}" title="${t("tip.erase.size")}" />
       <div class="muted" id="eraserInfo" style="font-size:.75rem"></div>
     </div>
     <div class="navcube" id="navcube" hidden></div>

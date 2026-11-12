@@ -95,22 +95,22 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
     <div class="mkb">
       <div class="mkb-fields">
         <label>${t("wiz.sidcInput")}</label>
-        <div class="row"><input data-sidcin inputmode="numeric" maxlength="30" placeholder="10032500001101000000" style="flex:1" />
+        <div class="row"><input data-sidcin inputmode="numeric" maxlength="30" placeholder="10032500001101000000" style="flex:1" title="${t("tip.area.sidcRaw")}" />
           <button type="button" data-sidcgo>${t("wiz.sidcGo")}</button></div>
         <label>${t("wiz.catalog")}</label><div data-slot="cat"></div>
         <label>${t("marker.heading")}</label><div data-slot="marker"></div>
         <label>${t("wiz.affiliation")}</label>
-        <select data-aff>${AFFILIATIONS.map((a) => `<option value="${a.digit}">${a.label}</option>`).join("")}</select>
+        <select data-aff aria-label="${t("wiz.affiliation")}">${AFFILIATIONS.map((a) => `<option value="${a.digit}">${a.label}</option>`).join("")}</select>
         <div data-echrow hidden><label>${t("wiz.echelon")}</label>
-          <select data-ech>${AMPLIFIERS.map((m) => `<option value="${m.digits}">${m.label}</option>`).join("")}</select>
+          <select data-ech aria-label="${t("wiz.echelon")}" title="${t("tip.wiz.echelon")}">${AMPLIFIERS.map((m) => `<option value="${m.digits}">${m.label}</option>`).join("")}</select>
         </div>
         <div data-modrow></div>
         ${
           opts.templateFields
             ? `<label>${t("wiz.direction")}</label>
-               <select data-dir>${DIRECTIONS.map((d) => `<option value="${d.degrees}">${d.label}</option>`).join("")}</select>
-               <label>${t("wiz.unitText")}</label><input data-unit maxlength="60" />
-               <label>${t("wiz.aiText")}</label><input data-ai maxlength="120" />
+               <select data-dir aria-label="${t("wiz.direction")}" title="${t("tip.wiz.dir")}">${DIRECTIONS.map((d) => `<option value="${d.degrees}">${d.label}</option>`).join("")}</select>
+               <label>${t("wiz.unitText")}</label><input data-unit maxlength="60" aria-label="${t("wiz.unitText")}" title="${t("tip.mk.unit")}" />
+               <label>${t("wiz.aiText")}</label><input data-ai maxlength="120" aria-label="${t("wiz.aiText")}" title="${t("tip.mk.ai")}" />
                ${
                  opts.ctx?.layers
                    ? `<label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", opts.ctx.layers, opts.ctx.layerId)}`
@@ -122,11 +122,11 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
                    : ""
                }
                <label>${t("marker.color")}</label>
-               <div class="row"><input type="color" data-tint value="#000000" />
-                 <button type="button" data-tint-reset>${t("marker.colorReset")}</button></div>
+               <div class="row"><input type="color" data-tint value="#000000" aria-label="${t("marker.color")}" />
+                 <button type="button" data-tint-reset title="${t("tip.mk.colorReset")}">${t("marker.colorReset")}</button></div>
                <div class="mkb-flags">
-                 <label><input type="checkbox" data-lock/> ${t("wiz.locked")}</label>
-                 <label><input type="checkbox" data-ts checked/> ${t("wiz.timestamp")}</label>
+                 <label title="${t("tip.wiz.lock")}"><input type="checkbox" data-lock/> ${t("wiz.locked")}</label>
+                 <label title="${t("tip.wiz.ts")}"><input type="checkbox" data-ts checked/> ${t("wiz.timestamp")}</label>
                </div>`
             : ""
         }

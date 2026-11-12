@@ -144,6 +144,7 @@ export function promptDialog(message: string, opts: PromptOpts = {}): Promise<st
         <button class="primary" data-ok>${opts.okLabel ?? t("common.ok")}</button>
       </div></div>`;
     back.querySelector(".nd-msg")!.textContent = message;
+    back.querySelector("[data-in]")!.setAttribute("aria-label", message); // Eingabefeld nach der Frage benennen
     document.body.appendChild(back);
     a11yModal(back, opts.title ?? message);
     const inp = back.querySelector<HTMLInputElement>("[data-in]")!;

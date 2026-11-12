@@ -124,8 +124,8 @@ export function mountBridgeAdmin(host: HTMLElement): void {
           : `<tr><td class="muted">${t("brg.none")}</td></tr>`
       }</tbody></table>
       <div class="row" style="gap:.4rem;flex-wrap:wrap">
-        <select id="bga-conv">${ov.conversations.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select>
-        <select id="bga-chan">${
+        <select id="bga-conv" title="${t("tip.brg.conv")}" aria-label="${t("tip.brg.conv")}">${ov.conversations.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select>
+        <select id="bga-chan" title="${t("tip.brg.chan")}" aria-label="${t("tip.brg.chan")}">${
           ov.channels.length
             ? groups
                 .map(

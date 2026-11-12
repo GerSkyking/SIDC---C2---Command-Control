@@ -22,9 +22,9 @@ export function areaFieldsHtml(f: AreaFields): string {
     `<label class="chk-lbl">${t("areaName.symbol")}</label>` +
     `<div class="area-sym" data-area-sym></div>` +
     // Rückfall/Profi-Eingabe: SIDC direkt (z. B. ohne hochgeladenen Marker-Katalog)
-    `<details class="area-sidc-raw"><summary class="muted" style="font-size:.75rem">${t("areaName.sidcRaw")}</summary>` +
-    `<input data-area-sidc-in maxlength="30" spellcheck="false" placeholder="10031000001211000000" value="${esc(f.sidc)}" /></details>` +
-    `<label class="chk" style="margin-top:.4rem"><input type="checkbox" data-area-fill ${f.fill ? "checked" : ""}/> <span>${t("areaName.fill")}</span></label>`
+    `<details class="area-sidc-raw"><summary class="muted" style="font-size:.75rem" title="${t("tip.area.sidcRaw")}">${t("areaName.sidcRaw")}</summary>` +
+    `<input data-area-sidc-in maxlength="30" spellcheck="false" aria-label="${t("areaName.sidcRaw")}" placeholder="10031000001211000000" value="${esc(f.sidc)}" /></details>` +
+    `<label class="chk" style="margin-top:.4rem" title="${t("tip.area.fill")}"><input type="checkbox" data-area-fill ${f.fill ? "checked" : ""}/> <span>${t("areaName.fill")}</span></label>`
   );
 }
 

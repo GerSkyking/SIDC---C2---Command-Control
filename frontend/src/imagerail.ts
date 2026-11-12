@@ -150,7 +150,7 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
     return `<div class="ir-item${faded ? " ir-other" : ""}" data-iid="${esc(i.id)}">
       <img class="ir-thumb" src="${esc(api.planImageUrl(ctx.planId, i.id))}" alt="${esc(i.caption || i.filename)}"
         tabindex="0" role="button" loading="lazy" data-ir-open ${ctx.canEdit ? 'draggable="true" data-ir-drag' : ""}
-        title="${ctx.canEdit ? esc(t("imgrail.dragHint")) : ""}" />
+        title="${ctx.canEdit ? esc(t("imgrail.dragHint")) + " · " : ""}${esc(t("tip.img.open"))}" />
       <div class="ir-meta">
         <div class="ir-name-row">
           ${
@@ -160,7 +160,7 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
           }
           ${ctx.canEdit ? `<button class="icon-btn" data-ir-gear title="${t("settings.title")}">${icon("settings", 14)}</button>` : ""}
         </div>
-        ${faded && i.phase_id ? `<div class="ir-phase-badge">${esc(phaseName(i.phase_id))}</div>` : ""}
+        ${faded && i.phase_id ? `<div class="ir-phase-badge" title="${t("tip.img.otherPhase")}">${esc(phaseName(i.phase_id))}</div>` : ""}
         ${ctx.canEdit ? `<div class="ir-gear-panel" data-ir-gearpanel ${openGear.has(i.id) ? "" : "hidden"}></div>` : ""}
       </div>
     </div>`;

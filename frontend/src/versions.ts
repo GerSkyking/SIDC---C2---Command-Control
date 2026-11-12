@@ -47,7 +47,7 @@ export function openVersionPanel(
               <span class="muted">${new Date(v.created_at).toLocaleString()} · ${esc(v.author)}
                 · ${v.marker_count} ${t("versions.markers")}, ${v.stroke_count} ${t("versions.strokes")}</span>
             </div>
-            ${canRestore ? `<button data-restore="${v.id}">${t("versions.restore")}</button>` : ""}
+            ${canRestore ? `<button data-restore="${v.id}" title="${t("tip.ver.restore")}">${t("versions.restore")}</button>` : ""}
           </div>`,
         )
         .join("");
