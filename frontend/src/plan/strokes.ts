@@ -11,6 +11,7 @@ import { cid } from "../ws";
 import { AREA_CLOSE_PX, type LngLat2, type PlanCtx, type Stroke } from "./ctx";
 import { areaFieldsHtml, openAreaNameDialog, wireAreaFields } from "./strokeArea";
 import { fmtDist, lineDraftFC } from "./geo";
+import { isStrokeDot } from "./render";
 
 export function initStrokes(ctx: PlanCtx): void {
   const { map, socket, root, strokes, canEdit, caps, cal, sig, lineColors, lineWidths, phaseListeners, layerListeners } = ctx;
@@ -112,7 +113,9 @@ export function initStrokes(ctx: PlanCtx): void {
   });
   strokeDelBtn.addEventListener("click", async () => {
     const saved = !(ctx.mode === "line" && ctx.linePts.length >= 2) && !(ctx.mode === "measure" && ctx.measureActive.length >= 2);
-    if (saved && (ctx.editStrokeId || ctx.editMeasureId) && !(await confirmDialog(t("line.confirmDelete"), { danger: true, trash: true }))) return;
+    const editDot = !!ctx.editStrokeId && isStrokeDot(strokes.get(ctx.editStrokeId) ?? ({} as Stroke));
+    const ask = t(editDot ? "dot.confirmDelete" : "line.confirmDelete");
+    if (saved && (ctx.editStrokeId || ctx.editMeasureId) && !(await confirmDialog(ask, { danger: true, trash: true }))) return;
     if (ctx.mode === "line" && ctx.linePts.length >= 2) {
       cancelLine(); // laufende Linie verwerfen
     } else if (ctx.mode === "measure" && ctx.measureActive.length >= 2) {
@@ -186,7 +189,7 @@ export function initStrokes(ctx: PlanCtx): void {
   };
   /** Daten einer bestehenden Linie zum Neu-Anlegen (Undo des Löschens). */
   const strokeData = (s: Stroke): Record<string, unknown> => ({
-    kind: "phaseline",
+    kind: s.kind || "phaseline", // Punkte bleiben Punkte (kind "dot")
     points: s.points.map((p) => [p[0], p[1]]),
     color: s.color,
     width: s.width,
@@ -395,6 +398,10 @@ export function initStrokes(ctx: PlanCtx): void {
   function openStrokeSettings(strokeId: string): void {
     const s = strokes.get(strokeId);
     if (!s) return;
+    if (isStrokeDot(s)) {
+      ctx.ui.openDotSettings(strokeId); // Punkt: eigener kleiner Dialog (dots.ts)
+      return;
+    }
     const isClosed = s.closed === true && s.points.length >= 3;
     const back = document.createElement("div");
     back.className = "edit-modal area-name-dlg";
@@ -573,6 +580,9 @@ export function initStrokes(ctx: PlanCtx): void {
     cancelLine,
     refreshLineDraft,
     strokeCommitted,
+    commitStroke,
+    modifyStroke,
+    deleteStroke,
     renderMeasureX: () => renderMeasureX(),
     renderLineX: () => renderLineX(),
   });

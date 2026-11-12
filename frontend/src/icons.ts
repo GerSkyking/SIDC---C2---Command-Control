@@ -36,6 +36,8 @@ const ICONS: Record<string, string> = {
   markerMove: `${A("M12 4a5 5 0 015 5c0 3.5-5 9-5 9")}${L("M12 4a5 5 0 015 5c0 3.5-5 9-5 9s-5-5.5-5-9a5 5 0 015-5z")}${L("M5 20h14")}`,
   point: L("M7 3l4 16 2-6 6-2z"),
   line: L("M5 19L19 5"),
+  // Punkt: Ring mit Akzentfläche + gefüllter Kern (dicker runder Strich = gefüllter Kreis)
+  dot: `${A("M12 5.5a6.5 6.5 0 110 13 6.5 6.5 0 010-13z")}${L("M12 5.5a6.5 6.5 0 110 13 6.5 6.5 0 010-13z")}<path d="M12 12h.01" style="stroke-width:7"/>`,
   ruler: `${A("M4 14L14 4l6 6L10 20z")}${L("M4 14L14 4l6 6L10 20z")}${L("M8 8l2 2M11 5l2 2M5 11l2 2")}`,
   eraser: `${L("M8 20H5l-2-2a2 2 0 010-3l9-9 6 6-8 8z")}${L("M8 20h12M8 14l6 6")}`,
   marker: `${A("M12 3a6 6 0 016 6c0 4.2-6 12-6 12S6 13.2 6 9a6 6 0 016-6z")}${L("M12 3a6 6 0 016 6c0 4.2-6 12-6 12S6 13.2 6 9a6 6 0 016-6z")}${L("M12 9h.01")}`,

@@ -5,6 +5,19 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-11-12 – Punkt-Werkzeug
+- Neues Werkzeug **Punkt** (Taste `P`, umbelegbar) in der Werkzeugleiste direkt unter *Linie*: setzt mit jedem Klick
+  einen einfachen Punkt. Menü wie beim Linien-Werkzeug (beweglich/anheftbar): Farbe aus der Linien-Palette oder frei
+  per Farbwähler, Größe klein/mittel/groß, optionaler Text, Phase, weitere Phasen, Layer. Das Werkzeug bleibt aktiv.
+  Auch im Rechtsklick-Menü (setzt den Punkt an der geklickten Stelle).
+- Gespeichert als Stroke `kind: "dot"` (genau 1 Punkt, `color`, `width` = Größe, `name` = Text). Backend erzwingt genau
+  einen Punkt beim Anlegen und Verschieben, ein Punkt ist nie geschlossen; Linien brauchen beim Ändern weiter ≥ 2 Punkte.
+- Darstellung im Editor und in der öffentlichen Ansicht: Kreis in Punktfarbe mit Kontrast-Rand, Text rechts daneben
+  (Punktfarbe, Kontrast-Halo wie bei benannten Flächen); Linien-Layer zeichnen Punkte nicht. Phasen-/Layer-Sichtbarkeit
+  und Deckkraft wie bei Linien, Screenshot/Briefing-PDF zeigen Punkte mit.
+- Bearbeiten: Punkt anklicken → ziehen verschiebt, Zahnrad öffnet Farbe/Größe/Text/Phase/Layer/Löschen; Undo/Redo für
+  Anlegen, Löschen, Einstellungen und Verschieben. Radierer trifft Punkte, die Suche findet sie über den Text und fliegt hin.
+
 ### 2026-11-12 – ORBAT: eigene Seite für Spieler vollständig
 - Spieler sehen einen ORBAT der eigenen Seite (Zugehörigkeit *Freund*, z. B. BLUFOR) im Plan jetzt **vollständig**
   (nur lesen, ohne Freigabe). Feindliche, neutrale und unbekannte ORBATs bleiben auf die Freigabe des Missionsbaus

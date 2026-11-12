@@ -14,6 +14,7 @@ export type HotAction =
   | "mapMove"
   | "point"
   | "line"
+  | "dot"
   | "markermove"
   | "measure"
   | "erase"
@@ -32,6 +33,7 @@ export const HOT_ORDER: HotAction[] = [
   "mapMove",
   "point",
   "line",
+  "dot",
   "markermove",
   "measure",
   "erase",
@@ -53,6 +55,7 @@ const DEFAULTS: Record<HotAction, string> = {
   mapMove: "w",
   point: "a",
   line: "d",
+  dot: "p",
   markermove: "m",
   measure: "f",
   erase: "s",
@@ -218,6 +221,7 @@ function hotLabels(): Record<HotAction, string> {
     mapMove: t("tool.move"),
     point: t("tool.point"),
     line: t("tool.line"),
+    dot: t("tool.dot"),
     markermove: t("tool.markermove"),
     measure: t("tool.measure"),
     erase: t("tool.erase"),

@@ -11,7 +11,7 @@ import { actionForKey } from "../settings";
 import { isTextMarker } from "../sidc/sidc";
 import type { Annot, LngLat2, PlanCtx, Stroke, TacAuto } from "./ctx";
 
-type Kind = "marker" | "note" | "star" | "line" | "area" | "image" | "place" | "phase";
+type Kind = "marker" | "note" | "star" | "line" | "dot" | "area" | "image" | "place" | "phase";
 
 interface Hit {
   kind: Kind;
@@ -41,12 +41,13 @@ const KIND_ICON: Record<Kind, string> = {
   note: "textbox",
   star: "star",
   line: "line",
+  dot: "dot",
   area: "spot",
   image: "image",
   place: "pin",
   phase: "clock",
 };
-const KIND_ORDER: Kind[] = ["phase", "marker", "star", "note", "area", "line", "image", "place"];
+const KIND_ORDER: Kind[] = ["phase", "marker", "star", "note", "area", "line", "dot", "image", "place"];
 
 // ── Normalisierung: Groß/klein egal, Umlaute tolerant (ä ≈ ae ≈ a) ──
 const UML: Record<string, string> = { ä: "ae", ö: "oe", ü: "ue", ß: "ss", æ: "ae", ø: "oe", œ: "oe" };
@@ -232,16 +233,17 @@ export function initSearch(ctx: PlanCtx): void {
           domSel: `#annots [data-aid="${a.id}"]`,
         });
       }
-    // Benannte Linien / Flächen
+    // Benannte Linien / Flächen und Punkte mit Text
     for (const s0 of strokes.values()) {
       const s = s0 as Stroke & { name?: string; closed?: boolean };
+      const dot = s.kind === "dot";
       const name = (s.name ?? "").trim();
       if (!name || !s.points?.length) continue;
       const jp = targetPhase(s.phase_id ?? null, s.extra_phase_ids);
       if (jp === false) continue;
       const hid = hiddenLayer(null, s.layer_id);
       out.push({
-        kind: s.closed ? "area" : "line",
+        kind: dot ? "dot" : s.closed ? "area" : "line",
         id: s.id,
         label: name,
         sub: subLine(s.phase_id ?? null, layerNameOf(s.layer_id), jp, hid),
@@ -249,8 +251,8 @@ export function initSearch(ctx: PlanCtx): void {
         phase: jp,
         layerKey: hid?.[0] ?? null,
         layerName: hid?.[1] ?? "",
-        pts: s.points,
-        area: true,
+        pts: dot ? s.points.slice(0, 1) : s.points,
+        area: !dot, // Punkt: hinfliegen (flyTo) statt Rahmen
       });
     }
     // Kartenbilder (je Platzierung)

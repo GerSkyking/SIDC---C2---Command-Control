@@ -1389,6 +1389,24 @@ const DE: Record<string, string> = {
   "tip.brief.player": "Briefing-PDF aus Spielersicht – ohne Missionsbau-Inhalte",
   "tip.brief.builder": "Briefing-PDF mit den Missionsbau-Phasen (⚑)",
   "tip.img.open": "Klick vergrößert das Bild",
+  // Punkt-Werkzeug
+  "tool.dot": "Punkt setzen – beliebige Farbe, freier Text",
+  "dot.heading": "Punkt",
+  "dot.size": "Größe",
+  "dot.sizeS": "Klein",
+  "dot.sizeM": "Mittel",
+  "dot.sizeL": "Groß",
+  "dot.text": "Text",
+  "dot.textPh": "optional, z. B. Treffpunkt",
+  "dot.freeColor": "Beliebige Farbe wählen",
+  "dot.hint": "Klick auf die Karte setzt einen Punkt mit diesen Einstellungen – das Werkzeug bleibt aktiv.",
+  "dot.edit": "Punkt bearbeiten",
+  "dot.delete": "Punkt löschen",
+  "dot.confirmDelete": "Punkt löschen?",
+  "tip.dot.color": "Farbe von Punkt und Text – aus der Palette oder frei über das gestrichelte Farbfeld",
+  "tip.dot.size": "Größe des Punkts auf der Karte",
+  "tip.dot.text": "Text neben dem Punkt (optional) – lässt sich über die Suche finden",
+  "search.kind.dot": "Punkt",
 };
 
 const EN: Record<string, string> = {
@@ -2775,6 +2793,24 @@ const EN: Record<string, string> = {
   "tip.brief.player": "Briefing PDF from the players' view – without mission-builder content",
   "tip.brief.builder": "Briefing PDF with the mission-builder phases (⚑)",
   "tip.img.open": "Click to enlarge the image",
+  // Dot tool
+  "tool.dot": "Dot – any colour, free text",
+  "dot.heading": "Dot",
+  "dot.size": "Size",
+  "dot.sizeS": "Small",
+  "dot.sizeM": "Medium",
+  "dot.sizeL": "Large",
+  "dot.text": "Text",
+  "dot.textPh": "optional, e.g. rally point",
+  "dot.freeColor": "Pick any colour",
+  "dot.hint": "Clicking the map places a dot with these settings – the tool stays active.",
+  "dot.edit": "Edit dot",
+  "dot.delete": "Delete dot",
+  "dot.confirmDelete": "Delete dot?",
+  "tip.dot.color": "Colour of the dot and its text – from the palette or any colour via the dashed swatch",
+  "tip.dot.size": "Size of the dot on the map",
+  "tip.dot.text": "Text next to the dot (optional) – can be found via search",
+  "search.kind.dot": "Dot",
 };
 
 const DICTS: Record<Lang, Record<string, string>> = { de: DE, en: EN };

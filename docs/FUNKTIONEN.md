@@ -30,7 +30,7 @@ Alle Rechte werden serverseitig je Operation geprüft.
 - Menü **Karte** mit Deckkraft je Ebene: Sat, Sat (vereinfacht), Gitter, Gebäude, Straßen, Gewässer, Stromleitungen, Bäume, Orte (Karten-Einstellungen pro Nutzer im Zahnrad).
 - **ViewCube** unten rechts (TOP + N/S/O/W + Ecken, Ziehen dreht/kippt, Home).
 - Karten-Import per Link, Upload oder Gitea-Quelle; DLC-Zoomstufen; Kartenserver für den lokalen ATAKmaps-Client.
-- **Suche im Plan** (Lupe, `Strg+F` / `/`): Marker, Notizen/Sterne, benannte Linien/Flächen, Kartenbilder, Ortsnamen, Phasen; umlaut-tolerant, Wortanfang vor Teiltreffer. Auswahl fliegt hin und hebt ~3 s hervor (Ring bzw. leuchtender Umriss), wechselt bei Bedarf die Phase und blendet ausgeblendete Layer ein; respektiert die Sichtbarkeit der aktuellen Ansicht.
+- **Suche im Plan** (Lupe, `Strg+F` / `/`): Marker, Notizen/Sterne, benannte Linien/Flächen, Punkte (Text), Kartenbilder, Ortsnamen, Phasen; umlaut-tolerant, Wortanfang vor Teiltreffer. Auswahl fliegt hin und hebt ~3 s hervor (Ring bzw. leuchtender Umriss), wechselt bei Bedarf die Phase und blendet ausgeblendete Layer ein; respektiert die Sichtbarkeit der aktuellen Ansicht.
 
 ## 5. Marker
 - **Wizard**: QuickMenü (Kategorien mit ↳), Katalog, **Marker-Baukasten** (Dropdowns, Live-Vorschau, **SIDC-Nummer-Eingabe**), Modifikatoren, Echelon, Richtung, Texte, Farbe, Sperren/Zeitstempel.
@@ -58,6 +58,7 @@ Alle Rechte werden serverseitig je Operation geprüft.
 | Karte bewegen | W | Pan/Drehen, Marker ziehen, Linien/Messlinien auswählen |
 | Zeigen | A | Laser-Punkt mit Spielerfarbe, gelber Ring, Pfeil (rechte Maustaste) |
 | Zeichnen | D | Phase-Lines mit Farbe/Breite, Phase, Weitere Phasen, Layer; Klick auf den Startpunkt schließt zur **benannten Fläche** (Name, SIDC-Symbol, Schraffur an/aus, Flächengröße am Schwerpunkt); Undo/Redo |
+| Punkt | P | einfacher Punkt (Stroke `kind: "dot"`): Farbe aus der Palette oder frei wählbar, Größe klein/mittel/groß, optionaler Text daneben (Punktfarbe mit Kontrast-Halo), Phase/Weitere Phasen/Layer; Panel beweglich/anheftbar, Werkzeug bleibt aktiv; Bearbeiten per Zahnrad, Ziehen verschiebt, Undo/Redo, Radierer, Suche über den Text, öffentliche Ansicht |
 | Marker verschieben | M | (mobil) Marker per Touch ziehen |
 | Lineal | F | mehrsegmentig, Teil-/Gesamtstrecke (3D-Höhe), Phase/Layer-Menü |
 | Radierer | S | Kreis mit einstellbarer Größe (Panel verschiebbar/fixierbar) |

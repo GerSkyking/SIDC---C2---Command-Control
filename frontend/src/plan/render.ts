@@ -5,10 +5,25 @@ import type * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 import { isTextMarker, markerLabelCategory } from "../sidc/sidc";
 import { ensureMapIcon, mapIconId, markerLabelOffsets } from "../sidc/symbol";
-import { areaFeatures, areaLabelFeature, ensureAreaLabelLayer, ensureAreaLayers, hatchId, ringOf, setAreaData, setAreaLabels } from "../mapAreas";
+import {
+  addDotLayers,
+  areaFeatures,
+  areaLabelFeature,
+  DOT_KIND,
+  dotFeature,
+  ensureAreaLabelLayer,
+  ensureAreaLayers,
+  hatchId,
+  NOT_DOT_FILTER,
+  ringOf,
+  setAreaData,
+  setAreaLabels,
+} from "../mapAreas";
 import { IS_MOBILE, type Marker, type PlanCtx, type Stroke } from "./ctx";
+/** Einfacher Punkt (Punkt-Werkzeug): genau 1 Punkt, Größe = width, Text = name. */
+export const isStrokeDot = (s: Stroke): boolean => s.kind === DOT_KIND;
 /** Geschlossene Linie mit mindestens 3 Punkten = Fläche. */
-export const isStrokeArea = (s: Stroke): boolean => s.closed === true && (s.points?.length ?? 0) >= 3;
+export const isStrokeArea = (s: Stroke): boolean => !isStrokeDot(s) && s.closed === true && (s.points?.length ?? 0) >= 3;
 import { emptyFC, packedToHex } from "./geo";
 
 export function initRender(ctx: PlanCtx): void {
@@ -142,17 +157,23 @@ export function initRender(ctx: PlanCtx): void {
   const strokeOpacity = (s: Stroke): number => multiPhaseOpacity(s.phase_id, s.extra_phase_ids) * tacOpacity(null, s.layer_id);
   const strokeFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
-    features: [...strokes.values()].map((s) => ({
-      type: "Feature",
-      // Geschlossene Fläche: Umriss = die Linie selbst als geschlossener Ring
-      geometry: { type: "LineString", coordinates: isStrokeArea(s) ? ringOf(s.points) : s.points },
-      properties: {
-        id: s.id,
-        color: packedToHex(s.color),
-        width: s.width > 0 ? s.width : 2,
-        opacity: strokeOpacity(s),
-      },
-    })),
+    features: [...strokes.values()].map(
+      (s): GeoJSON.Feature =>
+        // Punkt (Punkt-Werkzeug): Kreis + Text über eigene Layer (stroke-dots)
+        isStrokeDot(s)
+          ? dotFeature(s.id, s.points[0] ?? [0, 0], packedToHex(s.color), s.width, s.name || "", strokeOpacity(s))
+          : {
+              type: "Feature",
+              // Geschlossene Fläche: Umriss = die Linie selbst als geschlossener Ring
+              geometry: { type: "LineString", coordinates: isStrokeArea(s) ? ringOf(s.points) : s.points },
+              properties: {
+                id: s.id,
+                color: packedToHex(s.color),
+                width: s.width > 0 ? s.width : 2,
+                opacity: strokeOpacity(s),
+              },
+            },
+    ),
   });
   // Benannte Flächen (geschlossene Strokes): Schraffur in Stroke-Farbe (entfällt bei fill:false) und
   // Name/Symbol/Größe am Schwerpunkt — gleiche Optik wie die öffentliche Ansicht (mapAreas.ts).
@@ -287,6 +308,7 @@ export function initRender(ctx: PlanCtx): void {
       id: "strokes",
       type: "line",
       source: "strokes",
+      filter: NOT_DOT_FILTER as maplibregl.FilterSpecification, // Punkte haben eigene Layer
       paint: {
         "line-color": ["get", "color"],
         "line-width": ["get", "width"],
@@ -297,6 +319,8 @@ export function initRender(ctx: PlanCtx): void {
     // Schraffur unter den Linien, Beschriftung darüber
     ensureAreaLayers(map, "stroke-areas", { before: "strokes" });
     ensureAreaLabelLayer(map, "stroke-area-labels");
+    // Einfache Punkte (Punkt-Werkzeug): Kreis + Text, über Linien und Flächen-Beschriftung
+    addDotLayers(map, "strokes", "stroke-dots");
     refreshStrokeAreas();
     ctx.strokesLayer.done();
 

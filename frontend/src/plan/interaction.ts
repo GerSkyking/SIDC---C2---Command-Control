@@ -73,6 +73,15 @@ export function initContextMenu(ctx: PlanCtx): void {
         },
       },
       {
+        ic: "dot",
+        label: t("tool.dot").split(" – ")[0],
+        ok: caps.draw,
+        run: () => {
+          ctx.ui.setMode("dot");
+          ctx.ui.placeDot(pos); // Punkt direkt an der geklickten Stelle
+        },
+      },
+      {
         ic: "ruler",
         label: t("tool.measure").split(" – ")[0],
         ok: true,
@@ -141,7 +150,9 @@ export function initMapClicks(ctx: PlanCtx): void {
       const fillLayer = (ctx.mode === "move" || ctx.mode === "markermove") && map.getLayer("stroke-areas-fill") ? "stroke-areas-fill" : null;
       const sid =
         ctx.mode !== "measure" && caps.draw
-          ? ((map.queryRenderedFeatures(box, { layers: ["strokes"] })[0]?.properties?.id as string | undefined) ??
+          ? ((map.queryRenderedFeatures(box, { layers: ["stroke-dots", "strokes"].filter((l) => map.getLayer(l)) })[0]?.properties?.id as
+              | string
+              | undefined) ??
             (fillLayer ? (map.queryRenderedFeatures(e.point, { layers: [fillLayer] })[0]?.properties?.sid as string | undefined) : undefined))
           : undefined;
       const mid =

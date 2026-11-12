@@ -14,6 +14,9 @@ export function initToolbar(ctx: PlanCtx): void {
   makeMovable(toolbar, { plan: planId, key: "toolbar" });
   const lineStylePanel = root.querySelector<HTMLDivElement>("#lineStyle")!;
   const mvLine = makeMovable(lineStylePanel, { plan: planId, key: "linestyle", pinnable: true });
+  // Punkt-Menü: Farbe/Größe/Text/Phase/Layer für neue Punkte (wie das Linien-Menü)
+  const dotStylePanel = root.querySelector<HTMLDivElement>("#dotStyle")!;
+  const mvDot = makeMovable(dotStylePanel, { plan: planId, key: "dotstyle", pinnable: true });
   // Messen-Menü: Phase + taktischer Layer für neue Messlinien (Standard: aktuelle Phase)
   const measureStylePanel = root.querySelector<HTMLDivElement>("#measureStyle")!;
   const mvMeasure = makeMovable(measureStylePanel, { plan: planId, key: "measurestyle", pinnable: true });
@@ -21,7 +24,7 @@ export function initToolbar(ctx: PlanCtx): void {
   const mvEraser = makeMovable(eraserPanel, { plan: planId, key: "eraser", pinnable: true });
   const eraserRing = root.querySelector<HTMLDivElement>("#eraserRing")!;
   const modeCursor = (m: Mode = ctx.mode): string =>
-    m === "place" || m === "line" || m === "point" || m === "measure" || m === "text" || m === "ref" || m === "area"
+    m === "place" || m === "line" || m === "dot" || m === "point" || m === "measure" || m === "text" || m === "ref" || m === "area"
       ? "crosshair"
       : m === "erase"
         ? "crosshair"
@@ -83,6 +86,8 @@ export function initToolbar(ctx: PlanCtx): void {
       ctx.ui.refreshAreas();
     }
     lineStylePanel.hidden = mvLine.isPinned() ? false : m !== "line";
+    dotStylePanel.hidden = mvDot.isPinned() ? false : m !== "dot";
+    if (m === "dot") ctx.ui.syncDotPanel();
     if (measureStylePanel) {
       measureStylePanel.hidden = mvMeasure.isPinned() ? false : m !== "measure";
       if (m === "measure") {
@@ -187,6 +192,7 @@ export function initToolbar(ctx: PlanCtx): void {
       case "mapMove": setMode("move"); break;
       case "point": setModeBtn("point"); break;
       case "line": if (canEdit) setModeBtn("line"); break;
+      case "dot": if (canEdit) setModeBtn("dot"); break;
       case "markermove": if (canEdit) setModeBtn("markermove"); break;
       case "measure": setModeBtn("measure"); break;
       case "erase": setModeBtn("erase"); break;
@@ -223,6 +229,7 @@ export function initToolbar(ctx: PlanCtx): void {
     const tb = root.querySelector("#toolbar");
     if (!tb) return;
     tb.querySelector<HTMLButtonElement>('[data-mode="line"]')?.toggleAttribute("disabled", !caps.draw);
+    tb.querySelector<HTMLButtonElement>('[data-mode="dot"]')?.toggleAttribute("disabled", !caps.draw);
     tb.querySelector<HTMLButtonElement>('[data-mode="markermove"]')?.toggleAttribute("disabled", !caps.move);
     tb.querySelector<HTMLButtonElement>('[data-mode="erase"]')?.toggleAttribute("disabled", !caps.delete);
     tb.querySelector<HTMLButtonElement>('[data-mode="text"]')?.toggleAttribute("disabled", !caps.place);

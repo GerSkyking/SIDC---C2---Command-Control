@@ -240,7 +240,7 @@ export interface AreaLabelInput {
 }
 
 /** Kontrast-Halo zur Textfarbe: dunkel bei hellen Farben, hell bei dunklen. */
-function haloFor(hex: string): string {
+export function haloFor(hex: string): string {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
   if (!m) return "#000000";
   const [r, g, b] = [m[1], m[2], m[3]].map((x) => parseInt(x, 16) / 255);
@@ -314,6 +314,81 @@ export function ensureAreaLabelLayer(map: MlMap, id: string, before?: string): v
 /** Beschriftungen setzen. */
 export function setAreaLabels(map: MlMap, id: string, features: GeoJSON.Feature[]): void {
   (map.getSource(id) as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features });
+}
+
+// ── Einfache Punkte (Stroke kind "dot"): Kreis in Punktfarbe + Text daneben ─────────
+
+/** Stroke-Art des Punkt-Werkzeugs. */
+export const DOT_KIND = "dot";
+/** Größen des Punkt-Werkzeugs (Radius in px, gespeichert als Stroke-width). */
+export const DOT_SIZES = [5, 8, 12] as const;
+export const DOT_DEFAULT_SIZE = 8;
+/** Filter für Linien-Layer: Punkte nicht als Linie zeichnen. */
+export const NOT_DOT_FILTER = ["!=", ["get", "kind"], DOT_KIND];
+
+/** Kartenfeature eines Punkts; ``color`` "#rrggbb", ``size`` Radius in px. */
+export function dotFeature(id: string, pt: LngLat, color: string, size: number, name: string, opacity: number): GeoJSON.Feature {
+  const r = size > 0 ? Math.min(30, size) : DOT_DEFAULT_SIZE;
+  return {
+    type: "Feature",
+    geometry: { type: "Point", coordinates: pt },
+    properties: {
+      id,
+      kind: DOT_KIND,
+      color,
+      halo: haloFor(color),
+      r,
+      name,
+      // Text rechts neben dem Kreis (Abstand in em bei 12 px Schrift)
+      toff: [(r + 4) / 12, 0],
+      opacity,
+    },
+  };
+}
+
+/**
+ * Kreis- und Text-Layer für Punkte auf einer bestehenden Quelle (Features aus ``dotFeature``), identisch in
+ * Editor und öffentlicher Ansicht: ``<prefix>`` (Kreis, dünner Kontrast-Rand) und ``<prefix>-labels``.
+ */
+export function addDotLayers(map: MlMap, source: string, prefix: string): void {
+  if (map.getLayer(prefix)) return;
+  const isDot = ["==", ["get", "kind"], DOT_KIND];
+  map.addLayer({
+    id: prefix,
+    type: "circle",
+    source,
+    filter: isDot,
+    paint: {
+      "circle-radius": ["get", "r"],
+      "circle-color": ["get", "color"],
+      "circle-stroke-color": ["get", "halo"],
+      "circle-stroke-width": 1.5,
+      "circle-opacity": ["get", "opacity"],
+      "circle-stroke-opacity": ["get", "opacity"],
+    },
+  } as never);
+  map.addLayer({
+    id: `${prefix}-labels`,
+    type: "symbol",
+    source,
+    filter: ["all", isDot, ["!=", ["get", "name"], ""]],
+    layout: {
+      "text-field": ["get", "name"],
+      "text-size": 12,
+      "text-anchor": "left",
+      "text-justify": "left",
+      "text-offset": ["get", "toff"],
+      "text-allow-overlap": true,
+      "text-max-width": 16,
+    },
+    paint: {
+      // Text in Punktfarbe mit kontrastierendem Halo (wie die Beschriftung benannter Flächen)
+      "text-color": ["get", "color"],
+      "text-halo-color": ["get", "halo"],
+      "text-halo-width": 1.6,
+      "text-opacity": ["get", "opacity"],
+    },
+  } as never);
 }
 
 /**

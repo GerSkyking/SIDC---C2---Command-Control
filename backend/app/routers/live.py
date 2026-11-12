@@ -730,17 +730,23 @@ def _clean_stroke_name(v) -> str:
     return " ".join(v.split())[:STROKE_NAME_MAX]
 
 
+STROKE_DOT = "dot"  # einfacher Punkt: genau 1 Punkt, nie geschlossen, Text = name
+
+
 def _create_stroke(plan_id: str, uid: str, data: dict) -> dict:
     with SessionLocal() as db:
         pts = _clean_points(data.get("points", []))
+        kind = str(data.get("kind", "freehand"))[:32]
+        if kind == STROKE_DOT and len(pts) != 1:
+            raise ValueError("points")
         s = Stroke(
             plan_id=plan_id, created_by=uid,
             phase_id=_need_phase(db, plan_id, data.get("phase_id")), layer_id=data.get("layer_id"),
             extra_phase_ids=_clean_ids(data.get("extra_phase_ids")),
-            kind=str(data.get("kind", "freehand"))[:32], points=pts,
+            kind=kind, points=pts,
             channel=str(data.get("channel") or ""),
             color=int(data.get("color", -1)), width=float(data.get("width", -1)),
-            closed=data.get("closed") is True and len(pts) >= 3,
+            closed=kind != STROKE_DOT and data.get("closed") is True and len(pts) >= 3,
             name=_clean_stroke_name(data.get("name")),
             sidc=clean_sidc(data.get("sidc")),
             fill=data.get("fill") is not False,
@@ -795,7 +801,9 @@ def _update_stroke(plan_id: str, stroke_id: str, data: dict) -> dict | None:
         if s is None or s.plan_id != plan_id:
             return None
         pts = data.get("points")
-        if isinstance(pts, list) and len(pts) >= 2:
+        is_dot = s.kind == STROKE_DOT
+        # Punkt: genau 1 Punkt (Verschieben); Linie: mindestens 2 Punkte
+        if isinstance(pts, list) and (len(pts) == 1 if is_dot else len(pts) >= 2):
             s.points = [[float(p[0]), float(p[1])] for p in _clean_points(pts)]
         if data.get("color") is not None:
             s.color = int(data["color"])
@@ -818,7 +826,7 @@ def _update_stroke(plan_id: str, stroke_id: str, data: dict) -> dict | None:
         if "closed" in data:
             s.closed = data["closed"] is True
         # Geschlossen nur mit mindestens 3 Punkten (auch nach Punkt-Änderung)
-        s.closed = bool(s.closed) and len(s.points or []) >= 3
+        s.closed = not is_dot and bool(s.closed) and len(s.points or []) >= 3
         db.commit()
         return _stroke_out(s)
 

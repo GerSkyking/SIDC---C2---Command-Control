@@ -67,6 +67,7 @@ Werkzeugleiste links (nur mit Bearbeitungsrecht). Tasten sind die Standardbelegu
 | Karte bewegen | `W` | Schieben/Zoomen; Marker anklicken = bearbeiten; mittlere Maustaste zieht Marker |
 | Zeigen | `A` | dein Cursor erscheint bei allen; rechte Maustaste zieht einen Pfeil |
 | Linie | `D` | Punkte klicken, grüner Haken / Doppelklick beendet (Rechtsklick/Esc verwirft); Klick auf den grünen Startpunkt schließt zur **Fläche** (siehe unten); Farbe, Breite, Phase, Layer im Menü |
+| Punkt | `P` | einfachen Punkt setzen: Farbe (Palette oder beliebig), Größe, optionaler Text, Phase, Layer im Menü; jeder Klick setzt einen Punkt, das Werkzeug bleibt aktiv (siehe unten) |
 | Marker verschieben | `M` | (v. a. Touch) Marker ziehen |
 | Lineal | `F` | beliebig viele Punkte, Teil- und Gesamtstrecke; grüner Haken / Doppelklick beendet (Rechtsklick verwirft); Messlinien bleiben stehen |
 | Radierer | `S` | löscht alles im Kreis (Größe einstellbar) |
@@ -79,7 +80,7 @@ Außerdem: `Q`/`E` Rückgängig/Wiederholen, `X`/`C`/`V` Ausschneiden/Kopieren/E
 `Y` Phasen-Notizen, `N` nach Norden, `Esc` bricht ab bzw. schließt Fenster.
 
 **Im Plan suchen:** Lupe in der Topbar oder `Strg+F` bzw. `/`. Gesucht wird beim Tippen in Markern (Beschriftung,
-Zusatztext, Symbolname), Notizen und Sternen (auch verknüpfte Orte/Titel), benannten Linien/Flächen, Kartenbildern
+Zusatztext, Symbolname), Notizen und Sternen (auch verknüpfte Orte/Titel), benannten Linien/Flächen, Punkten (Text), Kartenbildern
 (Name, Notiz), Ortsnamen der Karte und Phasen – Groß/klein egal, Umlaute tolerant (`mueller` = `müller` = `muller`).
 Pfeiltasten + `Enter` oder Klick: die Karte fliegt hin und der Treffer leuchtet ~3 s auf. Liegt er in einer anderen
 Phase, wechselt die Ansicht dorthin; liegt er in einem ausgeblendeten Layer, wird der Layer wieder eingeblendet (beides
@@ -93,6 +94,13 @@ Fläche **schraffiert** wird. *Übernehmen* speichert, *Ohne Namen* oder Esc lä
 Schwerpunkt das Symbol über dem Namen, darunter klein die Flächengröße. Einheiten-/Punktsymbole werden gezeichnet; Symbole,
 die sich nicht als Punkt darstellen lassen, entfallen (dann nur der Name). Nachträglich: Fläche anklicken → Zahnrad
 (Name, Symbol, Füllung, *Geschlossene Fläche* an/aus) oder Stützpunkte ziehen. Rückgängig/Wiederholen gilt auch hier.
+
+**Punkte:** Das Werkzeug *Punkt* (`P`, direkt unter *Linie*) setzt mit jedem Klick einen farbigen Punkt. Im Menü daneben
+(beweglich und anheftbar wie das Linien-Menü) wählst du die **Farbe** – aus der Linien-Palette oder über das gestrichelte
+Feld eine **beliebige Farbe** –, die **Größe** (klein/mittel/groß), einen optionalen **Text** sowie Phase, weitere Phasen
+und Layer. Der Text steht rechts neben dem Punkt in Punktfarbe mit Kontrast-Rand. Nachträglich: Punkt anklicken (Karte
+bewegen) → ziehen verschiebt ihn, Zahnrad ändert Farbe/Größe/Text/Phase/Layer, Papierkorb löscht. Rückgängig/Wiederholen,
+Radierer, Suche (über den Text), öffentliche Ansicht, Screenshot und Briefing-PDF berücksichtigen Punkte wie Linien.
 
 **Marker bearbeiten:** Maus über den Marker zeigt Ersteller, Phase und Layer plus Schnellknöpfe (Löschen · Verschieben ·
 Bearbeiten). Im Bearbeiten-Fenster: Texte, Drehung, Größe, Phase (auch mehrere), Layer, Sperren, Modifikatoren,

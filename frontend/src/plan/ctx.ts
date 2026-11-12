@@ -56,8 +56,10 @@ export interface Stroke {
   sidc?: string;
   /** Schraffur-Füllung (Standard an) */
   fill?: boolean;
+  /** Art: "phaseline" (Linie/Fläche) oder "dot" (einfacher Punkt: 1 Punkt, width = Größe, name = Text) */
+  kind?: string;
 }
-export type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text" | "ref" | "area";
+export type Mode = "move" | "markermove" | "point" | "line" | "dot" | "erase" | "place" | "measure" | "text" | "ref" | "area";
 /** Standardfrist für Zeus-Freigaben (Phasen und Missionsbau-Notizen), in Stunden. */
 export const ZEUS_DEFAULT_H = 72;
 /** Stern-Pin auf der Karte (Farbe per CSS: gelb = für alle, pink = nur Missionsbau). */
@@ -222,6 +224,15 @@ export interface PlanUi {
   renderLineX: () => void;
   /** Server hat einen Stroke mit dieser cid angelegt (Undo/Redo der Anlage). */
   strokeCommitted: (cid: string, id: string) => void;
+  /** Stroke anlegen / Felder ändern / löschen — jeweils mit Undo/Redo. */
+  commitStroke: (data: Record<string, unknown>) => void;
+  modifyStroke: (id: string, data: Record<string, unknown>) => void;
+  deleteStroke: (id: string) => void;
+  // dots.ts
+  /** Punkt-Panel beim Wechsel ins Punkt-Werkzeug auf die aktuelle Phase setzen. */
+  syncDotPanel: () => void;
+  placeDot: (pos: LngLat2) => void;
+  openDotSettings: (id: string) => void;
   // markers.ts
   placeMarker: (pos: LngLat2, tpl: MarkerTemplate) => void;
   startPlaceAt: (pos: LngLat2) => void;
@@ -301,6 +312,12 @@ export function createUi(): PlanUi {
     renderMeasureX: noop,
     renderLineX: noop,
     strokeCommitted: noop,
+    commitStroke: noop,
+    modifyStroke: noop,
+    deleteStroke: noop,
+    syncDotPanel: noop,
+    placeDot: noop,
+    openDotSettings: noop,
     placeMarker: noop,
     startPlaceAt: noop,
     openEditPanel: noopAsync,

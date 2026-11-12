@@ -19,7 +19,22 @@ import { wireScaleBox } from "./scalebox";
 import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
 import { openLightbox } from "./lightbox";
 import type { ImagePlacement, PlanImage as PubImage } from "./api";
-import { AREA_COLORS, areaFeatures, areaLabelFeature, areaSizeText, ensureAreaLabelLayer, ensureAreaLayers, hatchId, ringOf, setAreaData, setAreaLabels } from "./mapAreas";
+import {
+  addDotLayers,
+  AREA_COLORS,
+  areaFeatures,
+  areaLabelFeature,
+  areaSizeText,
+  DOT_KIND,
+  dotFeature,
+  ensureAreaLabelLayer,
+  ensureAreaLayers,
+  hatchId,
+  NOT_DOT_FILTER,
+  ringOf,
+  setAreaData,
+  setAreaLabels,
+} from "./mapAreas";
 
 interface M {
   id: string;
@@ -48,6 +63,8 @@ interface S {
   name?: string;
   sidc?: string;
   fill?: boolean;
+  /** "dot" = einfacher Punkt (1 Punkt, width = Größe, name = Text) */
+  kind?: string;
 }
 interface Ph {
   id: string;
@@ -233,22 +250,28 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   });
   const sFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
-    features: [...strokes.values()].map((s) => ({
-      type: "Feature",
-      geometry: { type: "LineString", coordinates: isArea(s) ? ringOf(s.points) : s.points },
-      properties: {
-        id: s.id,
-        color: hex(s.color),
-        width: s.width > 0 ? s.width : 2,
-        opacity: opacityOf(s),
-      },
-    })),
+    features: [...strokes.values()].map(
+      (s): GeoJSON.Feature =>
+        // Punkt (Punkt-Werkzeug): Kreis + Text über eigene Layer (s-dots)
+        s.kind === DOT_KIND
+          ? dotFeature(s.id, s.points[0] ?? [0, 0], hex(s.color), s.width, s.name || "", opacityOf(s))
+          : {
+              type: "Feature",
+              geometry: { type: "LineString", coordinates: isArea(s) ? ringOf(s.points) : s.points },
+              properties: {
+                id: s.id,
+                color: hex(s.color),
+                width: s.width > 0 ? s.width : 2,
+                opacity: opacityOf(s),
+              },
+            },
+    ),
   });
 
   // ── Flächen: Bereiche von Notizen + geschlossene Linien (benannte Flächen) ──
   // Notiz-Bereiche wie im Editor: Schraffur 25 %, Außenlinie 50 %, pink = Missionsbau-Layer, gelb sonst;
   // offene Bereiche nur als Linie. Geschlossene Strokes: Schraffur in Stroke-Farbe (Außenlinie = Stroke selbst).
-  const isArea = (s: S): boolean => s.closed === true && (s.points?.length ?? 0) >= 3;
+  const isArea = (s: S): boolean => s.kind !== DOT_KIND && s.closed === true && (s.points?.length ?? 0) >= 3;
   const isNotesPhase = (pid: string | null | undefined): boolean =>
     !!pid && phases.some((p) => p.id === pid && p.role === "notes");
   const areaFC = (): GeoJSON.Feature[] => {
@@ -543,6 +566,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       id: "s",
       type: "line",
       source: "s",
+      filter: NOT_DOT_FILTER as maplibregl.FilterSpecification, // Punkte haben eigene Layer
       paint: {
         "line-color": ["get", "color"],
         "line-width": ["get", "width"],
@@ -550,6 +574,8 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       },
       layout: { "line-cap": "round", "line-join": "round" },
     });
+    // Einfache Punkte (Punkt-Werkzeug): Kreis + Text wie im Editor (unter den Markern)
+    addDotLayers(map, "s", "s-dots");
 
     map.addSource("linedraft", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     map.addLayer({
@@ -919,12 +945,13 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     map.on("mousedown", ly, onMarkerDown);
     map.on("click", ly, onMarkerClick);
   }
-  map.on("click", "s", (e) => {
-    if (mode === "erase" && rights.edit) {
-      const id = e.features?.[0]?.properties?.id as string | undefined;
-      if (id) wsSend({ type: "stroke.delete", id });
-    }
-  });
+  for (const ly of ["s", "s-dots"])
+    map.on("click", ly, (e) => {
+      if (mode === "erase" && rights.edit) {
+        const id = e.features?.[0]?.properties?.id as string | undefined;
+        if (id) wsSend({ type: "stroke.delete", id });
+      }
+    });
 
   // ── Präsentationsmodus ──────────────────────────────────────────────
   let presentBar: HTMLElement | null = null;

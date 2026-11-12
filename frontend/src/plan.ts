@@ -42,6 +42,7 @@ import { initOrbatPanel } from "./plan/orbatPanel";
 import { initGrid } from "./plan/grid";
 import { initToolbar } from "./plan/toolbar";
 import { initStrokes } from "./plan/strokes";
+import { initDots } from "./plan/dots";
 import { initEraser } from "./plan/eraser";
 import { initFavorites } from "./plan/favorites";
 import { initMarkers } from "./plan/markers";
@@ -268,6 +269,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
             (IS_MOBILE ? iconBtn("markerMove", { data: { mode: "markermove" }, title: t("tool.markermove") + hk("markermove") }) : "") +
             iconBtn("point", { data: { mode: "point" }, title: t("tool.point") + hk("point") }) +
             iconBtn("line", { data: { mode: "line" }, title: t("tool.line") + hk("line") }) +
+            iconBtn("dot", { data: { mode: "dot" }, title: t("tool.dot") + hk("dot") }) +
             iconBtn("ruler", { data: { mode: "measure" }, title: t("tool.measure") + hk("measure") }) +
             iconBtn("eraser", { data: { mode: "erase" }, title: t("tool.erase") + hk("erase") }) +
             iconBtn("textbox", { data: { mode: "text" }, title: t("tool.text") + hk("text") }) +
@@ -309,6 +311,22 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <button class="primary" id="lineFinish">${t("line.finish")}</button>
              <p class="muted" style="margin:.35rem 0 0;font-size:.72rem">${t("line.rmbHint")}</p>
           <p class="muted" style="margin:.2rem 0 0;font-size:.72rem">${t("line.closeHint")}</p>
+           </div>
+           <div class="line-style" id="dotStyle" hidden>
+             <div class="fav-head">${t("dot.heading")}</div>
+             <label>${t("line.color")}</label>
+             <div id="dc" class="line-colors" title="${t("tip.dot.color")}"></div>
+             <label>${t("dot.size")}</label>
+             <select id="dSize" aria-label="${t("dot.size")}" title="${t("tip.dot.size")}"></select>
+             <label>${t("dot.text")}</label>
+             <input type="text" id="dText" maxlength="128" placeholder="${t("dot.textPh")}" aria-label="${t("dot.text")}" title="${t("tip.dot.text")}" />
+             <label>${t("phase.assign")}</label>
+             <select id="dPhase" aria-label="${t("phase.assign")}" title="${t("tip.draw.phase")}"></select>
+             <label>${t("phase.extra")}</label>
+             <div id="dXph"></div>
+             <label>${t("wiz.layer")}</label>
+             <select id="dLayer" aria-label="${t("wiz.layer")}" title="${t("tip.draw.layer")}"></select>
+             <p class="muted" style="margin:.35rem 0 0;font-size:.72rem">${t("dot.hint")}</p>
            </div>
            <div class="line-style" id="measureStyle" hidden>
              <div class="fav-head">${t("tool.measure").split(" – ")[0]}</div>
@@ -458,6 +476,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   initToolbar(ctx);
   initStrokes(ctx);
+  initDots(ctx);
   initEraser(ctx);
   await initFavorites(ctx);
   initMarkers(ctx);

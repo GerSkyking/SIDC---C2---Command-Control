@@ -20,6 +20,15 @@ export function packedToHex(packed: number): string {
   return "#" + n.toString(16).padStart(6, "0");
 }
 
+/** "#rrggbb" → gepackte ARGB-Farbe (voll deckend, als vorzeichenbehaftete 32-Bit-Zahl wie die Linienfarben). */
+export function hexToPacked(hex: string): number {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return -1;
+  const p = (0xff000000 | parseInt(m[1], 16)) | 0;
+  // -1 bedeutet „Standardfarbe“ (packedToHex → Gold) — reines Weiß daher minimal abdunkeln
+  return p === -1 ? -2 : p;
+}
+
 export function emptyFC(): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features: [] };
 }
