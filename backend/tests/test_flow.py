@@ -397,6 +397,21 @@ def test_orbat_library(admin):
         # Spieler darf die ORBAT-Bibliothek nicht sehen
         assert c.get("/api/orbats").status_code == 403
 
+    # Eigene Seite (friend): Spieler sehen die ganze Struktur ohne Freigabe, nur lesend
+    own = admin.post("/api/orbats", json={"name": "Eigene Kp", "affiliation": "friend"}).json()["id"]
+    r1 = admin.post(f"/api/orbats/{own}/nodes", json={"name": "Zug A", "qty_planned": 30}).json()
+    admin.post(f"/api/orbats/{own}/nodes", json={"name": "Gruppe A1", "parent_id": r1["id"], "qty_planned": 8})
+    admin.post(f"/plans/{pid}/orbats", json={"orbat_id": own})
+    with TestClient(app) as c:
+        c.post("/auth/login", json={"username": "pl", "password": "pl-pass-123456"})
+        pv = {o["id"]: o for o in c.get(f"/plans/{pid}/orbats").json()}
+        assert pv[own]["released"] is True
+        names = sorted(n["name"] for n in pv[own]["nodes"])
+        assert names == ["Gruppe A1", "Zug A"]
+        assert next(n for n in pv[own]["nodes"] if n["name"] == "Zug A")["qty_planned"] == 30
+        # Gegner bleibt auf die Freigabe beschränkt
+        assert [n["id"] for n in pv[oid]["nodes"]] == [child["id"]]
+
 
 def test_orbat_marker_link(admin):
     """Marker ↔ ORBAT-Knoten: Status-Sync in beide Richtungen + freigegebener

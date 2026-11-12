@@ -5,6 +5,11 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-11-12 – ORBAT: eigene Seite für Spieler vollständig
+- Spieler sehen einen ORBAT der eigenen Seite (Zugehörigkeit *Freund*, z. B. BLUFOR) im Plan jetzt **vollständig**
+  (nur lesen, ohne Freigabe). Feindliche, neutrale und unbekannte ORBATs bleiben auf die Freigabe des Missionsbaus
+  beschränkt (sichtbar / Typ / Stärke). Missionsbauer sehen weiter alles.
+
 ### 2026-11-12 – Tooltips/Bedienhilfen
 - Durchgang durch die ganze Oberfläche: Häkchen, Regler, Auswahlfelder, Segment-Umschalter und Badges, deren Zweck
   nicht aus der Beschriftung hervorgeht, haben jetzt einen kurzen Tooltip (`title`, bei unbeschrifteten Feldern

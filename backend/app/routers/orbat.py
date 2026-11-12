@@ -456,12 +456,15 @@ def list_plan_orbats(plan_id: Annotated[str, Path()], user: CurrentUser, db: DbD
         if o is None:
             continue
         full = mb and _acl_level(db, user, o) is not None
+        # Eigene Seite (friend): Spieler sehen die ganze Struktur (nur lesen).
+        # Gegner/neutral/unbekannt: nur, was der Missionsbau per Freigabe zeigt.
+        own = o.affiliation == "friend"
         d = {"id": o.id, "name": o.name, "affiliation": o.affiliation, "released": not full}
         nodes = db.scalars(select(OrbatNode).where(OrbatNode.orbat_id == oid).order_by(OrbatNode.ordering))
         d["nodes"] = [
-            _node_out(n) if full else _released_node(n)
+            _node_out(n) if (full or own) else _released_node(n)
             for n in nodes
-            if full or n.rel_visible
+            if full or own or n.rel_visible
         ]
         out.append(d)
     return out

@@ -129,7 +129,8 @@ PlanOrbat       plan_id, orbat_id           # ORBAT einem Plan zugeschaltet
 - **ORBAT-Bibliothek** (Sidebar → Missionsbau): ORBATs anlegen/löschen, ACL verwalten,
   Baum bearbeiten. Bearbeiten nur Missionsbau + ORBAT-`editor`; Lesen je ORBAT-ACL.
 - **Im Plan:** „ORBAT hinzufügen" (berechtigter Missionsbauer) → danach sehen **alle
-  Spieler** dieses Plans die ORBAT — in der **freigegebenen** Sicht.
+  Spieler** dieses Plans die ORBAT (nur lesen): die **eigene Seite** (`affiliation = friend`)
+  vollständig, Feind/neutral/unbekannt nur in der **freigegebenen** Sicht.
 - **Baumdiagramm:** Org-Chart (Boxen + Linien, top-down), **Ein-/Ausklappen** und
   **Drag & Drop** zum Umhängen. Aufklappen erlaubt, aus einem Platoon einzelne Squads auf
   die Karte zu setzen (Baustein C).
