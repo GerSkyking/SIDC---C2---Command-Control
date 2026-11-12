@@ -253,6 +253,8 @@ def _stroke_dict(s: Stroke) -> dict:
         "id": s.id, "phase_id": s.phase_id, "layer_id": s.layer_id, "kind": s.kind,
         "channel": s.channel, "points": s.points, "color": s.color, "width": s.width,
         "extra_phase_ids": list(s.extra_phase_ids or []),
+        "closed": bool(s.closed), "name": s.name or "", "sidc": s.sidc or "",
+        "fill": s.fill is not False,
     }
 
 

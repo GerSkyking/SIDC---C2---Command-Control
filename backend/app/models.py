@@ -395,6 +395,12 @@ class Stroke(Base):
     points: Mapped[list] = mapped_column(JSON, default=list)           # [[x, y], ...]
     color: Mapped[int] = mapped_column(Integer, default=-1)
     width: Mapped[float] = mapped_column(Float, default=-1)
+    # Benannte Fläche: geschlossene Linie (>= 3 Punkte), optional schraffiert gefüllt, mit Namen
+    # und SIDC-Symbol (taktische Grafik) am Schwerpunkt.
+    closed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    name: Mapped[str] = mapped_column(String(128), default="", server_default="")
+    sidc: Mapped[str] = mapped_column(String(32), default="", server_default="")
+    fill: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

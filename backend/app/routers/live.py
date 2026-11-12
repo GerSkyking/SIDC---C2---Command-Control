@@ -707,15 +707,43 @@ def _clean_points(pts) -> list:
     return pts
 
 
+STROKE_NAME_MAX = 128
+# Ziffern-SIDC (APP-6D/2525D: 20 Stellen, 2525E/APP-6E: 30 Stellen) oder 15-stelliger
+# Buchstaben-SIDC (2525C: Großbuchstaben, Ziffern, "-" und "*").
+_SIDC_NUM_RE = re.compile(r"^(?:\d{20}|\d{30})$")
+_SIDC_LETTER_RE = re.compile(r"^[A-Z0-9*\-]{15}$")
+
+
+def clean_sidc(v) -> str:
+    """SIDC einer Fläche prüfen; ungültig/leer -> ""."""
+    if not isinstance(v, str):
+        return ""
+    v = v.strip().upper()
+    return v if _SIDC_NUM_RE.match(v) or _SIDC_LETTER_RE.match(v) else ""
+
+
+def _clean_stroke_name(v) -> str:
+    if not isinstance(v, str):
+        return ""
+    # Steuerzeichen raus, Leerraum zusammenfassen, kürzen
+    v = "".join(ch for ch in v if ch >= " " or ch == "\t")
+    return " ".join(v.split())[:STROKE_NAME_MAX]
+
+
 def _create_stroke(plan_id: str, uid: str, data: dict) -> dict:
     with SessionLocal() as db:
+        pts = _clean_points(data.get("points", []))
         s = Stroke(
             plan_id=plan_id, created_by=uid,
             phase_id=_need_phase(db, plan_id, data.get("phase_id")), layer_id=data.get("layer_id"),
             extra_phase_ids=_clean_ids(data.get("extra_phase_ids")),
-            kind=str(data.get("kind", "freehand"))[:32], points=_clean_points(data.get("points", [])),
+            kind=str(data.get("kind", "freehand"))[:32], points=pts,
             channel=str(data.get("channel") or ""),
             color=int(data.get("color", -1)), width=float(data.get("width", -1)),
+            closed=data.get("closed") is True and len(pts) >= 3,
+            name=_clean_stroke_name(data.get("name")),
+            sidc=clean_sidc(data.get("sidc")),
+            fill=data.get("fill") is not False,
         )
         db.add(s)
         db.commit()
@@ -727,6 +755,8 @@ def _stroke_out(s: Stroke) -> dict:
         "id": s.id, "phase_id": s.phase_id, "layer_id": s.layer_id, "kind": s.kind,
         "channel": s.channel, "points": s.points, "color": s.color, "width": s.width,
         "extra_phase_ids": list(s.extra_phase_ids or []),
+        "closed": bool(s.closed), "name": s.name or "", "sidc": s.sidc or "",
+        "fill": s.fill is not False,
     }
 
 
@@ -779,6 +809,16 @@ def _update_stroke(plan_id: str, stroke_id: str, data: dict) -> dict | None:
             s.channel = str(data["channel"] or "")
         if "layer_id" in data:
             s.layer_id = data["layer_id"] or None
+        if "name" in data:
+            s.name = _clean_stroke_name(data["name"])
+        if "sidc" in data:
+            s.sidc = clean_sidc(data["sidc"])
+        if "fill" in data:
+            s.fill = data["fill"] is not False
+        if "closed" in data:
+            s.closed = data["closed"] is True
+        # Geschlossen nur mit mindestens 3 Punkten (auch nach Punkt-Änderung)
+        s.closed = bool(s.closed) and len(s.points or []) >= 3
         db.commit()
         return _stroke_out(s)
 
