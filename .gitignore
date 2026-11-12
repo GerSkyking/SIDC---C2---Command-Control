@@ -37,3 +37,15 @@ backend/_localup/
 backend/_localmaps/
 backend/local_test.db
 backend/mig_test.db
+CHANGELOG.md
+Local/CHANGELOG.md
+Local/PLAN.md
+Local/README.md
+Local/REVIEW-2026-10.md
+Local/SECURITY-AUDIT.md
+Local/TODO DE.txt
+PLAN.md
+README.md
+REVIEW-2026-10.md
+SECURITY-AUDIT.md
+TODO DE.txt
