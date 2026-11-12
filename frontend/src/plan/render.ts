@@ -5,7 +5,10 @@ import type * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 import { isTextMarker, markerLabelCategory } from "../sidc/sidc";
 import { ensureMapIcon, mapIconId, markerLabelOffsets } from "../sidc/symbol";
-import { IS_MOBILE, type Marker, type PlanCtx } from "./ctx";
+import { areaFeatures, areaLabelFeature, ensureAreaLabelLayer, ensureAreaLayers, hatchId, ringOf, setAreaData, setAreaLabels } from "../mapAreas";
+import { IS_MOBILE, type Marker, type PlanCtx, type Stroke } from "./ctx";
+/** Geschlossene Linie mit mindestens 3 Punkten = Fläche. */
+export const isStrokeArea = (s: Stroke): boolean => s.closed === true && (s.points?.length ?? 0) >= 3;
 import { emptyFC, packedToHex } from "./geo";
 
 export function initRender(ctx: PlanCtx): void {
@@ -136,19 +139,46 @@ export function initRender(ctx: PlanCtx): void {
       heads: { type: "FeatureCollection", features: heads },
     };
   };
+  const strokeOpacity = (s: Stroke): number => multiPhaseOpacity(s.phase_id, s.extra_phase_ids) * tacOpacity(null, s.layer_id);
   const strokeFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
     features: [...strokes.values()].map((s) => ({
       type: "Feature",
-      geometry: { type: "LineString", coordinates: s.points },
+      // Geschlossene Fläche: Umriss = die Linie selbst als geschlossener Ring
+      geometry: { type: "LineString", coordinates: isStrokeArea(s) ? ringOf(s.points) : s.points },
       properties: {
         id: s.id,
         color: packedToHex(s.color),
         width: s.width > 0 ? s.width : 2,
-        opacity: multiPhaseOpacity(s.phase_id, s.extra_phase_ids) * tacOpacity(null, s.layer_id),
+        opacity: strokeOpacity(s),
       },
     })),
   });
+  // Benannte Flächen (geschlossene Strokes): Schraffur in Stroke-Farbe (entfällt bei fill:false) und
+  // Name/Symbol/Größe am Schwerpunkt — gleiche Optik wie die öffentliche Ansicht (mapAreas.ts).
+  const strokeAreaFC = (): GeoJSON.Feature[] => {
+    const out: GeoJSON.Feature[] = [];
+    for (const s of strokes.values()) {
+      if (!isStrokeArea(s) || s.fill === false) continue;
+      const op = strokeOpacity(s);
+      if (op <= 0.001) continue;
+      const color = packedToHex(s.color);
+      out.push(...areaFeatures(s.points, true, { sid: s.id, color, pat: hatchId(color), op }).filter((f) => f.geometry.type === "Polygon"));
+    }
+    return out;
+  };
+  const strokeAreaLabelFC = (): GeoJSON.Feature[] =>
+    [...strokes.values()].flatMap((s) => {
+      if (!isStrokeArea(s)) return [];
+      const op = strokeOpacity(s);
+      if (op <= 0.001) return [];
+      const f = areaLabelFeature(
+        map,
+        { id: s.id, pts: s.points, name: s.name || "", sidc: s.sidc || "", color: packedToHex(s.color), opacity: op, scale: ctx.personalScale },
+        ctx.cal,
+      );
+      return f ? [f] : [];
+    });
   // Verbindungslinien für Multipoint-Marker (gleiche linked_group_id, nach point_index)
   const chainFC = (): GeoJSON.FeatureCollection => {
     const byGroup = new Map<number, Marker[]>();
@@ -264,6 +294,10 @@ export function initRender(ctx: PlanCtx): void {
       },
       layout: { "line-cap": "round", "line-join": "round" },
     });
+    // Schraffur unter den Linien, Beschriftung darüber
+    ensureAreaLayers(map, "stroke-areas", { before: "strokes" });
+    ensureAreaLabelLayer(map, "stroke-area-labels");
+    refreshStrokeAreas();
     ctx.strokesLayer.done();
 
     map.addSource("chains", { type: "geojson", data: chainFC() });
@@ -311,7 +345,13 @@ export function initRender(ctx: PlanCtx): void {
       type: "circle",
       source: "linedraft",
       filter: ["==", ["geometry-type"], "Point"],
-      paint: { "circle-radius": 4, "circle-color": "#4c8dff", "circle-stroke-color": "#fff", "circle-stroke-width": 1 },
+      // Startpunkt grün und größer, sobald ein Klick die Linie zur Fläche schließen würde
+      paint: {
+        "circle-radius": ["case", ["get", "hot"], 9, ["get", "first"], 5.5, 4],
+        "circle-color": ["case", ["get", "hot"], "#3ddc84", "#4c8dff"],
+        "circle-stroke-color": "#fff",
+        "circle-stroke-width": ["case", ["get", "hot"], 2, 1],
+      },
     });
 
     // Messwerkzeug (Lineal): gestrichelte Linie + Distanz-Label
@@ -557,7 +597,15 @@ export function initRender(ctx: PlanCtx): void {
     (map.getSource("chains") as GeoJSONSource)?.setData(chainFC());
     refreshDir();
   };
-  const refreshStrokes = () => (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
+  const refreshStrokeAreas = () => {
+    if (!map.getSource("stroke-areas")) return;
+    setAreaData(map, "stroke-areas", strokeAreaFC());
+    setAreaLabels(map, "stroke-area-labels", strokeAreaLabelFC());
+  };
+  const refreshStrokes = () => {
+    (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
+    refreshStrokeAreas();
+  };
   const refreshMarkers = async () => {
     await Promise.all([...markers.values()].map(ensureIcon));
     (map.getSource("markers") as GeoJSONSource)?.setData(markerFC());

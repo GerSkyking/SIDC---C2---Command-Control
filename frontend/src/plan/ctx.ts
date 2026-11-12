@@ -50,6 +50,12 @@ export interface Stroke {
   extra_phase_ids?: string[];
   layer_id?: string | null;
   channel?: string;
+  /** Benannte Fläche: geschlossene Linie (Punkte offen gespeichert, ohne wiederholten Startpunkt). */
+  closed?: boolean;
+  name?: string;
+  sidc?: string;
+  /** Schraffur-Füllung (Standard an) */
+  fill?: boolean;
 }
 export type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text" | "ref" | "area";
 /** Standardfrist für Zeus-Freigaben (Phasen und Missionsbau-Notizen), in Stunden. */
@@ -201,6 +207,8 @@ export interface PlanUi {
   refreshLineDraft: () => void;
   renderMeasureX: () => void;
   renderLineX: () => void;
+  /** Server hat einen Stroke mit dieser cid angelegt (Undo/Redo der Anlage). */
+  strokeCommitted: (cid: string, id: string) => void;
   // markers.ts
   placeMarker: (pos: LngLat2, tpl: MarkerTemplate) => void;
   startPlaceAt: (pos: LngLat2) => void;
@@ -277,6 +285,7 @@ export function createUi(): PlanUi {
     refreshLineDraft: noop,
     renderMeasureX: noop,
     renderLineX: noop,
+    strokeCommitted: noop,
     placeMarker: noop,
     startPlaceAt: noop,
     openEditPanel: noopAsync,

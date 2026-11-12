@@ -8,7 +8,8 @@ import { confirmDialog } from "../notify";
 import { layerSelectHtml, phaseMultiHtml, readPhaseMulti } from "../sidc/layerui";
 import { lngLatToWorld } from "../sidc/sidc";
 import { cid } from "../ws";
-import type { PlanCtx } from "./ctx";
+import { AREA_CLOSE_PX, type LngLat2, type PlanCtx, type Stroke } from "./ctx";
+import { areaFieldsHtml, openAreaNameDialog, wireAreaFields } from "./strokeArea";
 import { fmtDist, lineDraftFC } from "./geo";
 
 export function initStrokes(ctx: PlanCtx): void {
@@ -119,7 +120,7 @@ export function initStrokes(ctx: PlanCtx): void {
       ctx.measureCursor = null;
       redrawMeasure();
     } else if (ctx.editStrokeId) {
-      if (caps.draw) socket.send({ type: "stroke.delete", id: ctx.editStrokeId });
+      if (caps.draw) deleteStroke(ctx.editStrokeId);
       ctx.ui.setEditStroke(null);
     } else if (ctx.editMeasureId) {
       const mid = ctx.editMeasureId;
@@ -128,9 +129,103 @@ export function initStrokes(ctx: PlanCtx): void {
       redrawMeasure();
     }
   });
+  // ── Fläche schließen: Klick nahe am Startpunkt (ab 3 Punkten) schließt die Linie zur Fläche ──
+  const nearStart = (p: LngLat2 | null): boolean => {
+    if (!p || ctx.linePts.length < 3) return false;
+    const a = map.project(ctx.linePts[0]);
+    const b = map.project(p);
+    return Math.hypot(a.x - b.x, a.y - b.y) <= AREA_CLOSE_PX;
+  };
+  // Geschlossener Entwurf, solange der Benennen-Dialog offen ist
+  let closingPts: LngLat2[] | null = null;
   const refreshLineDraft = () => {
-    (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(ctx.linePts, ctx.lineCursor));
+    const src = map.getSource("linedraft") as GeoJSONSource | undefined;
+    if (closingPts) src?.setData(lineDraftFC(closingPts, null, false, true));
+    else src?.setData(lineDraftFC(ctx.linePts, ctx.lineCursor, nearStart(ctx.lineCursor)));
     positionLineDone();
+  };
+
+  // ── Undo/Redo für Linien: Anlegen, Löschen, Einstellungen, Stützpunkte ──
+  // Wird eine gelöschte Linie per Undo/Redo neu angelegt, bekommt sie eine neue ID — ``alias`` führt die
+  // ursprüngliche ID auf die aktuelle, damit ältere Befehle (z. B. Einstellungen) weiter greifen.
+  const alias = new Map<string, string>();
+  const resolve = (id: string): string => {
+    let cur = id;
+    for (let i = 0; i < 50 && alias.has(cur); i++) cur = alias.get(cur)!;
+    return cur;
+  };
+  const pendingCommits = new Map<string, (id: string) => void>();
+  const sendCommit = (data: Record<string, unknown>, onId: (id: string) => void): void => {
+    const c = cid();
+    pendingCommits.set(c, onId);
+    socket.send({ type: "stroke.commit", cid: c, data });
+  };
+  const strokeCommitted = (c: string, id: string): void => {
+    const f = pendingCommits.get(c);
+    if (!f) return;
+    pendingCommits.delete(c);
+    f(id);
+  };
+  /** Linie anlegen (mit Undo = löschen, Redo = neu anlegen). */
+  const commitStroke = (data: Record<string, unknown>): void => {
+    let origId: string | null = null;
+    const onId = (id: string) => {
+      if (!origId) origId = id;
+      else if (id !== origId) alias.set(resolve(origId), id);
+    };
+    sendCommit(data, onId);
+    ctx.ui.pushCmd({
+      undo: () => {
+        if (!origId) return;
+        const id = resolve(origId);
+        if (ctx.editStrokeId === id) ctx.ui.setEditStroke(null);
+        socket.send({ type: "stroke.delete", id });
+      },
+      redo: () => sendCommit(data, onId),
+    });
+  };
+  /** Daten einer bestehenden Linie zum Neu-Anlegen (Undo des Löschens). */
+  const strokeData = (s: Stroke): Record<string, unknown> => ({
+    kind: "phaseline",
+    points: s.points.map((p) => [p[0], p[1]]),
+    color: s.color,
+    width: s.width,
+    phase_id: s.phase_id ?? null,
+    extra_phase_ids: [...(s.extra_phase_ids ?? [])],
+    layer_id: s.layer_id ?? null,
+    closed: s.closed === true,
+    name: s.name ?? "",
+    sidc: s.sidc ?? "",
+    fill: s.fill !== false,
+  });
+  const deleteStroke = (id: string): void => {
+    const s = strokes.get(id);
+    socket.send({ type: "stroke.delete", id });
+    if (!s) return;
+    const data = strokeData(s);
+    ctx.ui.pushCmd({
+      undo: () => sendCommit(data, (nid) => alias.set(resolve(id), nid)),
+      redo: () => socket.send({ type: "stroke.delete", id: resolve(id) }),
+    });
+  };
+  /** Felder einer Linie ändern (mit Undo auf den vorherigen Stand der geänderten Felder). */
+  const modifyStroke = (id: string, data: Record<string, unknown>): void => {
+    const s = strokes.get(id) as unknown as Record<string, unknown> | undefined;
+    const norm = (v: unknown): string => JSON.stringify(v === undefined ? null : v);
+    const changed: Record<string, unknown> = {};
+    const before: Record<string, unknown> = {};
+    for (const k of Object.keys(data)) {
+      const prev = k === "fill" ? s?.[k] !== false : k === "closed" ? s?.[k] === true : s?.[k];
+      if (s && norm(data[k]) === norm(prev)) continue;
+      changed[k] = data[k];
+      before[k] = prev === undefined ? (k === "name" || k === "sidc" ? "" : null) : JSON.parse(norm(prev));
+    }
+    if (!Object.keys(changed).length) return;
+    socket.send({ type: "stroke.modify", id, data: changed });
+    ctx.ui.pushCmd({
+      undo: () => socket.send({ type: "stroke.modify", id: resolve(id), data: before }),
+      redo: () => socket.send({ type: "stroke.modify", id: resolve(id), data: changed }),
+    });
   };
 
   // Höhe an einem Punkt — dieselbe Quelle wie im HUD (2D: DEM-Kacheln, 3D: Terrain-Mesh).
@@ -261,23 +356,34 @@ export function initStrokes(ctx: PlanCtx): void {
   }
   const finishLine = () => {
     if (ctx.linePts.length >= 2 && zeusBlocked()) return;
-    if (ctx.linePts.length >= 2) {
-      socket.send({
-        type: "stroke.commit",
-        cid: cid(),
-        data: {
-          kind: "phaseline",
-          points: ctx.linePts,
-          color: ctx.lineColor,
-          width: ctx.lineWidth,
-          phase_id: ctx.linePhaseId ?? ctx.currentPhaseId ?? null,
-          extra_phase_ids: lineExtraPhases,
-          layer_id: lineLayerId,
-        },
-      });
-    }
+    if (ctx.linePts.length >= 2) commitStroke(lineData(ctx.linePts));
     ctx.linePts = [];
     refreshLineDraft();
+  };
+  function lineData(pts: LngLat2[]): Record<string, unknown> {
+    return {
+      kind: "phaseline",
+      points: pts,
+      color: ctx.lineColor,
+      width: ctx.lineWidth,
+      phase_id: ctx.linePhaseId ?? ctx.currentPhaseId ?? null,
+      extra_phase_ids: [...lineExtraPhases],
+      layer_id: lineLayerId,
+    };
+  }
+  // Linie zur Fläche geschlossen → Benennen-Dialog (Name, Symbol, Füllung), dann mit closed:true speichern
+  const closeLine = () => {
+    if (ctx.linePts.length < 3 || zeusBlocked()) return;
+    const base = lineData([...ctx.linePts]);
+    closingPts = base.points as LngLat2[];
+    ctx.linePts = [];
+    ctx.lineCursor = null;
+    refreshLineDraft();
+    openAreaNameDialog(root, sig, (f) => {
+      closingPts = null;
+      refreshLineDraft();
+      commitStroke({ ...base, closed: true, name: f.name, sidc: f.sidc, fill: f.fill });
+    });
   };
   root.querySelector("#lineFinish")!.addEventListener("click", finishLine);
   // Laufende Linie verwerfen (Rechtsklick / Escape) — ohne sie zu setzen.
@@ -289,8 +395,9 @@ export function initStrokes(ctx: PlanCtx): void {
   function openStrokeSettings(strokeId: string): void {
     const s = strokes.get(strokeId);
     if (!s) return;
+    const isClosed = s.closed === true && s.points.length >= 3;
     const back = document.createElement("div");
-    back.className = "edit-modal";
+    back.className = "edit-modal area-name-dlg";
     back.innerHTML = `<div class="card" style="width:min(24rem,96vw)">
       <div class="row"><h1 style="flex:1;margin:0">${t("line.edit")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
       <label class="chk-lbl">${t("phase.assign")}
@@ -314,9 +421,16 @@ export function initStrokes(ctx: PlanCtx): void {
         <select data-swidth>${lineWidths
           .map((w) => `<option value="${w.width}" ${w.width === s.width ? "selected" : ""}>${w.width}</option>`)
           .join("")}</select></label>
+      <label class="chk" style="margin-top:.5rem" title="${t("areaName.closedHint")}"><input type="checkbox" data-sclosed ${isClosed ? "checked" : ""} ${
+        s.points.length < 3 ? "disabled" : ""
+      }/> <span>${t("areaName.closed")}</span></label>
+      <div data-area-block ${isClosed ? "" : "hidden"}>${areaFieldsHtml({ name: s.name ?? "", sidc: s.sidc ?? "", fill: s.fill !== false })}</div>
       <div class="row" style="margin-top:.6rem"><button class="primary" data-save style="flex:1">${t("common.save")}</button></div>
     </div>`;
     document.body.appendChild(back);
+    const readArea = wireAreaFields(back, { name: s.name ?? "", sidc: s.sidc ?? "", fill: s.fill !== false }, root, back);
+    const closedIn = back.querySelector<HTMLInputElement>("[data-sclosed]")!;
+    closedIn.addEventListener("change", () => (back.querySelector<HTMLElement>("[data-area-block]")!.hidden = !closedIn.checked));
     const close = () => back.remove();
     back.addEventListener("mousedown", (e) => e.target === back && close());
     back.querySelector("[data-x]")!.addEventListener("click", close);
@@ -328,19 +442,19 @@ export function initStrokes(ctx: PlanCtx): void {
       });
     }
     back.querySelector("[data-save]")!.addEventListener("click", () => {
-      socket.send({
-        type: "stroke.modify",
-        id: strokeId,
-        data: {
-          phase_id: back.querySelector<HTMLSelectElement>("[data-sphase]")!.value || ctx.currentPhaseId || null,
-          extra_phase_ids: readPhaseMulti(back, "data-xphases"),
-          layer_id: back.querySelector<HTMLSelectElement>("[data-slayer]")
-            ? back.querySelector<HTMLSelectElement>("[data-slayer]")!.value || null
-            : (s.layer_id ?? null),
-          color: Number(back.querySelector<HTMLSelectElement>("[data-scolor]")!.value),
-          width: Number(back.querySelector<HTMLSelectElement>("[data-swidth]")!.value),
-        },
-      });
+      const data: Record<string, unknown> = {
+        phase_id: back.querySelector<HTMLSelectElement>("[data-sphase]")!.value || ctx.currentPhaseId || null,
+        extra_phase_ids: readPhaseMulti(back, "data-xphases"),
+        layer_id: back.querySelector<HTMLSelectElement>("[data-slayer]")
+          ? back.querySelector<HTMLSelectElement>("[data-slayer]")!.value || null
+          : (s.layer_id ?? null),
+        color: Number(back.querySelector<HTMLSelectElement>("[data-scolor]")!.value),
+        width: Number(back.querySelector<HTMLSelectElement>("[data-swidth]")!.value),
+        closed: closedIn.checked && s.points.length >= 3,
+      };
+      // Name/Symbol/Füllung nur bei geschlossener Fläche (bei offener Linie bleiben sie gespeichert)
+      if (data.closed) Object.assign(data, readArea());
+      modifyStroke(strokeId, data);
       close();
     });
   }
@@ -358,6 +472,16 @@ export function initStrokes(ctx: PlanCtx): void {
     const mid = e.features?.[0]?.properties?.mid as string | undefined;
     ctx.ui.setEditMeasure(mid && mid !== "__active" ? mid : null);
   });
+  // Stützpunkte gespeichert → Undo auf die Punkte vor dem Ziehen (Fläche/Schraffur folgt über refreshStrokes)
+  const saveVerts = (id: string, before: LngLat2[], pts: LngLat2[]): void => {
+    const after = pts.map((p) => [p[0], p[1]] as LngLat2);
+    socket.send({ type: "stroke.modify", id, data: { points: after } });
+    if (JSON.stringify(before) === JSON.stringify(after)) return;
+    ctx.ui.pushCmd({
+      undo: () => socket.send({ type: "stroke.modify", id: resolve(id), data: { points: before } }),
+      redo: () => socket.send({ type: "stroke.modify", id: resolve(id), data: { points: after } }),
+    });
+  };
   map.on("mouseenter", "strokeverts-hit", () => (map.getCanvas().style.cursor = "grab"));
   map.on("mouseleave", "strokeverts-hit", () => (map.getCanvas().style.cursor = ctx.ui.modeCursor()));
   map.on("mousedown", "strokeverts-hit", (e) => {
@@ -367,6 +491,7 @@ export function initStrokes(ctx: PlanCtx): void {
     e.preventDefault();
     map.dragPan.disable();
     map.getCanvas().style.cursor = "grabbing";
+    const before = pts.map((p) => [p[0], p[1]] as LngLat2);
     const onMove = (ev: maplibregl.MapMouseEvent) => {
       pts[idx] = [ev.lngLat.lng, ev.lngLat.lat];
       if (ctx.editStrokeId) ctx.ui.refreshStrokes();
@@ -377,7 +502,7 @@ export function initStrokes(ctx: PlanCtx): void {
       map.off("mousemove", onMove);
       map.dragPan.enable();
       map.getCanvas().style.cursor = ctx.ui.modeCursor();
-      if (ctx.editStrokeId) socket.send({ type: "stroke.modify", id: ctx.editStrokeId, data: { points: pts } });
+      if (ctx.editStrokeId) saveVerts(ctx.editStrokeId, before, pts);
     };
     map.on("mousemove", onMove);
     // document statt map: Loslassen außerhalb der Karte darf den Drag nicht hängen lassen
@@ -393,6 +518,7 @@ export function initStrokes(ctx: PlanCtx): void {
     e.preventDefault();
     ctx.vertTouchDrag = true;
     map.dragPan.disable();
+    const before = pts.map((p) => [p[0], p[1]] as LngLat2);
     const onMove = (ev: maplibregl.MapTouchEvent) => {
       if (ev.points.length !== 1) return;
       pts[idx] = [ev.lngLat.lng, ev.lngLat.lat];
@@ -408,7 +534,7 @@ export function initStrokes(ctx: PlanCtx): void {
       ctx.vertTouchDrag = false;
       ctx.ui.syncDragPan();
       // bei touchcancel (Systemgeste/Anruf) trotzdem speichern — lokal ist der Punkt schon verschoben
-      if (ctx.editStrokeId) socket.send({ type: "stroke.modify", id: ctx.editStrokeId, data: { points: pts } });
+      if (ctx.editStrokeId) saveVerts(ctx.editStrokeId, before, pts);
     };
     document.addEventListener("touchend", end, { signal: sig });
     document.addEventListener("touchcancel", end, { signal: sig });
@@ -424,7 +550,12 @@ export function initStrokes(ctx: PlanCtx): void {
   });
   ctx.tools.line = {
     click: (e) => {
-      ctx.linePts.push([e.lngLat.lng, e.lngLat.lat]);
+      const p: LngLat2 = [e.lngLat.lng, e.lngLat.lat];
+      if (nearStart(p)) {
+        closeLine(); // Klick auf den Startpunkt → Fläche
+        return;
+      }
+      ctx.linePts.push(p);
       refreshLineDraft();
     },
   };
@@ -441,6 +572,7 @@ export function initStrokes(ctx: PlanCtx): void {
     finishLine,
     cancelLine,
     refreshLineDraft,
+    strokeCommitted,
     renderMeasureX: () => renderMeasureX(),
     renderLineX: () => renderLineX(),
   });

@@ -1,9 +1,11 @@
-// Wiederverwendbare Flächen-Hilfen für MapLibre (öffentliche Ansicht, später Plan-Editor):
+// Wiederverwendbare Flächen-Hilfen für MapLibre (öffentliche Ansicht und Plan-Editor):
 // Schraffur-Muster erzeugen/registrieren, Flächen-Layer (Füllung 25 %, Außenlinie 50 %) anlegen,
 // GeoJSON aus Punktlisten bauen, Schwerpunkt und Flächeninhalt (m² auf der Spielkarte) berechnen.
 // Punkte sind immer [lng, lat] wie bei Strokes und Annotation-Bereichen.
 import type { GeoJSONSource, Map as MlMap } from "maplibre-gl";
+import { getLang } from "./i18n";
 import { lngLatToWorld, type Calibration } from "./sidc/sidc";
+import { milsymbolImage } from "./sidc/symbol";
 
 export type LngLat = [number, number];
 
@@ -154,12 +156,164 @@ export function polygonAreaM2(pts: LngLat[], cal: Calibration | null): number {
   return Math.abs(s / 2);
 }
 
-/** Flächeninhalt lesbar: unter 1 km² in m², sonst km² (deutsches Zahlenformat optional über ``locale``). */
-export function formatArea(m2: number, locale?: string): string {
+/** Zahlenformat der Oberfläche: deutsch mit Komma, englisch mit Punkt. */
+export function uiLocale(): string {
+  return getLang() === "de" ? "de-DE" : "en-US";
+}
+
+/**
+ * Flächeninhalt lesbar, Staffelung: unter 1 ha in m² (ab 100 m² auf 10 m² gerundet), bis 50 ha in ha,
+ * darüber in km² — z. B. „850 m²“, „2,4 ha“, „0,85 km²“. Ohne ``locale`` die Sprache der Oberfläche.
+ */
+export function formatArea(m2: number, locale: string = uiLocale()): string {
   if (!Number.isFinite(m2) || m2 <= 0) return "0 m²";
-  if (m2 < 1e6) return `${Math.round(m2).toLocaleString(locale)} m²`;
+  const n = (v: number, d: number) => v.toLocaleString(locale, { maximumFractionDigits: d, minimumFractionDigits: 0 });
+  if (m2 < 1e4) return `${n(m2 < 100 ? Math.round(m2) : Math.round(m2 / 10) * 10, 0)} m²`;
+  if (m2 < 5e5) {
+    const ha = m2 / 1e4;
+    return `${n(ha, ha < 10 ? 1 : 0)} ha`;
+  }
   const km2 = m2 / 1e6;
-  return `${km2.toLocaleString(locale, { maximumFractionDigits: km2 < 10 ? 2 : 1 })} km²`;
+  return `${n(km2, km2 < 10 ? 2 : 1)} km²`;
+}
+
+/** Länge einer Linie in Metern auf der Spielkarte (2D, über die Kalibrierung). */
+export function pathLengthM(pts: LngLat[], cal: Calibration | null, closed = false): number {
+  const p = toMeters(cal, closed ? ringOf(openRing(pts)) : pts);
+  let s = 0;
+  for (let i = 1; i < p.length; i++) s += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+  return s;
+}
+
+/** Länge lesbar: unter 1 km in m, sonst km mit zwei Nachkommastellen. */
+export function formatLength(m: number, locale: string = uiLocale()): string {
+  if (!Number.isFinite(m) || m <= 0) return "0 m";
+  if (m < 1000) return `${Math.round(m).toLocaleString(locale)} m`;
+  return `${(m / 1000).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km`;
+}
+
+/** Kurztext für einen Bereich: geschlossen → Fläche, offen → Länge, zu wenige Punkte → "". */
+export function areaSizeText(pts: LngLat[], closed: boolean, cal: Calibration | null): string {
+  const p = openRing(pts);
+  if (closed && p.length >= 3) return formatArea(polygonAreaM2(p, cal));
+  if (p.length >= 2) return formatLength(pathLengthM(p, cal));
+  return "";
+}
+
+// ── Benannte Flächen: Name + SIDC-Symbol + Größe am Schwerpunkt ─────────
+
+/** Bild-ID des Flächen-Symbols (eigener Namensraum, damit Marker-Icons/PNG-Ersatz nicht kollidieren). */
+export function areaIconId(sidc: string): string {
+  return `area|${sidc}`;
+}
+
+/**
+ * SIDC-Symbol für eine Fläche registrieren — nur, wenn milsymbol es als Punktsymbol zeichnen kann
+ * (Linien-/Flächen-Control-Measures liefern keins). Ergebnis: Bild-ID oder "" (dann nur der Name).
+ */
+export function ensureAreaIcon(map: MlMap, sidc: string): string {
+  if (!sidc) return "";
+  const id = areaIconId(sidc);
+  if (map.hasImage(id)) return id;
+  const img = milsymbolImage(sidc, 32);
+  if (!img) return "";
+  map.addImage(id, img);
+  return id;
+}
+
+/** Kann milsymbol das Symbol als Punktsymbol zeichnen? (Vorschau/Hinweis im Dialog) */
+export function areaSymbolRenderable(sidc: string): boolean {
+  return !!sidc && !!milsymbolImage(sidc, 32);
+}
+
+export interface AreaLabelInput {
+  id: string;
+  pts: LngLat[];
+  name: string;
+  sidc: string;
+  /** Farbe "#rrggbb" (Text; Halo automatisch kontrastierend) */
+  color: string;
+  opacity: number;
+  scale?: number;
+  /** Größe mit anzeigen (Standard: ja) */
+  showSize?: boolean;
+}
+
+/** Kontrast-Halo zur Textfarbe: dunkel bei hellen Farben, hell bei dunklen. */
+function haloFor(hex: string): string {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  if (!m) return "#000000";
+  const [r, g, b] = [m[1], m[2], m[3]].map((x) => parseInt(x, 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? "#000000" : "#ffffff";
+}
+
+/** Beschriftungs-Feature einer geschlossenen Fläche (Symbol über Name, darunter klein die Größe). */
+export function areaLabelFeature(map: MlMap, a: AreaLabelInput, cal: Calibration | null): GeoJSON.Feature | null {
+  const c = areaCentroid(a.pts, true);
+  if (!c) return null;
+  const icon = ensureAreaIcon(map, a.sidc);
+  const size = a.showSize === false ? "" : areaSizeText(a.pts, true, cal);
+  if (!a.name && !icon && !size) return null;
+  return {
+    type: "Feature",
+    geometry: { type: "Point", coordinates: c },
+    properties: {
+      id: a.id,
+      name: a.name,
+      size,
+      sep: a.name && size ? "\n" : "",
+      icon,
+      hasIcon: !!icon,
+      color: a.color,
+      halo: haloFor(a.color),
+      opacity: a.opacity,
+      scale: a.scale ?? 1,
+    },
+  };
+}
+
+/** Symbol-Layer für Flächen-Beschriftungen (Quelle + Layer ``id``), identisch in Editor und öffentlicher Ansicht. */
+export function ensureAreaLabelLayer(map: MlMap, id: string, before?: string): void {
+  if (map.getSource(id)) return;
+  map.addSource(id, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer(
+    {
+      id,
+      type: "symbol",
+      source: id,
+      layout: {
+        "icon-image": ["get", "icon"],
+        "icon-size": ["*", 0.8, ["coalesce", ["get", "scale"], 1]],
+        "icon-allow-overlap": true,
+        "text-field": [
+          "format",
+          ["get", "name"], {},
+          ["get", "sep"], {},
+          ["get", "size"], { "font-scale": 0.78 },
+        ],
+        "text-size": 12,
+        "text-line-height": 1.15,
+        "text-anchor": ["case", ["get", "hasIcon"], "top", "center"],
+        "text-offset": ["case", ["get", "hasIcon"], ["literal", [0, 1.5]], ["literal", [0, 0]]],
+        "text-allow-overlap": true,
+        "text-max-width": 16,
+      },
+      paint: {
+        "icon-opacity": ["get", "opacity"],
+        // Text in Flächenfarbe mit kontrastierendem Halo (wie die übrigen Kartenbeschriftungen)
+        "text-color": ["get", "color"],
+        "text-halo-color": ["get", "halo"],
+        "text-halo-width": 1.6,
+        "text-opacity": ["get", "opacity"],
+      },
+    } as never,
+    before && map.getLayer(before) ? before : undefined,
+  );
+}
+
+/** Beschriftungen setzen. */
+export function setAreaLabels(map: MlMap, id: string, features: GeoJSON.Feature[]): void {
+  (map.getSource(id) as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features });
 }
 
 /**

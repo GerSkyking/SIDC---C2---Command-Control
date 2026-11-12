@@ -1,12 +1,13 @@
 // Bereich um einen Pin: offene Linie oder (geschlossen) schraffierte Fläche.
 // Gehört zur Annotation (Feld ``area``), folgt deren Sichtbarkeit und wandert beim Verschieben des Sterns mit.
-// Die Hilfen für Schraffur-Muster und Flächen-Layer (hatchImage, ensureAreaLayers, areaFC, ringOf) sind hier
-// gebündelt, damit weitere Flächen-Funktionen (z. B. Flächengröße, benannte Flächen) sie nutzen können.
+// Schraffur-Muster, Ring und Flächengröße kommen aus mapAreas.ts (gemeinsam mit benannten Flächen und der
+// öffentlichen Ansicht). Die Größe (Fläche bzw. Länge) steht klein unter dem Stern (updateAreaSizes).
 import type * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import { toast } from "../notify";
+import { areaSizeText, ensureHatch, ringOf } from "../mapAreas";
 import { AREA_CLOSE_PX, AREA_COL, AREA_MAX_POINTS, type Annot, type PlanCtx } from "./ctx";
 
 export function initAreas(ctx: PlanCtx): void {
@@ -20,24 +21,10 @@ export function initAreas(ctx: PlanCtx): void {
   areaBar.className = "area-bar";
   areaBar.hidden = true;
   root.appendChild(areaBar);
-  const hatchImage = (color: string): ImageData => {
-    const n = 16;
-    const cv = document.createElement("canvas");
-    cv.width = cv.height = n;
-    const g = cv.getContext("2d")!;
-    g.strokeStyle = color;
-    g.lineWidth = 2.2;
-    g.beginPath();
-    for (const o of [-n, 0, n]) {
-      g.moveTo(o, n);
-      g.lineTo(o + n, 0);
-    }
-    g.stroke();
-    return g.getImageData(0, 0, n, n);
-  };
+  // Schraffur-Muster aus mapAreas.ts (dieselbe Implementierung wie für benannte Flächen und die öffentliche Ansicht)
   function ensureAreaLayers(): void {
-    if (!map.hasImage("hatch-mb")) map.addImage("hatch-mb", hatchImage(AREA_COL.mb));
-    if (!map.hasImage("hatch-all")) map.addImage("hatch-all", hatchImage(AREA_COL.all));
+    const hatchMb = ensureHatch(map, AREA_COL.mb);
+    const hatchAll = ensureHatch(map, AREA_COL.all);
     const before = map.getLayer("strokes") ? "strokes" : undefined;
     if (!map.getSource("pin-areas")) {
       map.addSource("pin-areas", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -48,7 +35,7 @@ export function initAreas(ctx: PlanCtx): void {
           source: "pin-areas",
           filter: ["==", ["geometry-type"], "Polygon"],
           paint: {
-            "fill-pattern": ["case", ["get", "mb"], "hatch-mb", "hatch-all"],
+            "fill-pattern": ["case", ["get", "mb"], hatchMb, hatchAll],
             "fill-opacity": ["*", 0.25, ["get", "op"]],
           },
         },
@@ -93,7 +80,7 @@ export function initAreas(ctx: PlanCtx): void {
     }
   }
   const areaColorOf = (a: Annot | undefined): string => (a && isNotesAnnot(a) ? AREA_COL.mb : AREA_COL.all);
-  const ringOf = (pts: [number, number][]): [number, number][] => [...pts, pts[0]];
+
   function areaFC(): GeoJSON.FeatureCollection {
     const feats: GeoJSON.Feature[] = [];
     for (const a of annots.values()) {
@@ -137,6 +124,24 @@ export function initAreas(ctx: PlanCtx): void {
     }
     return { type: "FeatureCollection", features: feats };
   }
+  // Größe unter dem Stern: Fläche (geschlossen) bzw. Länge (offene Linie); beim Zeichnen live inkl. Mauszeiger.
+  function sizeTextOf(aid: string): string {
+    const d = ctx.areaDraft;
+    if (d && d.aid === aid) {
+      if (!d.pts.length) return "";
+      const hot = nearFirst(d.pts, ctx.areaCursor);
+      return hot ? areaSizeText(d.pts, true, ctx.cal) : areaSizeText(ctx.areaCursor ? [...d.pts, ctx.areaCursor] : d.pts, false, ctx.cal);
+    }
+    const ar = annots.get(aid)?.area;
+    return ar && ar.pts.length >= 2 ? areaSizeText(ar.pts, ar.closed, ctx.cal) : "";
+  }
+  function updateAreaSizes(): void {
+    root.querySelectorAll<HTMLElement>("#annots [data-area-size]").forEach((el) => {
+      const txt = sizeTextOf(el.dataset.areaSize ?? "");
+      if (el.textContent !== txt) el.textContent = txt;
+      el.hidden = !txt;
+    });
+  }
   function refreshAreas(): void {
     try {
       ensureAreaLayers();
@@ -145,6 +150,7 @@ export function initAreas(ctx: PlanCtx): void {
     } catch {
       /* Karte/Stil noch nicht geladen – folgt mit "load" */
     }
+    updateAreaSizes();
     positionAreaBar();
   }
   map.on("load", () => refreshAreas());
@@ -241,6 +247,7 @@ export function initAreas(ctx: PlanCtx): void {
     } catch {
       /* noch nicht geladen */
     }
+    updateAreaSizes();
   });
   map.on("contextmenu", (e) => {
     if (ctx.mode !== "area" || !ctx.areaDraft) return;

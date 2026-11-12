@@ -136,9 +136,13 @@ export function initMapClicks(ctx: PlanCtx): void {
         [e.point.x - R, e.point.y - R],
         [e.point.x + R, e.point.y + R],
       ];
+      // Im Verschieben-Werkzeug wählt auch ein Klick in eine benannte Fläche (Schraffur) die Linie —
+      // im Linien-Werkzeug nicht, sonst ließe sich innerhalb einer Fläche keine neue Linie beginnen.
+      const fillLayer = (ctx.mode === "move" || ctx.mode === "markermove") && map.getLayer("stroke-areas-fill") ? "stroke-areas-fill" : null;
       const sid =
         ctx.mode !== "measure" && caps.draw
-          ? (map.queryRenderedFeatures(box, { layers: ["strokes"] })[0]?.properties?.id as string | undefined)
+          ? ((map.queryRenderedFeatures(box, { layers: ["strokes"] })[0]?.properties?.id as string | undefined) ??
+            (fillLayer ? (map.queryRenderedFeatures(e.point, { layers: [fillLayer] })[0]?.properties?.sid as string | undefined) : undefined))
           : undefined;
       const mid =
         !sid && ctx.mode !== "line"

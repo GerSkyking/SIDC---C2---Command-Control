@@ -62,6 +62,7 @@ export function initLive(ctx: PlanCtx): void {
         strokes.set(msg.stroke.id, msg.stroke);
         ctx.ui.refreshStrokes();
         if (ctx.editStrokeId === msg.stroke.id) ctx.ui.refreshStrokeVerts();
+        if (msg.cid) ctx.ui.strokeCommitted(msg.cid as string, msg.stroke.id);
         break;
       case "stroke.delete":
         strokes.delete(msg.id);

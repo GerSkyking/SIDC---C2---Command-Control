@@ -24,14 +24,24 @@ export function emptyFC(): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features: [] };
 }
 
-export function lineDraftFC(pts: [number, number][], cursor: [number, number] | null = null): GeoJSON.FeatureCollection {
-  const feats: GeoJSON.Feature[] = pts.map((p) => ({
+/**
+ * Linien-Entwurf: Stützpunkte + Vorschau-Linie. ``hot`` = Mauszeiger ist nahe am Startpunkt → Startpunkt grün
+ * hervorheben und die Vorschau zum Startpunkt schließen (Klick schließt die Linie zur Fläche).
+ * ``ring`` = Entwurf als geschlossener Ring zeigen (während der Benennen-Dialog offen ist).
+ */
+export function lineDraftFC(
+  pts: [number, number][],
+  cursor: [number, number] | null = null,
+  hot = false,
+  ring = false,
+): GeoJSON.FeatureCollection {
+  const feats: GeoJSON.Feature[] = pts.map((p, i) => ({
     type: "Feature",
     geometry: { type: "Point", coordinates: p },
-    properties: {},
+    properties: { first: i === 0, hot: i === 0 && hot },
   }));
   // Vorschau-Linie vom letzten Punkt zum Mauszeiger (wie beim Lineal)
-  const trace = cursor && pts.length ? [...pts, cursor] : pts;
+  const trace = ring && pts.length >= 3 ? [...pts, pts[0]] : cursor && pts.length ? [...pts, hot ? pts[0] : cursor] : pts;
   if (trace.length >= 2) {
     feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: trace }, properties: {} });
   }
