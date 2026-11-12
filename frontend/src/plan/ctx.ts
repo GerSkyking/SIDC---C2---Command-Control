@@ -340,6 +340,8 @@ export interface PlanCtx {
   tacKey: string;
   tacState: Record<string, { on?: boolean; op?: number }>;
   baseLayerVisible: Record<string, boolean>;
+  /** Terrain-/Enfusion-Overlays müssen UNTER "strokes" liegen → warten, bis render.ts den Layer angelegt hat. */
+  strokesLayer: { ready: Promise<void>; done: () => void };
   /** Stern-Dialog: Zeus-Freigabe bzw. „Danach Bereich zeichnen“ je cid, bis der Server den Pin bestätigt. */
   pendingStarZeus: Map<string, Record<string, unknown>>;
   pendingStarArea: Set<string>;
