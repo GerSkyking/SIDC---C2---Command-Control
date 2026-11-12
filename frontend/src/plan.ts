@@ -43,16 +43,11 @@ import {
 import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
 import { attachMdToolbar } from "./mdtoolbar";
-import { openRefPicker } from "./refPicker";
-import { DOC_TYPE_ICON, type DocType, templateContent } from "./projectTemplates";
 import { esc } from "./esc";
 import { initNavCube } from "./navcube";
 import { wireScaleBox } from "./scalebox";
 import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
-import { openLightbox } from "./lightbox";
-import { mountImageRail, IMAGE_DND_TYPE } from "./imagerail";
-import { renderPlacementSettings } from "./imagePanel";
-import type { ImagePlacement, PlanImage, ProjectTask } from "./api";
+import type { ImagePlacement, PlanImage } from "./api";
 
 import {
   AREA_CLOSE_PX,
@@ -77,6 +72,8 @@ import {
   type TacLayer,
 } from "./plan/ctx";
 import { createModel, type PlanModel } from "./plan/model";
+import { initImages } from "./plan/images";
+import { initStarDialog } from "./plan/starDialog";
 import { emptyFC, esc0, fmtDist, fmtInput, imgToJpeg, lineDraftFC, packedToHex, parseNaive, parseUtc, polyHit } from "./plan/geo";
 export async function openPlanView(root: HTMLElement, planId: string, me: Me): Promise<void> {
   const snap = await api.snapshot(planId);
@@ -95,8 +92,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const placements = new Map<string, ImagePlacement>(
     (snap.image_placements ?? []).map((p: ImagePlacement) => [p.id, p]),
   );
-  let imageRail: { refresh: () => void } | null = null;
-  let imgClickSuppressed = false;
   // Alle document/window-Listener dieser Plan-Ansicht hängen an diesem Signal und
   // werden beim Verlassen (hashchange) gemeinsam abgeräumt.
   const life = new AbortController();
@@ -269,7 +264,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     bindXPhases,
     multiPhaseOpacity,
     tplCtx,
-    phaseOpacityOf,
     phaseOpacity,
     phaseNameOf,
     hk,
@@ -1176,13 +1170,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           ctx.pendingAnnotCid = null;
           openAnnotEditor(msg.annotation.id, true);
         }
-        if (msg.cid && pendingStarArea.has(msg.cid)) {
-          pendingStarArea.delete(msg.cid);
+        if (msg.cid && ctx.pendingStarArea.has(msg.cid)) {
+          ctx.pendingStarArea.delete(msg.cid);
           startAreaDraw(msg.annotation.id);
         }
-        if (msg.cid && pendingStarZeus.has(msg.cid)) {
-          const z = pendingStarZeus.get(msg.cid)!;
-          pendingStarZeus.delete(msg.cid);
+        if (msg.cid && ctx.pendingStarZeus.has(msg.cid)) {
+          const z = ctx.pendingStarZeus.get(msg.cid)!;
+          ctx.pendingStarZeus.delete(msg.cid);
           socket.send({ type: "annotation.modify", id: msg.annotation.id, data: z });
         }
         break;
@@ -1193,27 +1187,27 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         break;
       case "image.upsert":
         images.set(msg.image.id, msg.image);
-        if (!ctx.imgResizingId) renderMapImages(); // Beschriftung/Notiz können in Hover/Popover sichtbar sein
-        imageRail?.refresh();
+        if (!ctx.imgResizingId) ctx.ui.renderMapImages(); // Beschriftung/Notiz können in Hover/Popover sichtbar sein
+        ctx.ui.refreshImageRail();
         break;
       case "image.delete":
         images.delete(msg.id);
         // Alle Platzierungen dieses Bilds lokal mit entfernen (Server-CASCADE
         // sendet dafür keine einzelnen placement.delete-Nachrichten).
         for (const p of [...placements.values()]) if (p.image_id === msg.id) placements.delete(p.id);
-        renderMapImages();
-        imageRail?.refresh();
+        ctx.ui.renderMapImages();
+        ctx.ui.refreshImageRail();
         break;
       case "placement.upsert":
         placements.set(msg.placement.id, msg.placement);
-        if (!ctx.imgResizingId) renderMapImages();
-        else positionImages();
-        imageRail?.refresh();
+        if (!ctx.imgResizingId) ctx.ui.renderMapImages();
+        else ctx.ui.positionImages();
+        ctx.ui.refreshImageRail();
         break;
       case "placement.delete":
         placements.delete(msg.id);
-        renderMapImages();
-        imageRail?.refresh();
+        ctx.ui.renderMapImages();
+        ctx.ui.refreshImageRail();
         break;
     }
   });
@@ -1960,8 +1954,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (gone.has(ctx.currentPhaseId)) ctx.currentPhaseId = playerPhases()[0]?.id ?? "";
     applyPhase();
     renderAnnots();
-    renderMapImages();
-    imageRail?.refresh();
+    ctx.ui.renderMapImages();
+    ctx.ui.refreshImageRail();
   }
   function renderTimeline(): void {
     const apid = activePlayerId();
@@ -2913,8 +2907,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     applyPhase();
     refreshStrokes();
     renderAnnots();
-    if (!ctx.imgResizingId) renderMapImages();
-    imageRail?.refresh();
+    if (!ctx.imgResizingId) ctx.ui.renderMapImages();
+    ctx.ui.refreshImageRail();
   };
   socket.on((msg: WsMessage) => {
     if (msg.type === "layers.changed") onLayersChanged(msg.layers as TacLayer[], msg.removed as string | undefined);
@@ -3802,6 +3796,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ctx.pendingPos = null;
     }
   };
+  ctx.ui.setMode = setMode;
   toolbar.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => setMode(b.dataset.mode as Mode)),
   );
@@ -4753,6 +4748,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // ── Sichtbarkeit einer Notiz/eines Stern-Pins ──
   // Projekt-Plan + Missionsbau: „Alle" (normale Notiz in einer Phase) oder „Nur Missionsbau" (Layer
   // Missionsbau-Notizen, optional für Zeus freigegeben). Alle anderen wählen wie gewohnt die Phase.
+  Object.assign(ctx.ui, { annotVisHtml, wireAnnotVis, readAnnotVis });
   function annotVisHtml(a: Pick<Annot, "phase_id" | "extra_phase_ids" | "zeus_released" | "zeus_until"> & { mb?: boolean }): string {
     const mb = a.mb ?? isNotesAnnot(a as Annot);
     const pid = mb ? ctx.currentPhaseId : a.phase_id ?? ctx.currentPhaseId;
@@ -5390,337 +5386,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   phaseListeners.push(() => redrawMeasure()); // Messlinien: Ebene (Missionsbau/Spieler)
   renderAnnots();
 
-  // ── Bilder auf der Karte (platzierbar, wie Annotationen) ─────────────
-  const imagesEl = root.querySelector<HTMLDivElement>("#plan-images")!;
-  let imgDragId: string | null = null;
-  let imgRefFallback = 0;
-  const imageScale = (p: ImagePlacement): number => {
-    if (!p.scale_fixed) return 1;
-    const ref = p.ref_zoom && p.ref_zoom > 0 ? p.ref_zoom : imgRefFallback;
-    if (!ref) return 1;
-    return Math.max(0.3, Math.min(3, 2 ** (map.getZoom() - ref)));
-  };
-  function positionImages(): void {
-    for (const el of Array.from(imagesEl.children) as HTMLElement[]) {
-      const p = placements.get(el.dataset.pid ?? "");
-      if (!p) continue;
-      const pp = map.project([p.world_x, p.world_y]);
-      el.style.transform = `translate(${pp.x}px, ${pp.y}px) scale(${imageScale(p)})`;
-    }
-    positionImgPopover();
-  }
-
-  // ── Zahnrad-Popover direkt am Kartenbild (Name/Notiz/Phase/Skalieren/…) ──
-  // Zielt auf eine PLATZIERUNG (nicht das Bild selbst) — dasselbe Bild kann
-  // mehrfach/in mehreren Phasen platziert sein, jede Platzierung hat ihr eigenes
-  // Popover mit eigener Phase/Skalierung.
-  let imgPopoverId: string | null = null;
-  let imgPopoverEl: HTMLElement | null = null;
-  function closeImgPopover(): void {
-    imgPopoverEl?.remove();
-    imgPopoverEl = null;
-    imgPopoverId = null;
-  }
-  function positionImgPopover(): void {
-    if (!imgPopoverEl || !imgPopoverId) return;
-    const p = placements.get(imgPopoverId);
-    if (!p) {
-      closeImgPopover();
-      return;
-    }
-    const pp = map.project([p.world_x, p.world_y]);
-    const w = p.map_width * imageScale(p);
-    const mr = map.getContainer().getBoundingClientRect();
-    const rr = root.getBoundingClientRect();
-    const ox = mr.left - rr.left;
-    const oy = mr.top - rr.top;
-    const popW = imgPopoverEl.offsetWidth || 304;
-    let left = ox + pp.x + w / 2 + 10;
-    left = Math.max(8, Math.min(left, rr.width - popW - 8));
-    const top = Math.max(8, oy + pp.y - 10);
-    imgPopoverEl.style.left = `${left}px`;
-    imgPopoverEl.style.top = `${top}px`;
-  }
-  function toggleImgPopover(placementId: string): void {
-    if (imgPopoverId === placementId) {
-      closeImgPopover();
-      return;
-    }
-    const p = placements.get(placementId);
-    const img = p ? images.get(p.image_id) : undefined;
-    if (!p || !img) return;
-    closeImgPopover();
-    imgPopoverId = placementId;
-    const el = document.createElement("div");
-    el.className = "img-popover";
-    el.innerHTML = `
-      <div class="img-popover-head">
-        <input data-ip-cap value="${esc(img.caption)}" placeholder="${t("img.caption")}" title="${t("img.captionHint")}" />
-        <button class="icon-btn" data-ip-close title="${t("lightbox.close")}">${icon("x", 14)}</button>
-      </div>
-      <div data-ip-body></div>`;
-    root.appendChild(el);
-    imgPopoverEl = el;
-    el.querySelector<HTMLInputElement>("[data-ip-cap]")!.addEventListener("change", (e) => {
-      const v = (e.target as HTMLInputElement).value;
-      const curImg = images.get(img.id);
-      if (curImg) curImg.caption = v;
-      socket.send({ type: "image.modify", id: img.id, data: { caption: v, phase_id: curImg?.phase_id ?? null } });
-      renderMapImages();
-    });
-    el.querySelector("[data-ip-close]")!.addEventListener("click", () => closeImgPopover());
-    renderPlacementSettings(el.querySelector<HTMLElement>("[data-ip-body]")!, p, {
-      isMB,
-      phases,
-      send: (m) => socket.send(m),
-      getMapZoom: () => map.getZoom(),
-      onChanged: () => {
-        renderMapImages();
-        imageRail?.refresh();
-      },
-      onDeleted: () => closeImgPopover(),
-    });
-    positionImgPopover();
-  }
-  // Hover: Name / Notiz / Ersteller / Phase des Kartenbilds (analog Marker-Hover).
-  const imgHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14, anchor: "bottom" });
-  const showImgHover = (p: ImagePlacement, i: PlanImage) => {
-    const tip = document.createElement("div");
-    tip.className = "mk-tip";
-    const b = document.createElement("b");
-    b.textContent = i.caption || i.filename;
-    tip.append(b, document.createElement("br"));
-    for (const [k, v] of [
-      [t("marker.author"), i.author || "—"],
-      [t("phase.assign"), phaseNameOf(p.phase_id)],
-    ] as [string, string][]) {
-      tip.append(`${k}: ${v}`, document.createElement("br"));
-    }
-    if (i.note) {
-      const d = document.createElement("div");
-      d.className = "mk-tip-info";
-      d.textContent = i.note;
-      tip.append(d);
-    }
-    // world_x/world_y ist die linke obere Ecke des Bilds (siehe positionImages) —
-    // Popup horizontal auf die Bildmitte verschieben und über die obere Kante
-    // zwingen (anchor "bottom"), sonst rutscht der Tipp bei großen Bildern nach
-    // unten (maplibre würde sonst automatisch anchor "top" wählen).
-    const w = p.map_width * imageScale(p);
-    imgHoverPopup
-      .setLngLat([p.world_x, p.world_y])
-      .setOffset([w / 2, 0])
-      .setDOMContent(tip)
-      .addTo(map);
-  };
-  const hideImgHover = () => imgHoverPopup.remove();
-
-  function renderMapImages(): void {
-    if (ctx.imgResizingId) return;
-    if (!imgRefFallback) imgRefFallback = map.getZoom();
-    imagesEl.innerHTML = "";
-    for (const p of placements.values()) {
-      const i = images.get(p.image_id);
-      if (!i) continue; // Bild noch nicht geladen/bereits gelöscht
-      const op = phaseOpacityOf(p.phase_id);
-      if (op <= 0.001) continue; // fremde/versteckte Phase
-      const el = document.createElement("div");
-      el.className = "pimg";
-      el.dataset.pid = p.id;
-      el.style.width = `${p.map_width}px`;
-      el.style.opacity = String(op);
-      const tip = i.caption || i.filename;
-      el.innerHTML =
-        `<img src="${esc(api.planImageUrl(planId, i.id))}" alt="${esc(tip)}" draggable="false" />` +
-        (canEdit
-          ? `<button class="pimg-gear" data-imggear title="${t("settings.title")}">${icon("settings", 12)}</button>` +
-            `<button class="pimg-x" data-imgx title="${t("img.removeFromMap")}">${icon("x", 12)}</button>` +
-            `<div class="pimg-rz"></div>`
-          : "");
-      el.addEventListener("mousedown", (ev) => onImageDown(ev, p.id));
-      el.addEventListener("mouseenter", () => {
-        const curP = placements.get(p.id);
-        const curI = curP ? images.get(curP.image_id) : undefined;
-        if (curP && curI) showImgHover(curP, curI);
-      });
-      el.addEventListener("mouseleave", hideImgHover);
-      // Klick ohne vorherigen Drag/Resize -> groß anzeigen (Beschriftung als Notiz darunter).
-      // Wird bei einer echten Verschiebung/Größenänderung von onImageDown unterdrückt.
-      el.addEventListener("click", () => {
-        if (imgClickSuppressed) {
-          imgClickSuppressed = false;
-          return;
-        }
-        openLightbox([
-          {
-            url: api.planImageUrl(planId, i.id),
-            caption: i.caption || i.filename,
-            note: i.note,
-            onNoteSave: canEdit
-              ? (v) => {
-                  const cur = images.get(i.id);
-                  if (cur) cur.note = v;
-                  socket.send({ type: "image.modify", id: i.id, data: { note: v, phase_id: cur?.phase_id ?? null } });
-                }
-              : undefined,
-          },
-        ]);
-      });
-      el.querySelector("[data-imggear]")?.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        toggleImgPopover(p.id);
-      });
-      el.querySelector("[data-imgx]")?.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        placements.delete(p.id);
-        socket.send({ type: "placement.delete", id: p.id });
-        renderMapImages();
-        imageRail?.refresh();
-      });
-      imagesEl.appendChild(el);
-    }
-    positionImages();
-  }
-  function onImageDown(ev: MouseEvent, placementId: string): void {
-    if (!canEdit || (ctx.mode !== "move" && ctx.mode !== "markermove")) return;
-    const el0 = imagesEl.querySelector<HTMLElement>(`[data-pid="${placementId}"]`);
-    const cur = placements.get(placementId);
-    if (!el0 || !cur) return;
-    const sc = imageScale(cur) || 1;
-    const r = el0.getBoundingClientRect();
-    if ((ev.clientX - r.left) / sc > el0.clientWidth - 20 && (ev.clientY - r.top) / sc > el0.clientHeight - 20) {
-      ev.preventDefault();
-      ctx.imgResizingId = placementId;
-      const startW = cur.map_width;
-      const startX = ev.clientX;
-      const mv = (e: MouseEvent) => {
-        cur.map_width = Math.max(60, Math.min(2000, startW + (e.clientX - startX) / sc));
-        el0.style.width = `${cur.map_width}px`;
-      };
-      const up = () => {
-        document.removeEventListener("mousemove", mv);
-        document.removeEventListener("mouseup", up);
-        ctx.imgResizingId = null;
-        imgClickSuppressed = true; // Ecke ziehen endet auf demselben Element -> sonst öffnet Klick die Lightbox
-        setTimeout(() => (imgClickSuppressed = false), 0); // click folgt direkt auf mouseup; sonst bliebe das Flag hängen
-        socket.send({
-          type: "placement.modify", id: placementId,
-          data: { map_width: Math.round(cur.map_width), phase_id: cur.phase_id },
-        });
-        renderMapImages();
-      };
-      document.addEventListener("mousemove", mv, { signal: sig });
-      document.addEventListener("mouseup", up, { signal: sig });
-      return;
-    }
-    ev.stopPropagation();
-    ev.preventDefault();
-    imgDragId = placementId;
-    el0.classList.add("dragging");
-    if (ctx.mode === "move") map.dragPan.disable();
-    const canvasRect = () => map.getCanvas().getBoundingClientRect();
-    const startX = ev.clientX;
-    const startY = ev.clientY;
-    let moved = false;
-    // Versatz zwischen Greifpunkt und dem Bild-Anker (oben links) merken, damit das
-    // Bild beim Ziehen nicht unter den Cursor springt, sondern an der gegriffenen
-    // Stelle "kleben" bleibt.
-    const anchorPx0 = map.project([cur.world_x, cur.world_y]);
-    const cr0 = canvasRect();
-    const grabDx = ev.clientX - cr0.left - anchorPx0.x;
-    const grabDy = ev.clientY - cr0.top - anchorPx0.y;
-    const onMove = (e: MouseEvent) => {
-      if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) > 4) moved = true;
-      const cr = canvasRect();
-      const ll = map.unproject([e.clientX - cr.left - grabDx, e.clientY - cr.top - grabDy]);
-      cur.world_x = ll.lng;
-      cur.world_y = ll.lat;
-      positionImages();
-    };
-    const onUp = (e: MouseEvent) => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-      el0.classList.remove("dragging");
-      if (ctx.mode === "move") map.dragPan.enable();
-      imgDragId = null;
-      if (!moved) return; // reiner Klick -> Lightbox öffnet über den click-Listener
-      imgClickSuppressed = true;
-      setTimeout(() => (imgClickSuppressed = false), 0);
-      const cr = canvasRect();
-      const ll = map.unproject([e.clientX - cr.left - grabDx, e.clientY - cr.top - grabDy]);
-      socket.send({ type: "placement.move", id: placementId, data: { world_x: ll.lng, world_y: ll.lat } });
-    };
-    document.addEventListener("mousemove", onMove, { signal: sig });
-    document.addEventListener("mouseup", onUp, { signal: sig });
-  }
-  map.on("move", () => {
-    if (!imgDragId && !ctx.imgResizingId) positionImages();
-  });
-  phaseListeners.push(() => {
-    closeImgPopover();
-    renderMapImages();
-  });
-  document.addEventListener(
-    "mousedown",
-    (e) => {
-      const t2 = e.target as HTMLElement;
-      if (imgPopoverEl && !imgPopoverEl.contains(t2) && !t2.closest("[data-imggear]")) closeImgPopover();
-    },
-    { signal: sig },
-  );
-  document.addEventListener(
-    "keydown",
-    (e) => {
-      if (e.key === "Escape" && imgPopoverEl) closeImgPopover();
-    },
-    { signal: sig },
-  );
-  renderMapImages();
-
-  // Drag&Drop aus der Bild-Sidebar auf die Karte -> neue Platzierung anlegen
-  // (das Bild bleibt dabei unverändert, dasselbe Bild lässt sich so beliebig
-  // oft/in mehreren Phasen platzieren).
-  if (canEdit) {
-    const mapContainer = map.getContainer();
-    mapContainer.addEventListener("dragenter", (ev) => {
-      if (ev.dataTransfer?.types.includes(IMAGE_DND_TYPE)) ev.preventDefault();
-    });
-    mapContainer.addEventListener("dragover", (ev) => {
-      if (!ev.dataTransfer?.types.includes(IMAGE_DND_TYPE)) return;
-      ev.preventDefault();
-      ev.dataTransfer.dropEffect = "copy";
-    });
-    mapContainer.addEventListener("drop", (ev) => {
-      const imageId = ev.dataTransfer?.getData(IMAGE_DND_TYPE);
-      const cur = imageId ? images.get(imageId) : undefined;
-      if (!cur) return;
-      ev.preventDefault();
-      const cr = map.getCanvas().getBoundingClientRect();
-      const ll = map.unproject([ev.clientX - cr.left, ev.clientY - cr.top]);
-      socket.send({
-        type: "placement.create",
-        data: {
-          image_id: cur.id, phase_id: ctx.currentPhaseId || null,
-          world_x: ll.lng, world_y: ll.lat, ref_zoom: map.getZoom(),
-        },
-      });
-    });
-  }
-
-  imageRail = mountImageRail(root, {
-    planId,
-    images,
-    placements,
-    phases,
-    isMB,
-    canEdit,
-    imageMaxMb: 10,
-    getCurrentPhaseId: () => ctx.currentPhaseId,
-    send: (m) => socket.send(m),
-    map,
-    onOpenLightbox: openLightbox,
-  });
-  phaseListeners.push(() => imageRail?.refresh());
+  initImages(ctx);
 
   // Marker-Wizard an einer bereits gewählten Position öffnen (Klick im Platzier-Modus / Rechtsklick-Menü)
   function startPlaceAt(pos: [number, number]): void {
@@ -5741,208 +5407,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       },
     });
   }
-  /** Referenz-Pin: Annotation, deren Text nur den Verknüpfungs-Code enthält (Ebene = aktive Phase). */
-  // ── Stern-Pin: „Ort markieren" → Was ist hier / was soll hier passieren? ──
-  // Der Stern steht sofort auf der Karte (Entwurf), danach legt der Dialog wahlweise eine Aufgabe,
-  // eine Haftnotiz oder einen Verweis auf Bestehendes an. Der Pin selbst ist eine Annotation, deren
-  // erste Zeile nur aus Verknüpfungs-Codes besteht (Rest = Beschreibung).
-  const pendingStarZeus = new Map<string, Record<string, unknown>>();
-  const pendingStarArea = new Set<string>();
-  async function openStarDialog(pos: [number, number]): Promise<void> {
-    if (!projectId) return;
-    const pid = projectId;
-    const mbDefault = isMB;
-    const draftEl = document.createElement("div");
-    draftEl.className = `star-pin star-draft ${mbDefault ? "star-mb" : ""}`;
-    draftEl.innerHTML = STAR_SVG;
-    const draft = new maplibregl.Marker({ element: draftEl }).setLngLat(pos).addTo(map);
-    const [proj, assignees] = await Promise.all([
-      api.project(pid).catch(() => null),
-      api.projectAssignees(pid).catch((): { user_id: string; label: string }[] => []),
-    ]);
-    const canProj = !!proj && !proj.archived && (proj.role === "editor" || proj.role === "owner");
-    // Warum nichts Neues angelegt werden kann: kein Projekt-Mitglied (Plan nur per Plan-Freigabe), nur Betrachter, archiviert
-    const whyNot = canProj ? "" : !proj ? t("star.notMember") : proj.archived ? t("star.archived") : t("star.noProjectRole");
-    const docSpace: "builder" | "public" = proj?.is_builder ? "builder" : "public";
-    type Kind = "task" | "note" | "doc" | "link" | "text";
-    // Neu im Verzeichnis: dieselben Kategorien wie im Projekt-Reiter „Verzeichnis“ (Ort vorausgewählt)
-    const DIR_KINDS: DocType[] = ["place", "character", "faction", "scene", "mission", "opord", "briefing", ""];
-    let docType: DocType = "place";
-    // Ohne Projekt-Mitgliedschaft liefert auch die Projektsuche nichts: dann bleibt nur die Kartennotiz
-    let kind: Kind = canProj ? "doc" : proj ? "link" : "text";
-    let linkCode = "";
-    const back = document.createElement("div");
-    back.className = "edit-modal";
-    back.setAttribute("role", "dialog");
-    back.setAttribute("aria-modal", "true");
-    const lockAttr = (ok: boolean): string => (ok ? "" : `disabled title="${esc(whyNot)}"`);
-    const kindBtn = (k: Kind, ic: string, ok: boolean): string =>
-      `<button type="button" class="seg-btn" data-k="${k}" ${lockAttr(ok)}>${icon(ic, 14)} ${t("star.kind." + k)}</button>`;
-    const dirBtn = (ty: DocType): string =>
-      `<button type="button" class="seg-btn" data-k="doc" data-dt="${ty}" ${lockAttr(canProj)}>${icon(ty ? DOC_TYPE_ICON[ty] : "notes", 14)} ${
-        ty ? t("dt." + ty) : t("star.dt.other")
-      }</button>`;
-    back.innerHTML = `<div class="card star-dlg" style="width:min(38rem,96vw)">
-      <div class="row"><h1 style="flex:1;margin:0">${t("star.title")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
-      <p class="muted" style="margin:.2rem 0 .5rem">${t("star.intro")}</p>
-      <div class="star-sec">${t("star.secDir")}</div>
-      <div class="segmented star-kinds">${DIR_KINDS.map(dirBtn).join("")}</div>
-      <div class="star-sec">${t("star.secMore")}</div>
-      <div class="segmented star-kinds">${kindBtn("task", "check", canProj)}${kindBtn("note", "textbox", canProj)}${kindBtn("link", "link", !!proj)}${kindBtn("text", "edit", true)}</div>
-      ${canProj ? "" : `<p class="star-why">${icon("lock", 13)} ${esc(whyNot)}</p>`}
-      <p data-kdoc hidden class="muted" style="margin:.4rem 0 0;font-size:.78rem">${t(docSpace === "builder" ? "star.docBuilder" : "star.docPublic")}</p>
-      <div data-klink hidden>
-        <div class="row" style="margin-top:.5rem;gap:.4rem"><button type="button" data-pick>${icon("link", 14)} ${t("star.pickTarget")}</button><span data-picked class="muted">${t("star.nothingPicked")}</span></div>
-      </div>
-      <label style="margin-top:.5rem" data-ltitle>${t("star.what")}</label>
-      <input data-stitle maxlength="200" placeholder="${t("star.whatPh")}"/>
-      <label style="margin-top:.5rem" data-ldesc>${t("star.happens")}</label>
-      <textarea data-sdesc rows="4" placeholder="${t("star.happensPh")}"></textarea>
-      <div data-ktask class="row" style="gap:.5rem;margin-top:.5rem;flex-wrap:wrap">
-        <label style="flex:1 1 10rem">${t("star.assignee")}<select data-sas><option value="">—</option>${assignees
-          .map((u) => `<option value="${esc(u.user_id)}">${esc(u.label)}</option>`)
-          .join("")}</select></label>
-        <label style="flex:0 1 9rem">${t("star.due")}<input type="date" data-sdue/></label>
-        <label style="flex:0 1 8rem">${t("star.prio")}<select data-sprio><option value="low">${t("star.prio.low")}</option><option value="normal" selected>${t("star.prio.normal")}</option><option value="high">${t("star.prio.high")}</option></select></label>
-      </div>
-      <label class="chk star-area-chk"><input type="checkbox" data-sarea/> ${t("area.afterCreate")}</label>
-      ${annotVisHtml({ phase_id: ctx.currentPhaseId || null, extra_phase_ids: [], zeus_released: false, zeus_until: null, mb: mbDefault })}
-      <div class="row" style="margin-top:.8rem">
-        <button class="primary" data-save style="flex:1">${t("star.create")}</button>
-        <button data-cancel>${t("common.cancel")}</button>
-      </div>
-    </div>`;
-    document.body.appendChild(back);
-    const titleIn = back.querySelector<HTMLInputElement>("[data-stitle]")!;
-    const descIn = back.querySelector<HTMLTextAreaElement>("[data-sdesc]")!;
-    attachMdToolbar(descIn, { projectId: pid, isBuilder: isMB });
-    wireAnnotVis(back);
-    // Entwurfs-Stern färbt sich mit der gewählten Sichtbarkeit
-    back.querySelectorAll<HTMLButtonElement>("[data-avis] [data-v]").forEach((b) =>
-      b.addEventListener("click", () => draftEl.classList.toggle("star-mb", b.dataset.v === "mb")),
-    );
-    const showKind = (): void => {
-      back
-        .querySelectorAll<HTMLButtonElement>("[data-k]")
-        .forEach((b) => b.classList.toggle("active", b.dataset.k === kind && (kind !== "doc" || b.dataset.dt === docType)));
-      back.querySelector<HTMLElement>("[data-ktask]")!.hidden = kind !== "task";
-      back.querySelector<HTMLElement>("[data-klink]")!.hidden = kind !== "link";
-      back.querySelector<HTMLElement>("[data-kdoc]")!.hidden = kind !== "doc";
-      back.querySelector<HTMLElement>("[data-ltitle]")!.textContent = t(
-        kind === "link" ? "star.whatOptional" : kind === "doc" ? "star.name" : "star.what",
-      );
-      // Bei Verzeichnis-Einträgen (Person, Ort …) ist es eine Beschreibung, bei Aufgaben/Notizen der Auftrag
-      back.querySelector<HTMLElement>("[data-ldesc]")!.textContent = t(kind === "doc" ? "star.describe" : "star.happens");
-    };
-    back.querySelectorAll<HTMLButtonElement>("[data-k]").forEach((b) =>
-      b.addEventListener("click", () => {
-        kind = b.dataset.k as Kind;
-        if (kind === "doc") docType = (b.dataset.dt ?? "") as DocType;
-        showKind();
-      }),
-    );
-    const pick = async (): Promise<void> => {
-      const code = await openRefPicker({ projectId: pid, mode: "insert", isBuilder: isMB });
-      if (!code) return;
-      linkCode = code;
-      const sp = back.querySelector<HTMLElement>("[data-picked]")!;
-      sp.classList.remove("muted");
-      sp.innerHTML = renderMarkdown(code);
-      wireRefs(sp);
-    };
-    back.querySelector("[data-pick]")!.addEventListener("click", () => void pick());
-    showKind();
-    setTimeout(() => titleIn.focus(), 0);
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "Escape" || document.querySelector(".rp-back")) return;
-      e.stopPropagation();
-      close();
-    };
-    const close = (): void => {
-      draft.remove();
-      back.remove();
-      document.removeEventListener("keydown", onKey, true);
-    };
-    document.addEventListener("keydown", onKey, true);
-    back.addEventListener("mousedown", (e) => e.target === back && close());
-    back.querySelector("[data-x]")!.addEventListener("click", close);
-    back.querySelector("[data-cancel]")!.addEventListener("click", close);
-    const saveBtn = back.querySelector<HTMLButtonElement>("[data-save]")!;
-    saveBtn.addEventListener("click", async () => {
-      const title = titleIn.value.trim();
-      const desc = descIn.value.trim();
-      if (kind !== "link" && !title) {
-        titleIn.focus();
-        toast(t("star.needTitle"), { kind: "error" });
-        return;
-      }
-      if (kind === "link" && !linkCode) {
-        toast(t("star.needTarget"), { kind: "error" });
-        return;
-      }
-      const vis = readAnnotVis(back, null);
-      const mb = vis.mb_layer === true;
-      saveBtn.disabled = true;
-      let text = "";
-      try {
-        if (kind === "task") {
-          const tk = await api.createProjectTask(pid, {
-            title,
-            description: desc,
-            priority: back.querySelector<HTMLSelectElement>("[data-sprio]")!.value as ProjectTask["priority"],
-            assignee_id: back.querySelector<HTMLSelectElement>("[data-sas]")!.value || null,
-            due_date: back.querySelector<HTMLInputElement>("[data-sdue]")!.value || null,
-            plan_id: planId,
-          });
-          text = `{{task:${tk.id}}}`;
-        } else if (kind === "note") {
-          const n = await api.createProjectNote(pid, {
-            text: desc ? `${title}\n\n${desc}` : title,
-            color: mb ? "pink" : "yellow",
-            x: 40 + Math.round(Math.random() * 400),
-            y: 40 + Math.round(Math.random() * 300),
-          });
-          text = `{{note:${n.id}}}`;
-        } else if (kind === "doc") {
-          // Neue Datei aus Vorlage; die Beschreibung landet unter der Vorlage, der Plan als Verweis darunter
-          const ty = docType;
-          const content =
-            templateContent(ty, title).trimEnd() + (desc ? `\n\n${desc}` : "") + `\n\n---\n${t("star.docOnMap")} {{plan:${planId}}}\n`;
-          const d = await api.createProjectDoc(pid, { space: docSpace, kind: "doc", name: title, content, doc_type: ty });
-          text = `{{doc:${d.id}}}`;
-        } else if (kind === "link") {
-          text = [linkCode, title ? `**${title}**` : "", desc].filter(Boolean).join("\n\n");
-        } else {
-          text = [`## ${title}`, desc].filter(Boolean).join("\n\n");
-        }
-      } catch (e) {
-        saveBtn.disabled = false;
-        toastError(e);
-        return;
-      }
-      const ac = cid();
-      const { zeus_released: zRel, zeus_hours: zH, ...visCreate } = vis;
-      socket.send({
-        type: "annotation.create",
-        cid: ac,
-        data: {
-          world_x: pos[0],
-          world_y: pos[1],
-          text,
-          width: kind === "text" ? 240 : 160,
-          ref_zoom: map.getZoom(),
-          ...visCreate,
-        },
-      });
-      // Zeus-Freigabe ist ein Feld von annotation.modify: nach dem Anlegen nachreichen
-      if (mb && zRel) pendingStarZeus.set(ac, { zeus_released: true, zeus_hours: zH });
-      // „Danach Bereich zeichnen": sobald der Server den Pin bestätigt, startet das Zeichnen um ihn herum
-      if (back.querySelector<HTMLInputElement>("[data-sarea]")?.checked) pendingStarArea.add(ac);
-      close();
-      if (kind === "task" || kind === "note" || kind === "doc")
-        toast(t(kind === "task" ? "star.taskDone" : kind === "note" ? "star.noteDone" : "star.docDone"), { kind: "success" });
-    });
-  }
+  initStarDialog(ctx);
   function createAnnotAt(pos: [number, number]): void {
     const ac = cid();
     ctx.pendingAnnotCid = ac; // Antwort öffnet direkt den Editor
@@ -6007,8 +5472,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (ctx.editAreaId && (ctx.mode === "move" || ctx.mode === "markermove")) setEditArea(null); // Klick daneben beendet die Ecken-Bearbeitung
 
     if (ctx.mode === "ref") {
-      setMode("move");
-      if (caps.place && projectId) void openStarDialog([e.lngLat.lng, e.lngLat.lat]);
+      ctx.tools.ref?.click?.(e);
       return;
     }
 
