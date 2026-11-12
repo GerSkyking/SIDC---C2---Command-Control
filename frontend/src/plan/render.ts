@@ -195,7 +195,7 @@ export function initRender(ctx: PlanCtx): void {
       if (op <= 0.001) return [];
       const f = areaLabelFeature(
         map,
-        { id: s.id, pts: s.points, name: s.name || "", sidc: s.sidc || "", color: packedToHex(s.color), opacity: op, scale: ctx.personalScale },
+        { id: s.id, pts: s.points, name: s.name || "", ai: s.ai_text || "", sidc: s.sidc || "", color: packedToHex(s.color), opacity: op, scale: ctx.personalScale },
         ctx.cal,
       );
       return f ? [f] : [];

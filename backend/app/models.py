@@ -402,6 +402,7 @@ class Stroke(Base):
     closed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     name: Mapped[str] = mapped_column(String(128), default="", server_default="")
     sidc: Mapped[str] = mapped_column(String(32), default="", server_default="")
+    ai_text: Mapped[str] = mapped_column(String(128), default="", server_default="")  # Zusatztext zum Symbol
     fill: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

@@ -251,6 +251,8 @@ export interface AreaLabelInput {
   color: string;
   opacity: number;
   scale?: number;
+  /** Zusatztext (aus dem Marker-Baukasten), unter dem Namen */
+  ai?: string;
   /** Größe mit anzeigen (Standard: ja) */
   showSize?: boolean;
 }
@@ -269,15 +271,16 @@ export function areaLabelFeature(map: MlMap, a: AreaLabelInput, cal: Calibration
   if (!c) return null;
   const icon = ensureAreaIcon(map, a.sidc);
   const size = a.showSize === false ? "" : areaSizeText(a.pts, true, cal);
-  if (!a.name && !icon && !size) return null;
+  const name = [a.name, a.ai ?? ""].filter(Boolean).join("\n");
+  if (!name && !icon && !size) return null;
   return {
     type: "Feature",
     geometry: { type: "Point", coordinates: c },
     properties: {
       id: a.id,
-      name: a.name,
+      name,
       size,
-      sep: a.name && size ? "\n" : "",
+      sep: name && size ? "\n" : "",
       icon,
       hasIcon: !!icon,
       color: a.color,

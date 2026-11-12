@@ -304,7 +304,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       .flatMap((s) => {
         const f = areaLabelFeature(
           map,
-          { id: s.id, pts: s.points, name: s.name || "", sidc: s.sidc || "", color: hex(s.color), opacity: opacityOf(s), scale: personalScale },
+          { id: s.id, pts: s.points, name: s.name || "", ai: (s as { ai_text?: string }).ai_text || "", sidc: s.sidc || "", color: hex(s.color), opacity: opacityOf(s), scale: personalScale },
           snap.map_meta?.calibration ?? null,
         );
         return f ? [f] : [];

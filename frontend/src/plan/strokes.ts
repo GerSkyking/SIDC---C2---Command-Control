@@ -199,6 +199,7 @@ export function initStrokes(ctx: PlanCtx): void {
     closed: s.closed === true,
     name: s.name ?? "",
     sidc: s.sidc ?? "",
+    ai_text: s.ai_text ?? "",
     fill: s.fill !== false,
   });
   const deleteStroke = (id: string): void => {
@@ -385,7 +386,7 @@ export function initStrokes(ctx: PlanCtx): void {
     openAreaNameDialog(root, sig, (f) => {
       closingPts = null;
       refreshLineDraft();
-      commitStroke({ ...base, closed: true, name: f.name, sidc: f.sidc, fill: f.fill });
+      commitStroke({ ...base, closed: true, name: f.name, ai_text: f.ai_text, sidc: f.sidc, fill: f.fill });
     });
   };
   root.querySelector("#lineFinish")!.addEventListener("click", finishLine);
@@ -431,11 +432,11 @@ export function initStrokes(ctx: PlanCtx): void {
       <label class="chk" style="margin-top:.5rem" title="${t("areaName.closedHint")}"><input type="checkbox" data-sclosed ${isClosed ? "checked" : ""} ${
         s.points.length < 3 ? "disabled" : ""
       }/> <span>${t("areaName.closed")}</span></label>
-      <div data-area-block ${isClosed ? "" : "hidden"}>${areaFieldsHtml({ name: s.name ?? "", sidc: s.sidc ?? "", fill: s.fill !== false })}</div>
+      <div data-area-block ${isClosed ? "" : "hidden"}>${areaFieldsHtml({ name: s.name ?? "", ai_text: s.ai_text ?? "", sidc: s.sidc ?? "", fill: s.fill !== false })}</div>
       <div class="row" style="margin-top:.6rem"><button class="primary" data-save style="flex:1">${t("common.save")}</button></div>
     </div>`;
     document.body.appendChild(back);
-    const readArea = wireAreaFields(back, { name: s.name ?? "", sidc: s.sidc ?? "", fill: s.fill !== false }, root, back);
+    const readArea = wireAreaFields(back, { name: s.name ?? "", ai_text: s.ai_text ?? "", sidc: s.sidc ?? "", fill: s.fill !== false }, root, back);
     const closedIn = back.querySelector<HTMLInputElement>("[data-sclosed]")!;
     closedIn.addEventListener("change", () => (back.querySelector<HTMLElement>("[data-area-block]")!.hidden = !closedIn.checked));
     const close = () => back.remove();

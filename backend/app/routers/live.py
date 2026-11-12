@@ -749,6 +749,7 @@ def _create_stroke(plan_id: str, uid: str, data: dict) -> dict:
             closed=kind != STROKE_DOT and data.get("closed") is True and len(pts) >= 3,
             name=_clean_stroke_name(data.get("name")),
             sidc=clean_sidc(data.get("sidc")),
+            ai_text=_clean_stroke_name(data.get("ai_text")),
             fill=data.get("fill") is not False,
         )
         db.add(s)
@@ -761,7 +762,7 @@ def _stroke_out(s: Stroke) -> dict:
         "id": s.id, "phase_id": s.phase_id, "layer_id": s.layer_id, "kind": s.kind,
         "channel": s.channel, "points": s.points, "color": s.color, "width": s.width,
         "extra_phase_ids": list(s.extra_phase_ids or []),
-        "closed": bool(s.closed), "name": s.name or "", "sidc": s.sidc or "",
+        "closed": bool(s.closed), "name": s.name or "", "sidc": s.sidc or "", "ai_text": s.ai_text or "",
         "fill": s.fill is not False,
     }
 
@@ -821,6 +822,8 @@ def _update_stroke(plan_id: str, stroke_id: str, data: dict) -> dict | None:
             s.name = _clean_stroke_name(data["name"])
         if "sidc" in data:
             s.sidc = clean_sidc(data["sidc"])
+        if "ai_text" in data:
+            s.ai_text = _clean_stroke_name(data["ai_text"])
         if "fill" in data:
             s.fill = data["fill"] is not False
         if "closed" in data:

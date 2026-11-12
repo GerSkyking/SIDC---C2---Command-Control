@@ -58,6 +58,8 @@ export interface Stroke {
   fill?: boolean;
   /** Art: "phaseline" (Linie/Fläche) oder "dot" (einfacher Punkt: 1 Punkt, width = Größe, name = Text) */
   kind?: string;
+  /** Zusatztext zum Flächen-Symbol */
+  ai_text?: string;
 }
 export type Mode = "move" | "markermove" | "point" | "line" | "dot" | "erase" | "place" | "measure" | "text" | "ref" | "area";
 /** Standardfrist für Zeus-Freigaben (Phasen und Missionsbau-Notizen), in Stunden. */

@@ -10,6 +10,8 @@ import { openWizard } from "../sidc/wizard";
 
 export interface AreaFields {
   name: string;
+  /** Zusatztext (wie im Marker-Baukasten) */
+  ai_text: string;
   sidc: string;
   fill: boolean;
 }
@@ -18,6 +20,7 @@ export interface AreaFields {
 export function areaFieldsHtml(f: AreaFields): string {
   return (
     `<label class="chk-lbl">${t("areaName.name")}<input data-area-name maxlength="128" value="${esc(f.name)}" placeholder="${t("areaName.namePh")}" /></label>` +
+    `<label class="chk-lbl">${t("wiz.aiText")}<input data-area-ai maxlength="128" value="${esc(f.ai_text)}" /></label>` +
     `<label class="chk-lbl">${t("areaName.symbol")}</label>` +
     `<div class="area-sym" data-area-sym></div>` +
     // Rückfall/Profi-Eingabe: SIDC direkt (z. B. ohne hochgeladenen Marker-Katalog)
@@ -53,6 +56,11 @@ export function wireAreaFields(host: HTMLElement, f: AreaFields, wizardHost: HTM
         wizardHost,
         (tpl) => {
           setSidc(tpl.sidc);
+          // Texte aus dem Marker-Baukasten übernehmen (Einheitstext → Name, Zusatztext), nur wenn Felder leer sind
+          const nm = host.querySelector<HTMLInputElement>("[data-area-name]");
+          const ai = host.querySelector<HTMLInputElement>("[data-area-ai]");
+          if (nm && !nm.value.trim() && tpl.unit_text) nm.value = tpl.unit_text;
+          if (ai && !ai.value.trim() && tpl.ai_text) ai.value = tpl.ai_text;
         },
         { onClose: restore },
       );
@@ -79,6 +87,7 @@ export function wireAreaFields(host: HTMLElement, f: AreaFields, wizardHost: HTM
   drawSym();
   return () => ({
     name: (host.querySelector<HTMLInputElement>("[data-area-name]")?.value ?? "").trim(),
+    ai_text: (host.querySelector<HTMLInputElement>("[data-area-ai]")?.value ?? "").trim(),
     sidc,
     fill: host.querySelector<HTMLInputElement>("[data-area-fill]")?.checked ?? true,
   });
@@ -94,14 +103,14 @@ export function openAreaNameDialog(wizardHost: HTMLElement, sig: AbortSignal, do
   back.innerHTML = `<div class="card" style="width:min(24rem,96vw)">
     <div class="row"><h1 style="flex:1;margin:0">${t("areaName.title")}</h1></div>
     <p class="muted" style="margin:.2rem 0 .3rem;font-size:.8rem">${t("areaName.intro")}</p>
-    ${areaFieldsHtml({ name: "", sidc: "", fill: true })}
+    ${areaFieldsHtml({ name: "", ai_text: "", sidc: "", fill: true })}
     <div class="row" style="margin-top:.6rem">
       <button class="primary" data-area-ok style="flex:1">${t("areaName.apply")}</button>
       <button data-area-skip>${t("areaName.skip")}</button>
     </div>
   </div>`;
   document.body.appendChild(back);
-  const read = wireAreaFields(back, { name: "", sidc: "", fill: true }, wizardHost, back);
+  const read = wireAreaFields(back, { name: "", ai_text: "", sidc: "", fill: true }, wizardHost, back);
   const opened = Date.now();
   let finished = false;
   const ac = new AbortController();
@@ -113,7 +122,7 @@ export function openAreaNameDialog(wizardHost: HTMLElement, sig: AbortSignal, do
     back.remove();
     done(f);
   };
-  const skip = () => finish({ name: "", sidc: "", fill: true });
+  const skip = () => finish({ name: "", ai_text: "", sidc: "", fill: true });
   back.querySelector("[data-area-ok]")!.addEventListener("click", () => finish(read()));
   back.querySelector("[data-area-skip]")!.addEventListener("click", skip);
   // Klick daneben = ohne Namen (nicht sofort: der zweite Klick eines Doppelklicks landet sonst hier)
