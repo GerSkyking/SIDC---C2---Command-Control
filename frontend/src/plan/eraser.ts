@@ -4,6 +4,8 @@ import { t } from "../i18n";
 import { lngLatToWorld } from "../sidc/sidc";
 import type { PlanCtx } from "./ctx";
 import { fmtDist, polyHit } from "./geo";
+import { ringOf } from "../mapAreas";
+import { isStrokeArea } from "./render";
 
 export function initEraser(ctx: PlanCtx): void {
   const { map, socket, root, strokes, markers, caps, cal, sig } = ctx;
@@ -53,7 +55,9 @@ export function initEraser(ctx: PlanCtx): void {
       for (const s of strokes.values()) {
         if (multiPhaseOpacity(s.phase_id, s.extra_phase_ids) * tacOpacity(null, s.layer_id) <= 0) continue;
         const r = eraserR + Math.max(2, s.width) / 2;
-        if (polyHit(px, py, s.points.map((p) => map.project(p)), r) && once(s.id))
+        // Geschlossene Fläche: auch das Schluss-Segment zum Startpunkt zählt (Umriss = Ring)
+        const ring = isStrokeArea(s) ? ringOf(s.points) : s.points;
+        if (polyHit(px, py, ring.map((p) => map.project(p)), r) && once(s.id))
           socket.send({ type: "stroke.delete", id: s.id });
       }
     if (caps.delete)

@@ -329,6 +329,8 @@ export function initAnnots(ctx: PlanCtx): void {
         el.title = isNotesAnnot(a) ? t("star.mbHint") : "";
         body =
           `<div class="star-pin">${STAR_SVG}</div>` +
+          // Größe des Bereichs (Fläche bzw. Länge) klein unter dem Stern — Text setzt areas.ts (updateAreaSizes)
+          `<div class="star-area-size" data-area-size="${esc(a.id)}" hidden></div>` +
           (collapsed ? "" : `<div class="annot-body">${renderMarkdown(star.head)}</div>`) +
           (star.rest && !collapsed ? `<div class="star-desc notes-view">${renderMarkdown(star.rest)}</div>` : "");
       } else {

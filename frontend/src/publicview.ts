@@ -19,7 +19,7 @@ import { wireScaleBox } from "./scalebox";
 import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
 import { openLightbox } from "./lightbox";
 import type { ImagePlacement, PlanImage as PubImage } from "./api";
-import { AREA_COLORS, areaCentroid, areaFeatures, ensureAreaLayers, hatchId, ringOf, setAreaData } from "./mapAreas";
+import { AREA_COLORS, areaFeatures, areaLabelFeature, areaSizeText, ensureAreaLabelLayer, ensureAreaLayers, hatchId, ringOf, setAreaData, setAreaLabels } from "./mapAreas";
 
 interface M {
   id: string;
@@ -274,39 +274,22 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     }
     return out;
   };
-  const areaIconId = (sidc: string): string => mapIconId(sidc, "");
-  const ensureAreaIcons = async () => {
-    const todo = [...strokes.values()].filter((s) => isArea(s) && s.sidc && !loaded.has(areaIconId(s.sidc)));
-    await Promise.all(
-      todo.map(async (s) => {
-        const id = areaIconId(s.sidc!);
-        if (loaded.has(id)) return;
-        loaded.add(id);
-        if (!(await ensureMapIcon(map, s.sidc!, ""))) missingIcons.add(id);
-      }),
-    );
-  };
-  const areaLabelFC = (): GeoJSON.FeatureCollection => ({
-    type: "FeatureCollection",
-    features: [...strokes.values()]
-      .filter((s) => isArea(s) && (s.name || s.sidc))
+  // Name + SIDC-Symbol + Größe am Schwerpunkt (gemeinsame Optik mit dem Plan-Editor, siehe mapAreas.ts)
+  const areaLabelFC = (): GeoJSON.Feature[] =>
+    [...strokes.values()]
+      .filter((s) => isArea(s) && opacityOf(s) > 0.001)
       .flatMap((s) => {
-        const c = areaCentroid(s.points, true);
-        if (!c) return [];
-        const icon = s.sidc && !missingIcons.has(areaIconId(s.sidc)) ? areaIconId(s.sidc) : "";
-        return [
-          {
-            type: "Feature" as const,
-            geometry: { type: "Point" as const, coordinates: c },
-            properties: { id: s.id, name: s.name || "", icon, hasIcon: !!icon, color: hex(s.color), opacity: opacityOf(s), scale: personalScale },
-          },
-        ];
-      }),
-  });
+        const f = areaLabelFeature(
+          map,
+          { id: s.id, pts: s.points, name: s.name || "", sidc: s.sidc || "", color: hex(s.color), opacity: opacityOf(s), scale: personalScale },
+          snap.map_meta?.calibration ?? null,
+        );
+        return f ? [f] : [];
+      });
   const refreshAreas = () => {
     if (!map.getSource("areas")) return;
     setAreaData(map, "areas", areaFC());
-    void ensureAreaIcons().then(() => (map.getSource("area-labels") as GeoJSONSource | undefined)?.setData(areaLabelFC()));
+    setAreaLabels(map, "area-labels", areaLabelFC());
   };
 
   // ── Ebenen-Panel ──────────────────────────────────────────────────────
@@ -477,7 +460,12 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       .map(
         (a) =>
           `<div class="annot" data-aid="${a.id}" style="width:${a.width}px;${a.height ? `height:${a.height}px;` : ""}opacity:${phaseOpacityOf(a.phase_id)}">` +
-          `<div class="annot-body">${renderMarkdown(a.text || "")}</div></div>`,
+          `<div class="annot-body">${renderMarkdown(a.text || "")}</div>` +
+          // Größe des Bereichs (Fläche bzw. Länge einer offenen Linie) klein unter der Notiz
+          (a.area && Array.isArray(a.area.pts) && a.area.pts.length >= 2
+            ? `<div class="annot-area-size">${esc(areaSizeText(a.area.pts, !!a.area.closed, snap.map_meta?.calibration ?? null))}</div>`
+            : "") +
+          `</div>`,
       )
       .join("");
     wireNoteRefs(annotsEl);
@@ -688,29 +676,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       },
     });
     // Name + SIDC-Symbol benannter Flächen am Schwerpunkt
-    map.addSource("area-labels", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-    map.addLayer({
-      id: "area-labels",
-      type: "symbol",
-      source: "area-labels",
-      layout: {
-        "icon-image": ["get", "icon"],
-        "icon-size": ["*", 0.8, ["coalesce", ["get", "scale"], 1]],
-        "icon-allow-overlap": true,
-        "text-field": ["get", "name"],
-        "text-size": 12,
-        "text-anchor": ["case", ["get", "hasIcon"], "top", "center"],
-        "text-offset": ["case", ["get", "hasIcon"], ["literal", [0, 1.5]], ["literal", [0, 0]]],
-        "text-allow-overlap": true,
-      },
-      paint: {
-        "icon-opacity": ["get", "opacity"],
-        "text-color": "#ffffff",
-        "text-halo-color": ["get", "color"],
-        "text-halo-width": 1.6,
-        "text-opacity": ["get", "opacity"],
-      },
-    });
+    ensureAreaLabelLayer(map, "area-labels");
     refreshAreas();
     renderAnnots();
     renderMapImages();

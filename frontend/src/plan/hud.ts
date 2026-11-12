@@ -1,13 +1,11 @@
 // HUD und Kartensteuerung: Cursor-Koordinaten/Höhe (DEM-Kacheln bzw. Terrain), „Zeigen“ (Hervorhebung/Pfeil
 // für andere), 2D/3D + Navigations-Würfel, Kompass sowie die persönlichen Marker-/Textgrößen-Regler.
-import type { GeoJSONSource } from "maplibre-gl";
 import { makeMovable } from "../movable";
 import { initNavCube } from "../navcube";
 import { wireScaleBox } from "../scalebox";
 import { lngLatToWorld } from "../sidc/sidc";
 import { wireThemeSwitch } from "../ui";
 import type { PlanCtx } from "./ctx";
-import { lineDraftFC } from "./geo";
 
 export function initHud(ctx: PlanCtx): void {
   const { map, socket, root, planId, mapId, cal, me, peers, sig } = ctx;
@@ -110,7 +108,7 @@ export function initHud(ctx: PlanCtx): void {
     if (ctx.mode === "point") sendPointer(lng, lat);
     if (ctx.mode === "line" && ctx.linePts.length) {
       ctx.lineCursor = [lng, lat];
-      (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(ctx.linePts, ctx.lineCursor));
+      ctx.ui.refreshLineDraft(); // inkl. Hervorhebung des Startpunkts (Fläche schließen)
     }
   };
   map.on("touchmove", (e) => {

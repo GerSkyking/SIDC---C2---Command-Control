@@ -57,14 +57,14 @@ Alle Rechte werden serverseitig je Operation geprüft.
 |---|---|---|
 | Karte bewegen | W | Pan/Drehen, Marker ziehen, Linien/Messlinien auswählen |
 | Zeigen | A | Laser-Punkt mit Spielerfarbe, gelber Ring, Pfeil (rechte Maustaste) |
-| Zeichnen | D | Phase-Lines mit Farbe/Breite, Phase, Weitere Phasen, Layer |
+| Zeichnen | D | Phase-Lines mit Farbe/Breite, Phase, Weitere Phasen, Layer; Klick auf den Startpunkt schließt zur **benannten Fläche** (Name, SIDC-Symbol, Schraffur an/aus, Flächengröße am Schwerpunkt); Undo/Redo |
 | Marker verschieben | M | (mobil) Marker per Touch ziehen |
 | Lineal | F | mehrsegmentig, Teil-/Gesamtstrecke (3D-Höhe), Phase/Layer-Menü |
 | Radierer | S | Kreis mit einstellbarer Größe (Panel verschiebbar/fixierbar) |
 | Text | T | Markdown-Textfelder auf der Karte (einklappbar, mit Karte skalierbar) |
 | Marker setzen | Leertaste | Position wählen, Wizard; „Platzieren" auch oben im QuickMenü |
 | Favoriten | R | Schnellauswahl gespeicherter Marker |
-| Ort markieren | – | nur Projekt-Pläne: Klick setzt einen **Stern**, danach „Was ist hier?“ → Aufgabe, Haftnotiz, Verknüpfung oder Kartennotiz; gelb = alle, pink = nur Missionsbau |
+| Ort markieren | – | nur Projekt-Pläne: Klick setzt einen **Stern**, danach „Was ist hier?“ → Aufgabe, Haftnotiz, Verknüpfung oder Kartennotiz; gelb = alle, pink = nur Missionsbau; optionaler Bereich (Linie/Fläche) mit Größe unter dem Stern |
 
 - Mittlere Maustaste pannt in allen Werkzeugen; Rechtsklick-Menü im Karten-Werkzeug; Panels frei verschiebbar + fixierbar.
 - Tasten sind im Zahnrad pro Nutzer änderbar; dort auch *Marker-Texte* und *Marker-Info* (Marker-Anzeige).

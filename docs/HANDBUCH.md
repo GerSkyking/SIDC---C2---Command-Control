@@ -66,7 +66,7 @@ Werkzeugleiste links (nur mit Bearbeitungsrecht). Tasten sind die Standardbelegu
 |---|---|---|
 | Karte bewegen | `W` | Schieben/Zoomen; Marker anklicken = bearbeiten; mittlere Maustaste zieht Marker |
 | Zeigen | `A` | dein Cursor erscheint bei allen; rechte Maustaste zieht einen Pfeil |
-| Linie | `D` | Punkte klicken, grüner Haken / Rechtsklick / Doppelklick beendet; Farbe, Breite, Phase, Layer im Menü |
+| Linie | `D` | Punkte klicken, grüner Haken / Doppelklick beendet (Rechtsklick/Esc verwirft); Klick auf den grünen Startpunkt schließt zur **Fläche** (siehe unten); Farbe, Breite, Phase, Layer im Menü |
 | Marker verschieben | `M` | (v. a. Touch) Marker ziehen |
 | Lineal | `F` | beliebig viele Punkte, Teil- und Gesamtstrecke; Rechtsklick beendet; Messlinien bleiben stehen |
 | Radierer | `S` | löscht alles im Kreis (Größe einstellbar) |
@@ -85,6 +85,14 @@ Pfeiltasten + `Enter` oder Klick: die Karte fliegt hin und der Treffer leuchtet 
 Phase, wechselt die Ansicht dorthin; liegt er in einem ausgeblendeten Layer, wird der Layer wieder eingeblendet (beides
 steht vorher in der Trefferliste). Gefunden wird nur, was deine aktuelle Ansicht (Spieler/Missionsbau/Zeus) zeigen darf.
 `Esc` leert bzw. schließt. Funktioniert auch mit Nur-Lese-Zugriff und am Handy.
+
+**Benannte Flächen:** Zeichnest du mit dem Linien-Werkzeug mindestens drei Punkte und fährst zurück an den Startpunkt,
+wird er grün – ein Klick schließt die Linie zur Fläche. Im folgenden Fenster gibst du optional einen **Namen** und ein
+**Symbol** an (*Symbol wählen …* öffnet die Marker-Auswahl; alternativ *SIDC direkt eingeben*) und legst fest, ob die
+Fläche **schraffiert** wird. *Übernehmen* speichert, *Ohne Namen* oder Esc lässt sie unbenannt. Auf der Karte steht am
+Schwerpunkt das Symbol über dem Namen, darunter klein die Flächengröße. Einheiten-/Punktsymbole werden gezeichnet; Symbole,
+die sich nicht als Punkt darstellen lassen, entfallen (dann nur der Name). Nachträglich: Fläche anklicken → Zahnrad
+(Name, Symbol, Füllung, *Geschlossene Fläche* an/aus) oder Stützpunkte ziehen. Rückgängig/Wiederholen gilt auch hier.
 
 **Marker bearbeiten:** Maus über den Marker zeigt Ersteller, Phase und Layer plus Schnellknöpfe (Löschen · Verschieben ·
 Bearbeiten). Im Bearbeiten-Fenster: Texte, Drehung, Größe, Phase (auch mehrere), Layer, Sperren, Modifikatoren,
@@ -150,7 +158,8 @@ Bereich um den Stern zeichnen* oder später über den Knopf *Bereich* am Stern. 
 den (grün markierten) Startpunkt schließt die Fläche, sie wird schraffiert (Füllung 25 %, Rand 50 %). Eine offene Linie
 übernimmst du mit ✓, Enter oder Rechtsklick; Esc bricht ab. Später: Bereich anklicken → Ecken ziehen, in der Leiste
 *Fertig*, *Neu zeichnen* oder *Entfernen*. Verschiebst du den Stern, wandert der Bereich mit. Farbe und Sichtbarkeit
-folgen dem Stern (pink = nur Missionsbau, gelb = alle).
+folgen dem Stern (pink = nur Missionsbau, gelb = alle). Unter dem Stern steht klein die **Größe** des Bereichs (Fläche,
+z. B. 2,4 ha; bei offener Linie die Länge) – sie aktualisiert sich beim Zeichnen und Ecken-Ziehen.
 
 Auf der Karte: Neben dem Stern stehen die verknüpften Ziele – Klick öffnet sie (in einem neuen Tab). Die Beschreibung
 erscheint beim Überfahren. Darüber erscheinen die Knöpfe Einklappen · Zeus-Freigabe · Bearbeiten · Löschen; sie bleiben

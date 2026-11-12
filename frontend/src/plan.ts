@@ -308,6 +308,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <select id="lLayer"></select>
              <button class="primary" id="lineFinish">${t("line.finish")}</button>
              <p class="muted" style="margin:.35rem 0 0;font-size:.72rem">${t("line.rmbHint")}</p>
+          <p class="muted" style="margin:.2rem 0 0;font-size:.72rem">${t("line.closeHint")}</p>
            </div>
            <div class="line-style" id="measureStyle" hidden>
              <div class="fav-head">${t("tool.measure").split(" – ")[0]}</div>

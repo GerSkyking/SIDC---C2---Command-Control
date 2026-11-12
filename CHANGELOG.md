@@ -16,6 +16,23 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
   anderer Phase → vorher Phasenwechsel; Treffer in ausgeblendetem taktischem Layer → Layer wird eingeblendet (Hinweis).
 - Kürzel-Hilfe ergänzt. Neues Modul `frontend/src/plan/search.ts`; Hooks `listPlaces` (layers.ts), `showTacLayer` (tactical.ts).
 
+### 2026-11-12 – Benannte Flächen beim Zeichnen, Flächengröße am Stern
+- **Linien-Werkzeug:** Ab 3 Punkten wird der Startpunkt grün, sobald der Zeiger nahe ist (~12 px); ein Klick dort schließt
+  die Linie zur **Fläche**. Danach fragt ein kleiner Dialog nach **Name** (optional), **Symbol** (optional, über den
+  Marker-Wizard oder SIDC direkt) und **Füllung**; *Ohne Namen* bzw. Esc lässt die Fläche unbenannt. Gilt für jeden mit
+  Zeichenrecht.
+- Darstellung im Editor wie in der öffentlichen Ansicht: Schraffur in Linienfarbe (25 %, abschaltbar), Umriss = die Linie
+  als geschlossener Ring, am Schwerpunkt Symbol über Name und klein die **Flächengröße**. Symbole, die milsymbol nicht als
+  Punktsymbol zeichnen kann (z. B. Linien-Control-Measures), entfallen – dann steht nur der Name.
+- **Linien-Einstellungen** (Zahnrad): *Geschlossene Fläche* an/aus, Name, Symbol, Füllung. Stützpunkte ziehen
+  aktualisiert Schraffur und Größe live. Im Verschieben-Werkzeug wählt auch ein Klick in die Schraffur die Fläche.
+- **Rückgängig/Wiederholen** für Linien: Anlegen, Löschen (Papierkorb), Einstellungen und Stützpunkte ziehen.
+  Radierer trifft auch das Schluss-Segment einer Fläche.
+- **Flächengröße unter dem Stern:** Stern-Pins mit Bereich zeigen klein darunter die Fläche (z. B. 850 m² / 2,4 ha /
+  0,85 km²; offene Linie: Länge) – live beim Zeichnen und Ecken-Ziehen. Auch in der öffentlichen Ansicht unter der Notiz.
+- Intern: eine Schraffur-Implementierung (`mapAreas.ts`) für Pin-Bereiche, benannte Flächen und öffentliche Ansicht;
+  neue Hilfen `formatArea` (Staffelung m²/ha/km², DE mit Komma), `formatLength`, `areaSizeText`, Beschriftungs-Layer.
+
 ### 2026-11-12 – Bereich um einen Stern
 - Stern-Pins bekommen optional einen **Bereich**: beim Anlegen per Häkchen *Danach Bereich zeichnen* oder über den Knopf
   *Bereich* am Stern. Linksklicks setzen Ecken; Klick auf den Startpunkt schließt die Fläche (schraffiert, Füllung 25 %,
