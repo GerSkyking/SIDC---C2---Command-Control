@@ -1838,4 +1838,4 @@ button.stg-b:hover:not(:disabled) { border-color: var(--accent); }
   #app > .topbar:has(#tbMore) > #planSearchBtn { display: inline-grid; place-items: center; order: 0; }
   .psearch { left: 8px; right: 8px; width: auto; }
   .psearch-item { padding: 0.55rem 0.65rem; }
-}
+}#tool-ref[hidden] { display: none !important; }

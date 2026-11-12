@@ -234,7 +234,9 @@ export function initToolbar(ctx: PlanCtx): void {
     tb.querySelector<HTMLButtonElement>('[data-mode="erase"]')?.toggleAttribute("disabled", !caps.delete);
     tb.querySelector<HTMLButtonElement>('[data-mode="text"]')?.toggleAttribute("disabled", !caps.place);
     tb.querySelector<HTMLButtonElement>("#tool-marker")?.toggleAttribute("disabled", !caps.place);
-    tb.querySelector<HTMLButtonElement>("#tool-ref")?.toggleAttribute("disabled", !caps.place || !projectId);
+    // Missionsstern nur zeigen, wenn er verfügbar ist (Plan in einem Projekt + Platzieren erlaubt)
+    const refBtn = tb.querySelector<HTMLButtonElement>("#tool-ref");
+    if (refBtn) refBtn.hidden = !caps.place || !projectId;
     tb.querySelector<HTMLButtonElement>("#tool-fav")?.toggleAttribute("disabled", !caps.place);
   }
   applyCaps();
