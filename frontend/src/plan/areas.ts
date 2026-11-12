@@ -23,8 +23,8 @@ export function initAreas(ctx: PlanCtx): void {
   root.appendChild(areaBar);
   // Schraffur-Muster aus mapAreas.ts (dieselbe Implementierung wie für benannte Flächen und die öffentliche Ansicht)
   function ensureAreaLayers(): void {
-    const hatchMb = ensureHatch(map, AREA_COL.mb);
-    const hatchAll = ensureHatch(map, AREA_COL.all);
+    ensureHatch(map, AREA_COL.mb);
+    ensureHatch(map, AREA_COL.all);
     const before = map.getLayer("strokes") ? "strokes" : undefined;
     if (!map.getSource("pin-areas")) {
       map.addSource("pin-areas", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -35,7 +35,7 @@ export function initAreas(ctx: PlanCtx): void {
           source: "pin-areas",
           filter: ["==", ["geometry-type"], "Polygon"],
           paint: {
-            "fill-pattern": ["case", ["get", "mb"], hatchMb, hatchAll],
+            "fill-pattern": ["get", "pat"],
             "fill-opacity": ["*", 0.25, ["get", "op"]],
           },
         },
@@ -48,7 +48,7 @@ export function initAreas(ctx: PlanCtx): void {
           source: "pin-areas",
           layout: { "line-join": "round", "line-cap": "round" },
           paint: {
-            "line-color": ["case", ["get", "mb"], AREA_COL.mb, AREA_COL.all],
+            "line-color": ["get", "color"],
             "line-width": ["case", ["get", "sel"], 3.5, 2.5],
             "line-opacity": ["*", 0.5, ["get", "op"]],
           },
@@ -79,7 +79,7 @@ export function initAreas(ctx: PlanCtx): void {
       });
     }
   }
-  const areaColorOf = (a: Annot | undefined): string => (a && isNotesAnnot(a) ? AREA_COL.mb : AREA_COL.all);
+  const areaColorOf = (a: Annot | undefined): string => (a?.color || (a && isNotesAnnot(a) ? AREA_COL.mb : AREA_COL.all));
 
   function areaFC(): GeoJSON.FeatureCollection {
     const feats: GeoJSON.Feature[] = [];
@@ -88,7 +88,8 @@ export function initAreas(ctx: PlanCtx): void {
       if (!ar || ar.pts.length < 2) continue;
       const op = annotOpacity(a);
       if (op <= 0) continue;
-      const props = { aid: a.id, mb: isNotesAnnot(a), op, sel: a.id === ctx.editAreaId };
+      const col = areaColorOf(a);
+      const props = { aid: a.id, mb: isNotesAnnot(a), op, sel: a.id === ctx.editAreaId, color: col, pat: ensureHatch(map, col) };
       if (ar.closed && ar.pts.length >= 3) {
         feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [ringOf(ar.pts)] }, properties: props });
         feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: ringOf(ar.pts) }, properties: props });

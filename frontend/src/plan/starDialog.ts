@@ -59,10 +59,12 @@ export function initStarDialog(ctx: PlanCtx): void {
     back.innerHTML = `<div class="card star-dlg" style="width:min(38rem,96vw)">
       <div class="row"><h1 style="flex:1;margin:0">${t("star.title")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
       <p class="muted" style="margin:.2rem 0 .5rem">${t("star.intro")}</p>
+      <div class="star-sec">${t("star.secExisting")}</div>
+      <div class="segmented star-kinds">${kindBtn("link", "link", !!proj)}</div>
       <div class="star-sec">${t("star.secDir")}</div>
       <div class="segmented star-kinds">${DIR_KINDS.map(dirBtn).join("")}</div>
       <div class="star-sec">${t("star.secMore")}</div>
-      <div class="segmented star-kinds">${kindBtn("task", "check", canProj)}${kindBtn("note", "textbox", canProj)}${kindBtn("link", "link", !!proj)}${kindBtn("text", "edit", true)}</div>
+      <div class="segmented star-kinds">${kindBtn("task", "check", canProj)}${kindBtn("note", "textbox", canProj)}${kindBtn("text", "edit", true)}</div>
       ${canProj ? "" : `<p class="star-why">${icon("lock", 13)} ${esc(whyNot)}</p>`}
       <p data-kdoc hidden class="muted" style="margin:.4rem 0 0;font-size:.78rem">${t(docSpace === "builder" ? "star.docBuilder" : "star.docPublic")}</p>
       <div data-klink hidden>
@@ -80,6 +82,7 @@ export function initStarDialog(ctx: PlanCtx): void {
         <label style="flex:0 1 8rem">${t("star.prio")}<select data-sprio><option value="low">${t("star.prio.low")}</option><option value="normal" selected>${t("star.prio.normal")}</option><option value="high">${t("star.prio.high")}</option></select></label>
       </div>
       <label class="chk star-area-chk"><input type="checkbox" data-sarea/> ${t("area.afterCreate")}</label>
+      ${ctx.ui.starColorHtml("")}
       ${ctx.ui.annotVisHtml({ phase_id: ctx.currentPhaseId || null, extra_phase_ids: [], zeus_released: false, zeus_until: null, mb: mbDefault })}
       <div class="row" style="margin-top:.8rem">
         <button class="primary" data-save style="flex:1">${t("star.create")}</button>
@@ -91,6 +94,15 @@ export function initStarDialog(ctx: PlanCtx): void {
     const descIn = back.querySelector<HTMLTextAreaElement>("[data-sdesc]")!;
     attachMdToolbar(descIn, { projectId: pid, isBuilder: isMB });
     ctx.ui.wireAnnotVis(back);
+    ctx.ui.wireStarColor(back);
+    // Entwurfs-Stern zeigt die gewählte Farbe sofort
+    const scol = back.querySelector<HTMLInputElement>("[data-scol]");
+    const paintDraft = (): void => {
+      const c = ctx.ui.readStarColor(back);
+      draftEl.style.color = c;
+    };
+    scol?.addEventListener("input", paintDraft);
+    back.querySelector("[data-scol-reset]")?.addEventListener("click", paintDraft);
     // Entwurfs-Stern färbt sich mit der gewählten Sichtbarkeit
     back.querySelectorAll<HTMLButtonElement>("[data-avis] [data-v]").forEach((b) =>
       b.addEventListener("click", () => draftEl.classList.toggle("star-mb", b.dataset.v === "mb")),
@@ -205,6 +217,7 @@ export function initStarDialog(ctx: PlanCtx): void {
           text,
           width: kind === "text" ? 240 : 160,
           ref_zoom: map.getZoom(),
+          color: ctx.ui.readStarColor(back),
           ...visCreate,
         },
       });

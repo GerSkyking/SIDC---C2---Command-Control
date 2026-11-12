@@ -461,7 +461,7 @@ async def _handle(
         fields = {
             k: v for k, v in msg.get("data", {}).items()
             if k in ("world_x", "world_y", "text", "width", "height", "phase_id", "extra_phase_ids", "scale_fixed",
-                     "ref_zoom", "zeus_released", "zeus_hours", "area")
+                     "ref_zoom", "zeus_released", "zeus_hours", "area", "color")
         }
         if not is_builder:  # Einzelfreigabe für Zeus: nur Missionsbau
             fields.pop("zeus_released", None)
@@ -861,13 +861,19 @@ def _project_notes_phase(plan_id: str) -> tuple[str | None, bool]:
         return p.id, not had
 
 
+def _clean_color(v) -> str:
+    """Stern-Farbe: "#rrggbb" oder leer (Standardfarbe)."""
+    v = str(v or "").strip().lower()
+    return v if re.fullmatch(r"#[0-9a-f]{6}", v) else ""
+
+
 def _annotation_out(a: Annotation) -> dict:
     return {
         "id": a.id, "plan_id": a.plan_id, "phase_id": a.phase_id,
         "extra_phase_ids": list(a.extra_phase_ids or []),
         "world_x": a.world_x, "world_y": a.world_y, "text": a.text,
         "width": a.width, "height": a.height,
-        "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom, "area": a.area,
+        "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom, "area": a.area, "color": a.color or "",
         "zeus_released": annotation_zeus_open(a),
         "zeus_until": a.zeus_until.isoformat() if a.zeus_released and a.zeus_until is not None else None,
     }
@@ -885,6 +891,7 @@ def _create_annotation(plan_id: str, uid: str, data: dict) -> dict:
             scale_fixed=bool(data.get("scale_fixed", False)),
             ref_zoom=float(data.get("ref_zoom", 0)),
             area=_clean_area(data.get("area")),
+            color=_clean_color(data.get("color")),
         )
         db.add(a)
         db.flush()
@@ -924,6 +931,8 @@ def _update_annotation(plan_id: str, ann_id: str, uid: str, fields: dict) -> dic
             fields["phase_id"] = _need_phase(db, plan_id, fields["phase_id"])
         if "area" in fields:
             fields["area"] = _clean_area(fields["area"])
+        if "color" in fields:
+            fields["color"] = _clean_color(fields["color"])
         for k, v in fields.items():
             setattr(a, k, v)
         a.updated_by = uid

@@ -385,6 +385,15 @@ def test_last_project_setting(world):
     assert r.status_code == 200 and r.json()["ui_settings"]["last_project"] == w["pid"]
 
 
+def test_panel_positions_setting(world):
+    b = world["builder"]
+    pn = {"sidc_ui_toolbar": '{"x":10,"y":20}', "sidc_uipin_fav": "1"}
+    r = b.patch("/auth/me/settings", json={"panels": pn})
+    assert r.status_code == 200 and r.json()["ui_settings"]["panels"] == pn
+    assert b.patch("/auth/me/settings", json={"panels": {"k": 5}}).status_code == 422
+    assert b.patch("/auth/me/settings", json={"panels": "x"}).status_code == 422
+
+
 def test_whiteboard_links_and_refs(world):
     w = world
     pid = w["pid"]

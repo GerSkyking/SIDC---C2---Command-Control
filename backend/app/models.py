@@ -322,6 +322,8 @@ class Annotation(Base):
     ref_zoom: Mapped[float] = mapped_column(Float, default=0)
     # Optionaler Bereich um den Pin: {"pts": [[lng, lat], ...], "closed": bool}; geschlossen = schraffierte Fläche
     area: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Eigene Farbe des Stern-Pins (und seines Bereichs) als "#rrggbb"; leer = Standard (gelb / Missionsbau pink)
+    color: Mapped[str] = mapped_column(String(7), default="", server_default="")
     # Einzelfreigabe für Zeus (nur Annotationen auf dem Layer "Missionsbau-Notizen"; None = unbegrenzt).
     zeus_released: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     zeus_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

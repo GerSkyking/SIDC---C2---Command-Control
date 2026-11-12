@@ -271,10 +271,15 @@ export function openRefPicker(o: PickerOpts): Promise<string | null> {
     filters.querySelectorAll<HTMLElement>("[data-type]").forEach((b) =>
       b.addEventListener("click", () => {
         const ty = b.dataset.type!;
-        if (active.has(ty)) active.delete(ty);
-        else active.add(ty);
-        b.setAttribute("aria-pressed", String(active.has(ty)));
-        b.classList.toggle("on", active.has(ty));
+        // Einzelauswahl: ein Typ schließt die anderen aus; erneut klicken = kein Filter (Suche über alles im Projekt)
+        const was = active.has(ty);
+        active.clear();
+        if (!was) active.add(ty);
+        filters.querySelectorAll<HTMLElement>("[data-type]").forEach((x) => {
+          const on = active.has(x.dataset.type!);
+          x.setAttribute("aria-pressed", String(on));
+          x.classList.toggle("on", on);
+        });
         void run();
       }),
     );

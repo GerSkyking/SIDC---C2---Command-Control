@@ -4,7 +4,7 @@
 // Punkte sind immer [lng, lat] wie bei Strokes und Annotation-Bereichen.
 import type { GeoJSONSource, Map as MlMap } from "maplibre-gl";
 import { getLang } from "./i18n";
-import { lngLatToWorld, type Calibration } from "./sidc/sidc";
+import { iconUrl, lngLatToWorld, type Calibration } from "./sidc/sidc";
 import { milsymbolImage } from "./sidc/symbol";
 
 export type LngLat = [number, number];
@@ -216,10 +216,26 @@ export function ensureAreaIcon(map: MlMap, sidc: string): string {
   const id = areaIconId(sidc);
   if (map.hasImage(id)) return id;
   const img = milsymbolImage(sidc, 32);
-  if (!img) return "";
-  map.addImage(id, img);
-  return id;
+  if (img) {
+    map.addImage(id, img);
+    return id;
+  }
+  // Wie bei den normalen Markern: vorgerendertes PNG als Rückfall (Linien-/Flächen-Symbole u. a.)
+  if (areaIconFailed.has(id)) return "";
+  if (!areaIconPending.has(id)) {
+    areaIconPending.add(id);
+    map
+      .loadImage(iconUrl(sidc))
+      .then((r) => {
+        if (!map.hasImage(id)) map.addImage(id, r.data);
+      })
+      .catch(() => areaIconFailed.add(id))
+      .finally(() => areaIconPending.delete(id));
+  }
+  return id; // MapLibre zeichnet das Symbol, sobald das Bild geladen ist
 }
+const areaIconPending = new Set<string>();
+const areaIconFailed = new Set<string>();
 
 /** Kann milsymbol das Symbol als Punktsymbol zeichnen? (Vorschau/Hinweis im Dialog) */
 export function areaSymbolRenderable(sidc: string): boolean {
@@ -300,10 +316,10 @@ export function ensureAreaLabelLayer(map: MlMap, id: string, before?: string): v
       },
       paint: {
         "icon-opacity": ["get", "opacity"],
-        // Text in Flächenfarbe mit kontrastierendem Halo (wie die übrigen Kartenbeschriftungen)
-        "text-color": ["get", "color"],
-        "text-halo-color": ["get", "halo"],
-        "text-halo-width": 1.6,
+        // Wie die Beschriftung der SIDC-Marker: weiße Schrift, schwarze Umrandung
+        "text-color": "#e6e9ee",
+        "text-halo-color": "#000",
+        "text-halo-width": 1.4,
         "text-opacity": ["get", "opacity"],
       },
     } as never,
@@ -361,7 +377,7 @@ export function addDotLayers(map: MlMap, source: string, prefix: string): void {
     paint: {
       "circle-radius": ["get", "r"],
       "circle-color": ["get", "color"],
-      "circle-stroke-color": ["get", "halo"],
+      "circle-stroke-color": "#000",
       "circle-stroke-width": 1.5,
       "circle-opacity": ["get", "opacity"],
       "circle-stroke-opacity": ["get", "opacity"],
@@ -382,10 +398,10 @@ export function addDotLayers(map: MlMap, source: string, prefix: string): void {
       "text-max-width": 16,
     },
     paint: {
-      // Text in Punktfarbe mit kontrastierendem Halo (wie die Beschriftung benannter Flächen)
-      "text-color": ["get", "color"],
-      "text-halo-color": ["get", "halo"],
-      "text-halo-width": 1.6,
+      // Wie die Beschriftung der SIDC-Marker: weiße Schrift, schwarze Umrandung
+      "text-color": "#e6e9ee",
+      "text-halo-color": "#000",
+      "text-halo-width": 1.4,
       "text-opacity": ["get", "opacity"],
     },
   } as never);

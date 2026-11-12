@@ -281,7 +281,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       if (!ar || !Array.isArray(ar.pts) || ar.pts.length < 2) continue;
       const op = phaseOpacityOf(a.phase_id);
       if (op <= 0.001) continue;
-      const color = isNotesPhase(a.phase_id) ? AREA_COLORS.mb : AREA_COLORS.all;
+      const color = (a as { color?: string }).color || (isNotesPhase(a.phase_id) ? AREA_COLORS.mb : AREA_COLORS.all);
       out.push(...areaFeatures(ar.pts, !!ar.closed, { aid: a.id, color, pat: hatchId(color), op }));
     }
     for (const s of strokes.values()) {

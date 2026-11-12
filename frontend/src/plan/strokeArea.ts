@@ -5,7 +5,6 @@
 import { esc } from "../esc";
 import { t } from "../i18n";
 import { icon } from "../icons";
-import { areaSymbolRenderable } from "../mapAreas";
 import { iconSrc } from "../sidc/symbol";
 import { openWizard } from "../sidc/wizard";
 
@@ -36,12 +35,10 @@ export function wireAreaFields(host: HTMLElement, f: AreaFields, wizardHost: HTM
   let sidc = f.sidc;
   const symBox = host.querySelector<HTMLElement>("[data-area-sym]")!;
   const drawSym = () => {
-    const ok = areaSymbolRenderable(sidc);
     symBox.innerHTML =
-      (sidc && ok ? `<img src="${esc(iconSrc(sidc, 28))}" alt="" />` : "") +
+      (sidc ? `<img src="${esc(iconSrc(sidc, 28))}" alt="" data-hide-on-error />` : "") +
       `<button type="button" data-area-pick>${icon("marker", 14)} ${t(sidc ? "areaName.symbolChange" : "areaName.symbolPick")}</button>` +
       (sidc ? `<button type="button" class="icon-btn" data-area-unsym title="${t("areaName.symbolRemove")}">${icon("x", 14)}</button>` : "") +
-      (sidc && !ok ? `<p class="muted area-sym-hint">${t("areaName.symbolNoPoint")}</p>` : "") +
       (!sidc ? `<p class="muted area-sym-hint">${t("areaName.symbolHint")}</p>` : "");
     symBox.querySelector("[data-area-pick]")!.addEventListener("click", async () => {
       const restore = () => {

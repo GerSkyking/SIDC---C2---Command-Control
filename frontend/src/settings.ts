@@ -1,5 +1,6 @@
 // Einstellungs-Menü: Theme + Tastenkürzel. Keybinds werden PRO NUTZER auf dem
 // Server gespeichert (me.ui_settings.keybinds); localStorage dient nur als Cache.
+import { initUiStore } from "./uiStore";
 import { api, type Me } from "./api";
 import { mountNotifySettings } from "./notifySettings";
 import { t } from "./i18n";
@@ -98,6 +99,7 @@ function normalizeStored(raw: unknown): Record<HotAction, string> {
 
 export function initSettings(me: Me): void {
   currentMe = me;
+  initUiStore(me);
   mapPrefs = null; // neu aus den Nutzer-Einstellungen laden
   applyTopbarScale(getTopbarScale());
   const fromServer = (me.ui_settings as Record<string, unknown> | undefined)?.keybinds;

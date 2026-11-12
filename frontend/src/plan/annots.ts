@@ -7,6 +7,8 @@ import { attachMdToolbar } from "../mdtoolbar";
 import { esc } from "../esc";
 import { phaseMultiHtml, readPhaseMulti } from "../sidc/layerui";
 import { cid } from "../ws";
+import { api } from "../api";
+import { toast, toastError } from "../notify";
 import { STAR_SVG, ZEUS_DEFAULT_H, type Annot, type PlanCtx } from "./ctx";
 import { fmtInput, parseUtc } from "./geo";
 
@@ -143,6 +145,28 @@ export function initAnnots(ctx: PlanCtx): void {
     return out;
   }
 
+  const isStarText = (s: string): boolean => !!splitStar(s);
+  /** Farbwahl für Sterne: Auswahlfeld + „Standard“-Knopf (leer = Standardfarbe nach Sichtbarkeit). */
+  function starColorHtml(cur: string): string {
+    return `<div data-starcolor class="row" style="margin-top:.4rem;gap:.4rem;align-items:center">
+      <label style="margin:0">${t("star.color")}</label>
+      <input type="color" data-scol value="${cur || "#ffc21a"}" data-set="${cur ? "1" : ""}" aria-label="${t("star.color")}" title="${t("tip.star.color")}" />
+      <button type="button" data-scol-reset title="${t("tip.star.colorReset")}">${t("star.colorReset")}</button></div>`;
+  }
+  function wireStarColor(host: HTMLElement): void {
+    const inp = host.querySelector<HTMLInputElement>("[data-scol]");
+    if (!inp) return;
+    inp.addEventListener("input", () => (inp.dataset.set = "1"));
+    host.querySelector("[data-scol-reset]")?.addEventListener("click", () => {
+      inp.dataset.set = "";
+      inp.value = "#ffc21a";
+    });
+  }
+  const readStarColor = (host: HTMLElement): string => {
+    const inp = host.querySelector<HTMLInputElement>("[data-scol]");
+    return inp && inp.dataset.set ? inp.value : "";
+  };
+
   function openAnnotEditor(id: string, isNew = false): void {
     const a = annots.get(id);
     if (!a || !canEdit) return;
@@ -151,6 +175,7 @@ export function initAnnots(ctx: PlanCtx): void {
     back.innerHTML = `<div class="card" style="width:min(34rem,96vw)">
       <div class="row"><h1 style="flex:1;margin:0">${t("annot.title")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
       <textarea class="notes-edit annot-edit" rows="6" placeholder="${t("annot.hint")}"></textarea>
+      ${isStarText(a.text) ? starColorHtml(a.color || "") : ""}
       ${annotVisHtml(a)}
       <label class="ph-op" style="margin-top:.4rem">${t("annot.width")}
         <input type="range" min="140" max="480" step="10" value="${a.width}" data-w /></label>
@@ -170,6 +195,7 @@ export function initAnnots(ctx: PlanCtx): void {
     const wIn = back.querySelector<HTMLInputElement>("[data-w]")!;
     const fixIn = back.querySelector<HTMLInputElement>("[data-fix]")!;
     wireAnnotVis(back);
+    wireStarColor(back);
     const upd = () => {
       prev.innerHTML = renderMarkdown(ta.value);
       wireRefs(prev);
@@ -207,6 +233,7 @@ export function initAnnots(ctx: PlanCtx): void {
         scale_fixed: wantScale,
       };
       Object.assign(data, readAnnotVis(back, a));
+      if (back.querySelector("[data-starcolor]")) data.color = readStarColor(back);
       if (wantScale && (!a.scale_fixed || !a.ref_zoom || a.ref_zoom <= 0))
         data.ref_zoom = map.getZoom(); // aktuelle Größe = natürliche Größe
       socket.send({ type: "annotation.modify", id, data });
@@ -312,6 +339,54 @@ export function initAnnots(ctx: PlanCtx): void {
     document.addEventListener("mousemove", onMove, { signal: sig });
     document.addEventListener("mouseup", onUp, { signal: sig });
   }
+  /** Stern-Pin löschen: nur von der Karte oder zusätzlich das verknüpfte Projekt-Objekt (Dokument/Aufgabe/Notiz). */
+  function deleteStarDialog(id: string, head: string): void {
+    const targets = [...head.matchAll(/\{\{(doc|task|note):([0-9a-f]{32})\}\}/g)].map((m) => ({ kind: m[1], id: m[2] }));
+    const canProject = !!projectId && targets.length > 0;
+    const back = document.createElement("div");
+    back.className = "edit-modal";
+    back.setAttribute("role", "dialog");
+    back.setAttribute("aria-modal", "true");
+    back.innerHTML = `<div class="card stack" style="width:min(26rem,94vw)">
+      <h1 style="margin:0;font-size:1.05rem">${t("star.del.title")}</h1>
+      <p class="muted" style="margin:0">${t(canProject ? "star.del.msg" : "star.del.msgMap")}</p>
+      <div class="stack" style="gap:.4rem">
+        <button class="danger" data-map>${icon("trash", 16)} ${t("star.del.mapOnly")}</button>
+        ${canProject ? `<button class="danger" data-proj>${icon("trash", 16)} ${t("star.del.withProject")}</button>` : ""}
+        <button data-c>${t("common.cancel")}</button>
+      </div></div>`;
+    document.body.appendChild(back);
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") close();
+    };
+    const close = (): void => {
+      document.removeEventListener("keydown", onKey, true);
+      back.remove();
+    };
+    document.addEventListener("keydown", onKey, true);
+    back.addEventListener("mousedown", (e) => e.target === back && close());
+    back.querySelector("[data-c]")!.addEventListener("click", close);
+    back.querySelector("[data-map]")!.addEventListener("click", () => {
+      close();
+      socket.send({ type: "annotation.delete", id });
+    });
+    back.querySelector("[data-proj]")?.addEventListener("click", async () => {
+      close();
+      let failed = false;
+      for (const tg of targets) {
+        try {
+          if (tg.kind === "doc") await api.deleteProjectDoc(projectId!, tg.id);
+          else if (tg.kind === "task") await api.deleteProjectTask(projectId!, tg.id);
+          else await api.deleteProjectNote(projectId!, tg.id);
+        } catch (e) {
+          failed = true;
+          toastError(e);
+        }
+      }
+      if (!failed) toast(t("star.del.done"), { kind: "success" });
+      socket.send({ type: "annotation.delete", id });
+    });
+  }
   function renderAnnots(): void {
     if (ctx.annotResizingId) return; // Neuaufbau würde das laufende Ziehen abbrechen
     if (!annotRefFallback) annotRefFallback = map.getZoom();
@@ -327,6 +402,10 @@ export function initAnnots(ctx: PlanCtx): void {
         // Stern-Pin: auffälliges Symbol am Ort, daneben die verknüpften Ziele, Beschreibung beim Überfahren
         el.className = "annot annot-star" + (isNotesAnnot(a) ? " star-mb" : "") + (collapsed ? " annot-collapsed" : "");
         el.title = isNotesAnnot(a) ? t("star.mbHint") : "";
+        if (a.color) {
+          el.style.setProperty("--star", a.color);
+          el.style.setProperty("--star-mb", a.color);
+        }
         body =
           `<div class="star-pin">${STAR_SVG}</div>` +
           // Größe des Bereichs (Fläche bzw. Länge) klein unter dem Stern — Text setzt areas.ts (updateAreaSizes)
@@ -379,6 +458,10 @@ export function initAnnots(ctx: PlanCtx): void {
       });
       el.querySelector("[data-adel]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
+        if (star) {
+          void deleteStarDialog(a.id, star.head);
+          return;
+        }
         const tools = el.querySelector<HTMLElement>(".annot-tools")!;
         tools.innerHTML =
           `<label class="annot-delok" title="${t("tip.common.delConfirm")}"><input type="checkbox" data-adok/> ${t("common.delete")}</label>` +
@@ -451,5 +534,8 @@ export function initAnnots(ctx: PlanCtx): void {
     wireAnnotVis,
     readAnnotVis,
     createAnnotAt,
+    starColorHtml,
+    wireStarColor,
+    readStarColor,
   });
 }

@@ -85,6 +85,7 @@ export interface Annot {
   zeus_released?: boolean; // Einzelfreigabe für Zeus (Karten-Notizen)
   zeus_until?: string | null;
   area?: AnnotArea | null; // Bereich um den Pin
+  color?: string; // eigene Stern-Farbe "#rrggbb" (leer = Standard)
 }
 /** Bereich um einen Pin: offene Linie oder (closed) schraffierte Fläche, Punkte als [lng, lat]. */
 export interface AnnotArea {
@@ -246,6 +247,9 @@ export interface PlanUi {
   annotVisHtml: (a: Pick<Annot, "phase_id" | "extra_phase_ids" | "zeus_released" | "zeus_until"> & { mb?: boolean }) => string;
   wireAnnotVis: (host: HTMLElement) => void;
   readAnnotVis: (host: HTMLElement, a: Annot | null) => Record<string, unknown>;
+  starColorHtml: (cur: string) => string;
+  wireStarColor: (host: HTMLElement) => void;
+  readStarColor: (host: HTMLElement) => string;
   createAnnotAt: (pos: LngLat2) => void;
   // areas.ts
   refreshAreas: () => void;
@@ -329,6 +333,9 @@ export function createUi(): PlanUi {
     wireAnnotVis: noop,
     readAnnotVis: () => ({}),
     createAnnotAt: noop,
+    starColorHtml: () => "",
+    wireStarColor: noop,
+    readStarColor: () => "",
     refreshAreas: noop,
     renderAreaBar: noop,
     startAreaDraw: noop,

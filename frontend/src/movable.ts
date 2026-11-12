@@ -1,6 +1,7 @@
 // Verschiebbare Karten-Panels mit optionalem Pin (bleibt offen / an Ort) —
-// Position + Pin-Status je Plan/Browser gespeichert (User-Preset).
+// Position, Größe + Pin-Status pro Benutzer gespeichert (Server, siehe uiStore.ts), in allen Plänen gleich.
 import { t } from "./i18n";
+import { uiGet, uiRemove, uiSet } from "./uiStore";
 import { icon } from "./icons";
 
 export interface Movable {
@@ -19,9 +20,13 @@ export function makeMovable(
   el: HTMLElement,
   opts: { plan: string; key: string; pinnable?: boolean; onClose?: () => void; resizable?: boolean },
 ): Movable {
-  const posKey = `sidc_ui_${opts.plan}_${opts.key}`;
-  const pinKey = `sidc_uipin_${opts.plan}_${opts.key}`;
-  const sizeKey = `sidc_uisize_${opts.plan}_${opts.key}`;
+  // Pro Benutzer (Browser), nicht pro Plan: gleiche Position/Größe/Anheftung in allen Plänen.
+  // Alte plan-spezifische Werte dienen als Rückfall, bis neu gespeichert wird.
+  const posKey = `sidc_ui_${opts.key}`;
+  const pinKey = `sidc_uipin_${opts.key}`;
+  const sizeKey = `sidc_uisize_${opts.key}`;
+  const legacy = (k: string): string => k.replace(/^(sidc_ui(?:pin|size)?_)/, `$1${opts.plan}_`);
+  const rd = (k: string): string | null => uiGet(k) ?? uiGet(legacy(k));
 
   const bar = document.createElement("div");
   bar.className = "mv-bar";
@@ -57,7 +62,7 @@ export function makeMovable(
   if (resizeHandle) {
     const applySize = () => {
       try {
-        const s = JSON.parse(localStorage.getItem(sizeKey) || "null");
+        const s = JSON.parse(rd(sizeKey) || "null");
         if (s && typeof s.w === "number" && typeof s.h === "number") {
           el.style.width = `${s.w}px`;
           el.style.height = `${s.h}px`;
@@ -89,7 +94,7 @@ export function makeMovable(
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
         try {
-          localStorage.setItem(sizeKey, JSON.stringify({ w: el.offsetWidth, h: el.offsetHeight }));
+          uiSet(sizeKey, JSON.stringify({ w: el.offsetWidth, h: el.offsetHeight }));
         } catch {
           /* ignore */
         }
@@ -101,7 +106,7 @@ export function makeMovable(
 
   const readPin = () => {
     try {
-      return localStorage.getItem(pinKey) === "1";
+      return rd(pinKey) === "1";
     } catch {
       return false;
     }
@@ -121,7 +126,7 @@ export function makeMovable(
   const clampY = (y: number) => Math.max(topGuard(), Math.min(window.innerHeight - KEEP_Y, y));
   const savePos = (x: number, y: number) => {
     try {
-      localStorage.setItem(posKey, JSON.stringify({ x: Math.round(x), y: Math.round(y) }));
+      uiSet(posKey, JSON.stringify({ x: Math.round(x), y: Math.round(y) }));
     } catch {
       /* ignore */
     }
@@ -138,7 +143,7 @@ export function makeMovable(
 
   const applyPos = () => {
     try {
-      const p = JSON.parse(localStorage.getItem(posKey) || "null");
+      const p = JSON.parse(rd(posKey) || "null");
       if (p && typeof p.x === "number") place(p.x, p.y);
     } catch {
       /* ignore */
@@ -150,7 +155,7 @@ export function makeMovable(
     e.stopPropagation();
     pinned = !pinned;
     try {
-      localStorage.setItem(pinKey, pinned ? "1" : "0");
+      uiSet(pinKey, pinned ? "1" : "0");
     } catch {
       /* ignore */
     }
@@ -162,7 +167,7 @@ export function makeMovable(
     if (pinned) {
       pinned = false;
       try {
-        localStorage.setItem(pinKey, "0");
+        uiSet(pinKey, "0");
       } catch {
         /* ignore */
       }
@@ -201,8 +206,10 @@ export function makeMovable(
 
   const reset = () => {
     try {
-      localStorage.removeItem(posKey);
-      if (resizeHandle) localStorage.removeItem(sizeKey);
+      for (const k of [posKey, ...(resizeHandle ? [sizeKey] : [])]) {
+        uiRemove(k);
+        uiRemove(legacy(k));
+      }
     } catch {
       /* ignore */
     }
@@ -218,7 +225,7 @@ export function makeMovable(
     isPinned: () => pinned,
     hasPos: () => {
       try {
-        return !!localStorage.getItem(posKey);
+        return !!rd(posKey);
       } catch {
         return false;
       }

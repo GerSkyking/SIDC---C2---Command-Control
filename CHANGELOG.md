@@ -5,6 +5,16 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-11-12 – Korrekturen & Stern-Farbe
+- **Plan anlegen:** kein schwarzer Bildschirm mehr (Route wurde doppelt aufgerufen → zwei Karten gleichzeitig).
+- Markdown-Listen: kleiner Abstand zwischen Aufzählungspunkt und Text; Fokus-/Auswahlrahmen der Segment-Knöpfe nach innen.
+- **Stern („Ort markieren“):** eigene Farbe (auch für den Bereich; Migration `0047_annotation_color`), „Bestehendes
+  auswählen“ als eigener Abschnitt, Löschen per Dialog „Nur auf der Karte“ / „Auch im Projekt löschen“.
+- „Verknüpfung einfügen“: Typ-Filter als Einzelauswahl; ohne Filter Suche über das ganze Projekt.
+- Punkte und Flächen-Beschriftung: weiße Schrift mit schwarzer Umrandung wie bei SIDC-Markern; Flächen-Symbol mit
+  PNG-Rückfall wie normale Marker.
+- **UI-Boxen** (Position/Größe/Anheftung) pro Benutzer auf dem Server (`ui_settings.panels`) statt pro Plan.
+
 ### 2026-11-12 – Punkt-Werkzeug
 - Neues Werkzeug **Punkt** (Taste `P`, umbelegbar) in der Werkzeugleiste direkt unter *Linie*: setzt mit jedem Klick
   einen einfachen Punkt. Menü wie beim Linien-Werkzeug (beweglich/anheftbar): Farbe aus der Linien-Palette oder frei

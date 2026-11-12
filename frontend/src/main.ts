@@ -260,12 +260,10 @@ async function renderPlanList(): Promise<void> {
       const p = await api.createPlan(name, mapId, folderId);
       if (withAccess) {
         openAclEditor(p.id, name, () => {
-          location.hash = `#/plans/${p.id}`;
-          route();
+          location.hash = `#/plans/${p.id}`; // hashchange ruft route() — nicht doppelt aufrufen (zwei parallele Karten = schwarzer Bildschirm)
         });
       } else {
         location.hash = `#/plans/${p.id}`;
-        route();
       }
     } catch (e) {
       toastError(e);

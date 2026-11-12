@@ -170,11 +170,11 @@ export function renderMarkdown(src: string): string {
       while (stack.length && ind < stack[stack.length - 1].indent) closeTo(stack.length - 1);
       const top = stack[stack.length - 1];
       if (!top || ind > top.indent) {
-        out.push(`<${want}>`);
+        out.push(`<${want} class="md-list">`);
         stack.push({ type: want, indent: ind, liOpen: false });
       } else if (top.type !== want) {
         closeTo(stack.length - 1);
-        out.push(`<${want}>`);
+        out.push(`<${want} class="md-list">`);
         stack.push({ type: want, indent: ind, liOpen: false });
       } else if (top.liOpen) {
         out.push("</li>");

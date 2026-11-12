@@ -141,8 +141,8 @@ def patch_my_profile(body: ProfileIn, user: CurrentUser, db: DbDep) -> MeOut:
     return _me(db, user)
 
 
-_UI_SETTINGS_KEYS = {"keybinds", "theme", "lang", "map", "topbar_scale", "last_project"}
-_UI_SETTINGS_MAX_BYTES = 8192
+_UI_SETTINGS_KEYS = {"keybinds", "theme", "lang", "map", "topbar_scale", "last_project", "panels"}
+_UI_SETTINGS_MAX_BYTES = 16384
 
 
 @router.patch("/me/settings", response_model=MeOut)
@@ -150,6 +150,12 @@ def patch_my_settings(body: dict, user: CurrentUser, db: DbDep) -> MeOut:
     import json
 
     incoming = {k: v for k, v in (body or {}).items() if k in _UI_SETTINGS_KEYS}
+    if "panels" in incoming:  # Box-Positionen: Schlüssel -> JSON-Text, nur kleine Strings
+        pn = incoming["panels"]
+        if not isinstance(pn, dict) or any(
+            not isinstance(k, str) or len(k) > 64 or not isinstance(v, str) or len(v) > 200 for k, v in pn.items()
+        ) or len(pn) > 120:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Ungültige Panel-Einstellungen")
     cur = dict(user.ui_settings or {})
     cur.update(incoming)
     if len(json.dumps(cur)) > _UI_SETTINGS_MAX_BYTES:
