@@ -50,12 +50,8 @@ import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screen
 import type { ImagePlacement, PlanImage } from "./api";
 
 import {
-  AREA_CLOSE_PX,
-  AREA_COL,
-  AREA_MAX_POINTS,
   createUi,
   IS_MOBILE,
-  STAR_SVG,
   TAC_AUTO,
   ZEUS_DEFAULT_H,
   type ActAs,
@@ -73,6 +69,8 @@ import {
 } from "./plan/ctx";
 import { createModel, type PlanModel } from "./plan/model";
 import { initImages } from "./plan/images";
+import { initAreas } from "./plan/areas";
+import { initAnnots } from "./plan/annots";
 import { initStarDialog } from "./plan/starDialog";
 import { emptyFC, esc0, fmtDist, fmtInput, imgToJpeg, lineDraftFC, packedToHex, parseNaive, parseUtc, polyHit } from "./plan/geo";
 export async function openPlanView(root: HTMLElement, planId: string, me: Me): Promise<void> {
@@ -268,9 +266,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     phaseNameOf,
     hk,
     measureVisible,
-    annotZeusOpen,
-    isNotesAnnot,
-    annotOpacity,
   } = model;
   ctx.currentPhaseId = playerPhases()[0]?.id ?? phases[0]?.id ?? "";
 
@@ -1012,6 +1007,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     (map.getSource("dir-lines") as GeoJSONSource)?.setData(d.lines);
     (map.getSource("dir-heads") as GeoJSONSource)?.setData(d.heads);
   };
+  ctx.ui.refreshChains = () => (map.getSource("chains") as GeoJSONSource)?.setData(chainFC());
   const refreshStrokes = () => (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
   const refreshMarkers = async () => {
     await Promise.all([...markers.values()].map(ensureIcon));
@@ -1164,15 +1160,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       case "annotation.upsert": {
         const wasResizing = ctx.annotResizingId === msg.annotation.id;
         annots.set(msg.annotation.id, msg.annotation);
-        if (!ctx.annotResizingId) renderAnnots(); // während eines Resize nicht neu aufbauen
-        else if (!wasResizing) positionAnnots();
+        if (!ctx.annotResizingId) ctx.ui.renderAnnots(); // während eines Resize nicht neu aufbauen
+        else if (!wasResizing) ctx.ui.positionAnnots();
         if (msg.cid && msg.cid === ctx.pendingAnnotCid) {
           ctx.pendingAnnotCid = null;
-          openAnnotEditor(msg.annotation.id, true);
+          ctx.ui.openAnnotEditor(msg.annotation.id, true);
         }
         if (msg.cid && ctx.pendingStarArea.has(msg.cid)) {
           ctx.pendingStarArea.delete(msg.cid);
-          startAreaDraw(msg.annotation.id);
+          ctx.ui.startAreaDraw(msg.annotation.id);
         }
         if (msg.cid && ctx.pendingStarZeus.has(msg.cid)) {
           const z = ctx.pendingStarZeus.get(msg.cid)!;
@@ -1183,7 +1179,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
       case "annotation.delete":
         annots.delete(msg.id);
-        renderAnnots();
+        ctx.ui.renderAnnots();
         break;
       case "image.upsert":
         images.set(msg.image.id, msg.image);
@@ -1953,7 +1949,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     for (const i of images.values()) if (i.phase_id && gone.has(i.phase_id)) i.phase_id = null;
     if (gone.has(ctx.currentPhaseId)) ctx.currentPhaseId = playerPhases()[0]?.id ?? "";
     applyPhase();
-    renderAnnots();
+    ctx.ui.renderAnnots();
     ctx.ui.renderMapImages();
     ctx.ui.refreshImageRail();
   }
@@ -2185,7 +2181,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       opv.textContent = `${ctx.outOpacity}%`;
       localStorage.setItem("sidc_phaseopacity", String(ctx.outOpacity));
       void refreshMarkers();
-      renderAnnots();
+      ctx.ui.renderAnnots();
     });
     const cop = timelineEl.querySelector<HTMLInputElement>("#cross-op");
     if (cop) {
@@ -2195,7 +2191,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         copv.textContent = `${ctx.crossOpacity}%`;
         localStorage.setItem("sidc_crossopacity", String(ctx.crossOpacity));
         void refreshMarkers();
-        renderAnnots();
+        ctx.ui.renderAnnots();
       });
     }
   }
@@ -2785,7 +2781,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     void refreshMarkers();
     refreshStrokes();
     redrawMeasure();
-    renderAnnots();
+    ctx.ui.renderAnnots();
   };
   const saveTac = (): void => {
     try {
@@ -2906,7 +2902,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (ctx.actAs === "zeus" && !canZeus) ctx.actAs = "player";
     applyPhase();
     refreshStrokes();
-    renderAnnots();
+    ctx.ui.renderAnnots();
     if (!ctx.imgResizingId) ctx.ui.renderMapImages();
     ctx.ui.refreshImageRail();
   };
@@ -3747,8 +3743,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       // Zeichnen eines Bereichs abgebrochen (anderes Werkzeug, Esc)
       ctx.areaDraft = null;
       ctx.areaCursor = null;
-      renderAreaBar();
-      refreshAreas();
+      ctx.ui.renderAreaBar();
+      ctx.ui.refreshAreas();
     }
     lineStylePanel.hidden = mvLine.isPinned() ? false : m !== "line";
     if (measureStylePanel) {
@@ -3796,7 +3792,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       ctx.pendingPos = null;
     }
   };
-  ctx.ui.setMode = setMode;
+  Object.assign(ctx.ui, { setMode, positionLineDone, redrawMeasure, modeCursor, syncDragPan });
   toolbar.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => setMode(b.dataset.mode as Mode)),
   );
@@ -4657,7 +4653,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ic: "textbox",
         label: t("tool.text").split(" (")[0],
         ok: caps.place,
-        run: () => createAnnotAt(pos),
+        run: () => ctx.ui.createAnnotAt(pos),
       },
       { ic: "point", label: t("tool.point").split(" – ")[0], ok: true, run: () => setMode("point") },
       { ic: "eraser", label: t("tool.erase").split(" – ")[0], ok: caps.delete || caps.draw, run: () => setMode("erase") },
@@ -4692,699 +4688,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     map.once("movestart", closeCtxMenu);
   }
 
-  // ── Annotationen (platzierbare Markdown-Textfelder) ───────────────────
-  const annotsEl = root.querySelector<HTMLDivElement>("#annots")!;
-  let annotDragId: string | null = null;
-  const ANNOT_COLL_KEY = `sidc_annot_coll_${planId}`;
-  const collapsedAnnots = new Set<string>(
-    (() => {
-      try {
-        return JSON.parse(localStorage.getItem(ANNOT_COLL_KEY) || "[]");
-      } catch {
-        return [];
-      }
-    })(),
-  );
-  const saveCollapsed = () => {
-    try {
-      localStorage.setItem(ANNOT_COLL_KEY, JSON.stringify([...collapsedAnnots]));
-    } catch {
-      /* ignore */
-    }
-  };
-  // Stern-Pin: die erste Zeile besteht nur aus Verknüpfungs-Codes (darunter optional eine Beschreibung).
-  const REF_CODE_RE = /\{\{(?:(?:doc|task|plan|note|img):[0-9a-f]{32}|place:[^{}\n]+)\}\}/g;
-  const splitStar = (s: string): { head: string; rest: string } | null => {
-    const lines = s.split("\n");
-    const i = lines.findIndex((l) => l.trim());
-    if (i < 0) return null;
-    const head = lines[i];
-    if (!head.match(REF_CODE_RE) || head.replace(REF_CODE_RE, "").trim()) return null;
-    return { head: head.trim(), rest: lines.slice(i + 1).join("\n").trim() };
-  };
-  const annotFirstLine = (s: string): string =>
-    (s.split("\n").find((l) => l.trim()) ?? "").replace(/^#{1,6}\s+/, "").trim() || t("annot.placeholder");
-  // Referenz-Zoom für Notizen ohne eigenen ref_zoom (Altbestand): der Zoom beim
-  // ersten Zeichnen der Notizen — so skalieren sie ab jetzt mit der Karte mit.
-  let annotRefFallback = 0;
-  // scale_fixed === true  → Notiz skaliert MIT der Karte (zoomt mit)
-  // scale_fixed === false → konstante Bildschirmgröße (Standard)
-  const annotScale = (a: Annot): number => {
-    if (!a.scale_fixed) return 1;
-    const ref = a.ref_zoom && a.ref_zoom > 0 ? a.ref_zoom : annotRefFallback;
-    if (!ref) return 1;
-    return Math.max(0.3, Math.min(3, 2 ** (map.getZoom() - ref)));
-  };
+  initAreas(ctx);
+  initAnnots(ctx);
 
-  function positionAnnots(): void {
-    for (const el of Array.from(annotsEl.children) as HTMLElement[]) {
-      const a = annots.get(el.dataset.aid ?? "");
-      if (!a) continue;
-      const p = map.project([a.world_x, a.world_y]);
-      el.style.transform = `translate(${p.x}px, ${p.y}px) scale(${annotScale(a)})`;
-    }
-  }
-
-  // ── Sichtbarkeit einer Notiz/eines Stern-Pins ──
-  // Projekt-Plan + Missionsbau: „Alle" (normale Notiz in einer Phase) oder „Nur Missionsbau" (Layer
-  // Missionsbau-Notizen, optional für Zeus freigegeben). Alle anderen wählen wie gewohnt die Phase.
-  Object.assign(ctx.ui, { annotVisHtml, wireAnnotVis, readAnnotVis });
-  function annotVisHtml(a: Pick<Annot, "phase_id" | "extra_phase_ids" | "zeus_released" | "zeus_until"> & { mb?: boolean }): string {
-    const mb = a.mb ?? isNotesAnnot(a as Annot);
-    const pid = mb ? ctx.currentPhaseId : a.phase_id ?? ctx.currentPhaseId;
-    const zOpen = annotZeusOpen(a as Annot);
-    const phaseBlock =
-      `<div data-avphase ${mb && isMB && projectId ? "hidden" : ""}>` +
-      `<label style="margin-top:.4rem">${t("phase.assign")}</label>` +
-      `<select data-aphase>${selectablePhases()
-        .map(
-          (ph) =>
-            `<option value="${esc(ph.id)}" ${ph.id === pid ? "selected" : ""}>${ph.plane === "builder" ? "⚑ " : ""}${esc(ph.name)}</option>`,
-        )
-        .join("")}</select>` +
-      `<label style="margin-top:.4rem">${t("phase.extra")}</label>` +
-      `<div data-ax>${phaseMultiHtml("data-xphases", samePlanePhases(pid), mb ? [] : a.extra_phase_ids ?? [], pid)}</div>` +
-      `</div>`;
-    if (!(isMB && projectId)) return phaseBlock;
-    return (
-      `<label style="margin-top:.4rem">${t("annot.visibleFor")}</label>` +
-      `<div class="segmented" data-avis>` +
-      `<button type="button" class="seg-btn ${mb ? "" : "active"}" data-v="all">${t("annot.visAll")}</button>` +
-      `<button type="button" class="seg-btn vis-mb ${mb ? "active" : ""}" data-v="mb">${t("annot.visMb")}</button>` +
-      `</div>` +
-      `<div data-avmb ${mb ? "" : "hidden"}>` +
-      `<p class="muted" style="margin:.3rem 0 0;font-size:.78rem">${t("annot.visMbHint")}</p>` +
-      `<label style="margin-top:.4rem">${t("zeus.release")}</label>` +
-      `<select data-azeus>` +
-      `<option value="off" ${zOpen ? "" : "selected"}>${t("annot.zeusOff")}</option>` +
-      `<option value="keep" ${zOpen ? "selected" : "hidden"}>${t("annot.zeusOn")}${
-        a.zeus_until ? ` (${t("zeus.until")} ${fmtInput(new Date(parseUtc(a.zeus_until)))})` : ""
-      }</option>` +
-      `<option value="${ZEUS_DEFAULT_H}">${ZEUS_DEFAULT_H} h</option>` +
-      `<option value="unl">${t("zeus.unlimited")}</option>` +
-      `</select></div>` +
-      phaseBlock
-    );
-  }
-  function wireAnnotVis(host: HTMLElement): void {
-    const asel = host.querySelector<HTMLSelectElement>("[data-aphase]");
-    asel?.addEventListener("change", () => {
-      host.querySelector<HTMLElement>("[data-ax]")!.innerHTML = phaseMultiHtml(
-        "data-xphases", samePlanePhases(asel.value), readPhaseMulti(host, "data-xphases"), asel.value,
-      );
-    });
-    host.querySelectorAll<HTMLButtonElement>("[data-avis] [data-v]").forEach((b) =>
-      b.addEventListener("click", () => {
-        const mb = b.dataset.v === "mb";
-        host.querySelectorAll("[data-avis] [data-v]").forEach((x) => x.classList.toggle("active", x === b));
-        host.querySelector<HTMLElement>("[data-avmb]")!.hidden = !mb;
-        host.querySelector<HTMLElement>("[data-avphase]")!.hidden = mb;
-      }),
-    );
-  }
-  /** Felder für annotation.create/modify aus dem Sichtbarkeits-Block (``a`` = bisheriger Stand oder null). */
-  function readAnnotVis(host: HTMLElement, a: Annot | null): Record<string, unknown> {
-    const out: Record<string, unknown> = {};
-    const visBtn = host.querySelector<HTMLElement>("[data-avis] .active");
-    const mb = !!visBtn && visBtn.dataset.v === "mb";
-    if (visBtn) out.mb_layer = mb;
-    if (mb) {
-      const z = host.querySelector<HTMLSelectElement>("[data-azeus]")?.value ?? "off";
-      if (z !== "keep") {
-        out.zeus_released = z !== "off";
-        if (z !== "off" && z !== "unl") out.zeus_hours = Number(z);
-      }
-    } else {
-      const ps = host.querySelector<HTMLSelectElement>("[data-aphase]");
-      out.phase_id = ps?.value || ctx.currentPhaseId || null;
-      out.extra_phase_ids = readPhaseMulti(host, "data-xphases");
-      if (a && isNotesAnnot(a) && a.zeus_released) out.zeus_released = false;
-    }
-    return out;
-  }
-
-  function openAnnotEditor(id: string, isNew = false): void {
-    const a = annots.get(id);
-    if (!a || !canEdit) return;
-    const back = document.createElement("div");
-    back.className = "edit-modal";
-    back.innerHTML = `<div class="card" style="width:min(34rem,96vw)">
-      <div class="row"><h1 style="flex:1;margin:0">${t("annot.title")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
-      <textarea class="notes-edit annot-edit" rows="6" placeholder="${t("annot.hint")}"></textarea>
-      ${annotVisHtml(a)}
-      <label class="ph-op" style="margin-top:.4rem">${t("annot.width")}
-        <input type="range" min="140" max="480" step="10" value="${a.width}" data-w /></label>
-      <label class="chk" style="margin-top:.3rem"><input type="checkbox" data-fix ${a.scale_fixed ? "checked" : ""}/> <span>${t("annot.scaleWithMap")}</span></label>
-      <p class="muted" style="margin:.2rem 0 0;font-size:.75rem">${t("annot.resizeHint")}</p>
-      <div class="notes-view annot-prev"></div>
-      <div class="row" style="margin-top:.6rem">
-        <button class="primary" data-save style="flex:1">${t("common.save")}</button>
-        <button class="danger" data-del>${icon("trash", 14)} ${t("common.delete")}</button>
-      </div>
-    </div>`;
-    document.body.appendChild(back);
-    const ta = back.querySelector<HTMLTextAreaElement>(".annot-edit")!;
-    attachMdToolbar(ta, { projectId: projectId ?? undefined, isBuilder: isMB });
-    ta.value = a.text;
-    const prev = back.querySelector<HTMLDivElement>(".annot-prev")!;
-    const wIn = back.querySelector<HTMLInputElement>("[data-w]")!;
-    const fixIn = back.querySelector<HTMLInputElement>("[data-fix]")!;
-    wireAnnotVis(back);
-    const upd = () => {
-      prev.innerHTML = renderMarkdown(ta.value);
-      wireRefs(prev);
-    };
-    ta.addEventListener("input", upd);
-    upd();
-    setTimeout(() => ta.focus(), 0);
-    const removeIfEmpty = () => {
-      if (isNew && !ta.value.trim()) socket.send({ type: "annotation.delete", id });
-    };
-    const close = () => {
-      removeIfEmpty();
-      back.remove();
-    };
-    back.addEventListener("mousedown", (e) => e.target === back && close());
-    back.querySelector("[data-x]")!.addEventListener("click", close);
-    back.querySelector("[data-save]")!.addEventListener("click", () => {
-      const text = ta.value.trim();
-      if (!text) {
-        socket.send({ type: "annotation.delete", id }); // leere Notiz nicht speichern
-        back.remove();
-        return;
-      }
-      const wantScale = fixIn.checked; // true = mit der Karte mitskalieren
-      const sc = annotScale(a);
-      const data: Record<string, unknown> = {
-        text: ta.value,
-        // Wird das Mitskalieren abgeschaltet, aktuelle Bildschirmgröße einfrieren:
-        width:
-          !wantScale && a.scale_fixed
-            ? Math.round(Number(wIn.value) * sc)
-            : Number(wIn.value),
-        height:
-          !wantScale && a.scale_fixed && a.height ? Math.round(a.height * sc) : a.height ?? 0,
-        scale_fixed: wantScale,
-      };
-      Object.assign(data, readAnnotVis(back, a));
-      if (wantScale && (!a.scale_fixed || !a.ref_zoom || a.ref_zoom <= 0))
-        data.ref_zoom = map.getZoom(); // aktuelle Größe = natürliche Größe
-      socket.send({ type: "annotation.modify", id, data });
-      back.remove();
-    });
-    back.querySelector("[data-del]")!.addEventListener("click", () => {
-      socket.send({ type: "annotation.delete", id });
-      back.remove();
-    });
-  }
-
-  function onAnnotDown(ev: MouseEvent, id: string): void {
-    if (!canEdit || (ctx.mode !== "move" && ctx.mode !== "markermove")) return;
-    if ((ev.target as HTMLElement).closest(".annot-tools, .ref-chip")) return; // Chip = Klick, kein Ziehen
-    // Untere rechte Ecke = CSS-resize-Griff → Browser die Größenänderung machen
-    // lassen und erst beim Loslassen synchronisieren (kein Neuaufbau währenddessen).
-    const el0 = annotsEl.querySelector<HTMLElement>(`[data-aid="${id}"]`);
-    if (el0) {
-      const a0 = annots.get(id);
-      const sc = a0 ? annotScale(a0) || 1 : 1;
-      const r = el0.getBoundingClientRect();
-      const lx = (ev.clientX - r.left) / sc;
-      const ly = (ev.clientY - r.top) / sc;
-      if (!el0.classList.contains("annot-star") && lx > el0.clientWidth - 22 && ly > el0.clientHeight - 22) {
-        if (!canEdit) return;
-        ctx.annotResizingId = id;
-        const finish = () => {
-          document.removeEventListener("mouseup", finish);
-          if (ctx.annotResizingId !== id) return;
-          ctx.annotResizingId = null;
-          const cur = annots.get(id);
-          if (cur) {
-            const w = Math.round(el0.offsetWidth);
-            const h = Math.round(el0.offsetHeight);
-            if (Math.abs(w - cur.width) > 2 || Math.abs(h - (cur.height ?? 0)) > 2) {
-              cur.width = w;
-              cur.height = h;
-              socket.send({
-                type: "annotation.modify",
-                id,
-                data: { width: w, height: h, phase_id: cur.phase_id },
-              });
-            }
-          }
-          renderAnnots();
-        };
-        document.addEventListener("mouseup", finish, { signal: sig });
-        return; // nativen Resize laufen lassen
-      }
-    }
-    ev.stopPropagation();
-    ev.preventDefault();
-    annotDragId = id;
-    const el = annotsEl.querySelector<HTMLElement>(`[data-aid="${id}"]`)!;
-    el.classList.add("dragging");
-    if (ctx.mode === "move") map.dragPan.disable();
-    const canvasRect = () => map.getCanvas().getBoundingClientRect();
-    // Versatz zwischen Greifpunkt und dem Notiz-Anker merken (siehe onImageDown).
-    const a0 = annots.get(id);
-    const anchorPx0 = a0 ? map.project([a0.world_x, a0.world_y]) : { x: 0, y: 0 };
-    const cr0 = canvasRect();
-    const grabDx = ev.clientX - cr0.left - anchorPx0.x;
-    const grabDy = ev.clientY - cr0.top - anchorPx0.y;
-    // Ein Bereich am Pin wandert beim Verschieben mit
-    const area0 = a0?.area ? a0.area.pts.map((p) => [p[0], p[1]] as [number, number]) : null;
-    const start0 = a0 ? [a0.world_x, a0.world_y] : [0, 0];
-    const shiftArea = (a: Annot, lng: number, lat: number): void => {
-      if (!area0 || !a.area) return;
-      const dx = lng - start0[0];
-      const dy = lat - start0[1];
-      a.area = { ...a.area, pts: area0.map((p) => [p[0] + dx, p[1] + dy] as [number, number]) };
-    };
-    const onMove = (e: MouseEvent) => {
-      const r = canvasRect();
-      const ll = map.unproject([e.clientX - r.left - grabDx, e.clientY - r.top - grabDy]);
-      const a = annots.get(id);
-      if (a) {
-        a.world_x = ll.lng;
-        a.world_y = ll.lat;
-        positionAnnots();
-        if (area0) {
-          shiftArea(a, ll.lng, ll.lat);
-          refreshAreas();
-        }
-      }
-    };
-    const onUp = (e: MouseEvent) => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-      el.classList.remove("dragging");
-      if (ctx.mode === "move") map.dragPan.enable();
-      annotDragId = null;
-      const r = canvasRect();
-      const ll = map.unproject([e.clientX - r.left - grabDx, e.clientY - r.top - grabDy]);
-      const a = annots.get(id);
-      if (a && area0) shiftArea(a, ll.lng, ll.lat);
-      socket.send({
-        type: "annotation.move",
-        id,
-        data: { world_x: ll.lng, world_y: ll.lat, ...(a && area0 ? { area: a.area } : {}) },
-      });
-    };
-    document.addEventListener("mousemove", onMove, { signal: sig });
-    document.addEventListener("mouseup", onUp, { signal: sig });
-  }
-
-  // ── Bereich um einen Pin: Linie oder (geschlossen) schraffierte Fläche ──
-  // Gehört zur Annotation (Feld ``area``), folgt deren Sichtbarkeit und wandert beim Verschieben des Sterns mit.
-  // Zeichnen: Linksklicks setzen Ecken, Klick auf den Startpunkt schließt die Fläche, ✓ / Enter / Rechtsklick
-  // übernimmt eine offene Linie, Esc bricht ab. Bestehende Ecken: Bereich anklicken → Ecken ziehen.
-  const areaBar = document.createElement("div");
-  areaBar.className = "area-bar";
-  areaBar.hidden = true;
-  root.appendChild(areaBar);
-  const hatchImage = (color: string): ImageData => {
-    const n = 16;
-    const cv = document.createElement("canvas");
-    cv.width = cv.height = n;
-    const g = cv.getContext("2d")!;
-    g.strokeStyle = color;
-    g.lineWidth = 2.2;
-    g.beginPath();
-    for (const o of [-n, 0, n]) {
-      g.moveTo(o, n);
-      g.lineTo(o + n, 0);
-    }
-    g.stroke();
-    return g.getImageData(0, 0, n, n);
-  };
-  function ensureAreaLayers(): void {
-    if (!map.hasImage("hatch-mb")) map.addImage("hatch-mb", hatchImage(AREA_COL.mb));
-    if (!map.hasImage("hatch-all")) map.addImage("hatch-all", hatchImage(AREA_COL.all));
-    const before = map.getLayer("strokes") ? "strokes" : undefined;
-    if (!map.getSource("pin-areas")) {
-      map.addSource("pin-areas", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-      map.addLayer(
-        {
-          id: "pin-area-fill",
-          type: "fill",
-          source: "pin-areas",
-          filter: ["==", ["geometry-type"], "Polygon"],
-          paint: {
-            "fill-pattern": ["case", ["get", "mb"], "hatch-mb", "hatch-all"],
-            "fill-opacity": ["*", 0.25, ["get", "op"]],
-          },
-        },
-        before,
-      );
-      map.addLayer(
-        {
-          id: "pin-area-line",
-          type: "line",
-          source: "pin-areas",
-          layout: { "line-join": "round", "line-cap": "round" },
-          paint: {
-            "line-color": ["case", ["get", "mb"], AREA_COL.mb, AREA_COL.all],
-            "line-width": ["case", ["get", "sel"], 3.5, 2.5],
-            "line-opacity": ["*", 0.5, ["get", "op"]],
-          },
-        },
-        before,
-      );
-    }
-    if (!map.getSource("pin-area-edit")) {
-      map.addSource("pin-area-edit", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-      map.addLayer({
-        id: "pin-area-draft",
-        type: "line",
-        source: "pin-area-edit",
-        filter: ["==", ["geometry-type"], "LineString"],
-        paint: { "line-color": ["get", "color"], "line-width": 2.5, "line-dasharray": [2, 1.5] },
-      });
-      map.addLayer({
-        id: "pin-area-verts",
-        type: "circle",
-        source: "pin-area-edit",
-        filter: ["==", ["geometry-type"], "Point"],
-        paint: {
-          "circle-radius": ["case", ["get", "hot"], 9, ["get", "first"], 7, 5.5],
-          "circle-color": ["case", ["get", "hot"], "#3ddc84", "#ffffff"],
-          "circle-stroke-color": ["get", "color"],
-          "circle-stroke-width": 2.5,
-        },
-      });
-    }
-  }
-  const areaColorOf = (a: Annot | undefined): string => (a && isNotesAnnot(a) ? AREA_COL.mb : AREA_COL.all);
-  const ringOf = (pts: [number, number][]): [number, number][] => [...pts, pts[0]];
-  function areaFC(): GeoJSON.FeatureCollection {
-    const feats: GeoJSON.Feature[] = [];
-    for (const a of annots.values()) {
-      const ar = a.area;
-      if (!ar || ar.pts.length < 2) continue;
-      const op = annotOpacity(a);
-      if (op <= 0) continue;
-      const props = { aid: a.id, mb: isNotesAnnot(a), op, sel: a.id === ctx.editAreaId };
-      if (ar.closed && ar.pts.length >= 3) {
-        feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [ringOf(ar.pts)] }, properties: props });
-        feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: ringOf(ar.pts) }, properties: props });
-      } else {
-        feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: ar.pts }, properties: props });
-      }
-    }
-    return { type: "FeatureCollection", features: feats };
-  }
-  // Nähe zum Startpunkt in Bildschirm-Pixeln (Schließen der Fläche)
-  const nearFirst = (pts: [number, number][], p: [number, number] | null): boolean => {
-    if (!p || pts.length < 3) return false;
-    const a = map.project(pts[0]);
-    const b = map.project(p);
-    return Math.hypot(a.x - b.x, a.y - b.y) <= AREA_CLOSE_PX;
-  };
-  function areaEditFC(): GeoJSON.FeatureCollection {
-    const feats: GeoJSON.Feature[] = [];
-    if (ctx.areaDraft) {
-      const color = areaColorOf(annots.get(ctx.areaDraft.aid));
-      const hot = nearFirst(ctx.areaDraft.pts, ctx.areaCursor);
-      const line = [...ctx.areaDraft.pts, ...(ctx.areaCursor ? [hot ? ctx.areaDraft.pts[0] : ctx.areaCursor] : [])];
-      if (line.length >= 2) feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: line }, properties: { color } });
-      ctx.areaDraft.pts.forEach((p, i) =>
-        feats.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: { color, i, first: i === 0, hot: i === 0 && hot } }),
-      );
-    } else if (ctx.editAreaId) {
-      const a = annots.get(ctx.editAreaId);
-      const color = areaColorOf(a);
-      (a?.area?.pts ?? []).forEach((p, i) =>
-        feats.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: { color, i, first: false, hot: false } }),
-      );
-    }
-    return { type: "FeatureCollection", features: feats };
-  }
-  function refreshAreas(): void {
-    try {
-      ensureAreaLayers();
-      (map.getSource("pin-areas") as GeoJSONSource).setData(areaFC());
-      (map.getSource("pin-area-edit") as GeoJSONSource).setData(areaEditFC());
-    } catch {
-      /* Karte/Stil noch nicht geladen – folgt mit "load" */
-    }
-    positionAreaBar();
-  }
-  map.on("load", () => refreshAreas());
-  map.on("style.load", () => refreshAreas());
-  // Leiste (✓ übernehmen / neu zeichnen / entfernen) am letzten bzw. ersten Punkt
-  function positionAreaBar(): void {
-    const pts = ctx.areaDraft ? ctx.areaDraft.pts : ctx.editAreaId ? annots.get(ctx.editAreaId)?.area?.pts ?? [] : [];
-    const anchor = ctx.areaDraft ? pts[pts.length - 1] : pts[0];
-    if (!anchor || (ctx.areaDraft && pts.length < 2)) {
-      areaBar.hidden = true;
-      return;
-    }
-    const p = map.project(anchor);
-    const mr = map.getContainer().getBoundingClientRect();
-    const rr = root.getBoundingClientRect();
-    areaBar.hidden = false;
-    areaBar.style.left = `${mr.left - rr.left + p.x + 14}px`;
-    areaBar.style.top = `${mr.top - rr.top + p.y - 14}px`;
-  }
-  map.on("move", () => {
-    if (ctx.areaDraft || ctx.editAreaId) positionAreaBar();
-  });
-  function renderAreaBar(): void {
-    if (ctx.areaDraft) {
-      areaBar.innerHTML =
-        `<button class="area-ok" data-area-ok title="${t("area.finishOpen")}">${icon("check", 16)}</button>` +
-        `<button data-area-cancel title="${t("common.cancel")}">${icon("x", 16)}</button>`;
-    } else if (ctx.editAreaId) {
-      areaBar.innerHTML =
-        `<button class="area-ok" data-area-done title="${t("area.done")}">${icon("check", 16)}</button>` +
-        `<button data-area-redraw title="${t("area.redraw")}">${icon("line", 16)}</button>` +
-        `<button class="area-del" data-area-del title="${t("area.remove")}">${icon("trash", 16)}</button>`;
-    } else areaBar.innerHTML = "";
-    areaBar.querySelector("[data-area-ok]")?.addEventListener("click", () => commitArea(false));
-    areaBar.querySelector("[data-area-cancel]")?.addEventListener("click", () => setMode("move"));
-    areaBar.querySelector("[data-area-done]")?.addEventListener("click", () => setEditArea(null));
-    areaBar.querySelector("[data-area-redraw]")?.addEventListener("click", () => {
-      const id = ctx.editAreaId;
-      if (id) startAreaDraw(id);
-    });
-    areaBar.querySelector("[data-area-del]")?.addEventListener("click", () => {
-      const id = ctx.editAreaId;
-      if (!id) return;
-      setEditArea(null);
-      socket.send({ type: "annotation.modify", id, data: { area: null } });
-    });
-  }
-  const canEditArea = (a: Annot | undefined): boolean => !!a && canEdit && !!caps.move && (isMB || !isNotesAnnot(a));
-  function startAreaDraw(aid: string): void {
-    if (!canEditArea(annots.get(aid))) return;
-    ctx.editAreaId = null;
-    setMode("area");
-    ctx.areaDraft = { aid, pts: [] };
-    ctx.areaCursor = null;
-    renderAreaBar();
-    refreshAreas();
-    toast(t("area.hint"), { kind: "info", timeout: 6000 });
-  }
-  function commitArea(closed: boolean): void {
-    const d = ctx.areaDraft;
-    if (!d) return;
-    const pts = d.pts;
-    ctx.areaDraft = null;
-    ctx.areaCursor = null;
-    setMode("move");
-    if (pts.length < 2) return;
-    const area = { pts, closed: closed && pts.length >= 3 };
-    const a = annots.get(d.aid);
-    if (a) a.area = area; // sofort zeigen, Server bestätigt per upsert
-    socket.send({ type: "annotation.modify", id: d.aid, data: { area } });
-    refreshAreas();
-  }
-  function setEditArea(id: string | null): void {
-    ctx.editAreaId = id;
-    renderAreaBar();
-    refreshAreas();
-  }
-  // Klick in der Karte während des Zeichnens
-  function areaClick(p: [number, number]): void {
-    if (!ctx.areaDraft) return;
-    if (nearFirst(ctx.areaDraft.pts, p)) {
-      commitArea(true); // Schleife geschlossen → Fläche
-      return;
-    }
-    if (ctx.areaDraft.pts.length >= AREA_MAX_POINTS) return;
-    ctx.areaDraft.pts.push(p);
-    refreshAreas();
-  }
-  map.on("mousemove", (e) => {
-    if (ctx.mode !== "area" || !ctx.areaDraft) return;
-    ctx.areaCursor = [e.lngLat.lng, e.lngLat.lat];
-    try {
-      (map.getSource("pin-area-edit") as GeoJSONSource).setData(areaEditFC());
-    } catch {
-      /* noch nicht geladen */
-    }
-  });
-  map.on("contextmenu", (e) => {
-    if (ctx.mode !== "area" || !ctx.areaDraft) return;
-    e.preventDefault();
-    commitArea(false); // Rechtsklick übernimmt als offene Linie
-  });
-  document.addEventListener(
-    "keydown",
-    (ev) => {
-      if (!ctx.areaDraft && !ctx.editAreaId) return;
-      const tag = (ev.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (ev.key === "Escape") {
-        ev.stopPropagation();
-        if (ctx.areaDraft) setMode("move");
-        else setEditArea(null);
-      } else if (ev.key === "Enter" && ctx.areaDraft) {
-        ev.preventDefault();
-        commitArea(false);
-      }
-    },
-    { capture: true, signal: sig },
-  );
-  // Bestehenden Bereich anklicken → Ecken bearbeiten
-  const pickArea = (e: maplibregl.MapLayerMouseEvent): void => {
-    if (ctx.mode !== "move" && ctx.mode !== "markermove") return;
-    const aid = e.features?.[0]?.properties?.aid as string | undefined;
-    if (!aid || !canEditArea(annots.get(aid))) return;
-    e.preventDefault();
-    setEditArea(aid);
-  };
-  map.on("click", "pin-area-fill", pickArea);
-  map.on("click", "pin-area-line", pickArea);
-  map.on("mouseenter", "pin-area-verts", () => {
-    if (ctx.editAreaId) map.getCanvas().style.cursor = "grab";
-  });
-  map.on("mouseleave", "pin-area-verts", () => (map.getCanvas().style.cursor = modeCursor()));
-  map.on("mousedown", "pin-area-verts", (e) => {
-    const a = ctx.editAreaId ? annots.get(ctx.editAreaId) : undefined;
-    const idx = e.features?.[0]?.properties?.i as number | undefined;
-    if (!a?.area || idx == null || ctx.areaDraft) return;
-    e.preventDefault();
-    const pts = a.area.pts;
-    map.dragPan.disable();
-    map.getCanvas().style.cursor = "grabbing";
-    const onMove = (ev: maplibregl.MapMouseEvent) => {
-      pts[idx] = [ev.lngLat.lng, ev.lngLat.lat];
-      refreshAreas();
-    };
-    const onUp = () => {
-      map.off("mousemove", onMove);
-      syncDragPan();
-      map.getCanvas().style.cursor = modeCursor();
-      socket.send({ type: "annotation.modify", id: a.id, data: { area: a.area } });
-    };
-    map.on("mousemove", onMove);
-    document.addEventListener("mouseup", onUp, { once: true, signal: sig });
-  });
-
-  function renderAnnots(): void {
-    if (ctx.annotResizingId) return; // Neuaufbau würde das laufende Ziehen abbrechen
-    if (!annotRefFallback) annotRefFallback = map.getZoom();
-    annotsEl.innerHTML = "";
-    for (const a of annots.values()) {
-      const collapsed = collapsedAnnots.has(a.id);
-      const star = splitStar(a.text);
-      const el = document.createElement("div");
-      el.dataset.aid = a.id;
-      el.style.opacity = String(annotOpacity(a));
-      let body: string;
-      if (star) {
-        // Stern-Pin: auffälliges Symbol am Ort, daneben die verknüpften Ziele, Beschreibung beim Überfahren
-        el.className = "annot annot-star" + (isNotesAnnot(a) ? " star-mb" : "") + (collapsed ? " annot-collapsed" : "");
-        el.title = isNotesAnnot(a) ? t("star.mbHint") : "";
-        body =
-          `<div class="star-pin">${STAR_SVG}</div>` +
-          (collapsed ? "" : `<div class="annot-body">${renderMarkdown(star.head)}</div>`) +
-          (star.rest && !collapsed ? `<div class="star-desc notes-view">${renderMarkdown(star.rest)}</div>` : "");
-      } else {
-        el.className = "annot" + (collapsed ? " annot-collapsed" : "");
-        el.style.width = `${a.width}px`;
-        if (a.height && !collapsed) el.style.height = `${a.height}px`;
-        else el.style.height = "";
-        body = collapsed
-          ? `<div class="annot-body">${esc(annotFirstLine(a.text))}</div>`
-          : `<div class="annot-body">${renderMarkdown(a.text || "")}</div>`;
-      }
-      el.innerHTML =
-        body +
-        `<div class="annot-tools">` +
-        `<button class="icon-btn" data-acoll title="${t(collapsed ? "annot.expand" : "annot.collapse")}">${icon(collapsed ? "chevron" : "chevronDown", 14)}</button>` +
-        (canEdit && isMB && projectId && isNotesAnnot(a)
-          ? `<button class="icon-btn annot-zeus ${annotZeusOpen(a) ? "on" : ""}" data-azq title="${t(annotZeusOpen(a) ? "annot.zeusTipOn" : "annot.zeusTipOff")}">${icon("eye", 14)}</button>`
-          : "") +
-        (star && canEditArea(a)
-          ? `<button class="icon-btn" data-aarea title="${t(a.area ? "area.edit" : "area.draw")}">${icon("line", 14)}</button>`
-          : "") +
-        (canEdit
-          ? `<button class="icon-btn" data-aedit title="${t("common.rename")}">${icon("edit", 14)}</button>` +
-            `<button class="icon-btn" data-adel title="${t("common.delete")}">${icon("x", 14)}</button>`
-          : "") +
-        `</div>`;
-      el.querySelector("[data-aarea]")?.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        if (a.area) setEditArea(a.id);
-        else startAreaDraw(a.id);
-      });
-      el.querySelector("[data-acoll]")?.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        collapsed ? collapsedAnnots.delete(a.id) : collapsedAnnots.add(a.id);
-        saveCollapsed();
-        renderAnnots();
-      });
-      el.querySelector("[data-azq]")?.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const rel = !annotZeusOpen(a);
-        socket.send({ type: "annotation.modify", id: a.id, data: rel ? { zeus_released: true, zeus_hours: ZEUS_DEFAULT_H } : { zeus_released: false } });
-      });
-      el.querySelector("[data-aedit]")?.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        openAnnotEditor(a.id);
-      });
-      el.querySelector("[data-adel]")?.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const tools = el.querySelector<HTMLElement>(".annot-tools")!;
-        tools.innerHTML =
-          `<label class="annot-delok"><input type="checkbox" data-adok/> ${t("common.delete")}</label>` +
-          `<button class="icon-btn" data-adcancel title="${t("common.cancel")}">${icon("back", 12)}</button>`;
-        tools.querySelector("[data-adok]")!.addEventListener("change", () =>
-          socket.send({ type: "annotation.delete", id: a.id }),
-        );
-        tools.querySelector("[data-adcancel]")!.addEventListener("click", (e) => {
-          e.stopPropagation();
-          renderAnnots(); // Abbrechen → Werkzeuge wiederherstellen
-        });
-        el.addEventListener("mouseleave", () => renderAnnots(), { once: true });
-      });
-      el.addEventListener("mousedown", (ev) => onAnnotDown(ev, a.id));
-      el.addEventListener("dblclick", (ev) => {
-        ev.stopPropagation();
-        openAnnotEditor(a.id);
-      });
-      annotsEl.appendChild(el);
-    }
-    wireNoteImageRefs(annotsEl);
-    wireRefs(annotsEl);
-    positionAnnots();
-    try {
-      if (ctx.editAreaId && !annots.has(ctx.editAreaId)) setEditArea(null);
-      refreshAreas();
-    } catch {
-      /* Bereichs-Teil noch nicht initialisiert (erster Aufbau) */
-    }
-  }
-
-  map.on("move", () => {
-    if (!annotDragId && !ctx.annotResizingId) positionAnnots();
-    positionLineDone();
-  });
-  map.on("zoomend", () => (map.getSource("chains") as GeoJSONSource)?.setData(chainFC()));
-  phaseListeners.push(() => renderAnnots());
-  phaseListeners.push(() => redrawMeasure()); // Messlinien: Ebene (Missionsbau/Spieler)
-  renderAnnots();
 
   initImages(ctx);
 
@@ -5408,24 +4714,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     });
   }
   initStarDialog(ctx);
-  function createAnnotAt(pos: [number, number]): void {
-    const ac = cid();
-    ctx.pendingAnnotCid = ac; // Antwort öffnet direkt den Editor
-    socket.send({
-      type: "annotation.create",
-      cid: ac,
-      data: {
-        world_x: pos[0],
-        world_y: pos[1],
-        text: "",
-        width: 220,
-        phase_id: ctx.currentPhaseId || null,
-        // Missionsbau in der Missionsbau-Ansicht: neue Notiz zuerst auf den Layer „Missionsbau-Notizen“ (im Editor änderbar)
-        ...(projectId && isMB && ctx.actAs === "builder" ? { mb_layer: true } : {}),
-        ref_zoom: map.getZoom(),
-      },
-    });
-  }
 
   map.on("click", (e) => {
     if ((e as { defaultPrevented?: boolean }).defaultPrevented) return;
@@ -5466,10 +4754,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
 
     if (ctx.mode === "area") {
-      areaClick([e.lngLat.lng, e.lngLat.lat]);
+      ctx.tools.area?.click?.(e);
       return;
     }
-    if (ctx.editAreaId && (ctx.mode === "move" || ctx.mode === "markermove")) setEditArea(null); // Klick daneben beendet die Ecken-Bearbeitung
+    if (ctx.editAreaId && (ctx.mode === "move" || ctx.mode === "markermove")) ctx.ui.setEditArea(null); // Klick daneben beendet die Ecken-Bearbeitung
 
     if (ctx.mode === "ref") {
       ctx.tools.ref?.click?.(e);
@@ -5477,9 +4765,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
 
     if (ctx.mode === "text") {
-      if (!caps.place) return;
-      createAnnotAt([e.lngLat.lng, e.lngLat.lat]);
-      setMode("move");
+      ctx.tools.text?.click?.(e);
       return;
     }
 
