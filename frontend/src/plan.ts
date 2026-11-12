@@ -3,7 +3,7 @@
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 import { api, type Me } from "./api";
-import { describe, loadAllMarkers, loadModifiers, loadPhaseLineStyle, loadTranslations, translate } from "./sidc/catalog";
+import { loadAllMarkers, loadModifiers, loadPhaseLineStyle, loadTranslations, translate } from "./sidc/catalog";
 import {
   isTextMarker,
   lngLatToWorld,
@@ -14,7 +14,7 @@ import {
   type SidcModifiers,
 } from "./sidc/sidc";
 import { openWizard, type MarkerTemplate } from "./sidc/wizard";
-import { layerSelectHtml, phaseMultiHtml, readPhaseMulti, type PhaseOpt, type TplCtx } from "./sidc/layerui";
+import { layerSelectHtml, phaseMultiHtml, readPhaseMulti } from "./sidc/layerui";
 import { confirmDialog, promptDialog, toast, toastError } from "./notify";
 import { makeMovable } from "./movable";
 import { ensureMapIcon, iconSrc, mapIconId, markerLabelOffsets } from "./sidc/symbol";
@@ -35,18 +35,14 @@ import { icon } from "./icons";
 import { iconBtn, themeSwitch, wireThemeSwitch, wireTopbarMenu } from "./ui";
 import {
   actionForKey,
-  getKeybinds,
   getMapPrefs,
-  keyLabel,
   openSettings,
   registerSettingsSection,
   saveMapPrefs,
-  type HotAction,
 } from "./settings";
 import { cid, PlanSocket, type WsMessage } from "./ws";
 import { renderMarkdown } from "./md";
 import { attachMdToolbar } from "./mdtoolbar";
-import { wireRefChips, type WireOpts } from "./projectRefs";
 import { openRefPicker } from "./refPicker";
 import { DOC_TYPE_ICON, type DocType, templateContent } from "./projectTemplates";
 import { esc } from "./esc";
@@ -58,92 +54,30 @@ import { mountImageRail, IMAGE_DND_TYPE } from "./imagerail";
 import { renderPlacementSettings } from "./imagePanel";
 import type { ImagePlacement, PlanImage, ProjectTask } from "./api";
 
-// Bild-URL -> JPEG-DataURL (normalisiert WebP/GIF/PNG für jsPDF).
-async function imgToJpeg(url: string): Promise<string> {
-  const blob = await (await fetch(url, { credentials: "include" })).blob();
-  const bmp = await createImageBitmap(blob);
-  const c = document.createElement("canvas");
-  c.width = bmp.width;
-  c.height = bmp.height;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, c.width, c.height);
-  ctx.drawImage(bmp, 0, 0);
-  return c.toDataURL("image/jpeg", 0.9);
-}
-
-interface Marker {
-  id: string;
-  world_x: number;
-  world_y: number;
-  sidc: string;
-  unit_text: string;
-  ai_text: string;
-  channel?: string;
-  author?: string;
-  locked: boolean;
-  rotation_degrees: number;
-  icon_rotation: number;
-  scale?: number;
-  tint?: string;
-  phase_id: string | null;
-  extra_phase_ids?: string[];
-  layer_id: string | null;
-  orbat_node_id?: string | null;
-  orbat_strength?: number;
-  released?: boolean;
-  linked_group_id: number;
-  point_index: number;
-  line_color: number;
-  line_width: number;
-}
-interface Stroke {
-  id: string;
-  points: [number, number][];
-  color: number;
-  width: number;
-  phase_id?: string | null;
-  extra_phase_ids?: string[];
-  layer_id?: string | null;
-  channel?: string;
-}
-type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text" | "ref" | "area";
-/** Standardfrist für Zeus-Freigaben (Phasen und Missionsbau-Notizen), in Stunden. */
-const ZEUS_DEFAULT_H = 72;
-/** Stern-Pin auf der Karte (Farbe per CSS: gelb = für alle, pink = nur Missionsbau). */
-const STAR_SVG =
-  '<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M12 2.2l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
-
-// Touch-Gerät erkannt → "Marker verschieben" als Werkzeug anzeigen (am Desktop genügt die mittlere Maustaste).
-const IS_MOBILE =
-  /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent) ||
-  (matchMedia("(pointer: coarse)").matches && navigator.maxTouchPoints > 0);
-
-interface Annot {
-  id: string;
-  phase_id: string | null;
-  extra_phase_ids?: string[];
-  world_x: number;
-  world_y: number;
-  text: string;
-  width: number;
-  height?: number;
-  scale_fixed?: boolean;
-  ref_zoom?: number;
-  zeus_released?: boolean; // Einzelfreigabe für Zeus (Karten-Notizen)
-  zeus_until?: string | null;
-  area?: AnnotArea | null; // Bereich um den Pin
-}
-/** Bereich um einen Pin: offene Linie oder (closed) schraffierte Fläche, Punkte als [lng, lat]. */
-interface AnnotArea {
-  pts: [number, number][];
-  closed: boolean;
-}
-/** Farben der Bereiche: wie die Sterne (gelb = alle, pink = nur Missionsbau). */
-const AREA_COL = { mb: "#ff2d95", all: "#ffc21a" };
-const AREA_CLOSE_PX = 12; // so nah am Startpunkt = Fläche schließen
-const AREA_MAX_POINTS = 200; // wie im Backend
-
+import {
+  AREA_CLOSE_PX,
+  AREA_COL,
+  AREA_MAX_POINTS,
+  createUi,
+  IS_MOBILE,
+  STAR_SVG,
+  TAC_AUTO,
+  ZEUS_DEFAULT_H,
+  type ActAs,
+  type Annot,
+  type Cmd,
+  type Marker,
+  type Mode,
+  type Peer,
+  type PhaseT,
+  type PlanCtx,
+  type Span,
+  type Stroke,
+  type TacAuto,
+  type TacLayer,
+} from "./plan/ctx";
+import { createModel, type PlanModel } from "./plan/model";
+import { emptyFC, esc0, fmtDist, fmtInput, imgToJpeg, lineDraftFC, packedToHex, parseNaive, parseUtc, polyHit } from "./plan/geo";
 export async function openPlanView(root: HTMLElement, planId: string, me: Me): Promise<void> {
   const snap = await api.snapshot(planId);
   const mapId: string = snap.plan.map_id;
@@ -162,68 +96,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     (snap.image_placements ?? []).map((p: ImagePlacement) => [p.id, p]),
   );
   let imageRail: { refresh: () => void } | null = null;
-  let imgResizingId: string | null = null;
   let imgClickSuppressed = false;
   // Alle document/window-Listener dieser Plan-Ansicht hängen an diesem Signal und
   // werden beim Verlassen (hashchange) gemeinsam abgeräumt.
   const life = new AbortController();
   const sig = life.signal;
-  // Kleiner Bild-Wähler für "Bild in Notiz einfügen".
-  const pickPlanImage = (): Promise<string | null> =>
-    new Promise((resolve) => {
-      const list = [...images.values()];
-      const back = document.createElement("div");
-      back.className = "edit-modal";
-      back.innerHTML = `<div class="card stack" style="width:min(34rem,92vw)">
-        <div class="row"><strong style="flex:1">${t("img.pickTitle")}</strong>
-          <button class="icon-btn" data-x title="${t("common.close")}">${icon("x", 16)}</button></div>
-        <div class="ir-pick">${
-          list.length
-            ? list
-                .map(
-                  (i) =>
-                    `<button class="ir-pick-item" data-pick="${esc(i.id)}">
-                       <img src="${esc(api.planImageUrl(planId, i.id))}" alt="" loading="lazy" />
-                       <span>${esc(i.caption || i.filename)}</span></button>`,
-                )
-                .join("")
-            : `<p class="muted">${t("imgrail.empty")}</p>`
-        }</div></div>`;
-      const done = (v: string | null) => {
-        back.remove();
-        resolve(v);
-      };
-      back.addEventListener("mousedown", (e) => {
-        if (e.target === back) done(null);
-      });
-      back.querySelector("[data-x]")!.addEventListener("click", () => done(null));
-      back.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((b) =>
-        b.addEventListener("click", () => done(b.dataset.pick!)),
-      );
-      document.body.appendChild(back);
-    });
-
-  // Notiz-Bild-Chips ({{img:id}}) mit Text füllen + Klick -> Lightbox.
-  const wireNoteImageRefs = (container: HTMLElement): void => {
-    container.querySelectorAll<HTMLElement>(".note-img-ref").forEach((el) => {
-      const id = el.dataset.img ?? "";
-      const img = images.get(id);
-      if (img) el.textContent = "🖼︎ " + (img.caption || img.filename);
-      el.addEventListener("click", (e) => {
-        e.preventDefault();
-        openLightbox([
-          { url: api.planImageUrl(planId, id), caption: img?.caption || img?.filename || "" },
-        ]);
-      });
-    });
-  };
   // Projekt-Verweise: gehört der Plan zu einem Projekt, werden {{…}}-Codes in Textfeldern/Phasen-Notizen
-  // zu Chips (Ziele öffnen in neuem Tab, damit hier nichts verloren geht); sonst bleiben sie inaktiv.
+  // zu Chips (siehe model.wireRefs); sonst bleiben sie inaktiv.
   const projectId: string | null = snap.plan.project_id ?? null;
-  const refOpts: WireOpts = { newTab: true, skipImg: true, onPlace: (m, n) => flyToPlace(m, n) };
-  const wireRefs = (el: HTMLElement): void => {
-    if (projectId) void wireRefChips(el, projectId, refOpts);
-  };
   // `/plans` listet nur Pläne ohne Projekt; Projekt-Pläne stehen in `/plans/in-projects`.
   const myPlan = projectId
     ? (await api.plansInProjects()).find((p) => p.id === planId)
@@ -244,130 +124,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       if (e.name && !nameBySidc.has(key)) nameBySidc.set(key, translate(e.name));
       if (e.languageKey && !langKeyBySidc.has(key)) langKeyBySidc.set(key, e.languageKey);
     }
-  const markerInfoText = (sidc: string): string =>
-    describe(langKeyBySidc.get(sidc.slice(4, 6) + sidc.slice(10, 16)));
 
-  // Marker-Beschriftung: Name + (falls gesetzt) Modifikatoren, per Komma getrennt.
-  const MOD_SLOTS: [string, (s: string) => string][] = [
-    ["modifier1", (s) => s.slice(16, 18)],
-    ["modifier2", (s) => s.slice(18, 20)],
-    ["modifier3", (s) => s.slice(7, 8)],
-    ["modifier4", (s) => s.slice(6, 7)],
-  ];
-  const markerModifierLabels = (sidc: string): string[] => {
-    const sub = subCatBySidc.get(sidc.slice(4, 6) + sidc.slice(10, 16));
-    const defs = sub && modCat ? modCat[sub] : undefined;
-    if (!defs) return [];
-    const out: string[] = [];
-    for (const [slot, pick] of MOD_SLOTS) {
-      const code = Number(pick(sidc) || "0");
-      if (!code) continue;
-      const opt = (defs[slot] ?? []).find((o) => Number(o.code) === code);
-      if (opt?.description) out.push(opt.description);
-    }
-    return out;
-  };
-  const markerLabel = (m: Marker): string => {
-    if (isTextMarker(m.sidc)) return m.unit_text || "Text";
-    const base = m.unit_text || nameBySidc.get(m.sidc.slice(4, 6) + m.sidc.slice(10, 16)) || "";
-    return [base, ...markerModifierLabels(m.sidc)].filter(Boolean).join(", ");
-  };
   const lineColors = lineStyle?.colors ?? [
     { name: "Gelb", red: 255, green: 255, blue: 0, packedColor: -256, isDefault: true },
     { name: "Rot", red: 255, green: 0, blue: 0, packedColor: -65536, isDefault: false },
   ];
   const lineWidths = lineStyle?.widths ?? [{ width: 2, isDefault: true }, { width: 4, isDefault: false }];
-  let lineColor = (lineColors.find((c) => c.isDefault) ?? lineColors[0]).packedColor;
-  let lineWidth = (lineWidths.find((w) => w.isDefault) ?? lineWidths[0]).width;
-
-  // hl: Zeitstempel bis zu dem der Punkt gelb hervorgehoben ist (Infinity = Linksklick gehalten);
-  // arrow: Startpunkt des Pfeils, solange diese Person rechts klickt+zieht.
-  type Peer = { name: string; lng: number; lat: number; t: number; color: string; hl: number; arrow: [number, number] | null };
   const peers = new Map<string, Peer>();
-  // Jede Person bekommt eine eigene, aus der User-ID abgeleitete Farbe.
-  const peerColor = (uid: string): string => {
-    let h = 0;
-    for (let i = 0; i < uid.length; i++) h = (h * 31 + uid.charCodeAt(i)) >>> 0;
-    return `hsl(${Math.round((h * 137.508) % 360)} 85% 62%)`;
-  };
-  const upsertPeer = (uid: string, name: string, lng: number, lat: number, hl: boolean, arrow: [number, number] | null) => {
-    const prev = peers.get(uid);
-    const hlUntil = hl ? Infinity : prev && prev.hl === Infinity ? Date.now() + 1200 : (prev?.hl ?? 0);
-    peers.set(uid, { name, lng, lat, t: Date.now(), color: peerColor(uid), hl: hlUntil, arrow });
-  };
   const caps = { place: canEdit, move: canEdit, delete: canEdit, draw: canEdit };
-  let mode: Mode = "move";
-  let pending: MarkerTemplate | null = null;
-  let is3D = false;
 
-  // Phasen / Zeitstrahl (+ Missionsbau-Parallelebene)
-  interface PhaseT {
-    id: string;
-    name: string;
-    ordering: number;
-    notes: string;
-    plane?: "player" | "builder";
-    parent_id?: string | null;
-    sub_ordering?: number;
-    start_at?: string | null;
-    end_at?: string | null;
-    locked?: boolean;
-    zeus_released?: boolean;
-    zeus_until?: string | null;
-    player_released?: boolean;
-    role?: string | null; // "notes" = feste Ebene „Karten-Notizen“ (Projekt-Pläne)
-  }
   const isMB: boolean = !!me.is_mission_builder_effective;
   const phases: PhaseT[] = [...(snap.phases ?? [])].sort(
     (a: PhaseT, b: PhaseT) => a.ordering - b.ordering || (a.sub_ordering ?? 0) - (b.sub_ordering ?? 0),
   );
-  const isNotesPhase = (p: PhaseT | undefined): boolean => p?.role === "notes";
-  const isBuilderPhase = (id: string | null | undefined): boolean =>
-    !!id && phases.some((p) => p.id === id && p.plane === "builder");
-  // Die an eine gesperrte Spieler-Phase (aktuell nur "Base") gekoppelte Missionsbau-
-  // "Spiegel"-Phase ist für ALLE dauerhaft sichtbar (Server liefert sie non-MB-Usern
-  // ohnehin mit) — Bearbeiten bleibt server- wie clientseitig Missionsbauern vorbehalten.
-  const isReleasedBuilderPhase = (id: string | null | undefined): boolean => {
-    const p = id ? phases.find((x) => x.id === id) : undefined;
-    if (!p || p.plane !== "builder") return false;
-    if (p.player_released) return true;
-    const parent = phases.find((x) => x.id === p.parent_id);
-    return !!parent?.locked;
-  };
-  const playerPhases = (): PhaseT[] => phases.filter((p) => (p.plane ?? "player") === "player");
-  const builderChildren = (playerId: string): PhaseT[] =>
-    phases
-      .filter((p) => p.plane === "builder" && p.parent_id === playerId)
-      .sort((a, b) => (a.sub_ordering ?? 0) - (b.sub_ordering ?? 0));
-
-  let currentPhaseId: string = playerPhases()[0]?.id ?? phases[0]?.id ?? "";
-  // Bereich um einen Pin: laufendes Zeichnen bzw. Ecken-Bearbeitung (Logik bei den Annotationen)
-  let areaDraft: { aid: string; pts: [number, number][] } | null = null;
-  let areaCursor: [number, number] | null = null;
-  let editAreaId: string | null = null;
-  type ActAs = "player" | "builder" | "zeus";
   const canZeus = isMB || !!me.is_zeus_effective;
-  let actAs: ActAs = (() => {
-    const v = localStorage.getItem(`sidc_actas_${planId}`);
-    return v === "builder" && isMB ? "builder" : v === "zeus" && canZeus ? "zeus" : "player";
-  })();
-  // Zeus-Freigabe einer Missionsbau-Phase: aktiv, solange keine Frist gesetzt ist oder sie noch nicht abgelaufen ist.
-  const parseUtc = (s: string): number => Date.parse(/Z$|[+-]\d\d:?\d\d$/.test(s) ? s : s + "Z");
-  const zeusOpen = (id: string | null | undefined): boolean => {
-    const ph = id ? phases.find((x) => x.id === id) : undefined;
-    return !!ph && ph.plane === "builder" && !!ph.zeus_released && (!ph.zeus_until || parseUtc(ph.zeus_until) > Date.now());
-  };
-  const zeusChildren = (playerId: string): PhaseT[] => builderChildren(playerId).filter((p) => zeusOpen(p.id));
-  // Zeus-Ansicht: in Spieler-Phasen wird nichts gesetzt.
-  const zeusBlocked = (): boolean => {
-    if (actAs !== "zeus" || isBuilderPhase(currentPhaseId)) return false;
-    toast(t("zeus.noPlayerPhase"), { kind: "error" });
-    return true;
-  };
-  const activePlayerId = (): string => {
-    const cur = phases.find((p) => p.id === currentPhaseId);
-    return cur?.plane === "builder" ? cur.parent_id ?? "" : currentPhaseId;
-  };
   let outOpacity = Number(localStorage.getItem("sidc_phaseopacity") ?? "20"); // % fremde Phasen
   if (!Number.isFinite(outOpacity)) outOpacity = 20;
   let crossOpacity = Number(localStorage.getItem("sidc_crossopacity") ?? "20"); // % andere Ebene
@@ -376,130 +146,139 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   if (!Number.isFinite(personalScale) || personalScale <= 0) personalScale = 1;
   let textScale = Number(localStorage.getItem("sidc_text_scale") ?? "1"); // nur für mich
   if (!Number.isFinite(textScale) || textScale <= 0) textScale = 1;
-  // Einheits-/Zusatztext ein-/ausblenden — Control-Measure-Beschriftung (cm/line)
-  // bleibt dabei immer stehen, nur der Text an normalen Einheiten wird versteckt.
-  let showUnitAiLabels = localStorage.getItem("sidc_labels_on") !== "0";
-  // Großer Beschreibungsblock im Marker-Hover — standardmäßig aus.
-  let showMarkerInfo = localStorage.getItem("sidc_markerinfo") === "1";
-  const unitAiOpacityExpr = (on: boolean): maplibregl.ExpressionSpecification =>
-    on ? ["get", "opacity"] : ["*", ["get", "opacity"], ["match", ["get", "labelcat"], "default", 0, 1]];
   const phaseListeners: (() => void)[] = []; // z. B. Notiz-Fenster bei Phasenwechsel
   // ── Taktische Layer: Auto-Layer nach Identität + eigene Layer pro Plan ──
-  interface TacLayer {
-    id: string;
-    name: string;
-    color: number;
-    ordering: number;
-    is_default?: boolean;
-  }
-  let tacLayers: TacLayer[] = ((snap.layers ?? []) as TacLayer[]).filter((l) => !l.is_default);
   const layerListeners: (() => void)[] = [];
-  type TacAuto = "bluefor" | "redfor" | "civgreen" | "unknown";
-  const TAC_AUTO: TacAuto[] = ["bluefor", "redfor", "civgreen", "unknown"];
-  const autoLayerOf = (sidc: string): TacAuto | null => {
-    if (isTextMarker(sidc)) return null;
-    const id = sidc[3];
-    if (id === "2" || id === "3") return "bluefor";
-    if (id === "5" || id === "6" || id === "7" || id === "8") return "redfor";
-    if (id === "4") return "civgreen";
-    return "unknown";
-  };
   const tacKey = `sidc_tac_${planId}`;
-  let tacState: Record<string, { on?: boolean; op?: number }> = {};
-  try {
-    tacState = JSON.parse(localStorage.getItem(tacKey) || "{}") || {};
-  } catch {
-    tacState = {};
-  }
-  const tacVis = (key: string): number => {
-    const st = tacState[key];
-    if (!st) return 1;
-    return st.on === false ? 0 : Math.max(0, Math.min(100, st.op ?? 100)) / 100;
+  const tacState: Record<string, { on?: boolean; op?: number }> = (() => {
+    try {
+      return JSON.parse(localStorage.getItem(tacKey) || "{}") || {};
+    } catch {
+      return {};
+    }
+  })();
+  const baseLayerVisible: Record<string, boolean> = {
+    sat: true, satsimple: false, grid: true, contours: true, peaks: true, locations: true,
+    buildings: false, roads: false, water: false, powerlines: false, trees: false,
   };
-  const tacOpacity = (sidc: string | null, layerId: string | null | undefined): number => {
-    const a = sidc ? autoLayerOf(sidc) : null;
-    return (a ? tacVis("auto:" + a) : 1) * (layerId && tacLayers.some((l) => l.id === layerId) ? tacVis(layerId) : 1);
-  };
-  // Phasen derselben Ebene (Spieler/Missionsbau) zur Mehrfach-Auswahl
-  const samePlanePhases = (pid: string | null | undefined): PhaseOpt[] => {
-    const b = isBuilderPhase(pid);
-    return phases
-      .filter((p) => !isNotesPhase(p) && (p.plane === "builder") === b && (actAs !== "zeus" || !b || zeusOpen(p.id)))
-      .map((p) => ({ id: p.id, name: p.name, builder: p.plane === "builder" }));
-  };
-  // Phasen, die ich zuordnen darf: Spieler-Phasen, für Missionsbauer alles, für Zeus die freigegebenen
-  const selectablePhases = (): PhaseT[] =>
-    phases.filter((p) => !isNotesPhase(p) && (p.plane !== "builder" || isMB || zeusOpen(p.id)));
-  // Mehrfach-Phasen-Auswahl in einem Container: folgt der gewählten Hauptphase, speichert über set()
-  const bindXPhases = (
-    host: HTMLElement,
-    getPid: () => string | null,
-    get: () => string[],
-    set: (v: string[]) => void,
-  ): (() => void) => {
-    const render = (): void => {
-      const pid = getPid();
-      const opts = samePlanePhases(pid);
-      const valid = get().filter((x) => x !== pid && opts.some((p) => p.id === x));
-      set(valid);
-      host.innerHTML = phaseMultiHtml("data-xphases", opts, valid, pid);
-      host.querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((cb) =>
-        cb.addEventListener("change", () => set(readPhaseMulti(host, "data-xphases"))),
-      );
-    };
-    render();
-    return render;
-  };
-  const multiPhaseOpacity = (pid: string | null | undefined, extras?: string[]): number =>
-    Math.max(phaseOpacityOf(pid), ...(extras ?? []).map((x) => phaseOpacityOf(x)));
-  const tplCtx = (): TplCtx => ({
-    layers: tacLayers.map((l) => ({ id: l.id, name: l.name })),
-    layerId: null,
-    phases: samePlanePhases(currentPhaseId),
-    phaseId: currentPhaseId,
-  });
 
-  const phaseOpacityOf = (phaseId: string | null | undefined): number => {
-    if (phaseId == null) return 1;
-    const mB = isBuilderPhase(phaseId);
-    // Freigegebene Base-Missionsbau-Phase: immer voll sichtbar, auch in der
-    // echten Spieler-Vorschau — unabhängig von der aktuell gewählten Phase.
-    if (mB && isReleasedBuilderPhase(phaseId)) return 1;
-    // Feste Ebene „Karten-Notizen“: ohne Phasen-Abdunklung, solange sie in der aktuellen Ansicht überhaupt sichtbar ist
-    if (isNotesPhase(phases.find((x) => x.id === phaseId))) {
-      if (actAs === "zeus") return zeusOpen(phaseId) ? 1 : 0;
-      return isMB && actAs === "builder" ? 1 : 0;
-    }
-    // Zeus-Ansicht: Spieler-Inhalt (nur ansehen) + für Zeus freigegebene Missionsbau-Phasen
-    if (actAs === "zeus") {
-      const outO = Math.max(0, Math.min(100, outOpacity)) / 100;
-      if (mB) return zeusOpen(phaseId) ? (phaseId === currentPhaseId ? 1 : outO) : 0;
-      return phaseId === activePlayerId() || phaseId === currentPhaseId ? 1 : outO;
-    }
-    if (mB && !isMB) return 0; // Zeus-freigegebene Phasen nur in der Zeus-Ansicht
-    // Missionsbau in Spieler-Ansicht = echte Spieler-Vorschau: Missionsbau-Inhalte weg.
-    if (mB && isMB && actAs === "player") return 0;
-    const curB = isBuilderPhase(currentPhaseId);
-    if (mB !== curB) return Math.max(0, Math.min(100, crossOpacity)) / 100; // andere Ebene
-    if (phaseId === currentPhaseId) return 1;
-    return Math.max(0, Math.min(100, outOpacity)) / 100; // Fremdphase (gleiche Ebene)
+  const ctx: PlanCtx = {
+    root,
+    planId,
+    me,
+    snap,
+    mapId,
+    cal,
+    markers,
+    strokes,
+    annots,
+    images,
+    placements,
+    phases,
+    projectId,
+    myPlan,
+    canEdit,
+    isMB,
+    canZeus,
+    caps,
+    lineColors,
+    lineWidths,
+    modCat,
+    subCatBySidc,
+    nameBySidc,
+    langKeyBySidc,
+    sig,
+    map: null as unknown as maplibregl.Map, // wird direkt nach dem Seitenaufbau gesetzt
+    socket: new PlanSocket(planId),
+    peers,
+    phaseListeners,
+    layerListeners,
+    tacKey,
+    tacState,
+    baseLayerVisible,
+    pendingStarZeus: new Map(),
+    pendingStarArea: new Set(),
+    model: null as unknown as PlanModel, // direkt darunter gesetzt
+    ui: createUi(),
+    tools: {},
+    // veränderlicher Zustand
+    mode: "move",
+    pending: null,
+    is3D: false,
+    currentPhaseId: "",
+    actAs: (() => {
+      const v = localStorage.getItem(`sidc_actas_${planId}`);
+      return v === "builder" && isMB ? "builder" : v === "zeus" && canZeus ? "zeus" : "player";
+    })() as ActAs,
+    lineColor: (lineColors.find((c) => c.isDefault) ?? lineColors[0]).packedColor,
+    lineWidth: (lineWidths.find((w) => w.isDefault) ?? lineWidths[0]).width,
+    outOpacity,
+    crossOpacity,
+    personalScale,
+    textScale,
+    // Einheits-/Zusatztext ein-/ausblenden — Control-Measure-Beschriftung (cm/line)
+    // bleibt dabei immer stehen, nur der Text an normalen Einheiten wird versteckt.
+    showUnitAiLabels: localStorage.getItem("sidc_labels_on") !== "0",
+    // Großer Beschreibungsblock im Marker-Hover — standardmäßig aus.
+    showMarkerInfo: localStorage.getItem("sidc_markerinfo") === "1",
+    tacLayers: ((snap.layers ?? []) as TacLayer[]).filter((l) => !l.is_default),
+    planOrbatCache: [],
+    hoverLngLat: null,
+    hoverMarkerId: null,
+    measureLines: [],
+    measureActive: [],
+    measureCursor: null,
+    measurePhaseId: null,
+    editMeasureId: null,
+    editStrokeId: null,
+    linePts: [],
+    lineCursor: null,
+    linePhaseId: null,
+    vertTouchDrag: false,
+    chainGroup: null,
+    chainIndex: 0,
+    awaitingPos: false,
+    pendingPos: null,
+    dragId: null,
+    annotResizingId: null,
+    pendingAnnotCid: null,
+    areaDraft: null,
+    areaCursor: null,
+    editAreaId: null,
+    imgResizingId: null,
   };
-  const phaseOpacity = (m: Marker): number =>
-    Math.max(phaseOpacityOf(m.phase_id), ...(m.extra_phase_ids ?? []).map((x) => phaseOpacityOf(x))) *
-    (m.released ? 0.6 : 1) *
-    tacOpacity(m.sidc, m.layer_id);
-  const phaseNameOf = (id: string | null): string => {
-    const ph = id ? phases.find((p) => p.id === id) : undefined;
-    if (!id) return t("phase.global");
-    // Für Spieler freigegebene Missionsbau-Phase: erscheint als die Spieler-Phase darüber
-    if (ph && ph.plane === "builder" && !isMB) return phases.find((p) => p.id === ph.parent_id)?.name ?? ph.name;
-    return ph?.name ?? "—";
-  };
-  // Hotkey-Hinweis " (Taste)" für Tooltips, aus den (änderbaren) Nutzer-Keybinds.
-  const hk = (action: HotAction): string => {
-    const k = getKeybinds()[action];
-    return k ? ` (${keyLabel(k)})` : "";
-  };
+  const model = (ctx.model = createModel(ctx));
+  const {
+    pickPlanImage,
+    wireNoteImageRefs,
+    wireRefs,
+    markerInfoText,
+    markerLabel,
+    upsertPeer,
+    isNotesPhase,
+    playerPhases,
+    builderChildren,
+    zeusOpen,
+    zeusChildren,
+    zeusBlocked,
+    activePlayerId,
+    unitAiOpacityExpr,
+    tacOpacity,
+    samePlanePhases,
+    selectablePhases,
+    bindXPhases,
+    multiPhaseOpacity,
+    tplCtx,
+    phaseOpacityOf,
+    phaseOpacity,
+    phaseNameOf,
+    hk,
+    measureVisible,
+    annotZeusOpen,
+    isNotesAnnot,
+    annotOpacity,
+  } = model;
+  ctx.currentPhaseId = playerPhases()[0]?.id ?? phases[0]?.id ?? "";
 
   root.innerHTML = `
     <div class="topbar">
@@ -567,7 +346,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
              <div id="lc" class="line-colors"></div>
              <label>${t("line.width")}</label>
              <select id="lw">${lineWidths
-               .map((w) => `<option value="${w.width}" ${w.width === lineWidth ? "selected" : ""}>${w.width}</option>`)
+               .map((w) => `<option value="${w.width}" ${w.width === ctx.lineWidth ? "selected" : ""}>${w.width}</option>`)
                .join("")}</select>
              <label>${t("phase.assign")}</label>
              <select id="lPhase">
@@ -602,13 +381,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       <button type="button" class="mk-scale-head" title="${t("scale.toggle")}"><span>${t("scale.title")}</span><span class="chev">▾</span></button>
       <div class="mk-scale-row" title="${t("marker.scaleLocal")}">
         ${icon("marker", 13)}
-        <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(personalScale * 100)}" />
-        <span id="mkScaleV">${Math.round(personalScale * 100)}%</span>
+        <input type="range" id="mkScaleIn" min="25" max="300" step="5" value="${Math.round(ctx.personalScale * 100)}" />
+        <span id="mkScaleV">${Math.round(ctx.personalScale * 100)}%</span>
       </div>
       <div class="mk-scale-row" title="${t("marker.textScaleLocal")}">
         ${icon("textbox", 13)}
-        <input type="range" id="mkTextScaleIn" min="25" max="300" step="5" value="${Math.round(textScale * 100)}" />
-        <span id="mkTextScaleV">${Math.round(textScale * 100)}%</span>
+        <input type="range" id="mkTextScaleIn" min="25" max="300" step="5" value="${Math.round(ctx.textScale * 100)}" />
+        <span id="mkTextScaleV">${Math.round(ctx.textScale * 100)}%</span>
       </div>
     </div>
     <button class="line-done" id="lineDone" title="${t("line.finish")}" hidden>${icon("check", 18)}</button>
@@ -627,7 +406,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     <div class="layers-panel orbat-panel" id="orbatPanel" hidden></div>
     <canvas class="grid-canvas" id="gridCanvas"></canvas>`;
 
-  const map = new maplibregl.Map({
+  const map = (ctx.map = new maplibregl.Map({
     container: "map",
     style: `/api/maps/${mapId}/style.json`,
     maxPitch: 0, // 2D: nur Drehen, kein Kippen — der 3D-Schalter hebt das an
@@ -635,7 +414,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     attributionControl: false, // kein MapLibre-Logo / Attribution-Box
     transformRequest: (url) =>
       url.startsWith("/") || url.startsWith(location.origin) ? { url, credentials: "include" } : { url },
-  });
+  }));
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
@@ -713,11 +492,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const markerFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
     features: [...markers.values()].map((m) => {
-      const scale = Math.max(0.25, Math.min(3, m.scale ?? 1)) * personalScale;
+      const scale = Math.max(0.25, Math.min(3, m.scale ?? 1)) * ctx.personalScale;
       // Text-Offset aus der tatsächlichen Icon-Größe berechnet (0.8 = derselbe
       // Faktor wie in "icon-size" unten), damit der Text immer knapp außerhalb
       // des Icons sitzt statt eines geschätzten Fixwerts.
-      const labelOff = markerLabelOffsets(m.sidc, 0.8 * scale, textScale);
+      const labelOff = markerLabelOffsets(m.sidc, 0.8 * scale, ctx.textScale);
       return {
         type: "Feature" as const,
         geometry: { type: "Point" as const, coordinates: [m.world_x, m.world_y] },
@@ -855,7 +634,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     // Abstand zum Icon-Rand (skaliert mit der Icon-Größe des Markers) — groß
     // genug, dass das Symbol frei lesbar bleibt.
     const gapPx = (m: Marker) =>
-      Math.max(38, 52 * Math.max(0.25, Math.min(3, m.scale ?? 1)) * personalScale);
+      Math.max(38, 52 * Math.max(0.25, Math.min(3, m.scale ?? 1)) * ctx.personalScale);
     const feats: GeoJSON.Feature[] = [];
     for (const list of byGroup.values()) {
       if (list.length < 2) continue;
@@ -1134,7 +913,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       filter: ["!=", ["get", "istext"], true],
       layout: {
         "text-field": ["get", "label"],
-        "text-size": 11 * textScale,
+        "text-size": 11 * ctx.textScale,
         "text-anchor": UNIT_TEXT_ANCHOR,
         "text-offset": UNIT_TEXT_OFFSET,
         "text-justify": UNIT_TEXT_JUSTIFY,
@@ -1148,7 +927,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "text-color": ["case", ["!=", ["get", "tcolor"], ""], ["get", "tcolor"], "#e6e9ee"],
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
-        "text-opacity": unitAiOpacityExpr(showUnitAiLabels),
+        "text-opacity": unitAiOpacityExpr(ctx.showUnitAiLabels),
       },
     });
     // Nur-Text-Marker ("Spezial"): kein Symbol, nur der Text — eigene Farbe, immer sichtbar.
@@ -1159,7 +938,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       filter: ["==", ["get", "istext"], true],
       layout: {
         "text-field": ["get", "label"],
-        "text-size": 14 * textScale,
+        "text-size": 14 * ctx.textScale,
         "text-anchor": "center",
         "text-justify": "center",
         "text-allow-overlap": true,
@@ -1178,7 +957,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       source: "markers",
       layout: {
         "text-field": ["get", "ai"],
-        "text-size": 11 * textScale,
+        "text-size": 11 * ctx.textScale,
         "text-anchor": AI_TEXT_ANCHOR,
         "text-offset": AI_TEXT_OFFSET,
         "text-justify": AI_TEXT_JUSTIFY,
@@ -1189,7 +968,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         "text-color": "#e6e9ee",
         "text-halo-color": "#000",
         "text-halo-width": 1.4,
-        "text-opacity": unitAiOpacityExpr(showUnitAiLabels),
+        "text-opacity": unitAiOpacityExpr(ctx.showUnitAiLabels),
       },
     });
 
@@ -1251,19 +1030,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // ── Linien nachträglich bearbeiten: Stützpunkte ziehen ───────────────
   // Lineal: mehrsegmentige, bleibende Messlinien (nur lokal, je Sitzung)
   // builder=true → nur in der Missionsbau-Ebene sichtbar, sonst nur in der Spieler-Ebene
-  let measureLines: { id: string; pts: [number, number][]; phase_id: string | null; extra_phase_ids: string[]; layer_id: string | null }[] = [];
-  const measureVisible = (ml: { phase_id: string | null; extra_phase_ids: string[]; layer_id: string | null }): boolean =>
-    multiPhaseOpacity(ml.phase_id, ml.extra_phase_ids) * tacOpacity(null, ml.layer_id) > 0;
-  let measureActive: [number, number][] = [];
-  let measureCursor: [number, number] | null = null;
-  let editMeasureId: string | null = null;
-  let editStrokeId: string | null = null;
+  // Lineal-Zustand (measureLines/measureActive/…) liegt in ctx
   let onEditSelChange: () => void = () => {}; // wird später auf die Button-Positionierung gesetzt
   const editPts = (): [number, number][] | undefined =>
-    editMeasureId
-      ? measureLines.find((x) => x.id === editMeasureId)?.pts
-      : editStrokeId
-        ? strokes.get(editStrokeId)?.points
+    ctx.editMeasureId
+      ? ctx.measureLines.find((x) => x.id === ctx.editMeasureId)?.pts
+      : ctx.editStrokeId
+        ? strokes.get(ctx.editStrokeId)?.points
         : undefined;
   const refreshStrokeVerts = () => {
     (map.getSource("strokeverts") as GeoJSONSource)?.setData({
@@ -1276,14 +1049,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     });
   };
   const setEditStroke = (id: string | null) => {
-    editStrokeId = id;
-    if (id) editMeasureId = null;
+    ctx.editStrokeId = id;
+    if (id) ctx.editMeasureId = null;
     refreshStrokeVerts();
     onEditSelChange();
   };
   const setEditMeasure = (id: string | null) => {
-    editMeasureId = id;
-    if (id) editStrokeId = null;
+    ctx.editMeasureId = id;
+    if (id) ctx.editStrokeId = null;
     refreshStrokeVerts();
     onEditSelChange();
   };
@@ -1308,7 +1081,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("load", refreshDir);
 
   // ── WebSocket ──────────────────────────────────────────────────────────
-  const socket = new PlanSocket(planId);
+  const socket = ctx.socket;
   let lastDropToast = 0;
   socket.onDropped = () => {
     // Nicht still verlieren: Nutzer sieht, dass die Änderung NICHT angekommen ist.
@@ -1318,10 +1091,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
 
   // ── Undo/Redo (eigene Aktionen: verschieben, bearbeiten, sperren) ─────
-  interface Cmd {
-    undo: () => void;
-    redo: () => void;
-  }
   const undoStack: Cmd[] = [];
   const redoStack: Cmd[] = [];
   const UNDO_MAX = 60;
@@ -1391,20 +1160,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       case "stroke.upsert":
         strokes.set(msg.stroke.id, msg.stroke);
         refreshStrokes();
-        if (editStrokeId === msg.stroke.id) refreshStrokeVerts();
+        if (ctx.editStrokeId === msg.stroke.id) refreshStrokeVerts();
         break;
       case "stroke.delete":
         strokes.delete(msg.id);
         refreshStrokes();
-        if (editStrokeId === msg.id) setEditStroke(null);
+        if (ctx.editStrokeId === msg.id) setEditStroke(null);
         break;
       case "annotation.upsert": {
-        const wasResizing = annotResizingId === msg.annotation.id;
+        const wasResizing = ctx.annotResizingId === msg.annotation.id;
         annots.set(msg.annotation.id, msg.annotation);
-        if (!annotResizingId) renderAnnots(); // während eines Resize nicht neu aufbauen
+        if (!ctx.annotResizingId) renderAnnots(); // während eines Resize nicht neu aufbauen
         else if (!wasResizing) positionAnnots();
-        if (msg.cid && msg.cid === pendingAnnotCid) {
-          pendingAnnotCid = null;
+        if (msg.cid && msg.cid === ctx.pendingAnnotCid) {
+          ctx.pendingAnnotCid = null;
           openAnnotEditor(msg.annotation.id, true);
         }
         if (msg.cid && pendingStarArea.has(msg.cid)) {
@@ -1424,7 +1193,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         break;
       case "image.upsert":
         images.set(msg.image.id, msg.image);
-        if (!imgResizingId) renderMapImages(); // Beschriftung/Notiz können in Hover/Popover sichtbar sein
+        if (!ctx.imgResizingId) renderMapImages(); // Beschriftung/Notiz können in Hover/Popover sichtbar sein
         imageRail?.refresh();
         break;
       case "image.delete":
@@ -1437,7 +1206,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         break;
       case "placement.upsert":
         placements.set(msg.placement.id, msg.placement);
-        if (!imgResizingId) renderMapImages();
+        if (!ctx.imgResizingId) renderMapImages();
         else positionImages();
         imageRail?.refresh();
         break;
@@ -1523,14 +1292,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   makeMovable(hud, { plan: planId, key: "hud" });
   makeMovable(root.querySelector<HTMLDivElement>("#mkScale")!, { plan: planId, key: "mkscale" });
   let lastCursorSent = 0;
-  let hoverLngLat: { lng: number; lat: number } | null = null;
-  let hoverMarkerId: string | null = null;
   map.on("mousemove", (e) => {
-    hoverLngLat = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+    ctx.hoverLngLat = { lng: e.lngLat.lng, lat: e.lngLat.lat };
     const [wx, wy] = lngLatToWorld(cal, e.lngLat.lng, e.lngLat.lat);
     let h = "–";
     try {
-      const el = is3D
+      const el = ctx.is3D
         ? (map.queryTerrainElevation(e.lngLat) ?? 0) / 1.5
         : sampleElevation(e.lngLat.lng, e.lngLat.lat);
       if (el != null) h = `${Math.round(el)} m`;
@@ -1542,14 +1309,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
   // Vorschau-Linie / Messlinie / Zeiger folgen dem Zeiger bzw. dem Finger
   const trackCursor = (lng: number, lat: number) => {
-    if (mode === "measure" && measureActive.length) {
-      measureCursor = [lng, lat];
+    if (ctx.mode === "measure" && ctx.measureActive.length) {
+      ctx.measureCursor = [lng, lat];
       redrawMeasure();
     }
-    if (mode === "point") sendPointer(lng, lat);
-    if (mode === "line" && linePts.length) {
-      lineCursor = [lng, lat];
-      (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts, lineCursor));
+    if (ctx.mode === "point") sendPointer(lng, lat);
+    if (ctx.mode === "line" && ctx.linePts.length) {
+      ctx.lineCursor = [lng, lat];
+      (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(ctx.linePts, ctx.lineCursor));
     }
   };
   map.on("touchmove", (e) => {
@@ -1569,7 +1336,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     refreshPeers();
   };
   map.on("mousedown", (e) => {
-    if (mode !== "point") return;
+    if (ctx.mode !== "point") return;
     if (e.originalEvent.button === 0) ptrHl = true;
     else if (e.originalEvent.button === 2) ptrArrowFrom = [e.lngLat.lng, e.lngLat.lat];
     else return;
@@ -1579,12 +1346,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (!ptrHl && !ptrArrowFrom) return;
     ptrHl = false;
     ptrArrowFrom = null;
-    if (mode === "point" && ptrLast) sendPointer(ptrLast[0], ptrLast[1], true);
+    if (ctx.mode === "point" && ptrLast) sendPointer(ptrLast[0], ptrLast[1], true);
   };
   document.addEventListener("mouseup", releasePtr, { signal: sig });
   // Touch: Zeigen folgt dem Finger (ein Finger); ein zweiter Finger beendet es und navigiert die Karte
   map.on("touchstart", (e) => {
-    if (mode !== "point") return;
+    if (ctx.mode !== "point") return;
     if (e.points.length !== 1) return releasePtr();
     ptrHl = true;
     sendPointer(e.lngLat.lng, e.lngLat.lat, true);
@@ -1599,10 +1366,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   navcube.hidden = false;
 
   root.querySelector("#t3d")!.addEventListener("click", () => {
-    is3D = !is3D;
-    root.querySelector("#t3d")!.classList.toggle("active", is3D);
+    ctx.is3D = !ctx.is3D;
+    root.querySelector("#t3d")!.classList.toggle("active", ctx.is3D);
     const hasDem = !!map.getSource("terrain-dem");
-    if (is3D) {
+    if (ctx.is3D) {
       if (hasDem) map.setTerrain({ source: "terrain-dem", exaggeration: 1.5 });
       map.setMaxPitch(85);
       map.easeTo({ pitch: 60, duration: 700 });
@@ -1610,7 +1377,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       // 2D: Terrain-Mesh abschalten → deutlich ressourcenschonender.
       map.easeTo({ pitch: 0, duration: 700 });
       map.once("moveend", () => {
-        if (!is3D) {
+        if (!ctx.is3D) {
           if (hasDem) map.setTerrain(null);
           map.setMaxPitch(0); // Kippen wieder sperren, Drehung bleibt
         }
@@ -1657,23 +1424,23 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     try {
       const opts = getShotOpts();
       const out = await renderMapCanvas(map, opts);
-      const ctx = out.getContext("2d")!;
-      if (baseLayerVisible.grid !== false) ctx.drawImage(gridCanvas, 0, 0, out.width, out.height);
+      const g2d = out.getContext("2d")!;
+      if (baseLayerVisible.grid !== false) g2d.drawImage(gridCanvas, 0, 0, out.width, out.height);
 
       const d = shotDate();
       const s = out.height / 1080; // Label-Skalierung, auflösungsunabhängig
-      ctx.font = `bold ${Math.round(15 * s)}px monospace`;
-      ctx.textBaseline = "bottom";
-      ctx.lineWidth = 3 * s;
-      ctx.strokeStyle = "rgba(0,0,0,0.85)";
-      ctx.fillStyle = "#fff";
+      g2d.font = `bold ${Math.round(15 * s)}px monospace`;
+      g2d.textBaseline = "bottom";
+      g2d.lineWidth = 3 * s;
+      g2d.strokeStyle = "rgba(0,0,0,0.85)";
+      g2d.fillStyle = "#fff";
       const label = militaryDtg(d);
       const x = 12 * s;
       const y = out.height - 12 * s;
-      ctx.strokeText(label, x, y);
-      ctx.fillText(label, x, y);
+      g2d.strokeText(label, x, y);
+      g2d.fillText(label, x, y);
 
-      const phaseName = phases.find((p) => p.id === currentPhaseId)?.name ?? "global";
+      const phaseName = phases.find((p) => p.id === ctx.currentPhaseId)?.name ?? "global";
       const safe = (str: string) => str.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "map";
       const fileStamp =
         `${p2(d.getDate())}${p2(d.getMonth() + 1)}${d.getFullYear()}-` +
@@ -1714,7 +1481,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const briefingBtn = root.querySelector<HTMLButtonElement>("#briefing")!;
   briefingBtn.addEventListener("click", async () => {
     briefingBtn.disabled = true;
-    const origPhase = currentPhaseId;
+    const origPhase = ctx.currentPhaseId;
     const origCenter = map.getCenter();
     const origZoom = map.getZoom();
     const origBearing = map.getBearing();
@@ -1752,7 +1519,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       for (let pi = 0; pi < briefPhases.length; pi++) {
         const phase = briefPhases[pi];
         if (pi > 0) doc.addPage();
-        currentPhaseId = phase.id;
+        ctx.currentPhaseId = phase.id;
         // Marker dieser Phase (+ globale) für den Bildausschnitt
         const pts = [...markers.values()]
           .filter((m) => m.phase_id === phase.id || m.phase_id == null || (m.extra_phase_ids ?? []).includes(phase.id))
@@ -1839,7 +1606,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const nodesOnMap = new Set(
         [...markers.values()].map((m) => m.orbat_node_id).filter(Boolean) as string[],
       );
-      const forceItems = planOrbatCache.flatMap((o) =>
+      const forceItems = ctx.planOrbatCache.flatMap((o) =>
         (o.nodes ?? [])
           .filter((n) => o.released || nodesOnMap.has(n.id))
           .map((n) => ({ orbat: o.name, aff: o.affiliation, n })),
@@ -1875,7 +1642,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     } catch (e) {
       toast(e instanceof Error ? e.message : "PDF-Export fehlgeschlagen", { kind: "error" });
     } finally {
-      currentPhaseId = origPhase;
+      ctx.currentPhaseId = origPhase;
       map.jumpTo({ center: origCenter, zoom: origZoom, bearing: origBearing });
       await refreshMarkers();
       renderTimeline();
@@ -1952,12 +1719,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let toggleNotesWin: () => void = () => {}; // wird bei der Notiz-Fenster-Einrichtung gesetzt
   let repaintNotesTimes: () => void = () => {};
 
-  // Naive ISO-Zeit als lokale Wanduhr interpretieren (kein UTC-Versatz).
-  const parseNaive = (s: string): Date => new Date(/[Z+]|[+-]\d\d:?\d\d$/.test(s) ? s : s.replace(" ", "T"));
-  const fmtInput = (d: Date): string => {
-    const p = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-  };
   const DUR = 60; // Standard-Dauer je Phase (min)
   const defaultHHour = (): Date => {
     const raw = snap.plan.h_hour as string | null | undefined;
@@ -1987,7 +1748,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   };
 
-  type Span = { s: number; e: number };
   const computeSpans = (): Map<string, Span> => {
     const out = new Map<string, Span>();
     const H = opStart.getTime();
@@ -2083,25 +1843,25 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     updatePresentBar();
   }
   function selectPhase(id: string): void {
-    if (id === currentPhaseId || !phases.some((p) => p.id === id)) return;
-    currentPhaseId = id;
+    if (id === ctx.currentPhaseId || !phases.some((p) => p.id === id)) return;
+    ctx.currentPhaseId = id;
     applyPhase();
   }
   function selectPlayerPhase(pid: string): void {
-    currentPhaseId =
-      actAs === "builder" ? builderChildren(pid)[0]?.id ?? pid : actAs === "zeus" ? zeusChildren(pid)[0]?.id ?? pid : pid;
+    ctx.currentPhaseId =
+      ctx.actAs === "builder" ? builderChildren(pid)[0]?.id ?? pid : ctx.actAs === "zeus" ? zeusChildren(pid)[0]?.id ?? pid : pid;
     applyPhase();
   }
-  function setActAs(mode: ActAs): void {
-    actAs = mode;
+  function setActAs(next: ActAs): void {
+    ctx.actAs = next;
     try {
-      localStorage.setItem(`sidc_actas_${planId}`, mode);
+      localStorage.setItem(`sidc_actas_${planId}`, next);
     } catch {
       /* ignore */
     }
     const pid = activePlayerId();
-    currentPhaseId =
-      mode === "builder" ? builderChildren(pid)[0]?.id ?? pid : mode === "zeus" ? zeusChildren(pid)[0]?.id ?? pid : pid;
+    ctx.currentPhaseId =
+      next === "builder" ? builderChildren(pid)[0]?.id ?? pid : next === "zeus" ? zeusChildren(pid)[0]?.id ?? pid : pid;
     applyPhase();
   }
 
@@ -2191,15 +1951,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   let tlFirstPaint = true;
   let tlKeepScroll = -1;
-  const esc0 = (s: string) =>
-    (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
   function removePhaseLocal(delId: string): void {
     const gone = new Set([delId, ...phases.filter((p) => p.parent_id === delId).map((p) => p.id)]);
     for (let i = phases.length - 1; i >= 0; i--) if (gone.has(phases[i].id)) phases.splice(i, 1);
     for (const m of markers.values()) if (m.phase_id && gone.has(m.phase_id)) m.phase_id = null;
     for (const a of annots.values()) if (a.phase_id && gone.has(a.phase_id)) a.phase_id = null;
     for (const i of images.values()) if (i.phase_id && gone.has(i.phase_id)) i.phase_id = null;
-    if (gone.has(currentPhaseId)) currentPhaseId = playerPhases()[0]?.id ?? "";
+    if (gone.has(ctx.currentPhaseId)) ctx.currentPhaseId = playerPhases()[0]?.id ?? "";
     applyPhase();
     renderAnnots();
     renderMapImages();
@@ -2232,7 +1990,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const players = phases.filter((p) => (p.plane ?? "player") === "player").map((p) => p.id);
     // Missionsbau-Notizen sind ein Layer, keine Phase: nicht im Zeitstrahl
     const builders = phases
-      .filter((p) => p.plane === "builder" && !isNotesPhase(p) && (actAs !== "zeus" || zeusOpen(p.id)))
+      .filter((p) => p.plane === "builder" && !isNotesPhase(p) && (ctx.actAs !== "zeus" || zeusOpen(p.id)))
       .map((p) => p.id);
     const rowP = assignRows(players, spans);
     const rowB = assignRows(builders, spans);
@@ -2255,7 +2013,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const dur = Math.round((sp.e - sp.s) / 60000);
       const durTxt = dur >= 1440 ? `${(dur / 1440).toFixed(1)} d` : dur >= 60 ? `${(dur / 60).toFixed(dur % 60 ? 1 : 0)} h` : `${dur} min`;
       return (
-        `<div class="tl-bar ${id === currentPhaseId ? "active" : ""} ${explicit ? "" : "tl-auto"} ${fixedRole ? "tl-notes" : ""}" ` +
+        `<div class="tl-bar ${id === ctx.currentPhaseId ? "active" : ""} ${explicit ? "" : "tl-auto"} ${fixedRole ? "tl-notes" : ""}" ` +
         `data-pick="${id}" data-plane="${plane}" style="left:${left}px;width:${w}px;top:${row * 26}px" ` +
         `title="${esc0(p.name)} · ${fixedRole ? t("notes.layerHint") : durTxt}">` +
         (canEdit && (plane === "player" || isMB) && !fixedRole ? `<span class="tl-edge tl-edge-l" data-edge="l" data-id="${id}"></span>` : "") +
@@ -2278,7 +2036,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       [...players, ...builders]
         .map((id) => {
           const p = phases.find((x) => x.id === id)!;
-          return `<option value="${id}" ${id === currentPhaseId ? "selected" : ""}>${p.plane === "builder" ? "⚑ " : ""}${esc0(p.name)}</option>`;
+          return `<option value="${id}" ${id === ctx.currentPhaseId ? "selected" : ""}>${p.plane === "builder" ? "⚑ " : ""}${esc0(p.name)}</option>`;
         })
         .join("") +
       `</select>`;
@@ -2289,17 +2047,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       `<span class="tl-zoom"><button id="tl-zout" title="${t("tl.zoomOut")}">${icon("minus", 14)}</button><button id="tl-zin" title="${t("tl.zoomIn")}">${icon("plus", 14)}</button></span>` +
       (isMB || canZeus
         ? `<span class="segmented mb-actas">` +
-          `<button class="seg-btn ${actAs === "player" ? "active" : ""}" data-as="player">${t("mb.player")}</button>` +
-          (isMB ? `<button class="seg-btn ${actAs === "builder" ? "active" : ""}" data-as="builder">${t("mb.builder")}</button>` : "") +
-          (canZeus ? `<button class="seg-btn ${actAs === "zeus" ? "active" : ""}" data-as="zeus">${t("mb.zeus")}</button>` : "") +
+          `<button class="seg-btn ${ctx.actAs === "player" ? "active" : ""}" data-as="player">${t("mb.player")}</button>` +
+          (isMB ? `<button class="seg-btn ${ctx.actAs === "builder" ? "active" : ""}" data-as="builder">${t("mb.builder")}</button>` : "") +
+          (canZeus ? `<button class="seg-btn ${ctx.actAs === "zeus" ? "active" : ""}" data-as="zeus">${t("mb.zeus")}</button>` : "") +
           `</span>`
         : "") +
       (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+ ${t("phase.heading")}</button>` : "") +
       `<label class="ph-op" title="${t("phase.outOpacityHint")}">${t("phase.outOpacity")}` +
-      `<input type="range" id="ph-op" min="0" max="100" step="5" value="${outOpacity}"/><span id="ph-op-v">${outOpacity}%</span></label>` +
+      `<input type="range" id="ph-op" min="0" max="100" step="5" value="${ctx.outOpacity}"/><span id="ph-op-v">${ctx.outOpacity}%</span></label>` +
       (isMB
         ? `<label class="ph-op" title="${t("mb.crossOpacityHint")}">${t("mb.crossOpacity")}` +
-          `<input type="range" id="cross-op" min="0" max="100" step="5" value="${crossOpacity}"/><span id="cross-op-v">${crossOpacity}%</span></label>`
+          `<input type="range" id="cross-op" min="0" max="100" step="5" value="${ctx.crossOpacity}"/><span id="cross-op-v">${ctx.crossOpacity}%</span></label>`
         : "") +
       `</div>`;
 
@@ -2312,7 +2070,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       (canEdit ? `<button id="player-add" class="tl-subadd" title="${t("phase.add")}">+</button>` : "") +
       `</div>` +
       `<div class="tl-ruler">${ticks.join("")}</div>` +
-      (isMB || actAs === "zeus"
+      (isMB || ctx.actAs === "zeus"
         ? `<div class="tl-lane tl-builder" style="height:${laneH(maxRow(rowB))}px">` +
           builders.map((id) => bar(id, "builder", rowB.get(id) ?? 0)).join("") +
           (canEdit && isMB ? `<button id="sub-add" class="tl-subadd" title="${t("mb.subPhase")}">+</button>` : "") +
@@ -2351,18 +2109,18 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const pickPhase = (id: string): void => {
       const p = phases.find((x) => x.id === id);
       if (!p) return;
-      if (isMB && actAs !== "zeus") {
+      if (isMB && ctx.actAs !== "zeus") {
         const want = p.plane === "builder" ? "builder" : "player";
-        if (actAs !== want) {
-          actAs = want;
+        if (ctx.actAs !== want) {
+          ctx.actAs = want;
           try {
-            localStorage.setItem(`sidc_actas_${planId}`, actAs);
+            localStorage.setItem(`sidc_actas_${planId}`, ctx.actAs);
           } catch {
             /* ignore */
           }
         }
       }
-      currentPhaseId = id;
+      ctx.currentPhaseId = id;
       applyPhase();
     };
     const snap15 = (min: number) => Math.round(min / 15) * 15;
@@ -2429,9 +2187,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const op = timelineEl.querySelector<HTMLInputElement>("#ph-op")!;
     const opv = timelineEl.querySelector<HTMLSpanElement>("#ph-op-v")!;
     op.addEventListener("input", () => {
-      outOpacity = Number(op.value);
-      opv.textContent = `${outOpacity}%`;
-      localStorage.setItem("sidc_phaseopacity", String(outOpacity));
+      ctx.outOpacity = Number(op.value);
+      opv.textContent = `${ctx.outOpacity}%`;
+      localStorage.setItem("sidc_phaseopacity", String(ctx.outOpacity));
       void refreshMarkers();
       renderAnnots();
     });
@@ -2439,9 +2197,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (cop) {
       const copv = timelineEl.querySelector<HTMLSpanElement>("#cross-op-v")!;
       cop.addEventListener("input", () => {
-        crossOpacity = Number(cop.value);
-        copv.textContent = `${crossOpacity}%`;
-        localStorage.setItem("sidc_crossopacity", String(crossOpacity));
+        ctx.crossOpacity = Number(cop.value);
+        copv.textContent = `${ctx.crossOpacity}%`;
+        localStorage.setItem("sidc_crossopacity", String(ctx.crossOpacity));
         void refreshMarkers();
         renderAnnots();
       });
@@ -2490,7 +2248,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const nEdit = notesWin.querySelector<HTMLTextAreaElement>(".notes-edit")!;
   if (canEdit) attachMdToolbar(nEdit, { projectId: projectId ?? undefined, isBuilder: isMB });
   const nView = notesWin.querySelector<HTMLDivElement>(".notes-view")!;
-  let notesTabId = currentPhaseId;
+  let notesTabId = ctx.currentPhaseId;
   const saveTimers = new Map<string, number>();
 
   const renderNotesTimes = () => {
@@ -2662,7 +2420,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Phasenwechsel → Reiter dieser Phase aktiv machen
   phaseListeners.push(() => {
     flushNotes();
-    notesTabId = currentPhaseId;
+    notesTabId = ctx.currentPhaseId;
     paintNotes();
   });
   notesWin.querySelector(".notes-x")!.addEventListener("click", () => (notesWin.hidden = true));
@@ -2677,10 +2435,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const si = root.querySelector<HTMLInputElement>("#mkScaleIn")!;
     const sv = root.querySelector<HTMLSpanElement>("#mkScaleV")!;
     si.addEventListener("input", () => {
-      personalScale = Number(si.value) / 100 || 1;
+      ctx.personalScale = Number(si.value) / 100 || 1;
       sv.textContent = `${si.value}%`;
       try {
-        localStorage.setItem("sidc_marker_scale", String(personalScale));
+        localStorage.setItem("sidc_marker_scale", String(ctx.personalScale));
       } catch {
         /* ignore */
       }
@@ -2691,16 +2449,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const si = root.querySelector<HTMLInputElement>("#mkTextScaleIn")!;
     const sv = root.querySelector<HTMLSpanElement>("#mkTextScaleV")!;
     si.addEventListener("input", () => {
-      textScale = Number(si.value) / 100 || 1;
+      ctx.textScale = Number(si.value) / 100 || 1;
       sv.textContent = `${si.value}%`;
       try {
-        localStorage.setItem("sidc_text_scale", String(textScale));
+        localStorage.setItem("sidc_text_scale", String(ctx.textScale));
       } catch {
         /* ignore */
       }
-      map.setLayoutProperty("marker-unittext", "text-size", 11 * textScale);
-      map.setLayoutProperty("marker-aitext", "text-size", 11 * textScale);
-      map.setLayoutProperty("marker-textmark", "text-size", 14 * textScale);
+      map.setLayoutProperty("marker-unittext", "text-size", 11 * ctx.textScale);
+      map.setLayoutProperty("marker-aitext", "text-size", 11 * ctx.textScale);
+      map.setLayoutProperty("marker-textmark", "text-size", 14 * ctx.textScale);
       void refreshMarkers(); // Text-Offsets neu berechnen, sonst rückt der Text vom Icon weg
     });
   }
@@ -2749,10 +2507,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   let locData: { langs: string[]; groups: LocGroup[] } | null = null;
   let mapLang = "en_us";
   const groupVisible = new Map<string, boolean>();
-  const baseLayerVisible: Record<string, boolean> = {
-    sat: true, satsimple: false, grid: true, contours: true, peaks: true, locations: true,
-    buildings: false, roads: false, water: false, powerlines: false, trees: false,
-  };
   // Logische Overlay-Layer -> tatsaechliche MapLibre-Layer-IDs
   const overlayLayers: Record<string, string[]> = {
     contours: ["contours-line", "contours-label"],
@@ -2847,6 +2601,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
   const refreshLoc = () => (map.getSource("locations") as GeoJSONSource)?.setData(locFC());
   /** Ort-Chip ({{place:<karte>:<name>}}) dieser Karte: zum Ort fliegen (true), sonst Popover im Chip-Code. */
+  ctx.ui.flyToPlace = flyToPlace;
   function flyToPlace(mid: string, name: string): boolean {
     if (mid !== mapId || !locData) return false;
     for (const g of locData.groups)
@@ -3067,8 +2822,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       `<div class="fav-head">${t("tac.heading")}</div>` +
       `<div class="tac-sep">${t("tac.auto")}</div>` +
       TAC_AUTO.map((k) => row("auto:" + k, auto[k], false)).join("") +
-      (tacLayers.length || canEdit ? `<div class="tac-sep">${t("tac.custom")}</div>` : "") +
-      tacLayers.map((l) => row(l.id, l.name, canEdit)).join("") +
+      (ctx.tacLayers.length || canEdit ? `<div class="tac-sep">${t("tac.custom")}</div>` : "") +
+      ctx.tacLayers.map((l) => row(l.id, l.name, canEdit)).join("") +
       (isMB && projectId ? `<div class="tac-sep">${t("mb.builder")}</div>` + row("mbnotes", t("tac.mbNotes"), false) : "") +
       (canEdit
         ? `<div class="tac-new"><input id="tacNewName" maxlength="40" placeholder="${t("tac.new")}"/><button id="tacNewBtn">${t("tac.add")}</button></div>`
@@ -3122,7 +2877,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
   // Layer-Liste vom Server (anderer Nutzer legt an/löscht)
   const onLayersChanged = (list: TacLayer[], removed?: string): void => {
-    tacLayers = list.filter((l) => !l.is_default);
+    ctx.tacLayers = list.filter((l) => !l.is_default);
     if (removed) {
       for (const m of markers.values()) if (m.layer_id === removed) m.layer_id = null;
       for (const st of strokes.values()) if (st.layer_id === removed) st.layer_id = null;
@@ -3153,12 +2908,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     for (const i of (sn.images ?? []) as PlanImage[]) images.set(i.id, i);
     placements.clear();
     for (const p of (sn.image_placements ?? []) as ImagePlacement[]) placements.set(p.id, p);
-    if (!phases.some((x) => x.id === currentPhaseId)) currentPhaseId = playerPhases()[0]?.id ?? "";
-    if (actAs === "zeus" && !canZeus) actAs = "player";
+    if (!phases.some((x) => x.id === ctx.currentPhaseId)) ctx.currentPhaseId = playerPhases()[0]?.id ?? "";
+    if (ctx.actAs === "zeus" && !canZeus) ctx.actAs = "player";
     applyPhase();
     refreshStrokes();
     renderAnnots();
-    if (!imgResizingId) renderMapImages();
+    if (!ctx.imgResizingId) renderMapImages();
     imageRail?.refresh();
   };
   socket.on((msg: WsMessage) => {
@@ -3172,16 +2927,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const orbatPanel = root.querySelector<HTMLDivElement>("#orbatPanel")!;
   const orbatBtn = root.querySelector<HTMLButtonElement>("#orbatBtn")!;
   const orbOpen = new Set<string>();
-  let planOrbatCache: import("./api").Orbat[] = [];
   let orbatAvail: import("./api").Orbat[] = [];
   async function ensureOrbatCache(): Promise<void> {
-    if (planOrbatCache.length) return;
-    planOrbatCache = await api.planOrbats(planId).catch(() => []);
+    if (ctx.planOrbatCache.length) return;
+    ctx.planOrbatCache = await api.planOrbats(planId).catch(() => []);
   }
   // Daten laden (Netz), dann rendern.
   async function refreshOrbatPanel(): Promise<void> {
     try {
-      planOrbatCache = await api.planOrbats(planId);
+      ctx.planOrbatCache = await api.planOrbats(planId);
     } catch {
       /* keine */
     }
@@ -3190,7 +2944,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
   // Reines Rendern aus dem Cache — Baum auf-/zuklappen läuft ohne Netz.
   function renderOrbatPanel(): void {
-    const linked = planOrbatCache;
+    const linked = ctx.planOrbatCache;
     const avail = orbatAvail;
     const st = (s: string) => `<span class="st-pill st-${s}">${t("orbat.status." + s)}</span>`;
     const nodeRows = (o: import("./api").Orbat): string => {
@@ -3290,9 +3044,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     );
     orbatPanel.querySelectorAll<HTMLButtonElement>("[data-oplace]").forEach((b) =>
       b.addEventListener("click", () => {
-        chainGroup = null;
-        awaitingPos = false;
-        pending = {
+        ctx.chainGroup = null;
+        ctx.awaitingPos = false;
+        ctx.pending = {
           sidc: b.dataset.osidc || "10060000000000000000",
           unit_text: b.dataset.oname || "",
           ai_text: "",
@@ -3321,7 +3075,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     orbatPanel.hidden = !orbatPanel.hidden;
     if (!orbatPanel.hidden) {
       if (!mvOrbat.hasPos()) placeNextToTool(orbatPanel, orbatBtn);
-      if (planOrbatCache.length) renderOrbatPanel(); // sofort aus Cache
+      if (ctx.planOrbatCache.length) renderOrbatPanel(); // sofort aus Cache
       else orbatPanel.innerHTML = `<div class="fav-head">${t("orbat.inPlan")}</div><div class="muted">…</div>`;
       void refreshOrbatPanel();
       mvOrbat.bringIntoView();
@@ -3374,23 +3128,23 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const disp = document.createElement("div");
     disp.innerHTML =
       `<div class="fav-head">${t("map.display")}</div>` +
-      `<div class="layer-row"><label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" data-lbl ${showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label></div>` +
-      `<div class="layer-row"><label class="chk" title="${t("map.infoToggle")}"><input type="checkbox" data-info ${showMarkerInfo ? "checked" : ""}/> ${t("map.info")}</label></div>`;
+      `<div class="layer-row"><label class="chk" title="${t("map.labelsToggle")}"><input type="checkbox" data-lbl ${ctx.showUnitAiLabels ? "checked" : ""}/> ${t("map.labels")}</label></div>` +
+      `<div class="layer-row"><label class="chk" title="${t("map.infoToggle")}"><input type="checkbox" data-info ${ctx.showMarkerInfo ? "checked" : ""}/> ${t("map.info")}</label></div>`;
     host.appendChild(disp);
     disp.querySelector<HTMLInputElement>("[data-lbl]")!.addEventListener("change", (e) => {
-      showUnitAiLabels = (e.target as HTMLInputElement).checked;
+      ctx.showUnitAiLabels = (e.target as HTMLInputElement).checked;
       try {
-        localStorage.setItem("sidc_labels_on", showUnitAiLabels ? "1" : "0");
+        localStorage.setItem("sidc_labels_on", ctx.showUnitAiLabels ? "1" : "0");
       } catch {
         /* ignore */
       }
-      map.setPaintProperty("marker-unittext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
-      map.setPaintProperty("marker-aitext", "text-opacity", unitAiOpacityExpr(showUnitAiLabels));
+      map.setPaintProperty("marker-unittext", "text-opacity", unitAiOpacityExpr(ctx.showUnitAiLabels));
+      map.setPaintProperty("marker-aitext", "text-opacity", unitAiOpacityExpr(ctx.showUnitAiLabels));
     });
     disp.querySelector<HTMLInputElement>("[data-info]")!.addEventListener("change", (e) => {
-      showMarkerInfo = (e.target as HTMLInputElement).checked;
+      ctx.showMarkerInfo = (e.target as HTMLInputElement).checked;
       try {
-        localStorage.setItem("sidc_markerinfo", showMarkerInfo ? "1" : "0");
+        localStorage.setItem("sidc_markerinfo", ctx.showMarkerInfo ? "1" : "0");
       } catch {
         /* ignore */
       }
@@ -3736,7 +3490,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Messen-Menü: Phase + taktischer Layer für neue Messlinien (Standard: aktuelle Phase)
   const measureStylePanel = root.querySelector<HTMLDivElement>("#measureStyle")!;
   const mvMeasure = makeMovable(measureStylePanel, { plan: planId, key: "measurestyle", pinnable: true });
-  let measurePhaseId: string | null = currentPhaseId || null;
+  ctx.measurePhaseId = ctx.currentPhaseId || null;
   let measureLayerId: string | null = null;
   let measureExtra: string[] = [];
   let lineExtraPhases: string[] = [];
@@ -3748,36 +3502,28 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const fill = () => {
       ml.innerHTML =
         `<option value="">${t("tac.autoOpt")}</option>` +
-        tacLayers.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("");
-      if (measureLayerId && !tacLayers.some((l) => l.id === measureLayerId)) measureLayerId = null;
+        ctx.tacLayers.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("");
+      if (measureLayerId && !ctx.tacLayers.some((l) => l.id === measureLayerId)) measureLayerId = null;
       ml.value = measureLayerId ?? "";
     };
     fill();
     layerListeners.push(fill);
-    mp.value = measurePhaseId ?? "";
-    renderMeasureX = bindXPhases(root.querySelector<HTMLElement>("#mXph")!, () => measurePhaseId, () => measureExtra, (v) => (measureExtra = v));
+    mp.value = ctx.measurePhaseId ?? "";
+    renderMeasureX = bindXPhases(root.querySelector<HTMLElement>("#mXph")!, () => ctx.measurePhaseId, () => measureExtra, (v) => (measureExtra = v));
     mp.addEventListener("change", () => {
-      measurePhaseId = mp.value || currentPhaseId || null;
+      ctx.measurePhaseId = mp.value || ctx.currentPhaseId || null;
       renderMeasureX();
     });
     ml.addEventListener("change", () => (measureLayerId = ml.value || null));
     phaseListeners.push(() => {
-      measurePhaseId = currentPhaseId || null;
-      mp.value = measurePhaseId ?? "";
+      ctx.measurePhaseId = ctx.currentPhaseId || null;
+      mp.value = ctx.measurePhaseId ?? "";
       renderMeasureX();
       redrawMeasure();
     });
   }
-  let linePts: [number, number][] = [];
-  let lineCursor: [number, number] | null = null; // Mauszeiger für die Vorschau-Linie
-  let linePhaseId: string | null = currentPhaseId || null;
+  ctx.linePhaseId = ctx.currentPhaseId || null;
   let lineLayerId: string | null = null;
-  let chainGroup: number | null = null;
-  let chainIndex = 0;
-  // Marker-Workflow wie im ATAK: erst Position auf der Karte klicken, dann öffnet
-  // sich der Wizard. awaitingPos = warte auf den Positions-Klick.
-  let awaitingPos = false;
-  let pendingPos: [number, number] | null = null;
 
   const lineDoneBtn = root.querySelector<HTMLButtonElement>("#lineDone")!;
   const strokeGearBtn = root.querySelector<HTMLButtonElement>("#strokeGear")!;
@@ -3788,14 +3534,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Anker für den grünen Haken (und das Zahnrad): letzter Punkt der laufenden
   // Linie bzw. der gerade bearbeiteten Linie/Messlinie.
   const doneAnchor = (): [number, number] | null => {
-    if (mode === "line" && linePts.length >= 2) return linePts[linePts.length - 1];
-    if (mode === "measure" && measureActive.length >= 2) return measureActive[measureActive.length - 1];
-    if (editStrokeId) {
-      const p = strokes.get(editStrokeId)?.points;
+    if (ctx.mode === "line" && ctx.linePts.length >= 2) return ctx.linePts[ctx.linePts.length - 1];
+    if (ctx.mode === "measure" && ctx.measureActive.length >= 2) return ctx.measureActive[ctx.measureActive.length - 1];
+    if (ctx.editStrokeId) {
+      const p = strokes.get(ctx.editStrokeId)?.points;
       if (p && p.length) return p[p.length - 1] as [number, number];
     }
-    if (editMeasureId) {
-      const p = measureLines.find((x) => x.id === editMeasureId)?.pts;
+    if (ctx.editMeasureId) {
+      const p = ctx.measureLines.find((x) => x.id === ctx.editMeasureId)?.pts;
       if (p && p.length) return p[p.length - 1];
     }
     return null;
@@ -3803,9 +3549,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const positionLineDone = () => {
     const a = doneAnchor();
     // Zahnrad nur beim Bearbeiten einer bestehenden Phasenlinie, Papierkorb auch bei Messlinien
-    const running = (mode === "line" && linePts.length >= 2) || (mode === "measure" && measureActive.length >= 2);
-    const showGear = !!editStrokeId && !running;
-    const showDel = !!editStrokeId || !!editMeasureId || running; // laufend: Löschen = verwerfen
+    const running = (ctx.mode === "line" && ctx.linePts.length >= 2) || (ctx.mode === "measure" && ctx.measureActive.length >= 2);
+    const showGear = !!ctx.editStrokeId && !running;
+    const showDel = !!ctx.editStrokeId || !!ctx.editMeasureId || running; // laufend: Löschen = verwerfen
     if (!a) {
       lineDoneBtn.hidden = true;
       strokeGearBtn.hidden = true;
@@ -3835,43 +3581,42 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   onEditSelChange = positionLineDone;
   lineDoneBtn.addEventListener("click", () => {
-    if (mode === "line" && linePts.length >= 2) finishLine();
-    else if (mode === "measure" && measureActive.length >= 2) commitMeasure();
-    else if (editStrokeId) setEditStroke(null);
-    else if (editMeasureId) setEditMeasure(null);
+    if (ctx.mode === "line" && ctx.linePts.length >= 2) finishLine();
+    else if (ctx.mode === "measure" && ctx.measureActive.length >= 2) commitMeasure();
+    else if (ctx.editStrokeId) setEditStroke(null);
+    else if (ctx.editMeasureId) setEditMeasure(null);
   });
   strokeGearBtn.addEventListener("click", () => {
-    if (editStrokeId) openStrokeSettings(editStrokeId);
+    if (ctx.editStrokeId) openStrokeSettings(ctx.editStrokeId);
   });
   strokeDelBtn.addEventListener("click", async () => {
-    const saved = !(mode === "line" && linePts.length >= 2) && !(mode === "measure" && measureActive.length >= 2);
-    if (saved && (editStrokeId || editMeasureId) && !(await confirmDialog(t("line.confirmDelete"), { danger: true, trash: true }))) return;
-    if (mode === "line" && linePts.length >= 2) {
+    const saved = !(ctx.mode === "line" && ctx.linePts.length >= 2) && !(ctx.mode === "measure" && ctx.measureActive.length >= 2);
+    if (saved && (ctx.editStrokeId || ctx.editMeasureId) && !(await confirmDialog(t("line.confirmDelete"), { danger: true, trash: true }))) return;
+    if (ctx.mode === "line" && ctx.linePts.length >= 2) {
       cancelLine(); // laufende Linie verwerfen
-    } else if (mode === "measure" && measureActive.length >= 2) {
-      measureActive = [];
-      measureCursor = null;
+    } else if (ctx.mode === "measure" && ctx.measureActive.length >= 2) {
+      ctx.measureActive = [];
+      ctx.measureCursor = null;
       redrawMeasure();
-    } else if (editStrokeId) {
-      if (caps.draw) socket.send({ type: "stroke.delete", id: editStrokeId });
+    } else if (ctx.editStrokeId) {
+      if (caps.draw) socket.send({ type: "stroke.delete", id: ctx.editStrokeId });
       setEditStroke(null);
-    } else if (editMeasureId) {
-      const mid = editMeasureId;
-      measureLines = measureLines.filter((x) => x.id !== mid);
+    } else if (ctx.editMeasureId) {
+      const mid = ctx.editMeasureId;
+      ctx.measureLines = ctx.measureLines.filter((x) => x.id !== mid);
       setEditMeasure(null);
       redrawMeasure();
     }
   });
   const refreshLineDraft = () => {
-    (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(linePts, lineCursor));
+    (map.getSource("linedraft") as GeoJSONSource)?.setData(lineDraftFC(ctx.linePts, ctx.lineCursor));
     positionLineDone();
   };
 
-  const fmtDist = (mtr: number) => (mtr < 1000 ? `${Math.round(mtr)} m` : `${(mtr / 1000).toFixed(2)} km`);
   // Höhe an einem Punkt — dieselbe Quelle wie im HUD (2D: DEM-Kacheln, 3D: Terrain-Mesh).
   const elevationAt = (lng: number, lat: number): number => {
     try {
-      const el = is3D
+      const el = ctx.is3D
         ? (map.queryTerrainElevation({ lng, lat }) ?? 0) / 1.5
         : sampleElevation(lng, lat);
       return el ?? 0;
@@ -3923,9 +3668,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
           properties: { kind: "label", label: `Σ ${fmtDist(pathLen(pts))}` },
         });
     };
-    for (const ml of measureLines) if (measureVisible(ml)) addLine(ml.id, ml.pts);
-    if (measureActive.length) {
-      const live = measureCursor ? [...measureActive, measureCursor] : measureActive;
+    for (const ml of ctx.measureLines) if (measureVisible(ml)) addLine(ml.id, ml.pts);
+    if (ctx.measureActive.length) {
+      const live = ctx.measureCursor ? [...ctx.measureActive, ctx.measureCursor] : ctx.measureActive;
       addLine("__active", live);
     }
     src.setData({ type: "FeatureCollection", features: feats });
@@ -3933,23 +3678,23 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const commitMeasure = () => {
     // Doppelklick setzt den letzten Punkt doppelt — Duplikat entfernen
-    const n = measureActive.length;
-    if (n >= 2 && measureActive[n - 1][0] === measureActive[n - 2][0] && measureActive[n - 1][1] === measureActive[n - 2][1])
-      measureActive.pop();
-    if (measureActive.length >= 2)
-      measureLines.push({
+    const n = ctx.measureActive.length;
+    if (n >= 2 && ctx.measureActive[n - 1][0] === ctx.measureActive[n - 2][0] && ctx.measureActive[n - 1][1] === ctx.measureActive[n - 2][1])
+      ctx.measureActive.pop();
+    if (ctx.measureActive.length >= 2)
+      ctx.measureLines.push({
         id: `m${Date.now()}`,
-        pts: [...measureActive],
-        phase_id: measurePhaseId ?? currentPhaseId ?? null,
+        pts: [...ctx.measureActive],
+        phase_id: ctx.measurePhaseId ?? ctx.currentPhaseId ?? null,
         extra_phase_ids: [...measureExtra],
         layer_id: measureLayerId,
       });
-    measureActive = [];
-    measureCursor = null;
+    ctx.measureActive = [];
+    ctx.measureCursor = null;
     redrawMeasure();
   };
 
-  const modeCursor = (m: Mode = mode): string =>
+  const modeCursor = (m: Mode = ctx.mode): string =>
     m === "place" || m === "line" || m === "point" || m === "measure" || m === "text" || m === "ref" || m === "area"
       ? "crosshair"
       : m === "erase"
@@ -3964,7 +3709,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
   // Werkzeuge, bei denen ein Finger/die Maus nicht die Karte schiebt
   const fixesMap = () =>
-    mode === "point" || mode === "line" || mode === "erase" || mode === "measure" || mode === "markermove";
+    ctx.mode === "point" || ctx.mode === "line" || ctx.mode === "erase" || ctx.mode === "measure" || ctx.mode === "markermove";
   const syncDragPan = () => {
     if (fixesMap()) map.dragPan.disable();
     else map.dragPan.enable();
@@ -3978,12 +3723,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     { passive: true },
   );
   const reFix = (e: TouchEvent) => {
-    if (e.touches.length === 0 && !vertTouchDrag) syncDragPan();
+    if (e.touches.length === 0 && !ctx.vertTouchDrag) syncDragPan();
   };
   map.getCanvas().addEventListener("touchend", reFix, { passive: true });
   map.getCanvas().addEventListener("touchcancel", reFix, { passive: true });
   const setMode = (m: Mode) => {
-    mode = m;
+    ctx.mode = m;
     toolbar.querySelectorAll("[data-mode]").forEach((b) =>
       b.classList.toggle("active", (b as HTMLElement).dataset.mode === m),
     );
@@ -4004,10 +3749,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (m !== "erase") eraserRing.hidden = true;
     toolbar.querySelector("#tool-marker")?.classList.toggle("active", m === "place");
     toolbar.querySelector("#tool-ref")?.classList.toggle("active", m === "ref");
-    if (m !== "area" && areaDraft) {
+    if (m !== "area" && ctx.areaDraft) {
       // Zeichnen eines Bereichs abgebrochen (anderes Werkzeug, Esc)
-      areaDraft = null;
-      areaCursor = null;
+      ctx.areaDraft = null;
+      ctx.areaCursor = null;
       renderAreaBar();
       refreshAreas();
     }
@@ -4015,26 +3760,26 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     if (measureStylePanel) {
       measureStylePanel.hidden = mvMeasure.isPinned() ? false : m !== "measure";
       if (m === "measure") {
-        measurePhaseId = currentPhaseId || null;
+        ctx.measurePhaseId = ctx.currentPhaseId || null;
         const mp = root.querySelector<HTMLSelectElement>("#mPhase");
-        if (mp) mp.value = measurePhaseId ?? "";
+        if (mp) mp.value = ctx.measurePhaseId ?? "";
         renderMeasureX();
       }
     }
     if (m === "line") {
-      linePhaseId = currentPhaseId || null;
+      ctx.linePhaseId = ctx.currentPhaseId || null;
       const lp = root.querySelector<HTMLSelectElement>("#lPhase");
-      if (lp) lp.value = linePhaseId ?? "";
+      if (lp) lp.value = ctx.linePhaseId ?? "";
       renderLineX();
     }
     if (m !== "line") {
-      linePts = [];
+      ctx.linePts = [];
       refreshLineDraft();
     }
     if (m !== "move" && m !== "markermove" && m !== "line") setEditStroke(null);
     if (m !== "measure") {
-      measureActive = [];
-      measureCursor = null;
+      ctx.measureActive = [];
+      ctx.measureCursor = null;
       redrawMeasure();
     }
     if (m !== "move" && m !== "markermove" && m !== "measure") setEditMeasure(null);
@@ -4051,10 +3796,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
     }
     if (m !== "place") {
-      pending = null;
-      chainGroup = null;
-      awaitingPos = false;
-      pendingPos = null;
+      ctx.pending = null;
+      ctx.chainGroup = null;
+      ctx.awaitingPos = false;
+      ctx.pendingPos = null;
     }
   };
   toolbar.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
@@ -4098,20 +3843,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
     updateEraserUi();
   });
-  map.on("zoom", () => mode === "erase" && updateEraserUi());
+  map.on("zoom", () => ctx.mode === "erase" && updateEraserUi());
   const erasedIds = new Set<string>(); // schon gesendet, Server-Antwort steht noch aus
-  const distToSeg = (px: number, py: number, a: { x: number; y: number }, b: { x: number; y: number }): number => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const l2 = dx * dx + dy * dy;
-    const tt = l2 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / l2)) : 0;
-    return Math.hypot(px - (a.x + tt * dx), py - (a.y + tt * dy));
-  };
-  const polyHit = (px: number, py: number, pts: { x: number; y: number }[], r: number): boolean => {
-    if (pts.length === 1) return Math.hypot(pts[0].x - px, pts[0].y - py) <= r;
-    for (let i = 1; i < pts.length; i++) if (distToSeg(px, py, pts[i - 1], pts[i]) <= r) return true;
-    return false;
-  };
   const eraseAt = (px: number, py: number) => {
     const once = (id: string): boolean => {
       if (erasedIds.has(id)) return false;
@@ -4132,23 +3865,23 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         const p = map.project([m.world_x, m.world_y]);
         if (Math.hypot(p.x - px, p.y - py) <= eraserR + 8 && once(m.id)) socket.send({ type: "marker.delete", id: m.id });
       }
-    const hitIds = measureLines
+    const hitIds = ctx.measureLines
       .filter((ml) => measureVisible(ml) && polyHit(px, py, ml.pts.map((p) => map.project(p)), eraserR))
       .map((ml) => ml.id);
     if (hitIds.length) {
-      measureLines = measureLines.filter((x) => !hitIds.includes(x.id));
-      if (editMeasureId && hitIds.includes(editMeasureId)) setEditMeasure(null);
+      ctx.measureLines = ctx.measureLines.filter((x) => !hitIds.includes(x.id));
+      if (ctx.editMeasureId && hitIds.includes(ctx.editMeasureId)) setEditMeasure(null);
       redrawMeasure();
     }
   };
   map.on("mousedown", (e) => {
-    if (mode !== "erase" || e.originalEvent.button !== 0) return;
+    if (ctx.mode !== "erase" || e.originalEvent.button !== 0) return;
     erasing = true;
     eraseDownAt = Date.now();
     eraseAt(e.point.x, e.point.y);
   });
   map.on("mousemove", (e) => {
-    if (mode !== "erase") return;
+    if (ctx.mode !== "erase") return;
     const rr = root.getBoundingClientRect();
     eraserRing.hidden = false;
     eraserRing.style.left = `${e.originalEvent.clientX - rr.left}px`;
@@ -4158,7 +3891,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   document.addEventListener("mouseup", () => (erasing = false), { signal: sig });
   // Touch: Radierer folgt dem Finger; ein zweiter Finger bricht ab (Karte navigieren)
   map.on("touchstart", (e) => {
-    if (mode !== "erase") return;
+    if (ctx.mode !== "erase") return;
     if (e.points.length !== 1) {
       erasing = false;
       return;
@@ -4168,7 +3901,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     eraseAt(e.point.x, e.point.y);
   });
   map.on("touchmove", (e) => {
-    if (mode !== "erase" || e.points.length !== 1) return;
+    if (ctx.mode !== "erase" || e.points.length !== 1) return;
     const tc = e.originalEvent.touches[0];
     const rr = root.getBoundingClientRect();
     eraserRing.hidden = false;
@@ -4194,7 +3927,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         map.touchZoomRotate.disableRotation();
         map.keyboard.disableRotation();
       } else {
-        setMode(mode); // stellt Drehen je nach Werkzeug wieder her
+        setMode(ctx.mode); // stellt Drehen je nach Werkzeug wieder her
         map.keyboard.enableRotation();
       }
     };
@@ -4258,8 +3991,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       case "north": map.easeTo({ bearing: 0, duration: 400 }); break;
       case "copy":
       case "cut": {
-        if (!hoverMarkerId) return;
-        const m = markers.get(hoverMarkerId);
+        if (!ctx.hoverMarkerId) return;
+        const m = markers.get(ctx.hoverMarkerId);
         if (!m || m.released) return;
         clipboardMarker = markerToTpl(m);
         toast(t("hot.copy"), { kind: "success", timeout: 1200 });
@@ -4267,9 +4000,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         break;
       }
       case "paste": {
-        if (!clipboardMarker || !hoverLngLat || !caps.place) return;
-        chainGroup = null;
-        placeMarker([hoverLngLat.lng, hoverLngLat.lat], clipboardMarker);
+        if (!clipboardMarker || !ctx.hoverLngLat || !caps.place) return;
+        ctx.chainGroup = null;
+        placeMarker([ctx.hoverLngLat.lng, ctx.hoverLngLat.lat], clipboardMarker);
         break;
       }
     }
@@ -4287,7 +4020,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       locked: tpl.locked,
       timestamp_visible: tpl.timestamp_visible,
       rotation_degrees: tpl.rotation_degrees,
-      phase_id: currentPhaseId || null,
+      phase_id: ctx.currentPhaseId || null,
     };
     if (tpl.layer_id) data.layer_id = tpl.layer_id;
     if (tpl.extra_phase_ids?.length) data.extra_phase_ids = tpl.extra_phase_ids;
@@ -4296,23 +4029,23 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       data.orbat_node_id = tpl.orbat_node_id;
       data.orbat_strength = tpl.orbat_strength ?? 1;
     }
-    if (chainGroup != null) {
-      data.linked_group_id = chainGroup;
-      data.point_index = chainIndex;
-      if (chainIndex === 0) {
-        data.line_color = lineColor;
-        data.line_width = lineWidth;
+    if (ctx.chainGroup != null) {
+      data.linked_group_id = ctx.chainGroup;
+      data.point_index = ctx.chainIndex;
+      if (ctx.chainIndex === 0) {
+        data.line_color = ctx.lineColor;
+        data.line_width = ctx.lineWidth;
       }
-      chainIndex++;
+      ctx.chainIndex++;
     }
     socket.send({ type: "marker.create", cid: cid(), data });
   }
 
   root.querySelector("#tool-marker")!.addEventListener("click", () => {
-    pending = null;
-    pendingPos = null;
+    ctx.pending = null;
+    ctx.pendingPos = null;
     setMode("place"); // Karte fixiert, Fadenkreuz — jetzt Position klicken
-    awaitingPos = true;
+    ctx.awaitingPos = true;
   });
 
   // Linien-Stil-Panel
@@ -4322,7 +4055,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       .map(
         (c) =>
           `<button data-pc="${c.packedColor}" title="${esc(c.name)}" style="background:rgb(${c.red},${c.green},${c.blue})" class="${
-            c.packedColor === lineColor ? "active" : ""
+            c.packedColor === ctx.lineColor ? "active" : ""
           }"></button>`,
       )
       .join(""));
@@ -4330,61 +4063,61 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   lcBox.addEventListener("click", (e) => {
     const b = (e.target as HTMLElement).closest("[data-pc]") as HTMLElement | null;
     if (!b) return;
-    lineColor = Number(b.dataset.pc);
+    ctx.lineColor = Number(b.dataset.pc);
     drawColors();
   });
   root.querySelector<HTMLSelectElement>("#lw")!.addEventListener("change", (e) => {
-    lineWidth = Number((e.target as HTMLSelectElement).value);
+    ctx.lineWidth = Number((e.target as HTMLSelectElement).value);
   });
   {
     const lp = root.querySelector<HTMLSelectElement>("#lPhase")!;
     const ll = root.querySelector<HTMLSelectElement>("#lLayer")!;
-    lp.value = linePhaseId ?? "";
+    lp.value = ctx.linePhaseId ?? "";
     const fillLayers = () => {
       ll.innerHTML =
         `<option value="">${t("tac.autoOpt")}</option>` +
-        tacLayers.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("");
-      if (lineLayerId && !tacLayers.some((l) => l.id === lineLayerId)) lineLayerId = null;
+        ctx.tacLayers.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("");
+      if (lineLayerId && !ctx.tacLayers.some((l) => l.id === lineLayerId)) lineLayerId = null;
       ll.value = lineLayerId ?? "";
     };
     fillLayers();
     layerListeners.push(fillLayers);
-    renderLineX = bindXPhases(root.querySelector<HTMLElement>("#lXph")!, () => linePhaseId, () => lineExtraPhases, (v) => (lineExtraPhases = v));
+    renderLineX = bindXPhases(root.querySelector<HTMLElement>("#lXph")!, () => ctx.linePhaseId, () => lineExtraPhases, (v) => (lineExtraPhases = v));
     lp.addEventListener("change", () => {
-      linePhaseId = lp.value || currentPhaseId || null;
+      ctx.linePhaseId = lp.value || ctx.currentPhaseId || null;
       renderLineX();
     });
     phaseListeners.push(() => {
-      linePhaseId = currentPhaseId || null;
-      lp.value = linePhaseId ?? "";
+      ctx.linePhaseId = ctx.currentPhaseId || null;
+      lp.value = ctx.linePhaseId ?? "";
       renderLineX();
     });
     ll.addEventListener("change", () => (lineLayerId = ll.value || null));
   }
   const finishLine = () => {
-    if (linePts.length >= 2 && zeusBlocked()) return;
-    if (linePts.length >= 2) {
+    if (ctx.linePts.length >= 2 && zeusBlocked()) return;
+    if (ctx.linePts.length >= 2) {
       socket.send({
         type: "stroke.commit",
         cid: cid(),
         data: {
           kind: "phaseline",
-          points: linePts,
-          color: lineColor,
-          width: lineWidth,
-          phase_id: linePhaseId ?? currentPhaseId ?? null,
+          points: ctx.linePts,
+          color: ctx.lineColor,
+          width: ctx.lineWidth,
+          phase_id: ctx.linePhaseId ?? ctx.currentPhaseId ?? null,
           extra_phase_ids: lineExtraPhases,
           layer_id: lineLayerId,
         },
       });
     }
-    linePts = [];
+    ctx.linePts = [];
     refreshLineDraft();
   };
   root.querySelector("#lineFinish")!.addEventListener("click", finishLine);
   // Laufende Linie verwerfen (Rechtsklick / Escape) — ohne sie zu setzen.
   const cancelLine = () => {
-    linePts = [];
+    ctx.linePts = [];
     refreshLineDraft();
   };
 
@@ -4407,7 +4140,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         </select></label>
       <label class="chk-lbl">${t("phase.extra")}<div data-sx>${phaseMultiHtml("data-xphases", samePlanePhases(s.phase_id), s.extra_phase_ids ?? [], s.phase_id)}</div></label>
       ${
-        `<label class="chk-lbl">${t("wiz.layer")}${layerSelectHtml("data-slayer", tacLayers, s.layer_id)}</label>`
+        `<label class="chk-lbl">${t("wiz.layer")}${layerSelectHtml("data-slayer", ctx.tacLayers, s.layer_id)}</label>`
       }
       <label class="chk-lbl">${t("line.color")}
         <select data-scolor>${lineColors
@@ -4435,7 +4168,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         type: "stroke.modify",
         id: strokeId,
         data: {
-          phase_id: back.querySelector<HTMLSelectElement>("[data-sphase]")!.value || currentPhaseId || null,
+          phase_id: back.querySelector<HTMLSelectElement>("[data-sphase]")!.value || ctx.currentPhaseId || null,
           extra_phase_ids: readPhaseMulti(back, "data-xphases"),
           layer_id: back.querySelector<HTMLSelectElement>("[data-slayer]")
             ? back.querySelector<HTMLSelectElement>("[data-slayer]")!.value || null
@@ -4483,10 +4216,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         if ((ev.target as HTMLElement).closest("[data-delfav]")) return; // auch Klick aufs SVG im Löschen-Knopf
         const f = favs.find((x) => x.id === el.dataset.fav)!;
         setMode("place");
-        awaitingPos = false; // Favorit direkt per Klick platzieren
-        chainGroup = f.is_multipoint ? Math.floor(Math.random() * 1e9) : null;
-        chainIndex = 0;
-        pending = {
+        ctx.awaitingPos = false; // Favorit direkt per Klick platzieren
+        ctx.chainGroup = f.is_multipoint ? Math.floor(Math.random() * 1e9) : null;
+        ctx.chainIndex = 0;
+        ctx.pending = {
           sidc: f.sidc,
           unit_text: f.unit_text,
           ai_text: f.ai_text,
@@ -4533,13 +4266,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
 
   let suppressClick = false;
-  let vertTouchDrag = false;
   // Touch: ein Tipp auf einen Marker zeigt nur die Hover-Info (mit den Aktions-Icons), öffnet nicht das Bearbeiten
   let lastTouchAt = 0;
   map.getCanvas().addEventListener("touchstart", () => (lastTouchAt = Date.now()), { passive: true });
   const isTouchTap = () => Date.now() - lastTouchAt < 1000;
   const onMarkerClick = (e: maplibregl.MapLayerMouseEvent) => {
-    if (dragId || suppressClick) return; // gerade verschoben
+    if (ctx.dragId || suppressClick) return; // gerade verschoben
     e.preventDefault();
     const id = e.features?.[0]?.properties?.id as string;
     const m = markers.get(id);
@@ -4549,7 +4281,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       return;
     }
     if (m.released) return; // freigegebene Feind-Marker sind nur Anzeige
-    if (mode === "move" || mode === "markermove") {
+    if (ctx.mode === "move" || ctx.mode === "markermove") {
       openEditPanel(m);
     }
   };
@@ -4558,18 +4290,17 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("click", "marker-textmark", onMarkerClick); // Nur-Text-Marker
 
   // Marker ziehen (siehe unten) — früh deklariert, weil der Hover-Handler prüft.
-  let dragId: string | null = null;
 
   // Linie zum Bearbeiten wählen (Verschieben-Modus), Stützpunkte ziehen
   // (im Zeichnen-Werkzeug nur, wenn gerade keine neue Linie läuft — sonst setzt der Klick einen Punkt)
   map.on("click", "strokes", (e) => {
     if (!canEdit) return;
-    if (mode !== "move" && mode !== "markermove" && !(mode === "line" && !linePts.length)) return;
+    if (ctx.mode !== "move" && ctx.mode !== "markermove" && !(ctx.mode === "line" && !ctx.linePts.length)) return;
     e.preventDefault();
     setEditStroke((e.features?.[0]?.properties?.id as string) ?? null);
   });
   map.on("click", "measure-line", (e) => {
-    if (mode !== "move" && mode !== "markermove" && !(mode === "measure" && !measureActive.length)) return;
+    if (ctx.mode !== "move" && ctx.mode !== "markermove" && !(ctx.mode === "measure" && !ctx.measureActive.length)) return;
     e.preventDefault();
     const mid = e.features?.[0]?.properties?.mid as string | undefined;
     setEditMeasure(mid && mid !== "__active" ? mid : null);
@@ -4585,7 +4316,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     map.getCanvas().style.cursor = "grabbing";
     const onMove = (ev: maplibregl.MapMouseEvent) => {
       pts[idx] = [ev.lngLat.lng, ev.lngLat.lat];
-      if (editStrokeId) refreshStrokes();
+      if (ctx.editStrokeId) refreshStrokes();
       else redrawMeasure();
       refreshStrokeVerts();
     };
@@ -4593,7 +4324,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       map.off("mousemove", onMove);
       map.dragPan.enable();
       map.getCanvas().style.cursor = modeCursor();
-      if (editStrokeId) socket.send({ type: "stroke.modify", id: editStrokeId, data: { points: pts } });
+      if (ctx.editStrokeId) socket.send({ type: "stroke.modify", id: ctx.editStrokeId, data: { points: pts } });
     };
     map.on("mousemove", onMove);
     // document statt map: Loslassen außerhalb der Karte darf den Drag nicht hängen lassen
@@ -4607,12 +4338,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const pts = editPts();
     if (!pts || idx == null) return;
     e.preventDefault();
-    vertTouchDrag = true;
+    ctx.vertTouchDrag = true;
     map.dragPan.disable();
     const onMove = (ev: maplibregl.MapTouchEvent) => {
       if (ev.points.length !== 1) return;
       pts[idx] = [ev.lngLat.lng, ev.lngLat.lat];
-      if (editStrokeId) refreshStrokes();
+      if (ctx.editStrokeId) refreshStrokes();
       else redrawMeasure();
       refreshStrokeVerts();
     };
@@ -4621,10 +4352,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       document.removeEventListener("touchend", end);
       document.removeEventListener("touchcancel", end);
       map.off("touchmove", onMove);
-      vertTouchDrag = false;
+      ctx.vertTouchDrag = false;
       syncDragPan();
       // bei touchcancel (Systemgeste/Anruf) trotzdem speichern — lokal ist der Punkt schon verschoben
-      if (editStrokeId) socket.send({ type: "stroke.modify", id: editStrokeId, data: { points: pts } });
+      if (ctx.editStrokeId) socket.send({ type: "stroke.modify", id: ctx.editStrokeId, data: { points: pts } });
     };
     document.addEventListener("touchend", end, { signal: sig });
     document.addEventListener("touchcancel", end, { signal: sig });
@@ -4646,7 +4377,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     ev.preventDefault();
     const fromX = m.world_x;
     const fromY = m.world_y;
-    dragId = id;
+    ctx.dragId = id;
     map.dragPan.disable();
     hoverPopup.remove();
     map.getCanvas().style.cursor = "grabbing";
@@ -4665,8 +4396,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("click", onClick, true);
       document.removeEventListener("keydown", onKey, true);
-      dragId = null;
-      if (mode === "move") map.dragPan.enable();
+      ctx.dragId = null;
+      if (ctx.mode === "move") map.dragPan.enable();
       map.getCanvas().style.cursor = modeCursor();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -4692,16 +4423,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     setTimeout(() => document.addEventListener("click", onClick, { capture: true, signal: sig }), 0);
   };
   const showHover = (e: maplibregl.MapLayerMouseEvent) => {
-    if (dragId) return;
+    if (ctx.dragId) return;
     const id = e.features?.[0]?.properties?.id as string | undefined;
     const m = id ? markers.get(id) : undefined;
     // Komplett ausgeblendete Marker (Opacity 0 — fremde Phase/Ebene/Channel) zeigen
     // keine Hover-Info, auch wenn ihre Trefferfläche noch da ist.
     if (!m || phaseOpacity(m) <= 0) return;
     window.clearTimeout(hoverHideTimer);
-    hoverMarkerId = m.id;
+    ctx.hoverMarkerId = m.id;
     map.getCanvas().style.cursor = "pointer";
-    const info = showMarkerInfo ? markerInfoText(m.sidc) : "";
+    const info = ctx.showMarkerInfo ? markerInfoText(m.sidc) : "";
     // setDOMContent statt setHTML: keine HTML-Zeichenkette -> kein Sanitizer-Pfad,
     // Werte landen ausschließlich als textContent.
     const tip = document.createElement("div");
@@ -4709,7 +4440,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const b = document.createElement("b");
     b.textContent = markerLabel(m) || "—";
     tip.append(b, document.createElement("br"));
-    const lyName = tacLayers.find((l) => l.id === m.layer_id)?.name;
+    const lyName = ctx.tacLayers.find((l) => l.id === m.layer_id)?.name;
     for (const [k, v] of [
       ...(lyName ? [[t("wiz.layer"), lyName]] : []),
       [t("marker.author"), m.author || "—"],
@@ -4759,7 +4490,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   const hideHoverNow = () => {
     window.clearTimeout(hoverHideTimer);
-    hoverMarkerId = null;
+    ctx.hoverMarkerId = null;
     map.getCanvas().style.cursor = modeCursor(); // nicht hart auf Default zurück
     hoverPopup.remove();
   };
@@ -4777,7 +4508,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // gehaltener mittlerer Maustaste.
   const onMarkerMouseDown = (e: maplibregl.MapLayerMouseEvent) => {
     const midBtn = e.originalEvent.button === 1;
-    const wantDrag = caps.move && (mode === "markermove" || (mode === "move" && midBtn));
+    const wantDrag = caps.move && (ctx.mode === "markermove" || (ctx.mode === "move" && midBtn));
     if (!wantDrag) return;
     const id = e.features?.[0]?.properties?.id as string;
     const m = id ? markers.get(id) : undefined;
@@ -4786,11 +4517,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     e.originalEvent.preventDefault(); // Mittelklick-Autoscroll unterdrücken
     const dragFromX = m.world_x;
     const dragFromY = m.world_y;
-    dragId = id;
+    ctx.dragId = id;
     map.dragPan.disable();
     map.getCanvas().style.cursor = "grabbing";
     const onMove = (ev: maplibregl.MapMouseEvent) => {
-      const mm = markers.get(dragId!);
+      const mm = markers.get(ctx.dragId!);
       if (!mm) return;
       mm.world_x = ev.lngLat.lng;
       mm.world_y = ev.lngLat.lat;
@@ -4798,11 +4529,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     };
     const onUp = (ev: MouseEvent) => {
       map.off("mousemove", onMove);
-      const finished = dragId;
-      dragId = null;
+      const finished = ctx.dragId;
+      ctx.dragId = null;
       suppressClick = true;
       setTimeout(() => (suppressClick = false), 0);
-      if (mode === "move") map.dragPan.enable();
+      if (ctx.mode === "move") map.dragPan.enable();
       map.getCanvas().style.cursor = modeCursor();
       if (finished) {
         const cr = map.getCanvas().getBoundingClientRect();
@@ -4830,7 +4561,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Mittlere Maustaste ziehen = Karte schieben, auch wenn das Werkzeug die Karte fixiert
   // (Zeigen, Linie, Lineal, Radierer …). Im Karten-Werkzeug wird so ein Marker gezogen — dort nicht.
   map.getCanvas().addEventListener("mousedown", (ev) => {
-    if (ev.button !== 1 || mode === "move" || dragId) return;
+    if (ev.button !== 1 || ctx.mode === "move" || ctx.dragId) return;
     let lx = ev.clientX;
     let ly = ev.clientY;
     const onMove = (e: MouseEvent) => {
@@ -4847,10 +4578,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   map.on("dblclick", (e) => {
-    if (mode === "line") {
+    if (ctx.mode === "line") {
       e.preventDefault();
       finishLine();
-    } else if (mode === "measure") {
+    } else if (ctx.mode === "measure") {
       e.preventDefault();
       commitMeasure();
     }
@@ -4858,23 +4589,23 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // Rechtsklick bricht ab: Linien-Bearbeiten / laufende Linie / Marker-Linie
   map.on("contextmenu", (e) => {
-    if (editStrokeId || editMeasureId) {
+    if (ctx.editStrokeId || ctx.editMeasureId) {
       e.preventDefault();
       setEditStroke(null);
       setEditMeasure(null); // Bearbeiten abbrechen
-    } else if (mode === "line" && linePts.length) {
+    } else if (ctx.mode === "line" && ctx.linePts.length) {
       e.preventDefault();
       cancelLine(); // laufende Linie verwerfen, NICHT setzen
-    } else if (mode === "measure" && measureActive.length) {
+    } else if (ctx.mode === "measure" && ctx.measureActive.length) {
       e.preventDefault();
-      measureActive = []; // laufende Messlinie verwerfen (wie beim Zeichnen)
-      measureCursor = null;
+      ctx.measureActive = []; // laufende Messlinie verwerfen (wie beim Zeichnen)
+      ctx.measureCursor = null;
       redrawMeasure();
       positionLineDone();
-    } else if (mode === "place" && chainGroup != null && chainIndex > 0) {
+    } else if (ctx.mode === "place" && ctx.chainGroup != null && ctx.chainIndex > 0) {
       e.preventDefault();
       setMode("move");
-    } else if (mode === "move") {
+    } else if (ctx.mode === "move") {
       e.preventDefault();
       // Rechtsklick-Ziehen dreht die Karte — Menü nur bei einem echten Klick
       const oe = e.originalEvent as MouseEvent;
@@ -4901,9 +4632,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         label: t("tool.marker").split(" – ")[0],
         ok: caps.place,
         run: () => {
-          pending = null;
+          ctx.pending = null;
           setMode("place");
-          awaitingPos = false;
+          ctx.awaitingPos = false;
           startPlaceAt(pos);
         },
       },
@@ -4913,7 +4644,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ok: caps.draw,
         run: () => {
           setMode("line");
-          linePts.push(pos);
+          ctx.linePts.push(pos);
           refreshLineDraft();
         },
       },
@@ -4923,7 +4654,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         ok: true,
         run: () => {
           setMode("measure");
-          measureActive.push(pos);
+          ctx.measureActive.push(pos);
           redrawMeasure();
         },
       },
@@ -4969,23 +4700,6 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // ── Annotationen (platzierbare Markdown-Textfelder) ───────────────────
   const annotsEl = root.querySelector<HTMLDivElement>("#annots")!;
   let annotDragId: string | null = null;
-  let annotResizingId: string | null = null;
-  let pendingAnnotCid: string | null = null;
-  // Einzelfreigabe für Zeus: aktiv, solange keine Frist gesetzt ist oder sie noch nicht abgelaufen ist.
-  const annotZeusOpen = (a: Annot): boolean =>
-    !!a.zeus_released && (!a.zeus_until || parseUtc(a.zeus_until) > Date.now());
-  // Karten-Notiz = Pin auf der festen Ebene; Zeus kennt die Ebene selbst nicht (nur die freigegebenen Pins).
-  const isNotesAnnot = (a: Annot): boolean =>
-    isNotesPhase(phases.find((x) => x.id === a.phase_id)) ||
-    (!!a.phase_id && !phases.some((x) => x.id === a.phase_id) && !!a.zeus_released);
-  const annotOpacity = (a: Annot): number => {
-    if (isNotesAnnot(a)) {
-      // Layer „Missionsbau-Notizen“: der Missionsbau sieht ihn in jeder Ansicht (pink markiert, im Layer-Menü abschaltbar)
-      if (actAs === "zeus") return annotZeusOpen(a) ? 1 : 0;
-      return isMB ? tacVis("mbnotes") : 0;
-    }
-    return multiPhaseOpacity(a.phase_id, a.extra_phase_ids);
-  };
   const ANNOT_COLL_KEY = `sidc_annot_coll_${planId}`;
   const collapsedAnnots = new Set<string>(
     (() => {
@@ -5041,7 +4755,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // Missionsbau-Notizen, optional für Zeus freigegeben). Alle anderen wählen wie gewohnt die Phase.
   function annotVisHtml(a: Pick<Annot, "phase_id" | "extra_phase_ids" | "zeus_released" | "zeus_until"> & { mb?: boolean }): string {
     const mb = a.mb ?? isNotesAnnot(a as Annot);
-    const pid = mb ? currentPhaseId : a.phase_id ?? currentPhaseId;
+    const pid = mb ? ctx.currentPhaseId : a.phase_id ?? ctx.currentPhaseId;
     const zOpen = annotZeusOpen(a as Annot);
     const phaseBlock =
       `<div data-avphase ${mb && isMB && projectId ? "hidden" : ""}>` +
@@ -5106,7 +4820,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       }
     } else {
       const ps = host.querySelector<HTMLSelectElement>("[data-aphase]");
-      out.phase_id = ps?.value || currentPhaseId || null;
+      out.phase_id = ps?.value || ctx.currentPhaseId || null;
       out.extra_phase_ids = readPhaseMulti(host, "data-xphases");
       if (a && isNotesAnnot(a) && a.zeus_released) out.zeus_released = false;
     }
@@ -5189,7 +4903,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
 
   function onAnnotDown(ev: MouseEvent, id: string): void {
-    if (!canEdit || (mode !== "move" && mode !== "markermove")) return;
+    if (!canEdit || (ctx.mode !== "move" && ctx.mode !== "markermove")) return;
     if ((ev.target as HTMLElement).closest(".annot-tools, .ref-chip")) return; // Chip = Klick, kein Ziehen
     // Untere rechte Ecke = CSS-resize-Griff → Browser die Größenänderung machen
     // lassen und erst beim Loslassen synchronisieren (kein Neuaufbau währenddessen).
@@ -5202,11 +4916,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const ly = (ev.clientY - r.top) / sc;
       if (!el0.classList.contains("annot-star") && lx > el0.clientWidth - 22 && ly > el0.clientHeight - 22) {
         if (!canEdit) return;
-        annotResizingId = id;
+        ctx.annotResizingId = id;
         const finish = () => {
           document.removeEventListener("mouseup", finish);
-          if (annotResizingId !== id) return;
-          annotResizingId = null;
+          if (ctx.annotResizingId !== id) return;
+          ctx.annotResizingId = null;
           const cur = annots.get(id);
           if (cur) {
             const w = Math.round(el0.offsetWidth);
@@ -5232,7 +4946,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     annotDragId = id;
     const el = annotsEl.querySelector<HTMLElement>(`[data-aid="${id}"]`)!;
     el.classList.add("dragging");
-    if (mode === "move") map.dragPan.disable();
+    if (ctx.mode === "move") map.dragPan.disable();
     const canvasRect = () => map.getCanvas().getBoundingClientRect();
     // Versatz zwischen Greifpunkt und dem Notiz-Anker merken (siehe onImageDown).
     const a0 = annots.get(id);
@@ -5267,7 +4981,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
       el.classList.remove("dragging");
-      if (mode === "move") map.dragPan.enable();
+      if (ctx.mode === "move") map.dragPan.enable();
       annotDragId = null;
       const r = canvasRect();
       const ll = map.unproject([e.clientX - r.left - grabDx, e.clientY - r.top - grabDy]);
@@ -5372,7 +5086,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       if (!ar || ar.pts.length < 2) continue;
       const op = annotOpacity(a);
       if (op <= 0) continue;
-      const props = { aid: a.id, mb: isNotesAnnot(a), op, sel: a.id === editAreaId };
+      const props = { aid: a.id, mb: isNotesAnnot(a), op, sel: a.id === ctx.editAreaId };
       if (ar.closed && ar.pts.length >= 3) {
         feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [ringOf(ar.pts)] }, properties: props });
         feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: ringOf(ar.pts) }, properties: props });
@@ -5391,16 +5105,16 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
   function areaEditFC(): GeoJSON.FeatureCollection {
     const feats: GeoJSON.Feature[] = [];
-    if (areaDraft) {
-      const color = areaColorOf(annots.get(areaDraft.aid));
-      const hot = nearFirst(areaDraft.pts, areaCursor);
-      const line = [...areaDraft.pts, ...(areaCursor ? [hot ? areaDraft.pts[0] : areaCursor] : [])];
+    if (ctx.areaDraft) {
+      const color = areaColorOf(annots.get(ctx.areaDraft.aid));
+      const hot = nearFirst(ctx.areaDraft.pts, ctx.areaCursor);
+      const line = [...ctx.areaDraft.pts, ...(ctx.areaCursor ? [hot ? ctx.areaDraft.pts[0] : ctx.areaCursor] : [])];
       if (line.length >= 2) feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: line }, properties: { color } });
-      areaDraft.pts.forEach((p, i) =>
+      ctx.areaDraft.pts.forEach((p, i) =>
         feats.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: { color, i, first: i === 0, hot: i === 0 && hot } }),
       );
-    } else if (editAreaId) {
-      const a = annots.get(editAreaId);
+    } else if (ctx.editAreaId) {
+      const a = annots.get(ctx.editAreaId);
       const color = areaColorOf(a);
       (a?.area?.pts ?? []).forEach((p, i) =>
         feats.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: { color, i, first: false, hot: false } }),
@@ -5422,9 +5136,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("style.load", () => refreshAreas());
   // Leiste (✓ übernehmen / neu zeichnen / entfernen) am letzten bzw. ersten Punkt
   function positionAreaBar(): void {
-    const pts = areaDraft ? areaDraft.pts : editAreaId ? annots.get(editAreaId)?.area?.pts ?? [] : [];
-    const anchor = areaDraft ? pts[pts.length - 1] : pts[0];
-    if (!anchor || (areaDraft && pts.length < 2)) {
+    const pts = ctx.areaDraft ? ctx.areaDraft.pts : ctx.editAreaId ? annots.get(ctx.editAreaId)?.area?.pts ?? [] : [];
+    const anchor = ctx.areaDraft ? pts[pts.length - 1] : pts[0];
+    if (!anchor || (ctx.areaDraft && pts.length < 2)) {
       areaBar.hidden = true;
       return;
     }
@@ -5436,14 +5150,14 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     areaBar.style.top = `${mr.top - rr.top + p.y - 14}px`;
   }
   map.on("move", () => {
-    if (areaDraft || editAreaId) positionAreaBar();
+    if (ctx.areaDraft || ctx.editAreaId) positionAreaBar();
   });
   function renderAreaBar(): void {
-    if (areaDraft) {
+    if (ctx.areaDraft) {
       areaBar.innerHTML =
         `<button class="area-ok" data-area-ok title="${t("area.finishOpen")}">${icon("check", 16)}</button>` +
         `<button data-area-cancel title="${t("common.cancel")}">${icon("x", 16)}</button>`;
-    } else if (editAreaId) {
+    } else if (ctx.editAreaId) {
       areaBar.innerHTML =
         `<button class="area-ok" data-area-done title="${t("area.done")}">${icon("check", 16)}</button>` +
         `<button data-area-redraw title="${t("area.redraw")}">${icon("line", 16)}</button>` +
@@ -5453,11 +5167,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     areaBar.querySelector("[data-area-cancel]")?.addEventListener("click", () => setMode("move"));
     areaBar.querySelector("[data-area-done]")?.addEventListener("click", () => setEditArea(null));
     areaBar.querySelector("[data-area-redraw]")?.addEventListener("click", () => {
-      const id = editAreaId;
+      const id = ctx.editAreaId;
       if (id) startAreaDraw(id);
     });
     areaBar.querySelector("[data-area-del]")?.addEventListener("click", () => {
-      const id = editAreaId;
+      const id = ctx.editAreaId;
       if (!id) return;
       setEditArea(null);
       socket.send({ type: "annotation.modify", id, data: { area: null } });
@@ -5466,20 +5180,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const canEditArea = (a: Annot | undefined): boolean => !!a && canEdit && !!caps.move && (isMB || !isNotesAnnot(a));
   function startAreaDraw(aid: string): void {
     if (!canEditArea(annots.get(aid))) return;
-    editAreaId = null;
+    ctx.editAreaId = null;
     setMode("area");
-    areaDraft = { aid, pts: [] };
-    areaCursor = null;
+    ctx.areaDraft = { aid, pts: [] };
+    ctx.areaCursor = null;
     renderAreaBar();
     refreshAreas();
     toast(t("area.hint"), { kind: "info", timeout: 6000 });
   }
   function commitArea(closed: boolean): void {
-    const d = areaDraft;
+    const d = ctx.areaDraft;
     if (!d) return;
     const pts = d.pts;
-    areaDraft = null;
-    areaCursor = null;
+    ctx.areaDraft = null;
+    ctx.areaCursor = null;
     setMode("move");
     if (pts.length < 2) return;
     const area = { pts, closed: closed && pts.length >= 3 };
@@ -5489,24 +5203,24 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     refreshAreas();
   }
   function setEditArea(id: string | null): void {
-    editAreaId = id;
+    ctx.editAreaId = id;
     renderAreaBar();
     refreshAreas();
   }
   // Klick in der Karte während des Zeichnens
   function areaClick(p: [number, number]): void {
-    if (!areaDraft) return;
-    if (nearFirst(areaDraft.pts, p)) {
+    if (!ctx.areaDraft) return;
+    if (nearFirst(ctx.areaDraft.pts, p)) {
       commitArea(true); // Schleife geschlossen → Fläche
       return;
     }
-    if (areaDraft.pts.length >= AREA_MAX_POINTS) return;
-    areaDraft.pts.push(p);
+    if (ctx.areaDraft.pts.length >= AREA_MAX_POINTS) return;
+    ctx.areaDraft.pts.push(p);
     refreshAreas();
   }
   map.on("mousemove", (e) => {
-    if (mode !== "area" || !areaDraft) return;
-    areaCursor = [e.lngLat.lng, e.lngLat.lat];
+    if (ctx.mode !== "area" || !ctx.areaDraft) return;
+    ctx.areaCursor = [e.lngLat.lng, e.lngLat.lat];
     try {
       (map.getSource("pin-area-edit") as GeoJSONSource).setData(areaEditFC());
     } catch {
@@ -5514,21 +5228,21 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     }
   });
   map.on("contextmenu", (e) => {
-    if (mode !== "area" || !areaDraft) return;
+    if (ctx.mode !== "area" || !ctx.areaDraft) return;
     e.preventDefault();
     commitArea(false); // Rechtsklick übernimmt als offene Linie
   });
   document.addEventListener(
     "keydown",
     (ev) => {
-      if (!areaDraft && !editAreaId) return;
+      if (!ctx.areaDraft && !ctx.editAreaId) return;
       const tag = (ev.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (ev.key === "Escape") {
         ev.stopPropagation();
-        if (areaDraft) setMode("move");
+        if (ctx.areaDraft) setMode("move");
         else setEditArea(null);
-      } else if (ev.key === "Enter" && areaDraft) {
+      } else if (ev.key === "Enter" && ctx.areaDraft) {
         ev.preventDefault();
         commitArea(false);
       }
@@ -5537,7 +5251,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   );
   // Bestehenden Bereich anklicken → Ecken bearbeiten
   const pickArea = (e: maplibregl.MapLayerMouseEvent): void => {
-    if (mode !== "move" && mode !== "markermove") return;
+    if (ctx.mode !== "move" && ctx.mode !== "markermove") return;
     const aid = e.features?.[0]?.properties?.aid as string | undefined;
     if (!aid || !canEditArea(annots.get(aid))) return;
     e.preventDefault();
@@ -5546,13 +5260,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   map.on("click", "pin-area-fill", pickArea);
   map.on("click", "pin-area-line", pickArea);
   map.on("mouseenter", "pin-area-verts", () => {
-    if (editAreaId) map.getCanvas().style.cursor = "grab";
+    if (ctx.editAreaId) map.getCanvas().style.cursor = "grab";
   });
   map.on("mouseleave", "pin-area-verts", () => (map.getCanvas().style.cursor = modeCursor()));
   map.on("mousedown", "pin-area-verts", (e) => {
-    const a = editAreaId ? annots.get(editAreaId) : undefined;
+    const a = ctx.editAreaId ? annots.get(ctx.editAreaId) : undefined;
     const idx = e.features?.[0]?.properties?.i as number | undefined;
-    if (!a?.area || idx == null || areaDraft) return;
+    if (!a?.area || idx == null || ctx.areaDraft) return;
     e.preventDefault();
     const pts = a.area.pts;
     map.dragPan.disable();
@@ -5572,7 +5286,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   });
 
   function renderAnnots(): void {
-    if (annotResizingId) return; // Neuaufbau würde das laufende Ziehen abbrechen
+    if (ctx.annotResizingId) return; // Neuaufbau würde das laufende Ziehen abbrechen
     if (!annotRefFallback) annotRefFallback = map.getZoom();
     annotsEl.innerHTML = "";
     for (const a of annots.values()) {
@@ -5660,7 +5374,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     wireRefs(annotsEl);
     positionAnnots();
     try {
-      if (editAreaId && !annots.has(editAreaId)) setEditArea(null);
+      if (ctx.editAreaId && !annots.has(ctx.editAreaId)) setEditArea(null);
       refreshAreas();
     } catch {
       /* Bereichs-Teil noch nicht initialisiert (erster Aufbau) */
@@ -5668,7 +5382,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
 
   map.on("move", () => {
-    if (!annotDragId && !annotResizingId) positionAnnots();
+    if (!annotDragId && !ctx.annotResizingId) positionAnnots();
     positionLineDone();
   });
   map.on("zoomend", () => (map.getSource("chains") as GeoJSONSource)?.setData(chainFC()));
@@ -5802,7 +5516,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   const hideImgHover = () => imgHoverPopup.remove();
 
   function renderMapImages(): void {
-    if (imgResizingId) return;
+    if (ctx.imgResizingId) return;
     if (!imgRefFallback) imgRefFallback = map.getZoom();
     imagesEl.innerHTML = "";
     for (const p of placements.values()) {
@@ -5868,7 +5582,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     positionImages();
   }
   function onImageDown(ev: MouseEvent, placementId: string): void {
-    if (!canEdit || (mode !== "move" && mode !== "markermove")) return;
+    if (!canEdit || (ctx.mode !== "move" && ctx.mode !== "markermove")) return;
     const el0 = imagesEl.querySelector<HTMLElement>(`[data-pid="${placementId}"]`);
     const cur = placements.get(placementId);
     if (!el0 || !cur) return;
@@ -5876,7 +5590,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const r = el0.getBoundingClientRect();
     if ((ev.clientX - r.left) / sc > el0.clientWidth - 20 && (ev.clientY - r.top) / sc > el0.clientHeight - 20) {
       ev.preventDefault();
-      imgResizingId = placementId;
+      ctx.imgResizingId = placementId;
       const startW = cur.map_width;
       const startX = ev.clientX;
       const mv = (e: MouseEvent) => {
@@ -5886,7 +5600,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       const up = () => {
         document.removeEventListener("mousemove", mv);
         document.removeEventListener("mouseup", up);
-        imgResizingId = null;
+        ctx.imgResizingId = null;
         imgClickSuppressed = true; // Ecke ziehen endet auf demselben Element -> sonst öffnet Klick die Lightbox
         setTimeout(() => (imgClickSuppressed = false), 0); // click folgt direkt auf mouseup; sonst bliebe das Flag hängen
         socket.send({
@@ -5903,7 +5617,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     ev.preventDefault();
     imgDragId = placementId;
     el0.classList.add("dragging");
-    if (mode === "move") map.dragPan.disable();
+    if (ctx.mode === "move") map.dragPan.disable();
     const canvasRect = () => map.getCanvas().getBoundingClientRect();
     const startX = ev.clientX;
     const startY = ev.clientY;
@@ -5927,7 +5641,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
       el0.classList.remove("dragging");
-      if (mode === "move") map.dragPan.enable();
+      if (ctx.mode === "move") map.dragPan.enable();
       imgDragId = null;
       if (!moved) return; // reiner Klick -> Lightbox öffnet über den click-Listener
       imgClickSuppressed = true;
@@ -5940,7 +5654,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     document.addEventListener("mouseup", onUp, { signal: sig });
   }
   map.on("move", () => {
-    if (!imgDragId && !imgResizingId) positionImages();
+    if (!imgDragId && !ctx.imgResizingId) positionImages();
   });
   phaseListeners.push(() => {
     closeImgPopover();
@@ -5986,7 +5700,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       socket.send({
         type: "placement.create",
         data: {
-          image_id: cur.id, phase_id: currentPhaseId || null,
+          image_id: cur.id, phase_id: ctx.currentPhaseId || null,
           world_x: ll.lng, world_y: ll.lat, ref_zoom: map.getZoom(),
         },
       });
@@ -6001,7 +5715,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     isMB,
     canEdit,
     imageMaxMb: 10,
-    getCurrentPhaseId: () => currentPhaseId,
+    getCurrentPhaseId: () => ctx.currentPhaseId,
     send: (m) => socket.send(m),
     map,
     onOpenLightbox: openLightbox,
@@ -6010,20 +5724,20 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   // Marker-Wizard an einer bereits gewählten Position öffnen (Klick im Platzier-Modus / Rechtsklick-Menü)
   function startPlaceAt(pos: [number, number]): void {
-    awaitingPos = false;
-    pendingPos = pos;
+    ctx.awaitingPos = false;
+    ctx.pendingPos = pos;
     let picked = false;
     openWizard(root, (tpl) => {
       picked = true;
-      pending = tpl;
-      chainGroup = tpl.is_multipoint ? Math.floor(Math.random() * 1e9) : null;
-      chainIndex = 0;
-      placeMarker(pendingPos ?? pos, tpl); // sofort an der geklickten Position
+      ctx.pending = tpl;
+      ctx.chainGroup = tpl.is_multipoint ? Math.floor(Math.random() * 1e9) : null;
+      ctx.chainIndex = 0;
+      placeMarker(ctx.pendingPos ?? pos, tpl); // sofort an der geklickten Position
       if (!tpl.is_multipoint) setMode("move");
     }, {
       ...tplCtx(),
       onClose: () => {
-        if (!picked && mode === "place") awaitingPos = true; // Abbruch: gleich wieder Position wählen
+        if (!picked && ctx.mode === "place") ctx.awaitingPos = true; // Abbruch: gleich wieder Position wählen
       },
     });
   }
@@ -6092,7 +5806,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         <label style="flex:0 1 8rem">${t("star.prio")}<select data-sprio><option value="low">${t("star.prio.low")}</option><option value="normal" selected>${t("star.prio.normal")}</option><option value="high">${t("star.prio.high")}</option></select></label>
       </div>
       <label class="chk star-area-chk"><input type="checkbox" data-sarea/> ${t("area.afterCreate")}</label>
-      ${annotVisHtml({ phase_id: currentPhaseId || null, extra_phase_ids: [], zeus_released: false, zeus_until: null, mb: mbDefault })}
+      ${annotVisHtml({ phase_id: ctx.currentPhaseId || null, extra_phase_ids: [], zeus_released: false, zeus_until: null, mb: mbDefault })}
       <div class="row" style="margin-top:.8rem">
         <button class="primary" data-save style="flex:1">${t("star.create")}</button>
         <button data-cancel>${t("common.cancel")}</button>
@@ -6231,7 +5945,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   }
   function createAnnotAt(pos: [number, number]): void {
     const ac = cid();
-    pendingAnnotCid = ac; // Antwort öffnet direkt den Editor
+    ctx.pendingAnnotCid = ac; // Antwort öffnet direkt den Editor
     socket.send({
       type: "annotation.create",
       cid: ac,
@@ -6240,9 +5954,9 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         world_y: pos[1],
         text: "",
         width: 220,
-        phase_id: currentPhaseId || null,
+        phase_id: ctx.currentPhaseId || null,
         // Missionsbau in der Missionsbau-Ansicht: neue Notiz zuerst auf den Layer „Missionsbau-Notizen“ (im Editor änderbar)
-        ...(projectId && isMB && actAs === "builder" ? { mb_layer: true } : {}),
+        ...(projectId && isMB && ctx.actAs === "builder" ? { mb_layer: true } : {}),
         ref_zoom: map.getZoom(),
       },
     });
@@ -6253,7 +5967,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
     // Linie/Messlinie wählen: auch Klicks NAHE der Linie zählen (Radius ≈ Mauszeiger), nicht nur der Pixel darunter
     const pickIdle =
-      mode === "move" || mode === "markermove" || (mode === "line" && !linePts.length) || (mode === "measure" && !measureActive.length);
+      ctx.mode === "move" || ctx.mode === "markermove" || (ctx.mode === "line" && !ctx.linePts.length) || (ctx.mode === "measure" && !ctx.measureActive.length);
     if (pickIdle) {
       const R = 12;
       const box: [maplibregl.PointLike, maplibregl.PointLike] = [
@@ -6261,11 +5975,11 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         [e.point.x + R, e.point.y + R],
       ];
       const sid =
-        mode !== "measure" && caps.draw
+        ctx.mode !== "measure" && caps.draw
           ? (map.queryRenderedFeatures(box, { layers: ["strokes"] })[0]?.properties?.id as string | undefined)
           : undefined;
       const mid =
-        !sid && mode !== "line"
+        !sid && ctx.mode !== "line"
           ? (map.queryRenderedFeatures(box, { layers: ["measure-line"] })[0]?.properties?.mid as string | undefined)
           : undefined;
       if (sid) {
@@ -6279,60 +5993,60 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         return;
       }
       // Klick ins Leere beendet das Bearbeiten einer Linie/Messlinie
-      if (editStrokeId || editMeasureId) {
+      if (ctx.editStrokeId || ctx.editMeasureId) {
         setEditStroke(null);
         setEditMeasure(null);
         return;
       }
     }
 
-    if (mode === "area") {
+    if (ctx.mode === "area") {
       areaClick([e.lngLat.lng, e.lngLat.lat]);
       return;
     }
-    if (editAreaId && (mode === "move" || mode === "markermove")) setEditArea(null); // Klick daneben beendet die Ecken-Bearbeitung
+    if (ctx.editAreaId && (ctx.mode === "move" || ctx.mode === "markermove")) setEditArea(null); // Klick daneben beendet die Ecken-Bearbeitung
 
-    if (mode === "ref") {
+    if (ctx.mode === "ref") {
       setMode("move");
       if (caps.place && projectId) void openStarDialog([e.lngLat.lng, e.lngLat.lat]);
       return;
     }
 
-    if (mode === "text") {
+    if (ctx.mode === "text") {
       if (!caps.place) return;
       createAnnotAt([e.lngLat.lng, e.lngLat.lat]);
       setMode("move");
       return;
     }
 
-    if (mode === "erase") {
+    if (ctx.mode === "erase") {
       // Mausklick wurde schon bei mousedown radiert; hier nur noch der Touch-Tipp.
       if (Date.now() - eraseDownAt > 500) eraseAt(e.point.x, e.point.y);
       return;
     }
 
-    if (mode === "line") {
-      linePts.push([e.lngLat.lng, e.lngLat.lat]);
+    if (ctx.mode === "line") {
+      ctx.linePts.push([e.lngLat.lng, e.lngLat.lat]);
       refreshLineDraft();
       return;
     }
 
-    if (mode === "measure") {
-      measureActive.push([e.lngLat.lng, e.lngLat.lat]); // Linksklick verlängert
+    if (ctx.mode === "measure") {
+      ctx.measureActive.push([e.lngLat.lng, e.lngLat.lat]); // Linksklick verlängert
       redrawMeasure();
       return;
     }
 
-    if (mode === "place") {
+    if (ctx.mode === "place") {
       const pos: [number, number] = [e.lngLat.lng, e.lngLat.lat];
-      if (awaitingPos) {
+      if (ctx.awaitingPos) {
         startPlaceAt(pos);
         return;
       }
-      if (pending) {
-        placeMarker(pos, pending);
+      if (ctx.pending) {
+        placeMarker(pos, ctx.pending);
         const done =
-          !pending.is_multipoint || (pending.max_line_points > 0 && chainIndex >= pending.max_line_points);
+          !ctx.pending.is_multipoint || (ctx.pending.max_line_points > 0 && ctx.chainIndex >= ctx.pending.max_line_points);
         if (done) setMode("move");
       }
     }
@@ -6342,13 +6056,13 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     "keydown",
     (ev) => {
       if (ev.key === "Escape") {
-        if (mode === "line" && linePts.length) cancelLine();
-        else if (mode === "measure" && measureActive.length) {
-          measureActive = [];
-          measureCursor = null;
+        if (ctx.mode === "line" && ctx.linePts.length) cancelLine();
+        else if (ctx.mode === "measure" && ctx.measureActive.length) {
+          ctx.measureActive = [];
+          ctx.measureCursor = null;
           redrawMeasure();
           positionLineDone();
-        } else if (editStrokeId || editMeasureId) {
+        } else if (ctx.editStrokeId || ctx.editMeasureId) {
           setEditStroke(null);
           setEditMeasure(null);
         } else setMode("move");
@@ -6364,7 +6078,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     root.querySelector("#editModal")?.remove(); // Doppelklick: zweiter Aufruf ist während des await dazugekommen
     const m0 = { ...m }; // Stand beim Öffnen des Formulars
     const orbatNodeOpts = isMB
-      ? planOrbatCache
+      ? ctx.planOrbatCache
           .flatMap((o) => (o.nodes ?? []).map((n) => ({ id: n.id, label: `${o.name} · ${n.name}` })))
       : [];
     const back = document.createElement("div");
@@ -6424,7 +6138,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       </select>
       <label>${t("phase.extra")}</label>
       ${phaseMultiHtml("data-xphases", samePlanePhases(m.phase_id), m.extra_phase_ids ?? [], m.phase_id)}
-      <label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", tacLayers, m.layer_id)}
+      <label>${t("wiz.layer")}</label>${layerSelectHtml("data-layer", ctx.tacLayers, m.layer_id)}
       <label class="chk"><input type="checkbox" data-lock ${m.locked ? "checked" : ""}/> <span>${t("marker.locked")}</span></label>
       ${
         isMB
@@ -6506,7 +6220,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         unit_text: p.querySelector<HTMLInputElement>("[data-unit]")!.value,
         ai_text: p.querySelector<HTMLInputElement>("[data-ai]")!.value,
         icon_rotation: Number(p.querySelector<HTMLInputElement>("[data-rot]")!.value) || 0,
-        phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || currentPhaseId || null,
+        phase_id: p.querySelector<HTMLSelectElement>("[data-phase]")!.value || ctx.currentPhaseId || null,
         layer_id: p.querySelector<HTMLSelectElement>("[data-layer]")
           ? p.querySelector<HTMLSelectElement>("[data-layer]")!.value || null
           : (m.layer_id ?? null),
@@ -6557,10 +6271,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       close();
     });
     p.querySelector("[data-clone]")!.addEventListener("click", () => {
-      chainGroup = null;
+      ctx.chainGroup = null;
       setMode("place");
-      awaitingPos = false;
-      pending = {
+      ctx.awaitingPos = false;
+      ctx.pending = {
         sidc: m.sidc,
         unit_text: m.unit_text,
         ai_text: m.ai_text,
@@ -6601,26 +6315,3 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
 }
 
-function packedToHex(packed: number): string {
-  if (packed === undefined || packed === -1 || Number.isNaN(packed)) return "#ffd700";
-  const n = packed & 0xffffff;
-  return "#" + n.toString(16).padStart(6, "0");
-}
-
-function emptyFC(): GeoJSON.FeatureCollection {
-  return { type: "FeatureCollection", features: [] };
-}
-
-function lineDraftFC(pts: [number, number][], cursor: [number, number] | null = null): GeoJSON.FeatureCollection {
-  const feats: GeoJSON.Feature[] = pts.map((p) => ({
-    type: "Feature",
-    geometry: { type: "Point", coordinates: p },
-    properties: {},
-  }));
-  // Vorschau-Linie vom letzten Punkt zum Mauszeiger (wie beim Lineal)
-  const trace = cursor && pts.length ? [...pts, cursor] : pts;
-  if (trace.length >= 2) {
-    feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: trace }, properties: {} });
-  }
-  return { type: "FeatureCollection", features: feats };
-}
