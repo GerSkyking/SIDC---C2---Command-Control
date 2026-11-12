@@ -19,6 +19,7 @@ import { wireScaleBox } from "./scalebox";
 import { shotOptsMarkup, wireShotOpts, renderMapCanvas, mimeExt } from "./screenshot";
 import { openLightbox } from "./lightbox";
 import type { ImagePlacement, PlanImage as PubImage } from "./api";
+import { AREA_COLORS, areaCentroid, areaFeatures, ensureAreaLayers, hatchId, ringOf, setAreaData } from "./mapAreas";
 
 interface M {
   id: string;
@@ -41,12 +42,19 @@ interface S {
   width: number;
   channel?: string;
   phase_id?: string | null;
+  extra_phase_ids?: string[];
+  // Benannte Fläche (geschlossene Linie): schraffiert gefüllt, Name/Symbol am Schwerpunkt
+  closed?: boolean;
+  name?: string;
+  sidc?: string;
+  fill?: boolean;
 }
 interface Ph {
   id: string;
   name: string;
   ordering: number;
   plane?: string;
+  role?: string;
   parent_id?: string | null;
   start_at?: string | null;
   end_at?: string | null;
@@ -61,6 +69,7 @@ interface An {
   height?: number;
   scale_fixed?: boolean;
   ref_zoom?: number;
+  area?: { pts: [number, number][]; closed: boolean } | null;
 }
 
 function hex(p: number): string {
@@ -226,7 +235,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     type: "FeatureCollection",
     features: [...strokes.values()].map((s) => ({
       type: "Feature",
-      geometry: { type: "LineString", coordinates: s.points },
+      geometry: { type: "LineString", coordinates: isArea(s) ? ringOf(s.points) : s.points },
       properties: {
         id: s.id,
         color: hex(s.color),
@@ -235,6 +244,70 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       },
     })),
   });
+
+  // ── Flächen: Bereiche von Notizen + geschlossene Linien (benannte Flächen) ──
+  // Notiz-Bereiche wie im Editor: Schraffur 25 %, Außenlinie 50 %, pink = Missionsbau-Layer, gelb sonst;
+  // offene Bereiche nur als Linie. Geschlossene Strokes: Schraffur in Stroke-Farbe (Außenlinie = Stroke selbst).
+  const isArea = (s: S): boolean => s.closed === true && (s.points?.length ?? 0) >= 3;
+  const isNotesPhase = (pid: string | null | undefined): boolean =>
+    !!pid && phases.some((p) => p.id === pid && p.role === "notes");
+  const areaFC = (): GeoJSON.Feature[] => {
+    const out: GeoJSON.Feature[] = [];
+    for (const a of annots) {
+      const ar = a.area;
+      if (!ar || !Array.isArray(ar.pts) || ar.pts.length < 2) continue;
+      const op = phaseOpacityOf(a.phase_id);
+      if (op <= 0.001) continue;
+      const color = isNotesPhase(a.phase_id) ? AREA_COLORS.mb : AREA_COLORS.all;
+      out.push(...areaFeatures(ar.pts, !!ar.closed, { aid: a.id, color, pat: hatchId(color), op }));
+    }
+    for (const s of strokes.values()) {
+      if (!isArea(s) || s.fill === false) continue;
+      const op = opacityOf(s);
+      if (op <= 0.001) continue;
+      const color = hex(s.color);
+      out.push(
+        ...areaFeatures(s.points, true, { sid: s.id, color, pat: hatchId(color), op }).filter(
+          (f) => f.geometry.type === "Polygon",
+        ),
+      );
+    }
+    return out;
+  };
+  const areaIconId = (sidc: string): string => mapIconId(sidc, "");
+  const ensureAreaIcons = async () => {
+    const todo = [...strokes.values()].filter((s) => isArea(s) && s.sidc && !loaded.has(areaIconId(s.sidc)));
+    await Promise.all(
+      todo.map(async (s) => {
+        const id = areaIconId(s.sidc!);
+        if (loaded.has(id)) return;
+        loaded.add(id);
+        if (!(await ensureMapIcon(map, s.sidc!, ""))) missingIcons.add(id);
+      }),
+    );
+  };
+  const areaLabelFC = (): GeoJSON.FeatureCollection => ({
+    type: "FeatureCollection",
+    features: [...strokes.values()]
+      .filter((s) => isArea(s) && (s.name || s.sidc))
+      .flatMap((s) => {
+        const c = areaCentroid(s.points, true);
+        if (!c) return [];
+        const icon = s.sidc && !missingIcons.has(areaIconId(s.sidc)) ? areaIconId(s.sidc) : "";
+        return [
+          {
+            type: "Feature" as const,
+            geometry: { type: "Point" as const, coordinates: c },
+            properties: { id: s.id, name: s.name || "", icon, hasIcon: !!icon, color: hex(s.color), opacity: opacityOf(s), scale: personalScale },
+          },
+        ];
+      }),
+  });
+  const refreshAreas = () => {
+    if (!map.getSource("areas")) return;
+    setAreaData(map, "areas", areaFC());
+    void ensureAreaIcons().then(() => (map.getSource("area-labels") as GeoJSONSource | undefined)?.setData(areaLabelFC()));
+  };
 
   // ── Ebenen-Panel ──────────────────────────────────────────────────────
   const baseVisible: Record<string, boolean> = {
@@ -409,6 +482,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       .join("");
     wireNoteRefs(annotsEl);
     positionAnnots();
+    refreshAreas(); // Notiz-Bereiche folgen den Notizen (Phase/Deckkraft, Live-Änderungen)
   };
   const positionAnnots = () => {
     for (const el of Array.from(annotsEl.children) as HTMLElement[]) {
@@ -475,6 +549,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       /* Start in 2D: kein Terrain-Mesh */
     }
 
+    ensureAreaLayers(map, "areas");
     map.addSource("s", { type: "geojson", data: sFC() });
     map.addLayer({
       id: "s",
@@ -612,6 +687,31 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         "text-opacity": unitAiOpacityExpr(showUnitAiLabels),
       },
     });
+    // Name + SIDC-Symbol benannter Flächen am Schwerpunkt
+    map.addSource("area-labels", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({
+      id: "area-labels",
+      type: "symbol",
+      source: "area-labels",
+      layout: {
+        "icon-image": ["get", "icon"],
+        "icon-size": ["*", 0.8, ["coalesce", ["get", "scale"], 1]],
+        "icon-allow-overlap": true,
+        "text-field": ["get", "name"],
+        "text-size": 12,
+        "text-anchor": ["case", ["get", "hasIcon"], "top", "center"],
+        "text-offset": ["case", ["get", "hasIcon"], ["literal", [0, 1.5]], ["literal", [0, 0]]],
+        "text-allow-overlap": true,
+      },
+      paint: {
+        "icon-opacity": ["get", "opacity"],
+        "text-color": "#ffffff",
+        "text-halo-color": ["get", "color"],
+        "text-halo-width": 1.6,
+        "text-opacity": ["get", "opacity"],
+      },
+    });
+    refreshAreas();
     renderAnnots();
     renderMapImages();
   });
@@ -620,7 +720,10 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     await Promise.all([...markers.values()].map(ensureIcon));
     (map.getSource("m") as GeoJSONSource)?.setData(mFC());
   };
-  const refreshS = () => (map.getSource("s") as GeoJSONSource)?.setData(sFC());
+  const refreshS = () => {
+    (map.getSource("s") as GeoJSONSource)?.setData(sFC());
+    refreshAreas();
+  };
   const refreshAll = () => {
     void refreshM();
     refreshS();
@@ -641,6 +744,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
         /* ignore */
       }
       void refreshM();
+      refreshAreas();
     });
     makeMovable(root.querySelector<HTMLDivElement>("#mkScale")!, { plan: token, key: "mkscale" });
   }

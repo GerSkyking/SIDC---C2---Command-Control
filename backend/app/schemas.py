@@ -199,6 +199,10 @@ class StrokeOut(BaseModel):
     points: list
     color: int
     width: float
+    closed: bool = False
+    name: str = ""
+    sidc: str = ""
+    fill: bool = True
 
 
 # ─── Missionsbau-Projekte ──────────────────────────────────────────────────

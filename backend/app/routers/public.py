@@ -124,7 +124,7 @@ def public_snapshot(token: str, db: DbDep) -> dict:
         "include_builder": incl,
         "phases": [
             {"id": p.id, "name": p.name, "ordering": p.ordering,
-             "plane": p.plane or "player", "parent_id": p.parent_id,
+             "plane": p.plane or "player", "role": p.role or "", "parent_id": p.parent_id,
              "sub_ordering": p.sub_ordering or 0,
              "start_at": p.start_at.isoformat() if p.start_at else None,
              "end_at": p.end_at.isoformat() if p.end_at else None}
