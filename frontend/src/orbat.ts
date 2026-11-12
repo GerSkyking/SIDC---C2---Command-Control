@@ -101,7 +101,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
   const statusPill = (s: string) =>
     `<span class="st-pill st-${s}">${t("orbat.status." + s)}</span>`;
   const relSummary = (n: OrbatNode) => {
-    if (!n.rel_visible) return `<span class="muted">${t("orbat.rel.hidden")}</span>`;
+    if (!n.rel_visible) return `<span class="muted">${t("orbat.rel.notVisible")}</span>`;
     const parts = [n.rel_show_type ? t("orbat.rel.type") : t("orbat.rel.exists")];
     if ((n.rel_strength ?? -1) >= 0) parts.push(`~${n.rel_strength}%`);
     return `<span class="rel-sum">${parts.join(" · ")}</span>`;

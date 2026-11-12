@@ -74,7 +74,7 @@ export function sidebar(
     `<a class="sb-item ${sub ? "sb-sub" : ""} ${active === id ? "active" : ""}" href="${href}" title="${label}">${icon(ic)}<span>${label}</span></a>`;
   return `<nav class="sidebar ${collapsed ? "collapsed" : ""}" id="sidebar">
     <div class="sb-top">
-      <button class="sb-toggle icon-btn" id="sbToggle" title="Menü">${icon("chevron")}</button>
+      <button class="sb-toggle icon-btn" id="sbToggle" title="${t("common.menu")}" aria-label="${t("common.menu")}">${icon("chevron")}</button>
       <span class="sb-brand">SIDC – C2</span>
     </div>
     <div class="sb-nav">

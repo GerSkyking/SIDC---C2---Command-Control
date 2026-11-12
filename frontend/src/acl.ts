@@ -162,7 +162,7 @@ export async function openAclEditor(
             return `<div class="sh-item">
               <div class="row">
                 <strong class="grow">${esc(s.label || t("acl.linkUnnamed"))}</strong>
-                ${badge(s.can_point, t("tool.point"), t("tip.share.point"))}${badge(s.can_move, t("tool.markermove"), t("tip.share.move"))}${badge(s.can_edit, t("common.rename"), t("tip.share.edit"))}${badge(s.include_builder, "⚑", t("tip.share.builder"))}
+                ${badge(s.can_point, t("tool.point"), t("tip.share.point"))}${badge(s.can_move, t("tool.markermove"), t("tip.share.move"))}${badge(s.can_edit, t("acl.role.editor"), t("tip.share.edit"))}${badge(s.include_builder, "⚑", t("tip.share.builder"))}
                 <span class="muted" title="${t("tip.share.scope")}">${scope}</span>
                 <button class="icon-btn" data-edit="${s.token}" title="${t("tip.share.editLink")}">${icon("edit", 14)}</button>
                 <button class="icon-btn" data-revoke="${s.token}" title="${t("acl.revoke")}">${icon("x", 14)}</button>
@@ -212,7 +212,7 @@ export async function openAclEditor(
       <div class="row">
         <label class="chk" title="${t("tip.share.point")}"><input type="checkbox" data-f="can_point" ${s ? (s.can_point ? "checked" : "") : "checked"}/> ${t("tool.point")}</label>
         <label class="chk" title="${t("tip.share.move")}"><input type="checkbox" data-f="can_move" ${s?.can_move ? "checked" : ""}/> ${t("tool.markermove")}</label>
-        <label class="chk" title="${t("tip.share.edit")}"><input type="checkbox" data-f="can_edit" ${s?.can_edit ? "checked" : ""}/> ${t("common.rename")}</label>
+        <label class="chk" title="${t("tip.share.edit")}"><input type="checkbox" data-f="can_edit" ${s?.can_edit ? "checked" : ""}/> ${t("acl.role.editor")}</label>
         ${isMB ? `<label class="chk" title="${t("tip.share.builder")}"><input type="checkbox" data-f="include_builder" ${s?.include_builder ? "checked" : ""}/> ${t("mb.builder")}</label>` : ""}
       </div>
       <label class="chk-lbl">${t("acl.linkDays")}<input type="number" min="0" data-f="expires_days" placeholder="∞"/></label>

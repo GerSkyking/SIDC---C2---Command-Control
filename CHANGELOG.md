@@ -15,6 +15,13 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 - 144 neue i18n-Schlüssel (`tip.*`, DE/EN). Basis-Ebenen „sat“/„grid“ im Ebenen-Panel des Editors zeigen jetzt den
   übersetzten Namen (Satellit/Raster) wie schon die öffentliche Ansicht.
 - Freigabe-Link „bearbeiten“-Knopf und ORBAT-„bearbeiten“-Knopf hießen im Tooltip fälschlich „Umbenennen“.
+- Beschriftungen korrigiert: Link-Recht „Umbenennen“ → „Bearbeiten“ (gibt Anlegen/Ändern/Löschen frei); Badge der
+  öffentlichen Ansicht je nach Rechten („nur ansehen“ / „verschiebbar“ / „bearbeitbar“); Phasen-Chip dort „Alle Phasen“;
+  „Öffentlicher Link“ ohne „(nur ansehen)“; ORBAT-Liste „für Spieler verborgen“ statt „Stärke verborgen“ bei nicht
+  freigegebenen Einheiten; „(Baustein C)“ aus dem ORBAT-Hinweis entfernt; „UI Scale“ → „Anzeigegröße“; „Echelon“ →
+  „Größenordnung (Echelon)“; Plan-Rechte-Badges übersetzt (Lesen/Bearbeiten/Voll); Menü-Knopf übersetzt; Hinweis bei
+  archivierten Projekten sagt jetzt „schreibgeschützt“ (entspricht dem Backend). HANDBUCH: Lineal (Rechtsklick verwirft),
+  „Einstellungen“ statt „Config“, Projektstufe „Freigabe“.
 
 ### 2026-11-12 – Suche im Plan
 - Lupe in der Topbar (auch am Handy sichtbar), `Strg+F` oder `/` öffnet, `Esc` schließt. Entprellt beim Tippen werden

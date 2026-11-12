@@ -118,7 +118,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     <div class="topbar">
       <a href="#/" title="${t("nav.back")}">${icon("back")}</a>
       <strong>${esc(snap.plan.name)}</strong>
-      <span class="badge" title="${t("tip.pub.badge")}">${t("plan.public")}</span>
+      <span class="badge" title="${t("tip.pub.badge")}">${t(rights.edit ? "plan.publicEdit" : rights.move ? "plan.publicMove" : "plan.public")}</span>
       <button id="t3d" title="${t("map.threeD")}">3D</button>
       ${iconBtn("north", { id: "compass", cls: "compass", title: t("map.compass") })}
       <span class="shot-wrap">${iconBtn("camera", { id: "shot", title: t("map.screenshot") })}${shotOptsMarkup()}</span>
@@ -725,7 +725,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     }
     timelineEl.innerHTML =
       `<span class="ph-label">${t("phase.heading")}:</span>` +
-      `<span class="ph-chip ${currentPhaseId === "" ? "active" : ""}"><button data-ph="" title="${t("tip.pub.global")}">${t("phase.global")}</button></span>` +
+      `<span class="ph-chip ${currentPhaseId === "" ? "active" : ""}"><button data-ph="" title="${t("tip.pub.global")}">${t("pub.allPhases")}</button></span>` +
       phases
         .map((p) => {
           const time = p.start_at ? ` <span class="muted">${fmtT(p.start_at)}${p.end_at ? "–" + fmtT(p.end_at) : ""}</span>` : "";

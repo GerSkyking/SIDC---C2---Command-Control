@@ -230,7 +230,7 @@ export function renderPlanTree(
       `<span class="tree-grip" title="${t("folder.dragHandle")}">${icon("drag", 14)}</span>` +
       `<img class="tree-thumb" src="/plans/${p.id}/thumbnail" alt="" data-hide-on-error="none" />` +
       `<a href="#/plans/${p.id}" class="tree-name" title="${t("plans.open")}">${esc(p.name)}</a>` +
-      `<span class="badge" title="${t("tip.plan.level")}">${p.level}</span>` +
+      `<span class="badge" title="${t("tip.plan.level")}">${t("acl.role." + p.level)}</span>` +
       (opts.mapName ? `<span class="tree-map" title="${t("plans.map")}">${icon("map", 12)} ${esc(opts.mapName(p.map_id))}</span>` : "") +
       `<span class="tree-actions">` +
       (pid ? copyBtn("plan", p.id, "icon-btn", 16) : "") +
@@ -305,7 +305,7 @@ export function renderPlanTree(
         `<span class="tree-grip tree-grip-off"></span>` +
         `<img class="tree-thumb" src="/plans/${p.id}/thumbnail" alt="" data-hide-on-error="none" />` +
         `<a href="#/plans/${p.id}" class="tree-name" title="${t("plans.open")}">${esc(p.name)}</a>` +
-        `<span class="badge" title="${t("tip.plan.level")}">${p.level}</span>` +
+        `<span class="badge" title="${t("tip.plan.level")}">${t("acl.role." + p.level)}</span>` +
         (opts.mapName ? `<span class="tree-map" title="${t("plans.map")}">${icon("map", 12)} ${esc(opts.mapName(p.map_id))}</span>` : "") +
         `<span class="tree-actions">` +
         (p.level === "owner"

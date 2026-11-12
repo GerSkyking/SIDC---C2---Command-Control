@@ -68,7 +68,7 @@ Werkzeugleiste links (nur mit Bearbeitungsrecht). Tasten sind die Standardbelegu
 | Zeigen | `A` | dein Cursor erscheint bei allen; rechte Maustaste zieht einen Pfeil |
 | Linie | `D` | Punkte klicken, grüner Haken / Doppelklick beendet (Rechtsklick/Esc verwirft); Klick auf den grünen Startpunkt schließt zur **Fläche** (siehe unten); Farbe, Breite, Phase, Layer im Menü |
 | Marker verschieben | `M` | (v. a. Touch) Marker ziehen |
-| Lineal | `F` | beliebig viele Punkte, Teil- und Gesamtstrecke; Rechtsklick beendet; Messlinien bleiben stehen |
+| Lineal | `F` | beliebig viele Punkte, Teil- und Gesamtstrecke; grüner Haken / Doppelklick beendet (Rechtsklick verwirft); Messlinien bleiben stehen |
 | Radierer | `S` | löscht alles im Kreis (Größe einstellbar) |
 | Textfeld | `T` | Markdown-Notiz auf die Karte setzen |
 | Marker setzen | `Leertaste` | Position klicken → Marker-Auswahl (QuickMenü, Katalog oder **Marker-Baukasten**) |
@@ -129,7 +129,7 @@ Klonen, Als Favorit speichern.
    *Für Zeus freigeben* (72 h vorausgewählt, *Unbegrenzt* per Knopf). Einzelne pinke Sterne/Notizen gibst du über das
    **Auge** an der Notiz frei (72 h).
 8. **Stand verfolgen:** **Übersicht** (offene Aufgaben je Person, Fälliges, Meilensteine, Projektstufe
-   Entwurf → Review → Test → Release), **Aktivität**, **Feedback** (auch von außen, siehe C6).
+   Entwurf → Review → Test → Freigabe), **Aktivität**, **Feedback** (auch von außen, siehe C6).
 
 ## B5. Orte markieren (Sterne)
 
@@ -196,7 +196,7 @@ Missionsbau-Ansicht ist *Nur Missionsbau* vorausgewählt), alle anderen setzen n
   an *Discord-DM*, *Web-Push*, *ntfy*, *Gotify*, *Matrix*, *Webhook* oder *E-Mail*. Pro Kanal wählbar, welche Arten
   ankommen; *Testnachricht* prüft den Kanal. Auf Discord-DMs lässt sich direkt antworten. Web-Push auf dem iPhone nur,
   wenn die Seite zum Home-Bildschirm hinzugefügt wurde.
-- **Discord-Brücke:** Ein Gruppen-Chat läuft synchron mit einem Discord-Kanal (Admin → Config → *Discord-Brücke*, oder
+- **Discord-Brücke:** Ein Gruppen-Chat läuft synchron mit einem Discord-Kanal (Admin → Einstellungen → *Discord-Brücke*, oder
   Code aus dem Chat-Kopf mit `/c2 link` in Discord).
 
 ---
@@ -296,13 +296,13 @@ curl -X POST https://c2.example.org/api/public/feedback/<TOKEN> -H "Content-Type
 
 ## C7. Admin-Bereich
 
-Sidebar: **Benutzer & Gruppen**, **Log**, **Speicher**, **Config**.
+Sidebar: **Benutzer & Gruppen**, **Log**, **Speicher**, **Einstellungen**.
 
 - **Benutzer & Gruppen:** anlegen, Rolle, *Pläne erstellen*, *Missionsbau*, *Zeus*, aktiv/deaktiviert, Passwort-Reset,
   Discord-ID, löschen; Gruppen mit Mitgliedern und denselben Häkchen.
 - **Log:** Login-Versuche und alle wichtigen Aktionen, filterbar.
 - **Speicher:** belegter Platz je Projekt (Bilder, Dateien).
-- **Config:** SIDC-Kataloge hochladen (`SIDC_AllMarkersCatalog.json`, `SIDC_QuickMarkerMenuCatalog.json`,
+- **Einstellungen:** SIDC-Kataloge hochladen (`SIDC_AllMarkersCatalog.json`, `SIDC_QuickMarkerMenuCatalog.json`,
   `SIDC_PhaseLineStyleCatalog.json`, `SIDC_ModifierCatalog.json`, Übersetzungen `SIDC_Translations.xlsx`),
   **Karten** importieren (Download-Link, Direkt-Upload oder Gitea-Quelle; *Aktualisieren* lädt eine neue ZIP),
   Discord-Brücke, Service-Neustart.
