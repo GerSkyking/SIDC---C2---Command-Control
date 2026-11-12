@@ -61,10 +61,10 @@ export function initMarkers(ctx: PlanCtx): void {
   const isTouchTap = () => Date.now() - lastTouchAt < 1000;
   const onMarkerClick = (e: maplibregl.MapLayerMouseEvent) => {
     if (ctx.dragId || suppressClick) return; // gerade verschoben
-    e.preventDefault();
     const id = e.features?.[0]?.properties?.id as string;
     const m = markers.get(id);
-    if (!m) return;
+    if (!m) return; // z. B. Flächen-Symbol (nur Anzeige): Klick geht an die Karte durch
+    e.preventDefault();
     if (isTouchTap()) {
       showHover(e);
       return;

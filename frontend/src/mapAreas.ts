@@ -251,8 +251,8 @@ export interface AreaLabelInput {
   color: string;
   opacity: number;
   scale?: number;
-  /** Zusatztext (aus dem Marker-Baukasten), unter dem Namen */
-  ai?: string;
+  /** Symbol wird separat als normaler Marker gezeichnet: hier nur Platz lassen (Größe unter dem Symbol) */
+  symbolAsMarker?: boolean;
   /** Größe mit anzeigen (Standard: ja) */
   showSize?: boolean;
 }
@@ -269,10 +269,11 @@ export function haloFor(hex: string): string {
 export function areaLabelFeature(map: MlMap, a: AreaLabelInput, cal: Calibration | null): GeoJSON.Feature | null {
   const c = areaCentroid(a.pts, true);
   if (!c) return null;
-  const icon = ensureAreaIcon(map, a.sidc);
+  const icon = a.symbolAsMarker ? "" : ensureAreaIcon(map, a.sidc);
   const size = a.showSize === false ? "" : areaSizeText(a.pts, true, cal);
-  const name = [a.name, a.ai ?? ""].filter(Boolean).join("\n");
-  if (!name && !icon && !size) return null;
+  const name = a.name;
+  const hasIcon = !!icon || !!a.symbolAsMarker;
+  if (!name && !icon && !size && !hasIcon) return null;
   return {
     type: "Feature",
     geometry: { type: "Point", coordinates: c },
@@ -282,7 +283,7 @@ export function areaLabelFeature(map: MlMap, a: AreaLabelInput, cal: Calibration
       size,
       sep: name && size ? "\n" : "",
       icon,
-      hasIcon: !!icon,
+      hasIcon,
       color: a.color,
       halo: haloFor(a.color),
       opacity: a.opacity,

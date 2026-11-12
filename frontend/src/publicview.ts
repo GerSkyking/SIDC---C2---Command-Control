@@ -22,6 +22,7 @@ import type { ImagePlacement, PlanImage as PubImage } from "./api";
 import {
   addDotLayers,
   AREA_COLORS,
+  areaCentroid,
   areaFeatures,
   areaLabelFeature,
   areaSizeText,
@@ -221,9 +222,19 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
     loaded.add(id);
     if (!(await ensureMapIcon(map, m.sidc, m.tint || ""))) missingIcons.add(id);
   };
+  // Flächen mit SIDC-Symbol: normales Marker-Symbol am Schwerpunkt (Einheitstext = Name, Zusatztext = ai_text)
+  const areaMarkers = (): (M & { _op: number })[] =>
+    [...strokes.values()].flatMap((s) => {
+      const op = opacityOf(s);
+      const c = isArea(s) && s.sidc ? areaCentroid(s.points as [number, number][], true) : null;
+      if (!c || op <= 0.001) return [];
+      return [
+        { id: `area:${s.id}`, world_x: c[0], world_y: c[1], sidc: s.sidc, unit_text: s.name || "", ai_text: (s as { ai_text?: string }).ai_text || "", _op: op } as unknown as M & { _op: number },
+      ];
+    });
   const mFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
-    features: [...markers.values()].map((m) => {
+    features: [...markers.values(), ...areaMarkers()].map((m) => {
       const scale = Math.max(0.25, Math.min(3, m.scale ?? 1)) * personalScale;
       const labelOff = markerLabelOffsets(m.sidc, 0.8 * scale);
       return {
@@ -242,7 +253,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
           aiOff: labelOff.ai,
           rot: m.icon_rotation || 0,
           dot: missingIcons.has(iconIdOf(m)) && !isTextMarker(m.sidc),
-          opacity: opacityOf(m),
+          opacity: "_op" in m ? (m as { _op: number })._op : opacityOf(m),
           scale,
         },
       };
@@ -304,7 +315,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       .flatMap((s) => {
         const f = areaLabelFeature(
           map,
-          { id: s.id, pts: s.points, name: s.name || "", ai: (s as { ai_text?: string }).ai_text || "", sidc: s.sidc || "", color: hex(s.color), opacity: opacityOf(s), scale: personalScale },
+          { id: s.id, pts: s.points, name: s.sidc ? "" : s.name || "", sidc: "", symbolAsMarker: !!s.sidc, color: hex(s.color), opacity: opacityOf(s), scale: personalScale },
           snap.map_meta?.calibration ?? null,
         );
         return f ? [f] : [];
@@ -709,12 +720,13 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   });
 
   const refreshM = async () => {
-    await Promise.all([...markers.values()].map(ensureIcon));
+    await Promise.all([...markers.values(), ...areaMarkers()].map(ensureIcon));
     (map.getSource("m") as GeoJSONSource)?.setData(mFC());
   };
   const refreshS = () => {
     (map.getSource("s") as GeoJSONSource)?.setData(sFC());
     refreshAreas();
+    void refreshM(); // Flächen-Symbole sind Marker-Features
   };
   const refreshAll = () => {
     void refreshM();

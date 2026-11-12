@@ -8,6 +8,7 @@ import { ensureMapIcon, mapIconId, markerLabelOffsets } from "../sidc/symbol";
 import {
   addDotLayers,
   areaFeatures,
+  areaCentroid,
   areaLabelFeature,
   DOT_KIND,
   dotFeature,
@@ -42,9 +43,25 @@ export function initRender(ctx: PlanCtx): void {
     if (!ok) missingIcons.add(id);
   }
 
+  // Flächen mit SIDC-Symbol zeigen ein ganz normales Marker-Symbol (gleiche Layer, Text-Anordnung, Größe) am
+  // Schwerpunkt: Einheitstext = Name, Zusatztext = ai_text. Nur Anzeige (id "area:<stroke>"), nicht anklickbar.
+  const areaMarkers = (): (Marker & { _op: number })[] =>
+    [...strokes.values()].flatMap((s) => {
+      if (!isStrokeArea(s) || !s.sidc) return [];
+      const c = areaCentroid(s.points, true);
+      const op = strokeOpacity(s);
+      if (!c || op <= 0.001) return [];
+      return [
+        {
+          id: `area:${s.id}`, world_x: c[0], world_y: c[1], sidc: s.sidc, unit_text: s.name || "", ai_text: s.ai_text || "",
+          locked: false, rotation_degrees: -1, icon_rotation: 0, phase_id: null, layer_id: null, linked_group_id: 0,
+          point_index: 0, line_color: 0, line_width: 0, _op: op,
+        } as Marker & { _op: number },
+      ];
+    });
   const markerFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
-    features: [...markers.values()].map((m) => {
+    features: [...markers.values(), ...areaMarkers()].map((m) => {
       const scale = Math.max(0.25, Math.min(3, m.scale ?? 1)) * ctx.personalScale;
       // Text-Offset aus der tatsächlichen Icon-Größe berechnet (0.8 = derselbe
       // Faktor wie in "icon-size" unten), damit der Text immer knapp außerhalb
@@ -71,7 +88,7 @@ export function initRender(ctx: PlanCtx): void {
           rot: m.icon_rotation || 0,
           locked: m.locked,
           dot: missingIcons.has(iconIdOf(m)) && !isTextMarker(m.sidc),
-          opacity: phaseOpacity(m),
+          opacity: "_op" in m ? (m as { _op: number })._op : phaseOpacity(m),
           scale,
         },
       };
@@ -195,7 +212,7 @@ export function initRender(ctx: PlanCtx): void {
       if (op <= 0.001) return [];
       const f = areaLabelFeature(
         map,
-        { id: s.id, pts: s.points, name: s.name || "", ai: s.ai_text || "", sidc: s.sidc || "", color: packedToHex(s.color), opacity: op, scale: ctx.personalScale },
+        { id: s.id, pts: s.points, name: s.sidc ? "" : s.name || "", sidc: "", symbolAsMarker: !!s.sidc, color: packedToHex(s.color), opacity: op, scale: ctx.personalScale },
         ctx.cal,
       );
       return f ? [f] : [];
@@ -301,7 +318,7 @@ export function initRender(ctx: PlanCtx): void {
 
   // Terrain-/Enfusion-Overlays müssen UNTER "strokes" eingefügt werden → erst nach dessen Anlage starten
   map.on("load", async () => {
-    await Promise.all([...markers.values()].map(ensureIcon)).catch(() => {});
+    await Promise.all([...markers.values(), ...areaMarkers()].map(ensureIcon)).catch(() => {});
 
     map.addSource("strokes", { type: "geojson", data: strokeFC() });
     map.addLayer({
@@ -626,12 +643,18 @@ export function initRender(ctx: PlanCtx): void {
     setAreaData(map, "stroke-areas", strokeAreaFC());
     setAreaLabels(map, "stroke-area-labels", strokeAreaLabelFC());
   };
+  // Symbole der Flächen (wie normale Marker): Icons nachladen, dann die Marker-Quelle neu setzen
+  const refreshAreaMarkers = async () => {
+    await Promise.all(areaMarkers().map(ensureIcon)).catch(() => {});
+    (map.getSource("markers") as GeoJSONSource)?.setData(markerFC());
+  };
   const refreshStrokes = () => {
     (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
     refreshStrokeAreas();
+    void refreshAreaMarkers();
   };
   const refreshMarkers = async () => {
-    await Promise.all([...markers.values()].map(ensureIcon));
+    await Promise.all([...markers.values(), ...areaMarkers()].map(ensureIcon));
     (map.getSource("markers") as GeoJSONSource)?.setData(markerFC());
     (map.getSource("chains") as GeoJSONSource)?.setData(chainFC());
     refreshDir();
