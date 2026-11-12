@@ -137,6 +137,13 @@ Missionsbau und nur in Plänen, die zu einem Projekt gehören.
 4. *Anlegen*. Neues (Verzeichnis-Eintrag, Aufgabe, Haftnotiz) braucht Bearbeiter-Recht im Projekt; fehlt es, sind die
    Knöpfe gesperrt und der Dialog sagt, warum (z. B. „nicht im Projekt eingetragen“).
 
+**Bereich um den Stern:** Wie groß der Platz ist, legst du mit einem Bereich fest – beim Anlegen per Häkchen *Danach
+Bereich um den Stern zeichnen* oder später über den Knopf *Bereich* am Stern. Linksklicks setzen die Ecken; ein Klick auf
+den (grün markierten) Startpunkt schließt die Fläche, sie wird schraffiert (Füllung 25 %, Rand 50 %). Eine offene Linie
+übernimmst du mit ✓, Enter oder Rechtsklick; Esc bricht ab. Später: Bereich anklicken → Ecken ziehen, in der Leiste
+*Fertig*, *Neu zeichnen* oder *Entfernen*. Verschiebst du den Stern, wandert der Bereich mit. Farbe und Sichtbarkeit
+folgen dem Stern (pink = nur Missionsbau, gelb = alle).
+
 Auf der Karte: Neben dem Stern stehen die verknüpften Ziele – Klick öffnet sie (in einem neuen Tab). Die Beschreibung
 erscheint beim Überfahren. Darüber erscheinen die Knöpfe Einklappen · Zeus-Freigabe · Bearbeiten · Löschen; sie bleiben
 nach dem Verlassen kurz stehen, damit du sie auch beim eingeklappten Stern erreichst. Im Projekt zeigt jedes

@@ -296,3 +296,28 @@ def test_existing_annotation_keeps_its_phase_on_resize(world):
     assert msg["annotation"]["width"] == 300 and msg["annotation"]["phase_id"] == base
     msg = _ws(w["builder"], w["plan"], type="annotation.move", id=aid, data={"world_x": 3, "phase_id": base, "extra_phase_ids": []})
     assert msg["annotation"]["world_x"] == 3 and msg["annotation"]["phase_id"] == base
+
+
+def test_annotation_area(world):
+    """Bereich um einen Pin: bereinigt gespeichert, im Snapshot, wandert per move mit, null entfernt ihn."""
+    w = world
+    pts = [[0, 0], [1, 0], [1, 1], ["x", 2], [5]]
+    a = _ws_ann(w["builder"], w["plan"], mb_layer=True, text="Ort", area={"pts": pts, "closed": True})
+    assert a["area"] == {"pts": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 2.0]], "closed": True}
+    # weniger als 3 Punkte: nie geschlossen; weniger als 2: kein Bereich
+    msg = _ws(w["builder"], w["plan"], type="annotation.modify", id=a["id"], data={"area": {"pts": [[0, 0], [2, 2]], "closed": True}})
+    assert msg["annotation"]["area"] == {"pts": [[0.0, 0.0], [2.0, 2.0]], "closed": False}
+    msg = _ws(w["builder"], w["plan"], type="annotation.modify", id=a["id"], data={"area": {"pts": [[0, 0]]}})
+    assert msg["annotation"]["area"] is None
+    # move nimmt den verschobenen Bereich mit
+    area = {"pts": [[3, 3], [4, 3], [4, 4]], "closed": True}
+    msg = _ws(w["builder"], w["plan"], type="annotation.move", id=a["id"], data={"world_x": 3, "world_y": 3, "area": area})
+    assert msg["annotation"]["area"] == {"pts": [[3.0, 3.0], [4.0, 3.0], [4.0, 4.0]], "closed": True}
+    snap = {x["id"]: x for x in w["builder"].get(f"/plans/{w['plan']}/snapshot").json()["annotations"]}
+    assert snap[a["id"]]["area"]["closed"] is True
+    # höchstens 200 Punkte
+    big = {"pts": [[i, i] for i in range(500)], "closed": False}
+    msg = _ws(w["builder"], w["plan"], type="annotation.modify", id=a["id"], data={"area": big})
+    assert len(msg["annotation"]["area"]["pts"]) == 200
+    msg = _ws(w["builder"], w["plan"], type="annotation.modify", id=a["id"], data={"area": None})
+    assert msg["annotation"]["area"] is None

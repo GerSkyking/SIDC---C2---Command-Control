@@ -107,7 +107,7 @@ interface Stroke {
   layer_id?: string | null;
   channel?: string;
 }
-type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text" | "ref";
+type Mode = "move" | "markermove" | "point" | "line" | "erase" | "place" | "measure" | "text" | "ref" | "area";
 /** Standardfrist für Zeus-Freigaben (Phasen und Missionsbau-Notizen), in Stunden. */
 const ZEUS_DEFAULT_H = 72;
 /** Stern-Pin auf der Karte (Farbe per CSS: gelb = für alle, pink = nur Missionsbau). */
@@ -132,7 +132,17 @@ interface Annot {
   ref_zoom?: number;
   zeus_released?: boolean; // Einzelfreigabe für Zeus (Karten-Notizen)
   zeus_until?: string | null;
+  area?: AnnotArea | null; // Bereich um den Pin
 }
+/** Bereich um einen Pin: offene Linie oder (closed) schraffierte Fläche, Punkte als [lng, lat]. */
+interface AnnotArea {
+  pts: [number, number][];
+  closed: boolean;
+}
+/** Farben der Bereiche: wie die Sterne (gelb = alle, pink = nur Missionsbau). */
+const AREA_COL = { mb: "#ff2d95", all: "#ffc21a" };
+const AREA_CLOSE_PX = 12; // so nah am Startpunkt = Fläche schließen
+const AREA_MAX_POINTS = 200; // wie im Backend
 
 export async function openPlanView(root: HTMLElement, planId: string, me: Me): Promise<void> {
   const snap = await api.snapshot(planId);
@@ -331,6 +341,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       .sort((a, b) => (a.sub_ordering ?? 0) - (b.sub_ordering ?? 0));
 
   let currentPhaseId: string = playerPhases()[0]?.id ?? phases[0]?.id ?? "";
+  // Bereich um einen Pin: laufendes Zeichnen bzw. Ecken-Bearbeitung (Logik bei den Annotationen)
+  let areaDraft: { aid: string; pts: [number, number][] } | null = null;
+  let areaCursor: [number, number] | null = null;
+  let editAreaId: string | null = null;
   type ActAs = "player" | "builder" | "zeus";
   const canZeus = isMB || !!me.is_zeus_effective;
   let actAs: ActAs = (() => {
@@ -1392,6 +1406,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         if (msg.cid && msg.cid === pendingAnnotCid) {
           pendingAnnotCid = null;
           openAnnotEditor(msg.annotation.id, true);
+        }
+        if (msg.cid && pendingStarArea.has(msg.cid)) {
+          pendingStarArea.delete(msg.cid);
+          startAreaDraw(msg.annotation.id);
         }
         if (msg.cid && pendingStarZeus.has(msg.cid)) {
           const z = pendingStarZeus.get(msg.cid)!;
@@ -3932,7 +3950,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   };
 
   const modeCursor = (m: Mode = mode): string =>
-    m === "place" || m === "line" || m === "point" || m === "measure" || m === "text" || m === "ref"
+    m === "place" || m === "line" || m === "point" || m === "measure" || m === "text" || m === "ref" || m === "area"
       ? "crosshair"
       : m === "erase"
         ? "crosshair"
@@ -3980,12 +3998,19 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       map.dragRotate.disable();
       map.touchZoomRotate.disableRotation();
     }
-    if (m === "line" || m === "measure") map.doubleClickZoom.disable();
+    if (m === "line" || m === "measure" || m === "area") map.doubleClickZoom.disable();
     else map.doubleClickZoom.enable();
     eraserPanel.hidden = mvEraser.isPinned() ? false : m !== "erase";
     if (m !== "erase") eraserRing.hidden = true;
     toolbar.querySelector("#tool-marker")?.classList.toggle("active", m === "place");
     toolbar.querySelector("#tool-ref")?.classList.toggle("active", m === "ref");
+    if (m !== "area" && areaDraft) {
+      // Zeichnen eines Bereichs abgebrochen (anderes Werkzeug, Esc)
+      areaDraft = null;
+      areaCursor = null;
+      renderAreaBar();
+      refreshAreas();
+    }
     lineStylePanel.hidden = mvLine.isPinned() ? false : m !== "line";
     if (measureStylePanel) {
       measureStylePanel.hidden = mvMeasure.isPinned() ? false : m !== "measure";
@@ -5215,6 +5240,15 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     const cr0 = canvasRect();
     const grabDx = ev.clientX - cr0.left - anchorPx0.x;
     const grabDy = ev.clientY - cr0.top - anchorPx0.y;
+    // Ein Bereich am Pin wandert beim Verschieben mit
+    const area0 = a0?.area ? a0.area.pts.map((p) => [p[0], p[1]] as [number, number]) : null;
+    const start0 = a0 ? [a0.world_x, a0.world_y] : [0, 0];
+    const shiftArea = (a: Annot, lng: number, lat: number): void => {
+      if (!area0 || !a.area) return;
+      const dx = lng - start0[0];
+      const dy = lat - start0[1];
+      a.area = { ...a.area, pts: area0.map((p) => [p[0] + dx, p[1] + dy] as [number, number]) };
+    };
     const onMove = (e: MouseEvent) => {
       const r = canvasRect();
       const ll = map.unproject([e.clientX - r.left - grabDx, e.clientY - r.top - grabDy]);
@@ -5223,6 +5257,10 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         a.world_x = ll.lng;
         a.world_y = ll.lat;
         positionAnnots();
+        if (area0) {
+          shiftArea(a, ll.lng, ll.lat);
+          refreshAreas();
+        }
       }
     };
     const onUp = (e: MouseEvent) => {
@@ -5233,11 +5271,305 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       annotDragId = null;
       const r = canvasRect();
       const ll = map.unproject([e.clientX - r.left - grabDx, e.clientY - r.top - grabDy]);
-      socket.send({ type: "annotation.move", id, data: { world_x: ll.lng, world_y: ll.lat } });
+      const a = annots.get(id);
+      if (a && area0) shiftArea(a, ll.lng, ll.lat);
+      socket.send({
+        type: "annotation.move",
+        id,
+        data: { world_x: ll.lng, world_y: ll.lat, ...(a && area0 ? { area: a.area } : {}) },
+      });
     };
     document.addEventListener("mousemove", onMove, { signal: sig });
     document.addEventListener("mouseup", onUp, { signal: sig });
   }
+
+  // ── Bereich um einen Pin: Linie oder (geschlossen) schraffierte Fläche ──
+  // Gehört zur Annotation (Feld ``area``), folgt deren Sichtbarkeit und wandert beim Verschieben des Sterns mit.
+  // Zeichnen: Linksklicks setzen Ecken, Klick auf den Startpunkt schließt die Fläche, ✓ / Enter / Rechtsklick
+  // übernimmt eine offene Linie, Esc bricht ab. Bestehende Ecken: Bereich anklicken → Ecken ziehen.
+  const areaBar = document.createElement("div");
+  areaBar.className = "area-bar";
+  areaBar.hidden = true;
+  root.appendChild(areaBar);
+  const hatchImage = (color: string): ImageData => {
+    const n = 16;
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = n;
+    const g = cv.getContext("2d")!;
+    g.strokeStyle = color;
+    g.lineWidth = 2.2;
+    g.beginPath();
+    for (const o of [-n, 0, n]) {
+      g.moveTo(o, n);
+      g.lineTo(o + n, 0);
+    }
+    g.stroke();
+    return g.getImageData(0, 0, n, n);
+  };
+  function ensureAreaLayers(): void {
+    if (!map.hasImage("hatch-mb")) map.addImage("hatch-mb", hatchImage(AREA_COL.mb));
+    if (!map.hasImage("hatch-all")) map.addImage("hatch-all", hatchImage(AREA_COL.all));
+    const before = map.getLayer("strokes") ? "strokes" : undefined;
+    if (!map.getSource("pin-areas")) {
+      map.addSource("pin-areas", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer(
+        {
+          id: "pin-area-fill",
+          type: "fill",
+          source: "pin-areas",
+          filter: ["==", ["geometry-type"], "Polygon"],
+          paint: {
+            "fill-pattern": ["case", ["get", "mb"], "hatch-mb", "hatch-all"],
+            "fill-opacity": ["*", 0.25, ["get", "op"]],
+          },
+        },
+        before,
+      );
+      map.addLayer(
+        {
+          id: "pin-area-line",
+          type: "line",
+          source: "pin-areas",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": ["case", ["get", "mb"], AREA_COL.mb, AREA_COL.all],
+            "line-width": ["case", ["get", "sel"], 3.5, 2.5],
+            "line-opacity": ["*", 0.5, ["get", "op"]],
+          },
+        },
+        before,
+      );
+    }
+    if (!map.getSource("pin-area-edit")) {
+      map.addSource("pin-area-edit", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "pin-area-draft",
+        type: "line",
+        source: "pin-area-edit",
+        filter: ["==", ["geometry-type"], "LineString"],
+        paint: { "line-color": ["get", "color"], "line-width": 2.5, "line-dasharray": [2, 1.5] },
+      });
+      map.addLayer({
+        id: "pin-area-verts",
+        type: "circle",
+        source: "pin-area-edit",
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: {
+          "circle-radius": ["case", ["get", "hot"], 9, ["get", "first"], 7, 5.5],
+          "circle-color": ["case", ["get", "hot"], "#3ddc84", "#ffffff"],
+          "circle-stroke-color": ["get", "color"],
+          "circle-stroke-width": 2.5,
+        },
+      });
+    }
+  }
+  const areaColorOf = (a: Annot | undefined): string => (a && isNotesAnnot(a) ? AREA_COL.mb : AREA_COL.all);
+  const ringOf = (pts: [number, number][]): [number, number][] => [...pts, pts[0]];
+  function areaFC(): GeoJSON.FeatureCollection {
+    const feats: GeoJSON.Feature[] = [];
+    for (const a of annots.values()) {
+      const ar = a.area;
+      if (!ar || ar.pts.length < 2) continue;
+      const op = annotOpacity(a);
+      if (op <= 0) continue;
+      const props = { aid: a.id, mb: isNotesAnnot(a), op, sel: a.id === editAreaId };
+      if (ar.closed && ar.pts.length >= 3) {
+        feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [ringOf(ar.pts)] }, properties: props });
+        feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: ringOf(ar.pts) }, properties: props });
+      } else {
+        feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: ar.pts }, properties: props });
+      }
+    }
+    return { type: "FeatureCollection", features: feats };
+  }
+  // Nähe zum Startpunkt in Bildschirm-Pixeln (Schließen der Fläche)
+  const nearFirst = (pts: [number, number][], p: [number, number] | null): boolean => {
+    if (!p || pts.length < 3) return false;
+    const a = map.project(pts[0]);
+    const b = map.project(p);
+    return Math.hypot(a.x - b.x, a.y - b.y) <= AREA_CLOSE_PX;
+  };
+  function areaEditFC(): GeoJSON.FeatureCollection {
+    const feats: GeoJSON.Feature[] = [];
+    if (areaDraft) {
+      const color = areaColorOf(annots.get(areaDraft.aid));
+      const hot = nearFirst(areaDraft.pts, areaCursor);
+      const line = [...areaDraft.pts, ...(areaCursor ? [hot ? areaDraft.pts[0] : areaCursor] : [])];
+      if (line.length >= 2) feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: line }, properties: { color } });
+      areaDraft.pts.forEach((p, i) =>
+        feats.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: { color, i, first: i === 0, hot: i === 0 && hot } }),
+      );
+    } else if (editAreaId) {
+      const a = annots.get(editAreaId);
+      const color = areaColorOf(a);
+      (a?.area?.pts ?? []).forEach((p, i) =>
+        feats.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: { color, i, first: false, hot: false } }),
+      );
+    }
+    return { type: "FeatureCollection", features: feats };
+  }
+  function refreshAreas(): void {
+    try {
+      ensureAreaLayers();
+      (map.getSource("pin-areas") as GeoJSONSource).setData(areaFC());
+      (map.getSource("pin-area-edit") as GeoJSONSource).setData(areaEditFC());
+    } catch {
+      /* Karte/Stil noch nicht geladen – folgt mit "load" */
+    }
+    positionAreaBar();
+  }
+  map.on("load", () => refreshAreas());
+  map.on("style.load", () => refreshAreas());
+  // Leiste (✓ übernehmen / neu zeichnen / entfernen) am letzten bzw. ersten Punkt
+  function positionAreaBar(): void {
+    const pts = areaDraft ? areaDraft.pts : editAreaId ? annots.get(editAreaId)?.area?.pts ?? [] : [];
+    const anchor = areaDraft ? pts[pts.length - 1] : pts[0];
+    if (!anchor || (areaDraft && pts.length < 2)) {
+      areaBar.hidden = true;
+      return;
+    }
+    const p = map.project(anchor);
+    const mr = map.getContainer().getBoundingClientRect();
+    const rr = root.getBoundingClientRect();
+    areaBar.hidden = false;
+    areaBar.style.left = `${mr.left - rr.left + p.x + 14}px`;
+    areaBar.style.top = `${mr.top - rr.top + p.y - 14}px`;
+  }
+  map.on("move", () => {
+    if (areaDraft || editAreaId) positionAreaBar();
+  });
+  function renderAreaBar(): void {
+    if (areaDraft) {
+      areaBar.innerHTML =
+        `<button class="area-ok" data-area-ok title="${t("area.finishOpen")}">${icon("check", 16)}</button>` +
+        `<button data-area-cancel title="${t("common.cancel")}">${icon("x", 16)}</button>`;
+    } else if (editAreaId) {
+      areaBar.innerHTML =
+        `<button class="area-ok" data-area-done title="${t("area.done")}">${icon("check", 16)}</button>` +
+        `<button data-area-redraw title="${t("area.redraw")}">${icon("line", 16)}</button>` +
+        `<button class="area-del" data-area-del title="${t("area.remove")}">${icon("trash", 16)}</button>`;
+    } else areaBar.innerHTML = "";
+    areaBar.querySelector("[data-area-ok]")?.addEventListener("click", () => commitArea(false));
+    areaBar.querySelector("[data-area-cancel]")?.addEventListener("click", () => setMode("move"));
+    areaBar.querySelector("[data-area-done]")?.addEventListener("click", () => setEditArea(null));
+    areaBar.querySelector("[data-area-redraw]")?.addEventListener("click", () => {
+      const id = editAreaId;
+      if (id) startAreaDraw(id);
+    });
+    areaBar.querySelector("[data-area-del]")?.addEventListener("click", () => {
+      const id = editAreaId;
+      if (!id) return;
+      setEditArea(null);
+      socket.send({ type: "annotation.modify", id, data: { area: null } });
+    });
+  }
+  const canEditArea = (a: Annot | undefined): boolean => !!a && canEdit && !!caps.move && (isMB || !isNotesAnnot(a));
+  function startAreaDraw(aid: string): void {
+    if (!canEditArea(annots.get(aid))) return;
+    editAreaId = null;
+    setMode("area");
+    areaDraft = { aid, pts: [] };
+    areaCursor = null;
+    renderAreaBar();
+    refreshAreas();
+    toast(t("area.hint"), { kind: "info", timeout: 6000 });
+  }
+  function commitArea(closed: boolean): void {
+    const d = areaDraft;
+    if (!d) return;
+    const pts = d.pts;
+    areaDraft = null;
+    areaCursor = null;
+    setMode("move");
+    if (pts.length < 2) return;
+    const area = { pts, closed: closed && pts.length >= 3 };
+    const a = annots.get(d.aid);
+    if (a) a.area = area; // sofort zeigen, Server bestätigt per upsert
+    socket.send({ type: "annotation.modify", id: d.aid, data: { area } });
+    refreshAreas();
+  }
+  function setEditArea(id: string | null): void {
+    editAreaId = id;
+    renderAreaBar();
+    refreshAreas();
+  }
+  // Klick in der Karte während des Zeichnens
+  function areaClick(p: [number, number]): void {
+    if (!areaDraft) return;
+    if (nearFirst(areaDraft.pts, p)) {
+      commitArea(true); // Schleife geschlossen → Fläche
+      return;
+    }
+    if (areaDraft.pts.length >= AREA_MAX_POINTS) return;
+    areaDraft.pts.push(p);
+    refreshAreas();
+  }
+  map.on("mousemove", (e) => {
+    if (mode !== "area" || !areaDraft) return;
+    areaCursor = [e.lngLat.lng, e.lngLat.lat];
+    try {
+      (map.getSource("pin-area-edit") as GeoJSONSource).setData(areaEditFC());
+    } catch {
+      /* noch nicht geladen */
+    }
+  });
+  map.on("contextmenu", (e) => {
+    if (mode !== "area" || !areaDraft) return;
+    e.preventDefault();
+    commitArea(false); // Rechtsklick übernimmt als offene Linie
+  });
+  document.addEventListener(
+    "keydown",
+    (ev) => {
+      if (!areaDraft && !editAreaId) return;
+      const tag = (ev.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (ev.key === "Escape") {
+        ev.stopPropagation();
+        if (areaDraft) setMode("move");
+        else setEditArea(null);
+      } else if (ev.key === "Enter" && areaDraft) {
+        ev.preventDefault();
+        commitArea(false);
+      }
+    },
+    { capture: true, signal: sig },
+  );
+  // Bestehenden Bereich anklicken → Ecken bearbeiten
+  const pickArea = (e: maplibregl.MapLayerMouseEvent): void => {
+    if (mode !== "move" && mode !== "markermove") return;
+    const aid = e.features?.[0]?.properties?.aid as string | undefined;
+    if (!aid || !canEditArea(annots.get(aid))) return;
+    e.preventDefault();
+    setEditArea(aid);
+  };
+  map.on("click", "pin-area-fill", pickArea);
+  map.on("click", "pin-area-line", pickArea);
+  map.on("mouseenter", "pin-area-verts", () => {
+    if (editAreaId) map.getCanvas().style.cursor = "grab";
+  });
+  map.on("mouseleave", "pin-area-verts", () => (map.getCanvas().style.cursor = modeCursor()));
+  map.on("mousedown", "pin-area-verts", (e) => {
+    const a = editAreaId ? annots.get(editAreaId) : undefined;
+    const idx = e.features?.[0]?.properties?.i as number | undefined;
+    if (!a?.area || idx == null || areaDraft) return;
+    e.preventDefault();
+    const pts = a.area.pts;
+    map.dragPan.disable();
+    map.getCanvas().style.cursor = "grabbing";
+    const onMove = (ev: maplibregl.MapMouseEvent) => {
+      pts[idx] = [ev.lngLat.lng, ev.lngLat.lat];
+      refreshAreas();
+    };
+    const onUp = () => {
+      map.off("mousemove", onMove);
+      syncDragPan();
+      map.getCanvas().style.cursor = modeCursor();
+      socket.send({ type: "annotation.modify", id: a.id, data: { area: a.area } });
+    };
+    map.on("mousemove", onMove);
+    document.addEventListener("mouseup", onUp, { once: true, signal: sig });
+  });
 
   function renderAnnots(): void {
     if (annotResizingId) return; // Neuaufbau würde das laufende Ziehen abbrechen
@@ -5274,11 +5606,19 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         (canEdit && isMB && projectId && isNotesAnnot(a)
           ? `<button class="icon-btn annot-zeus ${annotZeusOpen(a) ? "on" : ""}" data-azq title="${t(annotZeusOpen(a) ? "annot.zeusTipOn" : "annot.zeusTipOff")}">${icon("eye", 14)}</button>`
           : "") +
+        (star && canEditArea(a)
+          ? `<button class="icon-btn" data-aarea title="${t(a.area ? "area.edit" : "area.draw")}">${icon("line", 14)}</button>`
+          : "") +
         (canEdit
           ? `<button class="icon-btn" data-aedit title="${t("common.rename")}">${icon("edit", 14)}</button>` +
             `<button class="icon-btn" data-adel title="${t("common.delete")}">${icon("x", 14)}</button>`
           : "") +
         `</div>`;
+      el.querySelector("[data-aarea]")?.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (a.area) setEditArea(a.id);
+        else startAreaDraw(a.id);
+      });
       el.querySelector("[data-acoll]")?.addEventListener("click", (ev) => {
         ev.stopPropagation();
         collapsed ? collapsedAnnots.delete(a.id) : collapsedAnnots.add(a.id);
@@ -5319,6 +5659,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     wireNoteImageRefs(annotsEl);
     wireRefs(annotsEl);
     positionAnnots();
+    try {
+      if (editAreaId && !annots.has(editAreaId)) setEditArea(null);
+      refreshAreas();
+    } catch {
+      /* Bereichs-Teil noch nicht initialisiert (erster Aufbau) */
+    }
   }
 
   map.on("move", () => {
@@ -5687,6 +6033,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
   // eine Haftnotiz oder einen Verweis auf Bestehendes an. Der Pin selbst ist eine Annotation, deren
   // erste Zeile nur aus Verknüpfungs-Codes besteht (Rest = Beschreibung).
   const pendingStarZeus = new Map<string, Record<string, unknown>>();
+  const pendingStarArea = new Set<string>();
   async function openStarDialog(pos: [number, number]): Promise<void> {
     if (!projectId) return;
     const pid = projectId;
@@ -5744,6 +6091,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         <label style="flex:0 1 9rem">${t("star.due")}<input type="date" data-sdue/></label>
         <label style="flex:0 1 8rem">${t("star.prio")}<select data-sprio><option value="low">${t("star.prio.low")}</option><option value="normal" selected>${t("star.prio.normal")}</option><option value="high">${t("star.prio.high")}</option></select></label>
       </div>
+      <label class="chk star-area-chk"><input type="checkbox" data-sarea/> ${t("area.afterCreate")}</label>
       ${annotVisHtml({ phase_id: currentPhaseId || null, extra_phase_ids: [], zeus_released: false, zeus_until: null, mb: mbDefault })}
       <div class="row" style="margin-top:.8rem">
         <button class="primary" data-save style="flex:1">${t("star.create")}</button>
@@ -5874,6 +6222,8 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
       });
       // Zeus-Freigabe ist ein Feld von annotation.modify: nach dem Anlegen nachreichen
       if (mb && zRel) pendingStarZeus.set(ac, { zeus_released: true, zeus_hours: zH });
+      // „Danach Bereich zeichnen": sobald der Server den Pin bestätigt, startet das Zeichnen um ihn herum
+      if (back.querySelector<HTMLInputElement>("[data-sarea]")?.checked) pendingStarArea.add(ac);
       close();
       if (kind === "task" || kind === "note" || kind === "doc")
         toast(t(kind === "task" ? "star.taskDone" : kind === "note" ? "star.noteDone" : "star.docDone"), { kind: "success" });
@@ -5935,6 +6285,12 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
         return;
       }
     }
+
+    if (mode === "area") {
+      areaClick([e.lngLat.lng, e.lngLat.lat]);
+      return;
+    }
+    if (editAreaId && (mode === "move" || mode === "markermove")) setEditArea(null); // Klick daneben beendet die Ecken-Bearbeitung
 
     if (mode === "ref") {
       setMode("move");

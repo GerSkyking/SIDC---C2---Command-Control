@@ -461,7 +461,7 @@ async def _handle(
         fields = {
             k: v for k, v in msg.get("data", {}).items()
             if k in ("world_x", "world_y", "text", "width", "height", "phase_id", "extra_phase_ids", "scale_fixed",
-                     "ref_zoom", "zeus_released", "zeus_hours")
+                     "ref_zoom", "zeus_released", "zeus_hours", "area")
         }
         if not is_builder:  # Einzelfreigabe für Zeus: nur Missionsbau
             fields.pop("zeus_released", None)
@@ -606,6 +606,23 @@ def _need_phase(db, plan_id: str, pid: str | None) -> str | None:
 
 def _clean_ids(v) -> list[str]:
     return [str(x) for x in v if isinstance(x, str)][:32] if isinstance(v, list) else []
+
+
+AREA_MAX_POINTS = 200
+
+
+def _clean_area(v) -> dict | None:
+    """Bereich eines Pins: höchstens 200 Punkte [lng, lat]; weniger als 2 Punkte = kein Bereich.
+    Geschlossen nur ab 3 Punkten."""
+    if not isinstance(v, dict) or not isinstance(v.get("pts"), list):
+        return None
+    pts = []
+    for p in v["pts"][:AREA_MAX_POINTS]:
+        if isinstance(p, (list, tuple)) and len(p) == 2:
+            pts.append([_num(p[0]), _num(p[1])])
+    if len(pts) < 2:
+        return None
+    return {"pts": pts, "closed": bool(v.get("closed")) and len(pts) >= 3}
 
 
 def _plan_node(db, plan_id: str, node_id: str | None) -> str | None:
@@ -802,7 +819,7 @@ def _annotation_out(a: Annotation) -> dict:
         "extra_phase_ids": list(a.extra_phase_ids or []),
         "world_x": a.world_x, "world_y": a.world_y, "text": a.text,
         "width": a.width, "height": a.height,
-        "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom,
+        "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom, "area": a.area,
         "zeus_released": annotation_zeus_open(a),
         "zeus_until": a.zeus_until.isoformat() if a.zeus_released and a.zeus_until is not None else None,
     }
@@ -819,6 +836,7 @@ def _create_annotation(plan_id: str, uid: str, data: dict) -> dict:
             height=float(data.get("height", 0)),
             scale_fixed=bool(data.get("scale_fixed", False)),
             ref_zoom=float(data.get("ref_zoom", 0)),
+            area=_clean_area(data.get("area")),
         )
         db.add(a)
         db.flush()
@@ -856,6 +874,8 @@ def _update_annotation(plan_id: str, ann_id: str, uid: str, fields: dict) -> dic
             fields["extra_phase_ids"] = _clean_ids(fields["extra_phase_ids"])
         if "phase_id" in fields:
             fields["phase_id"] = _need_phase(db, plan_id, fields["phase_id"])
+        if "area" in fields:
+            fields["area"] = _clean_area(fields["area"])
         for k, v in fields.items():
             setattr(a, k, v)
         a.updated_by = uid

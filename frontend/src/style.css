@@ -1767,3 +1767,11 @@ button.stg-b:hover:not(:disabled) { border-color: var(--accent); }
 .star-dlg [data-avis] .seg-btn, .edit-modal [data-avis] .seg-btn { flex: 1; }
 .star-sec { margin: 0.55rem 0 0.2rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .star-dlg [hidden] { display: none !important; }
+/* Bereich um einen Pin: Leiste am Zeichnen/Bearbeiten (übernehmen, neu zeichnen, entfernen) */
+.area-bar { position: absolute; z-index: 6; display: flex; gap: 0.2rem; padding: 0.15rem; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-sm); box-shadow: var(--shadow); }
+.area-bar button { width: 2rem; height: 2rem; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.area-bar .area-ok { background: var(--ok, #3ddc84); color: #fff; border-color: transparent; }
+.area-bar .area-del { color: var(--danger); }
+.star-area-chk { margin-top: 0.6rem; }
+.area-bar[hidden] { display: none; }

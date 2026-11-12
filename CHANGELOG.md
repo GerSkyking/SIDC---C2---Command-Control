@@ -5,6 +5,15 @@ Format lose nach [Keep a Changelog](https://keepachangelog.com/), Versionierung 
 
 ## [Unreleased]
 
+### 2026-11-12 – Bereich um einen Stern
+- Stern-Pins bekommen optional einen **Bereich**: beim Anlegen per Häkchen *Danach Bereich zeichnen* oder über den Knopf
+  *Bereich* am Stern. Linksklicks setzen Ecken; Klick auf den Startpunkt schließt die Fläche (schraffiert, Füllung 25 %,
+  Rand 50 %, Farbe wie der Stern); ✓ / Enter / Rechtsklick übernimmt eine offene Linie, Esc bricht ab.
+- Bestehende Bereiche: anklicken → Ecken ziehen; Leiste mit Fertig / Neu zeichnen / Entfernen. Der Bereich wandert beim
+  Verschieben des Sterns mit und folgt dessen Sichtbarkeit (Layer, Phase, Zeus-Freigabe).
+- Backend: `annotations.area` (JSON `{pts, closed}`, Migration `0045`), bereinigt auf höchstens 200 Punkte; in Live-Protokoll
+  (`annotation.create/modify/move`), Snapshot, Versionen und öffentlicher Ansicht (Daten; Darstellung dort noch nicht).
+
 ### 2026-11-12 – Stern-Dialog: Verzeichnis-Einträge direkt im Plan, Hover-Knöpfe erreichbar
 - „Was ist hier?“ hat oben **Neu im Verzeichnis**: Ort (vorausgewählt), Charakter, Fraktion, Szene, Missionskonzept, Befehl,
   Briefing, Sonstiges. Daraus entsteht eine Datei aus der passenden Vorlage im Bereich Missionsbau (Typ gesetzt, also sofort im

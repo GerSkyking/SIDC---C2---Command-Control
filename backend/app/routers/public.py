@@ -145,7 +145,7 @@ def public_snapshot(token: str, db: DbDep) -> dict:
         "annotations": [
             {"id": a.id, "phase_id": a.phase_id, "world_x": a.world_x, "world_y": a.world_y,
              "text": a.text, "width": a.width, "height": a.height,
-             "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom}
+             "scale_fixed": a.scale_fixed, "ref_zoom": a.ref_zoom, "area": a.area}
             for a in db.scalars(select(Annotation).where(Annotation.plan_id == plan.id))
             if ok(a.phase_id)
         ],
