@@ -2,6 +2,7 @@
 // verlorene Änderungen melden und nach Reconnect/Phasen-Änderung per Snapshot neu laden (resync).
 import { api, type ImagePlacement, type PlanImage } from "../api";
 import { esc } from "../esc";
+import { icon } from "../icons";
 import { t } from "../i18n";
 import { toast } from "../notify";
 import type { WsMessage } from "../ws";
@@ -22,13 +23,29 @@ export function initLive(ctx: PlanCtx): void {
 
   const presenceEl = root.querySelector<HTMLSpanElement>("#presence")!;
   const names = new Map<string, string>();
-  const renderPresence = () =>
-    (presenceEl.innerHTML = [...names.values()].map((n) => `<span class="badge" title="${t("tip.live.presence")}">${esc(n)}</span>`).join(""));
+  const MAX_NAMES = 5;
+  const renderPresence = () => {
+    const all = [...names.values()];
+    const full = all.slice(0, MAX_NAMES).map((n) => `<span class="badge" title="${esc(n)}">${esc(n)}</span>`).join("");
+    const more = (n: number, label: string) =>
+      `<span class="badge presence-more" title="${esc(label)}">${icon("eye", 13)}<span>${n}</span></span>`;
+    const allTitle = all.join(", ");
+    presenceEl.title = t("tip.live.presence");
+    presenceEl.innerHTML = full + (all.length > MAX_NAMES ? more(all.length - MAX_NAMES, all.slice(MAX_NAMES).join(", ")).replace("<span>", "<span>+") : "");
+    // Kein Platz → nur Auge + Gesamtzahl (Namen im Tooltip), damit die Leiste nicht überläuft
+    if (all.length && presenceEl.scrollWidth > presenceEl.clientWidth + 1)
+      presenceEl.innerHTML = more(all.length, allTitle);
+  };
+  new ResizeObserver(() => renderPresence()).observe(presenceEl.parentElement ?? presenceEl);
 
   socket.on((msg: WsMessage) => {
     switch (msg.type) {
       case "hello":
         Object.assign(caps, msg.caps);
+        // Bereits Anwesende kommen im hello (Join-Nachrichten davor hat dieser Client nie gesehen)
+        names.clear();
+        for (const p of (msg.peers as { uid: string; user: string }[] | undefined) ?? []) if (p.uid !== me.id) names.set(p.uid, p.user);
+        renderPresence();
         ctx.ui.applyCaps();
         break;
       case "reject":
@@ -46,7 +63,9 @@ export function initLive(ctx: PlanCtx): void {
         break;
       case "presence.cursor":
         if (msg.uid !== me.id) {
-          upsertPeer(msg.uid, names.get(msg.uid) ?? "?", msg.lng, msg.lat, !!msg.hl, (msg.arrow as [number, number] | null) ?? null);
+          // Name aus dem Cursor-Paket nachtragen, falls join/hello ihn nicht geliefert hat
+          if (msg.user && !names.has(msg.uid) && !String(msg.uid).startsWith("pub-")) { names.set(msg.uid, msg.user); renderPresence(); }
+          upsertPeer(msg.uid, names.get(msg.uid) ?? msg.user ?? "?", msg.lng, msg.lat, !!msg.hl, (msg.arrow as [number, number] | null) ?? null);
           ctx.ui.refreshPeers();
         }
         break;

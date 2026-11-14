@@ -30,6 +30,9 @@ class Hub:
         # Pro-Socket-Filter (z. B. öffentliche Share-Links): bekommt die Nachricht als dict und
         # liefert die auszuliefernde (ggf. bereinigte) Fassung oder None = nicht senden.
         self._filters: dict[WebSocket, Callable[[dict], dict | None]] = {}
+        # Anwesende (angemeldete) Nutzer je Verbindung: ws -> (uid, Anzeigename). Neue Clients
+        # bekommen damit die bereits Anwesenden im hello (sonst kennen sie nur spätere Joins → "?").
+        self._who: dict[WebSocket, tuple[str, str]] = {}
         self._redis: aioredis.Redis | None = None
         self._task: asyncio.Task | None = None
 
@@ -85,6 +88,21 @@ class Hub:
         if is_zeus:
             self._zeus.add(ws)
 
+    def set_who(self, ws: WebSocket, uid: str, label: str) -> None:
+        self._who[ws] = (uid, label)
+
+    def who(self, plan_id: str) -> list[dict]:
+        """Anwesende dieses Plans (nur Verbindungen dieses Prozesses), je Nutzer einmal."""
+        seen: dict[str, str] = {}
+        for ws in self._rooms.get(plan_id, ()):
+            w = self._who.get(ws)
+            if w:
+                seen[w[0]] = w[1]
+        return [{"uid": u, "user": n} for u, n in seen.items()]
+
+    def uid_present(self, plan_id: str, uid: str) -> bool:
+        return any((self._who.get(ws) or ("",))[0] == uid for ws in self._rooms.get(plan_id, ()))
+
     def set_roles(self, ws: WebSocket, *, is_builder: bool, is_zeus: bool) -> None:
         """Builder-/Zeus-Zugehörigkeit eines bereits verbundenen Sockets ändern."""
         (self._builders.add if is_builder else self._builders.discard)(ws)
@@ -95,6 +113,7 @@ class Hub:
         self._builders.discard(ws)
         self._zeus.discard(ws)
         self._filters.pop(ws, None)
+        self._who.pop(ws, None)
         if not self._rooms[plan_id]:
             self._rooms.pop(plan_id, None)
 

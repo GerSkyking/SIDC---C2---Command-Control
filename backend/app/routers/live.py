@@ -191,8 +191,10 @@ async def live_ws(websocket: WebSocket) -> None:
     try:
         await websocket.accept()
         await hub.join(plan_id, websocket, is_builder=is_builder, is_zeus=is_zeus)
+        hub.set_who(websocket, user.id, user.label)
         await websocket.send_json(
-            {"type": "hello", "level": level, "caps": caps, "mission_builder": is_builder, "zeus": is_zeus}
+            {"type": "hello", "level": level, "caps": caps, "mission_builder": is_builder, "zeus": is_zeus,
+             "peers": [p for p in hub.who(plan_id) if p["uid"] != user.id]}
         )
         await hub.broadcast(plan_id, {"type": "presence.join", "user": user.label, "uid": user.id})
         watcher = asyncio.create_task(_watch_auth(websocket, plan_id, st))
@@ -228,7 +230,8 @@ async def live_ws(websocket: WebSocket) -> None:
             watcher.cancel()
         hub.leave(plan_id, websocket)
         try:
-            await hub.broadcast(plan_id, {"type": "presence.leave", "uid": user.id})
+            if not hub.uid_present(plan_id, user.id):  # weiterer Tab desselben Nutzers noch offen → bleibt sichtbar
+                await hub.broadcast(plan_id, {"type": "presence.leave", "uid": user.id})
         except Exception:  # noqa: BLE001
             log.exception("presence.leave fehlgeschlagen (plan=%s)", plan_id)
 

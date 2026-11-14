@@ -505,6 +505,7 @@ export function initStrokes(ctx: PlanCtx): void {
       if (ctx.editStrokeId) ctx.ui.refreshStrokes();
       else redrawMeasure();
       ctx.ui.refreshStrokeVerts();
+      positionLineDone(); // Haken/Zahnrad/Papierkorb folgen dem Punkt
     };
     const onUp = () => {
       map.off("mousemove", onMove);
@@ -533,6 +534,7 @@ export function initStrokes(ctx: PlanCtx): void {
       if (ctx.editStrokeId) ctx.ui.refreshStrokes();
       else redrawMeasure();
       ctx.ui.refreshStrokeVerts();
+      positionLineDone(); // Haken/Zahnrad/Papierkorb folgen dem Punkt
     };
     map.on("touchmove", onMove);
     const end = () => {
@@ -546,6 +548,37 @@ export function initStrokes(ctx: PlanCtx): void {
     };
     document.addEventListener("touchend", end, { signal: sig });
     document.addEventListener("touchcancel", end, { signal: sig });
+  });
+  // Punkte (Punkt-Werkzeug) wie Marker behandeln: im Karten-Modus mit gehaltener mittlerer Maustaste
+  // (bzw. im Modus "Marker verschieben" mit links) direkt ziehen — ohne vorher auswählen zu müssen.
+  // Die Bestätigungs-Symbole (Haken/Zahnrad/Papierkorb) folgen dem Punkt.
+  map.on("mousedown", "stroke-dots", (e) => {
+    const midBtn = e.originalEvent.button === 1;
+    const wantDrag = canEdit && caps.draw && (ctx.mode === "markermove" || (ctx.mode === "move" && midBtn));
+    if (!wantDrag) return;
+    const id = e.features?.[0]?.properties?.id as string | undefined;
+    const s = id ? strokes.get(id) : undefined;
+    if (!id || !s || !isStrokeDot(s) || !s.points.length) return;
+    if (ctx.editStrokeId === id) return; // ausgewählter Punkt: sein Stützpunkt-Griff (strokeverts-hit) übernimmt
+    e.preventDefault();
+    e.originalEvent.preventDefault(); // Mittelklick-Autoscroll unterdrücken
+    const before = s.points.map((p) => [p[0], p[1]] as LngLat2);
+    map.dragPan.disable();
+    map.getCanvas().style.cursor = "grabbing";
+    const onMove = (ev: maplibregl.MapMouseEvent) => {
+      s.points[0] = [ev.lngLat.lng, ev.lngLat.lat];
+      ctx.ui.refreshStrokes();
+      if (ctx.editStrokeId === id) ctx.ui.refreshStrokeVerts();
+      positionLineDone();
+    };
+    const onUp = () => {
+      map.off("mousemove", onMove);
+      if (ctx.mode === "move") map.dragPan.enable();
+      map.getCanvas().style.cursor = ctx.ui.modeCursor();
+      saveVerts(id, before, s.points as LngLat2[]);
+    };
+    map.on("mousemove", onMove);
+    document.addEventListener("mouseup", onUp, { once: true, signal: sig });
   });
   map.on("dblclick", (e) => {
     if (ctx.mode === "line") {

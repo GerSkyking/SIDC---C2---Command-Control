@@ -290,6 +290,9 @@ export function initTimeline(ctx: PlanCtx): void {
     const first = dom0;
     dom0 -= 12 * 3600e3;
     dom1 += 12 * 3600e3;
+    // Volle Breite nutzen: ist der Phasenbereich schmaler als der Platz, wird die Zeitachse nach rechts verlängert
+    const availW = Math.floor(timelineEl.clientWidth || window.innerWidth - 24);
+    if (availW > 0) dom1 = Math.max(dom1, dom0 + (availW / tlPxPerMin) * 60000);
     const xOf = (t: number) => ((t - dom0) / 60000) * tlPxPerMin;
     const W = Math.max(200, xOf(dom1));
 

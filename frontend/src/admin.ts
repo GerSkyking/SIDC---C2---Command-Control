@@ -97,13 +97,20 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   }
 
   if (section === "storage") {
-    const rows = await api.adminProjectStorage().catch(() => []);
+    const [rows, mapRows] = await Promise.all([
+      api.adminProjectStorage().catch(() => []),
+      api.adminMapStorage().catch(() => []),
+    ]);
+    const mapsTotal = mapRows.reduce((a, m) => a + m.bytes, 0);
+    const projTotal = rows.reduce((a, r) => a + r.total_bytes, 0);
     const fb = (n: number) =>
       n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(2)} GB`;
     const max = Math.max(1, ...rows.map((r) => r.total_bytes));
     app.innerHTML = shell(
       `<h2>${t("admin.storage")}</h2>
        <p class="muted">${t("admin.storage.hint")}</p>
+       <p><strong>${t("admin.storage.grand")}: ${fb(projTotal + mapsTotal)}</strong>
+          <span class="muted"> (${t("admin.storage.projects")}: ${fb(projTotal)} · ${t("admin.storage.maps")}: ${fb(mapsTotal)})</span></p>
        ${
          rows.length
            ? `<table class="acl-tbl"><thead><tr>
@@ -120,6 +127,17 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
                 )
                 .join("")}</tbody></table>`
            : `<p class="muted">${t("admin.storage.empty")}</p>`
+       }
+       <h3>${t("admin.storage.maps")}</h3>
+       ${
+         mapRows.length
+           ? `<table class="acl-tbl"><thead><tr><th>${t("proj.name")}</th><th>${t("admin.storage.total")}</th><th></th></tr></thead><tbody>${mapRows
+               .map(
+                 (m) => `<tr><td style="text-align:left">${esc(m.name)}</td><td><strong>${fb(m.bytes)}</strong></td>
+                   <td style="width:30%"><div class="stor-bar"><i style="width:${Math.max(2, Math.round((m.bytes / Math.max(1, mapRows[0].bytes)) * 100))}%"></i></div></td></tr>`,
+               )
+               .join("")}</tbody></table>`
+           : `<p class="muted">${t("admin.storage.mapsEmpty")}</p>`
        }`,
       t("admin.storage"),
     );

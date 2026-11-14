@@ -361,7 +361,7 @@ export function initRender(ctx: PlanCtx): void {
       source: "strokeverts",
       paint: {
         "circle-radius": IS_MOBILE ? 11 : 8,
-        "circle-color": "#ff9900",
+        "circle-color": "#ffc720",
         "circle-stroke-color": "#fff",
         "circle-stroke-width": 2,
       },

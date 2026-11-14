@@ -11,7 +11,7 @@ import {
   type ModifierCatalog,
   type ModifierOption,
 } from "./catalog";
-import { combobox } from "./combobox";
+import { combobox, enhanceSelect } from "./combobox";
 import {
   AFFILIATIONS,
   AMPLIFIERS,
@@ -172,6 +172,7 @@ export async function renderMarkerBuilder(host: HTMLElement, opts: BuilderOpts):
         refresh();
       }),
     );
+    modRow.querySelectorAll<HTMLSelectElement>("[data-mod]").forEach(enhanceSelect);
   };
 
   // Kategorie- + Marker-Combobox

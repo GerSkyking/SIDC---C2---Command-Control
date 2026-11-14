@@ -45,9 +45,14 @@ export function combobox(
       : `<span class="muted">${esc(opts.placeholder ?? "…")}</span>`;
   };
   const paintList = () => {
-    const q = search.value.trim().toLowerCase();
+    // Volltext: jedes Wort muss irgendwo in Label/Zusatz vorkommen (ohne Groß-/Kleinschreibung und Akzente)
+    const norm = (x: string) => x.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const words = norm(search.value).split(/\s+/).filter(Boolean);
     ul.innerHTML = list
-      .filter((i) => !q || i.label.toLowerCase().includes(q) || (i.sub ?? "").toLowerCase().includes(q))
+      .filter((i) => {
+        const hay = norm(`${i.label} ${i.sub ?? ""}`);
+        return words.every((w) => hay.includes(w));
+      })
       .slice(0, 300)
       .map(
         (i) => `<li data-v="${encodeURIComponent(i.value)}" class="${i.value === value ? "sel" : ""}">
@@ -96,4 +101,17 @@ export function combobox(
       if (!pop.hidden) paintList();
     },
   };
+}
+
+/** Ersetzt ein <select> durch eine durchsuchbare Combobox (Volltext). Das <select>
+ *  bleibt versteckt im DOM und liefert weiter value/change-Events. */
+export function enhanceSelect(sel: HTMLSelectElement): Combobox {
+  const items: ComboItem[] = Array.from(sel.options).map((o) => ({ value: o.value, label: o.textContent ?? "" }));
+  const cb = combobox(items, { value: sel.value, placeholder: "—" }, (v) => {
+    sel.value = v;
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  sel.hidden = true;
+  sel.after(cb.el);
+  return cb;
 }

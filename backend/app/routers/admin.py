@@ -13,7 +13,8 @@ from sqlalchemy import desc, func, select
 
 from .. import audit
 from ..deps import AdminUser, DbDep
-from ..models import ApiToken, AuditLog, Group, GroupMember, Plan, PlanImage, Project, ProjectDoc, User
+from ..config import get_settings
+from ..models import ApiToken, AuditLog, Group, GroupMember, Map, Plan, PlanImage, Project, ProjectDoc, User
 from ..models import now as _now
 from ..security import MIN_PASSWORD_LEN, hash_password
 from ..services.realtime import broadcast_from_thread
@@ -216,6 +217,35 @@ def projects_storage(admin: AdminUser, db: DbDep) -> list[dict]:
         })
     out.sort(key=lambda r: r["total_bytes"], reverse=True)
     return out
+
+
+def _dir_bytes(path) -> int:
+    total = 0
+    try:
+        for root, _dirs, files in os.walk(path):
+            for f in files:
+                try:
+                    total += os.path.getsize(os.path.join(root, f))
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
+
+
+@router.get("/maps/storage")
+async def maps_storage(admin: AdminUser, db: DbDep) -> list[dict]:
+    """Plattenverbrauch je Karte (Kartendateien/Tiles unter ``maps_dir``), größte zuerst."""
+    base = get_settings().maps_dir
+    rows = list(db.execute(select(Map.id, Map.name, Map.status)).all())
+
+    def scan() -> list[dict]:
+        out = [{"map_id": mid, "name": name, "status": st, "bytes": _dir_bytes(base / mid)}
+               for mid, name, st in rows]
+        out.sort(key=lambda r: r["bytes"], reverse=True)
+        return out
+
+    return await run_in_threadpool(scan)
 
 
 # ─── Gruppen ───────────────────────────────────────────────────────────────

@@ -400,6 +400,12 @@ export interface ProjectStorageRow {
   plans_count: number;
   total_bytes: number;
 }
+export interface MapStorageRow {
+  map_id: string;
+  name: string;
+  status: string;
+  bytes: number;
+}
 export interface AdminGroup {
   id: string;
   name: string;
@@ -884,4 +890,5 @@ export const api = {
   createFolderIn: (name: string, parent_id: string | null, project_id: string) =>
     req<PlanFolder>("POST", "/folders", { name, parent_id, project_id }),
   adminProjectStorage: () => req<ProjectStorageRow[]>("GET", "/api/admin/projects/storage"),
+  adminMapStorage: () => req<MapStorageRow[]>("GET", "/api/admin/maps/storage"),
 };

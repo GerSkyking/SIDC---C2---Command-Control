@@ -2,6 +2,7 @@
 // Echelon, Richtung, Texte, Channel, Lock/Timestamp). Ergebnis = MarkerTemplate,
 // das die Plan-Ansicht per Linksklick platziert (wie ATAKmaps placeOnClick).
 
+import { enhanceSelect } from "./combobox";
 import { esc } from "../esc";
 import { t } from "../i18n";
 import { icon } from "../icons";
@@ -232,6 +233,7 @@ export async function openWizard(
           draw();
         }),
       );
+      config.querySelectorAll<HTMLSelectElement>("[data-mod]").forEach(enhanceSelect);
       config.querySelector<HTMLInputElement>("[data-tint]")?.addEventListener("input", (e) => {
         tint = (e.target as HTMLInputElement).value; // ohne draw(): Farbwähler bleibt offen
       });
