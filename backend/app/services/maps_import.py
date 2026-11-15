@@ -15,6 +15,7 @@ ZIP-Struktur (ATAKmaps-Mappack, erweitert):
 """
 from __future__ import annotations
 
+import os
 import json
 import logging
 import re
@@ -36,6 +37,18 @@ _settings = get_settings()
 
 
 _MAP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+
+
+def dir_bytes(path: Path) -> int:
+    """Gesamtgröße aller Dateien unter ``path`` (Karten-Speicherverbrauch)."""
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
 
 
 def map_dir(map_id: str) -> Path:
@@ -161,6 +174,7 @@ def run_import(
                     for g in loc.get("groups", [])
                 ]
 
+            meta["bytes"] = dir_bytes(dest)  # Speicherverbrauch einmalig beim Einrichten festhalten
             m.status = "ready"
             m.error = None
             m.meta = meta

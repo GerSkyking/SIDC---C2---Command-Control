@@ -110,8 +110,9 @@ def assign_default_group(db: Session, user_id: str) -> None:
 
 
 def effective_mission_builder(db: Session, user: User) -> bool:
-    """Globale Missionsbau-Rolle: User-Flag ODER eine Gruppen-Flag ODER Admin."""
-    if user.is_admin or getattr(user, "is_mission_builder", False):
+    """Globale Missionsbau-Rolle: User-Flag ODER eine Gruppen-Flag. Die Adminrolle schließt sie NICHT
+    ein (Admin = Verwaltungsbereich); ein Admin kann sich das Recht aber selbst geben."""
+    if getattr(user, "is_mission_builder", False):
         return True
     from .models import Group
 

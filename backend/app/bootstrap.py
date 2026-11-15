@@ -98,6 +98,7 @@ def ensure_bootstrap_admin() -> None:
                     password_hash=hash_password(s.bootstrap_admin_password),
                     role="admin",
                     can_create_plans=True,
+                    is_mission_builder=True,  # das lokale Konto ist gesperrt (Rechte nur per Konfiguration) → Rechte hier festlegen
                 )
             )
             db.commit()

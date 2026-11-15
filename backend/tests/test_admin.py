@@ -152,3 +152,17 @@ def test_bootstrap_admin_is_protected(admin):
     assert r.json()["protected"] is False
     assert admin.patch(f"/api/admin/users/{r.json()['id']}", json={"is_zeus": True}).status_code == 200
     assert admin.delete(f"/api/admin/users/{r.json()['id']}").status_code == 200
+
+
+def test_new_admin_has_no_implicit_mission_builder(admin, client):
+    r = admin.post("/api/admin/users", json={"username": "admin2", "password": "admin2-pass-12345", "role": "admin"})
+    uid = r.json()["id"]
+    from app import ratelimit
+    ratelimit._hits.clear()
+    admin.post("/auth/logout")
+    assert client.post("/auth/login", json={"username": "admin2", "password": "admin2-pass-12345"}).status_code == 200
+    me = client.get("/auth/me").json()
+    assert me["role"] == "admin" and me["is_mission_builder_effective"] is False and me["is_zeus_effective"] is False
+    # Admin darf sich das Recht selbst geben
+    assert client.patch(f"/api/admin/users/{uid}", json={"is_mission_builder": True}).status_code == 200
+    assert client.get("/auth/me").json()["is_mission_builder_effective"] is True
