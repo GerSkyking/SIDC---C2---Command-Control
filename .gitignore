@@ -5,6 +5,9 @@
 deploy/secret_key
 *.secret
 
+# Lokale Compose-Kopie (Vorlage: docker-compose.example.yml)
+docker-compose.yml
+
 # Data volumes (maps, uploads, db)
 /data/*
 !/data/.gitkeep

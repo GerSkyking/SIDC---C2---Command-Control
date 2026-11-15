@@ -1,0 +1,8 @@
+# Nur für Entwicklung: baut das Backend-Image lokal statt es aus der Registry zu ziehen.
+#   docker compose -f docker-compose.example.yml -f docker-compose.dev.yml up -d --build
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: sidc-c2:dev

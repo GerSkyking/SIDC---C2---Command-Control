@@ -1,6 +1,12 @@
 # SIDC – C2 – Command & Control
 #
-#   cp deploy/.env.example .env   &&   docker compose up -d
+#   cp deploy/.env.example .env   &&   cp docker-compose.example.yml docker-compose.yml
+#   docker compose up -d      (docker-compose.yml ist lokal und nicht im Repo)
+#
+# Es wird nichts gebaut: das Backend-Image kommt aus der GitHub Container Registry,
+# die Version steuert SIDC_IMAGE_TAG in der .env (z. B. 1.0.0). Update = Tag ändern,
+# dann `docker compose pull && docker compose up -d` (DB-Migrationen laufen beim Start).
+# Lokaler Build für Entwicklung: docker compose -f docker-compose.example.yml -f docker-compose.dev.yml up -d --build
 #
 # Der externe Reverse Proxy (Nginx Proxy Manager) verweist auf http://<host>:${HTTP_PORT}.
 # Kein Proxy-Container im Stack; TLS terminiert extern.
@@ -50,10 +56,7 @@ services:
       retries: 5
 
   backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    image: ghcr.io/gerskyking/sidc---c2---command-control:latest
+    image: ghcr.io/gerskyking/sidc---c2---command-control:${SIDC_IMAGE_TAG:?SIDC_IMAGE_TAG in .env setzen (z. B. 1.0.0)}
     restart: unless-stopped
     depends_on:
       db:
@@ -99,11 +102,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # Discord-Brücke (Red-DiscordBot + Cog c2bridge), gebaut direkt aus dem Bot-Repo.
-  # Ohne DISCORD_TOKEN bleibt der Container untätig. Lokaler Build: DISCORD_BOT_CONTEXT=../<Ordner des Bot-Repos>
+  # Discord-Brücke (Red-DiscordBot + Cog c2bridge), optional: nur mit `--profile discord`.
+  # Image aus dem Bot-Repo (Release-Tag), Version über BOT_IMAGE_TAG.
   discord-bot:
-    build:
-      context: ${DISCORD_BOT_CONTEXT:-https://github.com/GerSkyking/SIDC---C2---Command-Control-Bot.git#main}
+    profiles: ["discord"]
+    image: ghcr.io/gerskyking/sidc---c2---command-control-bot:${BOT_IMAGE_TAG:-1.0.0}
     restart: unless-stopped
     depends_on:
       backend:
