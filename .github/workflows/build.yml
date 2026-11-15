@@ -7,6 +7,27 @@ on:
   pull_request:
 
 jobs:
+  version:
+    # Liest VERSION. Gibt es den Tag v<VERSION> noch nicht (und ist es ein Push auf main),
+    # wird beim Image-Build ein Release daraus: Versions-Tags + GitHub Release.
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      minor: ${{ steps.v.outputs.minor }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: v
+        run: |
+          v=$(tr -d '[:space:]' < VERSION)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "minor=${v%.*}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF" = "refs/heads/main" ] && ! git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null 2>&1; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -19,7 +40,7 @@ jobs:
         working-directory: backend
 
   image:
-    needs: test
+    needs: [version, test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,6 +56,8 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
+            type=raw,value=${{ needs.version.outputs.minor }},enable=${{ needs.version.outputs.release == 'true' }}
             type=sha
 
       - uses: docker/setup-buildx-action@v3
@@ -57,14 +80,18 @@ jobs:
           cache-to: type=gha,mode=max
 
   release:
-    # Bei Tag v* automatisch ein GitHub Release mit Änderungsliste anlegen.
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: image
+    # Neue VERSION auf main -> Tag v<VERSION> + GitHub Release mit Änderungsliste.
+    # (Ein von Hand gesetzter v*-Tag baut ebenfalls Versions-Tags, legt hier aber nur an, falls noch kein Release existiert.)
+    if: needs.version.outputs.release == 'true' || startsWith(github.ref, 'refs/tags/v')
+    needs: [version, image]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v5
-      - run: gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME"
+      - run: |
+          tag="${GITHUB_REF_NAME}"
+          [ "${GITHUB_REF_TYPE}" = "tag" ] || tag="v${{ needs.version.outputs.version }}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --target "$GITHUB_SHA" --generate-notes --title "$tag"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

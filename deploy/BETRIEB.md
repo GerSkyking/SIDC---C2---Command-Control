@@ -1,11 +1,12 @@
 # Betrieb: Releases, Updates, Passwort-Reset
 
 ## Release veröffentlichen (Entwickler)
-1. `VERSION` anpassen, committen.
-2. Tag setzen und pushen: `git tag v1.1.0 && git push origin v1.1.0`
-3. GitHub Actions testet, baut das Image und veröffentlicht es als
-   `ghcr.io/gerskyking/sidc---c2---command-control` mit den Tags `1.1.0`, `1.1`, `sha-…`
-   und legt ein GitHub Release mit Änderungsliste an.
+1. `VERSION` hochsetzen (z. B. `1.1.0`), committen, auf `main` pushen.
+2. GitHub Actions testet, baut das Image und veröffentlicht es als
+   `ghcr.io/gerskyking/sidc---c2---command-control` mit den Tags `1.1.0`, `1.1`, `main`, `sha-…`
+   und legt Tag `v1.1.0` plus GitHub Release mit Änderungsliste an.
+3. Ohne Änderung an `VERSION` (Tag existiert schon) entsteht kein neues Release; Versions-Tags werden nie überschrieben.
+   Ein von Hand gesetzter `v*`-Tag funktioniert weiterhin.
 
 ## Erstinstallation / Update (Betreiber)
 Erstinstallation: `cp deploy/.env.example .env && cp docker-compose.example.yml docker-compose.yml`, `.env` ausfüllen, `docker compose up -d`.
