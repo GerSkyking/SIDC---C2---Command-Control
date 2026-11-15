@@ -284,26 +284,27 @@ function postShell(app: HTMLElement): void {
 }
 
 function userRow(u: AdminUser, discordId?: string): string {
+  const lock = u.protected ? "disabled" : "";
   return `<tr data-u="${u.id}">
     <td><strong>${esc(u.username)}</strong> ${u.is_local ? "" : '<span class="badge" title="${t("tip.admin.oidc")}">OIDC</span>'}
-        <span class="badge" title="${t("tip.admin.role")}">${esc(u.role)}</span> ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}
+        <span class="badge" title="${t("tip.admin.role")}">${esc(u.role)}</span> ${u.protected ? `<span class="badge" title="${t("admin.protectedHint")}">${icon("lock", 11)} ${t("admin.protected")}</span>` : ""} ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}
         ${u.display_name ? `<div class="muted" style="font-size:.8rem">${esc(u.display_name)}</div>` : ""}</td>
     <td>
       <details class="admin-drop">
         <summary title="${t("tip.admin.rights")}">${t("admin.rights")}</summary>
         <div class="drop-body">
-          <label class="chk" title="${t("tip.admin.active")}"><input type="checkbox" data-ur="active" ${u.is_active ? "checked" : ""}/> ${t("admin.active")}</label>
-          <label class="chk" title="${t("tip.admin.ccp")}"><input type="checkbox" data-ur="ccp" ${u.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
-          <label class="chk" title="${t("tip.admin.mb")}"><input type="checkbox" data-ur="mb" ${u.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
-          <label class="chk" title="${t("tip.admin.zeus")}"><input type="checkbox" data-ur="zeus" ${u.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
+          <label class="chk" title="${t("tip.admin.active")}"><input type="checkbox" data-ur="active" ${lock} ${u.is_active ? "checked" : ""}/> ${t("admin.active")}</label>
+          <label class="chk" title="${t("tip.admin.ccp")}"><input type="checkbox" data-ur="ccp" ${lock} ${u.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
+          <label class="chk" title="${t("tip.admin.mb")}"><input type="checkbox" data-ur="mb" ${lock} ${u.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
+          <label class="chk" title="${t("tip.admin.zeus")}"><input type="checkbox" data-ur="zeus" ${lock} ${u.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
           <label class="chk-lbl">${t("settings.displayName")}
             <input data-uname maxlength="64" value="${esc(u.display_name ?? "")}" /></label>
         </div>
       </details>
     </td>
     <td><button data-dc title="${discordId ? esc(t("tip.admin.discordOn").replace("{id}", discordId)) : t("tip.admin.discordOff")}">Discord${discordId ? " ✓" : ""}</button>
-        ${u.is_local ? `<button data-reset title="${t("tip.admin.pwReset")}">${t("admin.passwordShort")}</button>` : ""}
-        <button class="icon-btn" data-del title="${t("common.delete")}">${icon("x", 16)}</button></td>
+        ${u.is_local && !u.protected ? `<button data-reset title="${t("tip.admin.pwReset")}">${t("admin.passwordShort")}</button>` : ""}
+        ${u.protected ? "" : `<button class="icon-btn" data-del title="${t("common.delete")}">${icon("x", 16)}</button>`}</td>
   </tr>`;
 }
 

@@ -32,8 +32,8 @@ def test_user_and_group_management(admin):
 
 def test_admin_cannot_lock_self(admin):
     me = admin.get("/auth/me").json()
-    assert admin.patch(f"/api/admin/users/{me['id']}", json={"is_active": False}).status_code == 400
-    assert admin.patch(f"/api/admin/users/{me['id']}", json={"role": "user"}).status_code == 400
+    assert admin.patch(f"/api/admin/users/{me['id']}", json={"is_active": False}).status_code == 403  # geschütztes Bootstrap-Konto
+    assert admin.patch(f"/api/admin/users/{me['id']}", json={"role": "user"}).status_code == 403
 
 
 def test_catalog_upload_and_fetch(admin):
@@ -102,7 +102,7 @@ def test_self_export_and_delete(admin):
 
 
 def test_last_admin_cannot_self_delete(admin):
-    assert admin.delete("/auth/me").status_code == 400
+    assert admin.delete("/auth/me").status_code == 403  # geschütztes Bootstrap-Konto
     assert admin.get("/auth/me").status_code == 200
 
 
@@ -132,3 +132,23 @@ def test_favorites(admin):
     fid = r.json()["id"]
     assert len(admin.get("/api/favorites").json()) == 1
     assert admin.delete(f"/api/favorites/{fid}").json()["ok"] is True
+
+
+def test_bootstrap_admin_is_protected(admin):
+    users = admin.get("/api/admin/users").json()
+    me = next(u for u in users if u["username"] == "admin")
+    assert me["protected"] is True
+    # nicht löschbar, Rechte/Aktivstatus/Rolle/Passwort nicht änderbar
+    assert admin.delete(f"/api/admin/users/{me['id']}").status_code == 403
+    for body in ({"password": "another-long-pass-123"}, {"role": "user"}, {"is_active": False},
+                 {"can_create_plans": False}, {"is_zeus": True}, {"is_mission_builder": True}):
+        assert admin.patch(f"/api/admin/users/{me['id']}", json=body).status_code == 403, body
+    # Anzeigename bleibt änderbar
+    assert admin.patch(f"/api/admin/users/{me['id']}", json={"display_name": "Chef"}).status_code == 200
+    # Selbstlöschung gesperrt
+    assert admin.delete("/auth/me").status_code == 403
+    # andere Nutzer bleiben normal verwaltbar
+    r = admin.post("/api/admin/users", json={"username": "normalo", "password": "normalo-pass-123", "role": "user"})
+    assert r.json()["protected"] is False
+    assert admin.patch(f"/api/admin/users/{r.json()['id']}", json={"is_zeus": True}).status_code == 200
+    assert admin.delete(f"/api/admin/users/{r.json()['id']}").status_code == 200

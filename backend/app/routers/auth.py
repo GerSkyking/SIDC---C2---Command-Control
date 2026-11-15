@@ -288,6 +288,10 @@ def delete_my_account(request: Request, response: Response, user: CurrentUser, d
     """Eigenes Konto und die daran hängenden persönlichen Daten löschen (Recht auf
     Löschung). Plan-Inhalte, die der Nutzer erstellt hat (Marker, Bilder, …), bleiben
     erhalten — wie beim Löschen durch einen Admin — verlieren aber die Zuordnung."""
+    from .admin import is_protected_admin
+
+    if is_protected_admin(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Lokales Admin-Konto ist geschützt und nicht löschbar")
     if user.is_admin:
         others = db.scalar(
             select(User.id).where(User.role == "admin", User.is_active.is_(True), User.id != user.id)

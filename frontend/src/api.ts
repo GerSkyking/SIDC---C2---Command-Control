@@ -137,6 +137,7 @@ export interface AdminUser {
   is_zeus?: boolean;
   is_active: boolean;
   is_local: boolean;
+  protected?: boolean;
 }
 export interface PlanImage {
   id: string;

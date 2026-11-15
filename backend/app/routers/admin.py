@@ -70,6 +70,16 @@ class UserRow(BaseModel):
     is_zeus: bool = False
     is_active: bool
     is_local: bool  # hat ein Passwort (kein reiner OIDC-User)
+    protected: bool = False  # lokaler Bootstrap-Admin: nicht löschbar, Rechte/Passwort nur über die Server-Konfiguration
+
+
+def is_protected_admin(u: User) -> bool:
+    """Das lokale Bootstrap-Admin-Konto (BOOTSTRAP_ADMIN_USER). Es wird nur über die Server-Konfiguration
+    verwaltet — nicht löschbar, Rechte/Aktivstatus/Passwort per Web-UI/API unveränderlich."""
+    return bool(u.password_hash) and u.username == get_settings().bootstrap_admin_user
+
+
+_PROTECTED_MSG = "Lokales Admin-Konto ist geschützt (Verwaltung nur über die Server-Konfiguration)"
 
 
 def _row(u: User) -> UserRow:
@@ -77,6 +87,7 @@ def _row(u: User) -> UserRow:
         id=u.id, username=u.username, display_name=u.display_name, role=u.role,
         can_create_plans=u.can_create_plans, is_mission_builder=u.is_mission_builder,
         is_zeus=u.is_zeus, is_active=u.is_active, is_local=bool(u.password_hash),
+        protected=is_protected_admin(u),
     )
 
 
@@ -113,6 +124,11 @@ def patch_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbDep) -> Us
     u = db.get(User, user_id)
     if u is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if is_protected_admin(u) and any(
+        getattr(body, f, None) is not None
+        for f in ("password", "role", "can_create_plans", "is_mission_builder", "is_zeus", "is_active")
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, _PROTECTED_MSG)
     if body.password is not None:
         if len(body.password) < MIN_PASSWORD_LEN:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Passwort min. {MIN_PASSWORD_LEN} Zeichen")
@@ -145,6 +161,8 @@ def delete_user(user_id: str, request: Request, admin: AdminUser, db: DbDep) -> 
     u = db.get(User, user_id)
     if u is None:
         return {"ok": True}
+    if is_protected_admin(u):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, _PROTECTED_MSG)
     if u.id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Eigenes Konto nicht löschbar")
     uname = u.username
