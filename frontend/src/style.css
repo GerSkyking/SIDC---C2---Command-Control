@@ -1868,3 +1868,12 @@ html, body { overflow-x: hidden; }
 :root { color-scheme: dark; }
 :root[data-theme="light"] { color-scheme: light; }
 input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
+/* Einheitliche Höhe der Bedienelemente in der Topbar-Zeitleiste: + Phase, Phase kopieren, Zeus/Missionsbau/Spieler, +/−, Datum */
+.topbar { --ctl-h: 1.9rem; }
+.topbar input[type="datetime-local"],
+.tl-ctl > button, .tl-ctl > .segmented, .tl-ctl > .tl-zoom, .tl-ctl > select { height: var(--ctl-h); box-sizing: border-box; }
+.tl-ctl > button, .tl-ctl > select { padding-top: 0; padding-bottom: 0; display: inline-flex; align-items: center; }
+.tl-ctl > .segmented .seg-btn { height: 100%; padding-top: 0; padding-bottom: 0; display: inline-flex; align-items: center; }
+.tl-ctl .tl-zoom button { height: 100%; width: 1.9rem; }
+.tl-ctl #ph-add, .tl-ctl #ph-copy { font-size: 0.8rem; }
