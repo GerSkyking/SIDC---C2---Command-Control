@@ -363,7 +363,7 @@ ${t("tip.tl.bar")}${canEdit && (plane === "player" || isMB) && !fixedRole ? " ·
           `</span>`
         : "") +
       (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+ ${t("phase.heading")}</button>` : "") +
-      (isMB ? `<button id="ph-copy" title="${t("phase.copyHint")}">${icon("clone", 14)} ${t("phase.copy")}</button>` : "") +
+      (isMB ? `<button id="ph-copy" title="${t("phase.copyHint")}">${t("phase.copy")}</button>` : "") +
       `<label class="ph-op" title="${t("phase.outOpacityHint")}">${t("phase.outOpacity")}` +
       `<input type="range" id="ph-op" min="0" max="100" step="5" value="${ctx.outOpacity}" aria-label="${t("phase.outOpacity")}"/><span id="ph-op-v">${ctx.outOpacity}%</span></label>` +
       (isMB
