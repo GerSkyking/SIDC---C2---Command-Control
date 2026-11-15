@@ -30,6 +30,7 @@ from ..models import (
     PlanACL,
     PlanFolder,
     PlanImage,
+    PlanOrbat,
     Project,
     PlanVersion,
     Stroke,
@@ -1243,6 +1244,7 @@ def copy_phase_content(
     # Ketten-Gruppen neu nummerieren (sonst würden Ketten im Zielplan verschmelzen)
     top = db.scalar(select(func.coalesce(func.max(Marker.linked_group_id), 0)).where(Marker.plan_id == target.id))
     gmap: dict[int, int] = {}
+    linked: set[tuple[str, str]] = set()
     n_m = n_s = n_a = n_i = 0
     for m in db.scalars(select(Marker).where(Marker.plan_id == plan.id, Marker.phase_id == src.id)):
         d = _marker_dict(m)
@@ -1250,8 +1252,13 @@ def copy_phase_content(
         d["phase_id"] = dst.id
         d["extra_phase_ids"] = []
         d["layer_id"] = lid(m.layer_id)
-        if not same:
-            d["orbat_node_id"] = None
+        if not same and m.orbat_node_id:
+            # ORBAT-Verknüpfung bleibt; das ORBAT wird dem Zielplan bei Bedarf zugeordnet
+            node = db.get(OrbatNode, m.orbat_node_id)
+            if node is not None and (node.orbat_id, target.id) not in linked:
+                linked.add((node.orbat_id, target.id))
+                if db.get(PlanOrbat, (target.id, node.orbat_id)) is None:
+                    db.add(PlanOrbat(plan_id=target.id, orbat_id=node.orbat_id, added_by=user.id))
         g = m.linked_group_id
         if g is not None and g >= 0:
             if g not in gmap:
