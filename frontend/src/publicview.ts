@@ -39,6 +39,14 @@ import {
   setAreaLabels,
 } from "./mapAreas";
 
+/** Bereich eines Pins/Markers inkl. optionalem Stil */
+interface PArea {
+  pts: [number, number][];
+  closed: boolean;
+  color?: string;
+  pattern?: string;
+  strength?: number;
+}
 interface M {
   id: string;
   world_x: number;
@@ -50,6 +58,9 @@ interface M {
   locked: boolean;
   channel?: string;
   phase_id?: string | null;
+  extra_phase_ids?: string[];
+  /** Bereich um den Marker */
+  area?: PArea | null;
   scale?: number;
   tint?: string;
 }
@@ -91,7 +102,7 @@ interface An {
   height?: number;
   scale_fixed?: boolean;
   ref_zoom?: number;
-  area?: { pts: [number, number][]; closed: boolean } | null;
+  area?: PArea | null;
 }
 
 function hex(p: number): string {
@@ -296,8 +307,37 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       if (!ar || !Array.isArray(ar.pts) || ar.pts.length < 2) continue;
       const op = phaseOpacityOf(a.phase_id);
       if (op <= 0.001) continue;
-      const color = (a as { color?: string }).color || (isNotesPhase(a.phase_id) ? AREA_COLORS.mb : AREA_COLORS.all);
-      out.push(...areaFeatures(ar.pts, !!ar.closed, { aid: a.id, color, pat: hatchId(color), op }));
+      const color = ar.color || (a as { color?: string }).color || (isNotesPhase(a.phase_id) ? AREA_COLORS.mb : AREA_COLORS.all);
+      const pk = normPattern(ar.pattern);
+      out.push(
+        ...areaFeatures(ar.pts, !!ar.closed, {
+          aid: a.id,
+          color,
+          pat: hatchId(color, pk),
+          pk,
+          fo: normStrength(ar.strength ?? 25) / 100,
+          op,
+        }),
+      );
+    }
+    // Bereiche um Marker (gleiche Optik wie bei Notizen; Stil aus dem Bereich)
+    for (const m of markers.values()) {
+      const ar = m.area;
+      if (!ar || !Array.isArray(ar.pts) || ar.pts.length < 2) continue;
+      const op = opacityOf(m);
+      if (op <= 0.001) continue;
+      const color = ar.color || AREA_COLORS.all;
+      const pk = normPattern(ar.pattern);
+      out.push(
+        ...areaFeatures(ar.pts, !!ar.closed, {
+          mid: m.id,
+          color,
+          pat: hatchId(color, pk),
+          pk,
+          fo: normStrength(ar.strength ?? 25) / 100,
+          op,
+        }),
+      );
     }
     for (const s of strokes.values()) {
       if (!isArea(s) || s.fill === false) continue;
@@ -727,6 +767,7 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
   const refreshM = async () => {
     await Promise.all([...markers.values(), ...areaMarkers()].map(ensureIcon));
     (map.getSource("m") as GeoJSONSource)?.setData(mFC());
+    refreshAreas(); // Bereiche um Marker folgen den Markern (Phase, Live-Änderungen, Verschieben)
   };
   const refreshS = () => {
     (map.getSource("s") as GeoJSONSource)?.setData(sFC());

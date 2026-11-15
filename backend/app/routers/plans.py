@@ -204,7 +204,7 @@ def released_markers(db: Session, plan_id: str) -> list[dict]:
             sidc=sidc_with_status(base, n.status),
             phase_id=bmap[m.phase_id],
             unit_text="", ai_text="", channel="",
-            locked=True, orbat_node_id=None, released=True,
+            locked=True, orbat_node_id=None, released=True, area=None,
         )
         out.append(d)
     return out
