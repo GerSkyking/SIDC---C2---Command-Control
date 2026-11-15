@@ -28,7 +28,7 @@ export function mountMembers(host: HTMLElement, ctx: ProjCtx): void {
         </div>
         ${
           members.length
-            ? `<table class="acl-tbl mem-tbl"><thead><tr><th></th><th>${t("common.name")}</th><th>${t("proj.members.role")}</th><th></th></tr></thead><tbody>${members
+            ? `<table class="acl-tbl mem-tbl"><thead><tr><th></th><th>${t("common.name")}</th><th>${t("proj.members.role")}</th><th title="${t("proj.members.builderHint")}">${t("admin.missionBuilder")}</th><th></th></tr></thead><tbody>${members
                 .map(
                   (m, i) => `<tr data-i="${i}">
                     <td>${icon(m.subject_type === "group" ? "groups" : "users", 16)}</td>
@@ -38,6 +38,7 @@ export function mountMembers(host: HTMLElement, ctx: ProjCtx): void {
                         ? `<select data-role aria-label="${t("proj.members.role")}">${ROLES.map((r) => `<option value="${r}" ${r === m.role ? "selected" : ""}>${t("proj.role." + r)}</option>`).join("")}</select>`
                         : esc(t("proj.role." + m.role))
                     }</td>
+                    <td><input type="checkbox" data-builder ${m.is_builder ? "checked" : ""} ${ctx.isOwner && ctx.me.is_mission_builder_effective ? "" : "disabled"} title="${t("proj.members.builderHint")}" aria-label="${t("admin.missionBuilder")}" /></td>
                     <td>${ctx.isOwner ? `<button class="icon-btn" data-rm title="${t("proj.members.remove")}" aria-label="${t("proj.members.remove")}">${icon("x", 16)}</button>` : ""}</td>
                   </tr>`,
                 )
@@ -65,6 +66,11 @@ export function mountMembers(host: HTMLElement, ctx: ProjCtx): void {
       const m = members[Number(tr.dataset.i)];
       tr.querySelector<HTMLSelectElement>("[data-role]")?.addEventListener("change", (e) => {
         m.role = (e.target as HTMLSelectElement).value as ProjectRole;
+        dirty = true;
+        paint();
+      });
+      tr.querySelector<HTMLInputElement>("[data-builder]")?.addEventListener("change", (e) => {
+        m.is_builder = (e.target as HTMLInputElement).checked;
         dirty = true;
         paint();
       });

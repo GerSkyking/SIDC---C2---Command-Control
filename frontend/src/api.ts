@@ -34,6 +34,10 @@ export interface Me {
   can_create_plans_effective: boolean;
   is_mission_builder_effective: boolean;
   is_zeus_effective?: boolean;
+  is_staff?: boolean; // Admin oder Techniker
+  is_technician_effective?: boolean;
+  can_manage_maps_effective?: boolean;
+  can_grant_rights?: boolean; // lokaler Admin
   ui_settings?: Record<string, unknown>;
 }
 export interface MapItem {
@@ -135,6 +139,8 @@ export interface AdminUser {
   can_create_plans: boolean;
   is_mission_builder: boolean;
   is_zeus?: boolean;
+  is_technician?: boolean;
+  can_manage_maps?: boolean;
   is_active: boolean;
   is_local: boolean;
   protected?: boolean;
@@ -204,6 +210,8 @@ export interface ProjectMember {
   subject_type: "user" | "group";
   subject_id: string;
   role: ProjectRole;
+  /** Missionsbau-Recht nur in diesem Projekt (vergibt nur ein globaler Missionsbauer) */
+  is_builder?: boolean;
   name?: string;
 }
 export interface ProjectCandidate {
@@ -413,6 +421,9 @@ export interface AdminGroup {
   can_create_plans: boolean;
   is_mission_builder: boolean;
   is_zeus?: boolean;
+  is_technician?: boolean;
+  can_manage_maps?: boolean;
+  is_system?: boolean;
   member_ids: string[];
 }
 export interface AclEntry {
@@ -625,14 +636,14 @@ export const api = {
   deleteFavorite: (id: string) => req<void>("DELETE", `/api/favorites/${id}`),
 
   adminUsers: () => req<AdminUser[]>("GET", "/api/admin/users"),
-  createUser: (b: { username: string; password: string; role: string; can_create_plans: boolean; is_mission_builder?: boolean; is_zeus?: boolean; display_name?: string }) =>
+  createUser: (b: { username: string; password: string; role: string; can_create_plans: boolean; is_mission_builder?: boolean; is_zeus?: boolean; is_technician?: boolean; can_manage_maps?: boolean; display_name?: string }) =>
     req<AdminUser>("POST", "/api/admin/users", b),
-  patchUser: (id: string, b: Partial<{ role: string; can_create_plans: boolean; is_mission_builder: boolean; is_zeus: boolean; is_active: boolean; password: string; display_name: string }>) =>
+  patchUser: (id: string, b: Partial<{ role: string; can_create_plans: boolean; is_mission_builder: boolean; is_zeus: boolean; is_technician: boolean; can_manage_maps: boolean; is_active: boolean; password: string; display_name: string }>) =>
     req<AdminUser>("PATCH", `/api/admin/users/${id}`, b),
   deleteUser: (id: string) => req<void>("DELETE", `/api/admin/users/${id}`),
   adminGroups: () => req<AdminGroup[]>("GET", "/api/admin/groups"),
-  createGroup: (b: { name: string; can_create_plans: boolean; is_mission_builder?: boolean; is_zeus?: boolean }) => req<AdminGroup>("POST", "/api/admin/groups", b),
-  patchGroup: (id: string, b: { name: string; can_create_plans: boolean; is_mission_builder: boolean; is_zeus?: boolean }) =>
+  createGroup: (b: { name: string; can_create_plans: boolean; is_mission_builder?: boolean; is_zeus?: boolean; is_technician?: boolean; can_manage_maps?: boolean }) => req<AdminGroup>("POST", "/api/admin/groups", b),
+  patchGroup: (id: string, b: { name: string; can_create_plans: boolean; is_mission_builder: boolean; is_zeus?: boolean; is_technician?: boolean; can_manage_maps?: boolean }) =>
     req<AdminGroup>("PATCH", `/api/admin/groups/${id}`, b),
 
   orbats: () => req<Orbat[]>("GET", "/api/orbats"),
@@ -776,7 +787,7 @@ export const api = {
     req<ProjectMember[]>(
       "PUT",
       `/projects/${id}/members`,
-      m.map(({ subject_type, subject_id, role }) => ({ subject_type, subject_id, role })),
+      m.map(({ subject_type, subject_id, role, is_builder }) => ({ subject_type, subject_id, role, is_builder: !!is_builder })),
     ),
   /** Nutzer mit Projektzugriff (direkt oder über Gruppe) – Auswahl für Aufgaben-Zuständige. */
   projectAssignees: (id: string) => req<{ user_id: string; label: string }[]>("GET", `/projects/${id}/assignees`),

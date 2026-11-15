@@ -13,7 +13,7 @@ import { renderLegal } from "./legal";
 import { esc } from "./esc";
 import { icon } from "./icons";
 import { initTheme } from "./theme";
-import { setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
+import { navAdmin, setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
 initTheme();
 
@@ -98,7 +98,7 @@ async function route(): Promise<void> {
   }
 
   const adminMatch = location.hash.match(/^#\/admin(?:\/(users|log|config|storage))?$/);
-  if (adminMatch && me.role === "admin") {
+  if (adminMatch && (me.is_staff || me.role === "admin" || me.can_manage_maps_effective)) {
     return renderAdmin(app, (adminMatch[1] as "users" | "log" | "config" | "storage") || "users");
   }
   return renderPlanList();
@@ -174,7 +174,7 @@ async function renderPlanList(): Promise<void> {
 
   app.innerHTML = `
    <div class="shell">
-    ${sidebar("plans", { isAdmin: me!.role === "admin", username: me!.display_name || me!.username, isMissionBuilder: me!.is_mission_builder_effective })}
+    ${sidebar("plans", { ...navAdmin(me!), username: me!.display_name || me!.username, isMissionBuilder: me!.is_mission_builder_effective })}
     <div class="shell-main">
     <div class="topbar">
       <strong>${t("plans.heading")}</strong>
@@ -293,7 +293,7 @@ async function renderTrash(): Promise<void> {
   const items = await api.trash().catch(() => []);
   app.innerHTML = `
    <div class="shell">
-    ${sidebar("trash", { isAdmin: me!.role === "admin", username: me!.display_name || me!.username, isMissionBuilder: me!.is_mission_builder_effective })}
+    ${sidebar("trash", { ...navAdmin(me!), username: me!.display_name || me!.username, isMissionBuilder: me!.is_mission_builder_effective })}
     <div class="shell-main">
     <div class="topbar"><strong>${t("nav.trash")}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
     <div class="list stack">

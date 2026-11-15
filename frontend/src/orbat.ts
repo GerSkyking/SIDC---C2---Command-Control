@@ -5,7 +5,7 @@ import { a11yModal, confirmDialog, toastError } from "./notify";
 import { icon } from "./icons";
 import { esc } from "./esc";
 import { iconSrc } from "./sidc/symbol";
-import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
+import { navAdmin, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
 const AFFIL = ["friend", "hostile", "neutral", "unknown"] as const;
 const OPEN_KEY = "sidc_orbat_open";
@@ -32,7 +32,7 @@ export async function renderOrbatLibrary(app: HTMLElement, me: Me, selectedId?: 
 
   app.innerHTML = `
    <div class="shell">
-    ${sidebar("orbat", { isAdmin: me.role === "admin", username: me.display_name || me.username, isMissionBuilder: true })}
+    ${sidebar("orbat", { ...navAdmin(me), username: me.display_name || me.username, isMissionBuilder: true })}
     <div class="shell-main">
     <div class="topbar"><strong>${t("nav.orbat")}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
     <div class="orbat-wrap">

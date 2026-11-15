@@ -16,14 +16,14 @@ import { attachMentions, renderMentionText } from "./mentionInput";
 import { a11yModal, confirmDialog, promptDialog, toastError } from "./notify";
 import { relTime, startPolling } from "./projectUtil";
 import { openSettings } from "./settings";
-import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
+import { navAdmin, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
 const SYSTEM = "system";
 
 export async function renderChat(app: HTMLElement, me: Me, selIn?: string): Promise<void> {
   app.innerHTML = `
    <div class="shell">
-    ${sidebar("chat", { isAdmin: me.role === "admin", username: me.display_name || me.username, isMissionBuilder: me.is_mission_builder_effective })}
+    ${sidebar("chat", { ...navAdmin(me), username: me.display_name || me.username, isMissionBuilder: me.is_mission_builder_effective })}
     <div class="shell-main">
      <div class="topbar"><strong>${t("nav.chat")}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}
        <button class="icon-btn" id="settingsBtn" title="${t("settings.open")}" aria-label="${t("settings.open")}">${icon("settings")}</button></div>

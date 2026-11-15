@@ -24,10 +24,11 @@ export function configHtml(
   sources: MapSource[],
   catStatus: Record<string, boolean>,
   legalStatus: Record<string, boolean>,
+  staff = true,
 ): string {
   return `
     <div class="row"><h2 style="margin:0">${t("admin.maps")}</h2><span class="grow"></span>
-      <button id="restart" title="${t("tip.cfg.restart")}">${t("admin.restart")}</button></div>
+      ${staff ? `<button id="restart" title="${t("tip.cfg.restart")}">${t("admin.restart")}</button>` : ""}</div>
     <table><tbody>
       ${maps
         .map(
@@ -78,7 +79,7 @@ export function configHtml(
       </div>
     </div>
 
-    <h2>${t("admin.catalog")}</h2>
+    ${staff ? `<h2>${t("admin.catalog")}</h2>
     <p class="muted">${t("admin.catalogHint")}</p>
     <table><tbody>${CATALOGS.map(
       (c) => `<tr>
@@ -104,7 +105,7 @@ export function configHtml(
           ${legalStatus[p.key] ? `<button class="icon-btn" data-dellegal="${p.key}" title="${t("common.delete")}">${icon("trash", 16)}</button>` : ""}
         </td>
       </tr>`,
-    ).join("")}</tbody></table>`;
+    ).join("")}</tbody></table>` : ""}`;
 }
 
 export function wireConfig(root: HTMLElement, reload: () => void): void {

@@ -64,10 +64,21 @@ export function getLastProject(): string {
 
 export type NavSection = "plans" | "trash" | "users" | "log" | "config" | "storage" | "orbat" | "projects" | "chat";
 
+/** Sichtbarkeit des Admin-Bereichs je Rolle: Staff (Admin/Techniker) sieht Benutzer + Speicher, nur Admin das Log,
+ *  Kartenverwalter nur die Konfiguration (Karten). */
+export function navAdmin(me: { role: string; is_staff?: boolean; can_manage_maps_effective?: boolean }): {
+  isAdmin: boolean;
+  isStaff: boolean;
+  isFullAdmin: boolean;
+} {
+  const isStaff = !!me.is_staff || me.role === "admin";
+  return { isAdmin: isStaff || !!me.can_manage_maps_effective, isStaff, isFullAdmin: me.role === "admin" };
+}
+
 /** Linke Navigationsleiste für die Nicht-Karten-Ansichten. */
 export function sidebar(
   active: NavSection,
-  opts: { isAdmin: boolean; username: string; isMissionBuilder?: boolean },
+  opts: { isAdmin: boolean; isStaff?: boolean; isFullAdmin?: boolean; username: string; isMissionBuilder?: boolean },
 ): string {
   const collapsed = localStorage.getItem("sidc_sidebar") === "1";
   const item = (id: NavSection, ic: string, label: string, href: string, sub = false) =>
@@ -91,9 +102,9 @@ export function sidebar(
       ${
         opts.isAdmin
           ? `<div class="sb-group">${t("nav.admin")}</div>` +
-            item("users", "users", t("admin.usersGroups"), "#/admin/users", true) +
-            item("log", "audit", t("admin.log"), "#/admin/log", true) +
-            item("storage", "download", t("admin.storage"), "#/admin/storage", true) +
+            (opts.isStaff ? item("users", "users", t("admin.usersGroups"), "#/admin/users", true) : "") +
+            (opts.isFullAdmin ? item("log", "audit", t("admin.log"), "#/admin/log", true) : "") +
+            (opts.isStaff ? item("storage", "download", t("admin.storage"), "#/admin/storage", true) : "") +
             item("config", "settings", t("admin.config"), "#/admin/config", true)
           : ""
       }

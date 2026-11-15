@@ -5,16 +5,22 @@ import { mountBridgeAdmin } from "./bridgeUi";
 import { langSelect, t, wireLangSelect } from "./i18n";
 import { icon } from "./icons";
 import { confirmDialog, promptDialog, toastError } from "./notify";
-import { sidebar, themeSwitch, wireSidebar, wireThemeSwitch, type NavSection } from "./ui";
+import { navAdmin, sidebar, themeSwitch, wireSidebar, wireThemeSwitch, type NavSection } from "./ui";
 import { esc } from "./esc";
 
 export type AdminSection = "users" | "log" | "config" | "storage";
 
 export async function renderAdmin(app: HTMLElement, section: AdminSection = "users"): Promise<void> {
   const me = await api.me().catch(() => null);
+  const staff = !!me && navAdmin(me).isStaff;
+  const fullAdmin = me?.role === "admin";
+  const canGrant = !!me?.can_grant_rights;
+  // Ansichten je Rolle: Benutzer/Speicher = Staff, Log = Admin, Konfiguration (Karten) = Kartenverwalter
+  if ((section === "users" || section === "storage") && !staff) section = "config";
+  if (section === "log" && !fullAdmin) section = staff ? "users" : "config";
   const shell = (body: string, title: string) => `
    <div class="shell">
-    ${sidebar(section as NavSection, { isAdmin: true, username: me?.display_name || me?.username || "", isMissionBuilder: !!me?.is_mission_builder_effective })}
+    ${sidebar(section as NavSection, { ...navAdmin(me ?? { role: "user" }), username: me?.display_name || me?.username || "", isMissionBuilder: !!me?.is_mission_builder_effective })}
     <div class="shell-main">
     <div class="topbar"><strong>${title}</strong><span class="grow"></span>${themeSwitch()}${langSelect()}</div>
     <div class="list stack">${body}</div>
@@ -40,7 +46,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
       api.legal("privacy").catch(() => ({ content: null })),
     ]);
     const legalStatus = { imprint: !!imprint.content, privacy: !!privacy.content };
-    app.innerHTML = shell(configHtml(maps, sources, catStatus, legalStatus), t("admin.config"));
+    app.innerHTML = shell(configHtml(maps, sources, catStatus, legalStatus, staff), t("admin.config"));
     postShell(app);
     wireConfig(app.querySelector<HTMLElement>(".list")!, reload);
     const brg = document.createElement("div");
@@ -153,25 +159,29 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   ]);
   app.innerHTML = shell(
     `<h2>${t("admin.users")}</h2>
-     <table><tbody>${users.map((u) => userRow(u, discordIds[u.id])).join("")}</tbody></table>
+     <table><tbody>${users.map((u) => userRow(u, canGrant, discordIds[u.id])).join("")}</tbody></table>
      <div class="row">
        <input id="nu-name" placeholder="${t("auth.username")}" />
        <input id="nu-pw" type="password" placeholder="${t("auth.password")} (min. 12)" />
-       <select id="nu-role" title="${t("tip.admin.role")}"><option value="user">user</option><option value="admin">admin</option></select>
-       <label title="${t("tip.admin.ccp")}"><input type="checkbox" id="nu-ccp" /> ${t("admin.canCreatePlans")}</label>
-       <label title="${t("tip.admin.mb")}"><input type="checkbox" id="nu-mb" /> ${t("admin.missionBuilder")}</label>
-       <label title="${t("tip.admin.zeus")}"><input type="checkbox" id="nu-zeus" /> ${t("admin.zeus")}</label>
-       <button class="primary" id="nu-add">${t("common.create")}</button>
+       <select id="nu-role" title="${t("tip.admin.role")}" ${canGrant ? "" : "disabled"}><option value="user">user</option><option value="admin">admin</option></select>
+       <label title="${t("tip.admin.ccp")}"><input type="checkbox" id="nu-ccp" ${canGrant ? "" : "disabled"} /> ${t("admin.canCreatePlans")}</label>
+       <label title="${t("tip.admin.mb")}"><input type="checkbox" id="nu-mb" ${canGrant ? "" : "disabled"} /> ${t("admin.missionBuilder")}</label>
+       <label title="${t("tip.admin.zeus")}"><input type="checkbox" id="nu-zeus" ${canGrant ? "" : "disabled"} /> ${t("admin.zeus")}</label>
+       <label title="${t("tip.admin.technician")}"><input type="checkbox" id="nu-tech" ${canGrant ? "" : "disabled"} /> ${t("admin.technician")}</label>
+       <label title="${t("tip.admin.mapManager")}"><input type="checkbox" id="nu-maps" ${canGrant ? "" : "disabled"} /> ${t("admin.mapManager")}</label>
+       <button class="primary" id="nu-add" ${canGrant ? "" : "disabled"}>${t("common.create")}</button>
      </div>
 
      <h2>${t("admin.groups")}</h2>
      <p class="muted">${t("admin.groupsHint")}</p>
-     <table><tbody>${groups.map((g) => groupRow(g, users)).join("")}</tbody></table>
+     <table><tbody>${groups.map((g) => groupRow(g, users, canGrant, staff)).join("")}</tbody></table>
      <div class="row">
        <input id="ng-name" placeholder="${t("admin.groupName")}" />
-       <label title="${t("tip.admin.ccp")}"><input type="checkbox" id="ng-ccp" /> ${t("admin.canCreatePlans")}</label>
-       <label title="${t("tip.admin.mb")}"><input type="checkbox" id="ng-mb" /> ${t("admin.missionBuilder")}</label>
-       <label title="${t("tip.admin.zeus")}"><input type="checkbox" id="ng-zeus" /> ${t("admin.zeus")}</label>
+       <label title="${t("tip.admin.ccp")}"><input type="checkbox" id="ng-ccp" ${canGrant ? "" : "disabled"} /> ${t("admin.canCreatePlans")}</label>
+       <label title="${t("tip.admin.mb")}"><input type="checkbox" id="ng-mb" ${canGrant ? "" : "disabled"} /> ${t("admin.missionBuilder")}</label>
+       <label title="${t("tip.admin.zeus")}"><input type="checkbox" id="ng-zeus" ${canGrant ? "" : "disabled"} /> ${t("admin.zeus")}</label>
+       <label title="${t("tip.admin.technician")}"><input type="checkbox" id="ng-tech" ${canGrant ? "" : "disabled"} /> ${t("admin.technician")}</label>
+       <label title="${t("tip.admin.mapManager")}"><input type="checkbox" id="ng-maps" ${canGrant ? "" : "disabled"} /> ${t("admin.mapManager")}</label>
        <button class="primary" id="ng-add">${t("common.create")}</button>
      </div>`,
     t("admin.usersGroups"),
@@ -187,16 +197,20 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
         can_create_plans: (app.querySelector("#nu-ccp") as HTMLInputElement).checked,
         is_mission_builder: (app.querySelector("#nu-mb") as HTMLInputElement).checked,
         is_zeus: (app.querySelector("#nu-zeus") as HTMLInputElement).checked,
+        is_technician: (app.querySelector("#nu-tech") as HTMLInputElement).checked,
+        can_manage_maps: (app.querySelector("#nu-maps") as HTMLInputElement).checked,
       }),
     ),
   );
   app.querySelectorAll<HTMLElement>("[data-u]").forEach((el) => {
     const id = el.dataset.u!;
-    const field: Record<string, "is_active" | "can_create_plans" | "is_mission_builder" | "is_zeus"> = {
+    const field: Record<string, "is_active" | "can_create_plans" | "is_mission_builder" | "is_zeus" | "is_technician" | "can_manage_maps"> = {
       active: "is_active",
       ccp: "can_create_plans",
       mb: "is_mission_builder",
       zeus: "is_zeus",
+      technician: "is_technician",
+      maps: "can_manage_maps",
     };
     el.querySelectorAll<HTMLInputElement>("[data-ur]").forEach((cb) =>
       cb.addEventListener("change", async () => {
@@ -235,6 +249,8 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
         can_create_plans: (app.querySelector("#ng-ccp") as HTMLInputElement).checked,
         is_mission_builder: (app.querySelector("#ng-mb") as HTMLInputElement).checked,
         is_zeus: (app.querySelector("#ng-zeus") as HTMLInputElement).checked,
+        is_technician: (app.querySelector("#ng-tech") as HTMLInputElement).checked,
+        can_manage_maps: (app.querySelector("#ng-maps") as HTMLInputElement).checked,
       }),
     ),
   );
@@ -252,6 +268,8 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
           can_create_plans: el.querySelector<HTMLInputElement>('[data-gr="ccp"]')!.checked,
           is_mission_builder: el.querySelector<HTMLInputElement>('[data-gr="mb"]')!.checked,
           is_zeus: el.querySelector<HTMLInputElement>('[data-gr="zeus"]')!.checked,
+          is_technician: el.querySelector<HTMLInputElement>('[data-gr="technician"]')!.checked,
+          can_manage_maps: el.querySelector<HTMLInputElement>('[data-gr="maps"]')!.checked,
         };
         try {
           await api.patchGroup(id, body);
@@ -283,8 +301,9 @@ function postShell(app: HTMLElement): void {
   wireSidebar(app);
 }
 
-function userRow(u: AdminUser, discordId?: string): string {
+function userRow(u: AdminUser, canGrant: boolean, discordId?: string): string {
   const lock = u.protected ? "disabled" : "";
+  const rlock = u.protected || !canGrant ? "disabled" : ""; // Rechte vergibt nur ein lokaler Admin
   return `<tr data-u="${u.id}">
     <td><strong>${esc(u.username)}</strong> ${u.is_local ? "" : '<span class="badge" title="${t("tip.admin.oidc")}">OIDC</span>'}
         <span class="badge" title="${t("tip.admin.role")}">${esc(u.role)}</span> ${u.protected ? `<span class="badge" title="${t("admin.protectedHint")}">${icon("lock", 11)} ${t("admin.protected")}</span>` : ""} ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}
@@ -293,12 +312,14 @@ function userRow(u: AdminUser, discordId?: string): string {
       <details class="admin-drop">
         <summary title="${t("tip.admin.rights")}">${t("admin.rights")}</summary>
         <div class="drop-body">
-          <label class="chk" title="${t("tip.admin.active")}"><input type="checkbox" data-ur="active" ${lock} ${u.is_active ? "checked" : ""}/> ${t("admin.active")}</label>
-          <label class="chk" title="${t("tip.admin.ccp")}"><input type="checkbox" data-ur="ccp" ${lock} ${u.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
-          <label class="chk" title="${t("tip.admin.mb")}"><input type="checkbox" data-ur="mb" ${lock} ${u.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
-          <label class="chk" title="${t("tip.admin.zeus")}"><input type="checkbox" data-ur="zeus" ${lock} ${u.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
+          <label class="chk" title="${t("tip.admin.active")}"><input type="checkbox" data-ur="active" ${canGrant ? lock : "disabled"} ${u.is_active ? "checked" : ""}/> ${t("admin.active")}</label>
+          <label class="chk" title="${t("tip.admin.ccp")}"><input type="checkbox" data-ur="ccp" ${rlock} ${u.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
+          <label class="chk" title="${t("tip.admin.mb")}"><input type="checkbox" data-ur="mb" ${rlock} ${u.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
+          <label class="chk" title="${t("tip.admin.zeus")}"><input type="checkbox" data-ur="zeus" ${rlock} ${u.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
+          <label class="chk" title="${t("tip.admin.technician")}"><input type="checkbox" data-ur="technician" ${rlock} ${u.is_technician ? "checked" : ""}/> ${t("admin.technician")}</label>
+          <label class="chk" title="${t("tip.admin.mapManager")}"><input type="checkbox" data-ur="maps" ${rlock} ${u.can_manage_maps ? "checked" : ""}/> ${t("admin.mapManager")}</label>
           <label class="chk-lbl">${t("settings.displayName")}
-            <input data-uname maxlength="64" value="${esc(u.display_name ?? "")}" /></label>
+            <input data-uname maxlength="64" value="${esc(u.display_name ?? "")}" ${canGrant && !u.protected ? "" : "disabled"} /></label>
         </div>
       </details>
     </td>
@@ -308,16 +329,22 @@ function userRow(u: AdminUser, discordId?: string): string {
   </tr>`;
 }
 
-function groupRow(g: AdminGroup, users: AdminUser[]): string {
+function groupRow(g: AdminGroup, users: AdminUser[], canGrant: boolean, staff: boolean): string {
+  const sys = !!g.is_system;
+  const rlock = sys || !canGrant ? "disabled" : "";
+  const hasRights = g.can_create_plans || g.is_mission_builder || g.is_zeus || !!g.is_technician || !!g.can_manage_maps;
+  const mlock = sys || !staff || (hasRights && !canGrant) ? "disabled" : ""; // Mitglieder von Rechte-Gruppen: nur lokaler Admin
   return `<tr data-g="${g.id}">
     <td><strong>${esc(g.name)}</strong></td>
     <td>
       <details class="admin-drop">
         <summary title="${t("tip.admin.rights")}">${t("admin.rights")}</summary>
         <div class="drop-body">
-          <label class="chk" title="${t("tip.admin.ccp")}"><input type="checkbox" data-gr="ccp" ${g.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
-          <label class="chk" title="${t("tip.admin.mb")}"><input type="checkbox" data-gr="mb" ${g.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
-          <label class="chk" title="${t("tip.admin.zeus")}"><input type="checkbox" data-gr="zeus" ${g.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
+          <label class="chk" title="${t("tip.admin.ccp")}"><input type="checkbox" data-gr="ccp" ${rlock} ${g.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
+          <label class="chk" title="${t("tip.admin.mb")}"><input type="checkbox" data-gr="mb" ${rlock} ${g.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
+          <label class="chk" title="${t("tip.admin.zeus")}"><input type="checkbox" data-gr="zeus" ${rlock} ${g.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
+          <label class="chk" title="${t("tip.admin.technician")}"><input type="checkbox" data-gr="technician" ${rlock} ${g.is_technician ? "checked" : ""}/> ${t("admin.technician")}</label>
+          <label class="chk" title="${t("tip.admin.mapManager")}"><input type="checkbox" data-gr="maps" ${rlock} ${g.can_manage_maps ? "checked" : ""}/> ${t("admin.mapManager")}</label>
         </div>
       </details>
     </td>
@@ -328,7 +355,7 @@ function groupRow(g: AdminGroup, users: AdminUser[]): string {
           ${users
             .map(
               (u) =>
-                `<label class="chk"><input type="checkbox" data-member="${u.id}" ${
+                `<label class="chk"><input type="checkbox" data-member="${u.id}" ${mlock} ${
                   g.member_ids.includes(u.id) ? "checked" : ""
                 }/> ${esc(u.username)}</label>`,
             )
@@ -336,6 +363,6 @@ function groupRow(g: AdminGroup, users: AdminUser[]): string {
         </div>
       </details>
     </td>
-    <td><button class="icon-btn" data-delg title="${t("common.delete")}">${icon("x", 16)}</button></td>
+    <td>${sys ? `<span class="badge" title="${t("admin.publicHint")}">${icon("lock", 11)} ${t("admin.system")}</span>` : !staff || (hasRights && !canGrant) ? "" : `<button class="icon-btn" data-delg title="${t("common.delete")}">${icon("x", 16)}</button>`}</td>
   </tr>`;
 }

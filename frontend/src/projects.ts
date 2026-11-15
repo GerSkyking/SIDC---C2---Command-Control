@@ -10,7 +10,7 @@ import { projectFolderPath, renderProjectTree, selectedProjectFolder } from "./p
 import { wireCopyButtons } from "./projectRefs";
 import { type ProjCtx, fmtBytes, modalOpen } from "./projectUtil";
 import { openSettings } from "./settings";
-import { getLastProject, setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
+import { getLastProject, navAdmin, setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
 type Tab = "overview" | "activity" | "public" | "builder" | "directory" | "timeline" | "plans" | "tasks" | "feedback" | "whiteboard" | "members";
 const TABS: { id: Tab; ic: string; key: string }[] = [
@@ -30,7 +30,7 @@ const TABS: { id: Tab; ic: string; key: string }[] = [
 function shell(me: Me, title: string, body: string, crumbs = ""): string {
   return `
    <div class="shell">
-    ${sidebar("projects", { isAdmin: me.role === "admin", username: me.display_name || me.username, isMissionBuilder: me.is_mission_builder_effective })}
+    ${sidebar("projects", { ...navAdmin(me), username: me.display_name || me.username, isMissionBuilder: me.is_mission_builder_effective })}
     <div class="shell-main">
     <div class="topbar">
       ${crumbs || `<strong>${esc(title)}</strong>`}
@@ -66,7 +66,7 @@ export async function renderProjects(app: HTMLElement, me: Me, id?: string, tab?
 
 async function renderList(app: HTMLElement, me: Me): Promise<void> {
   const isAdmin = me.role === "admin";
-  const canCreate = isAdmin || me.is_mission_builder_effective;
+  const canCreate = me.is_mission_builder_effective;
   let list: ProjectItem[] = [];
   let folders: ProjectFolder[] = [];
   let loadErr = "";
@@ -76,7 +76,7 @@ async function renderList(app: HTMLElement, me: Me): Promise<void> {
   } catch (e) {
     loadErr = e instanceof Error ? e.message : String(e);
   }
-  const storage: ProjectStorageRow[] = isAdmin ? await api.adminProjectStorage().catch(() => []) : [];
+  const storage: ProjectStorageRow[] = navAdmin(me).isStaff ? await api.adminProjectStorage().catch(() => []) : [];
   let showArchived = false;
   try {
     showArchived = localStorage.getItem("sidc_proj_archived") === "1";
@@ -154,7 +154,7 @@ async function renderList(app: HTMLElement, me: Me): Promise<void> {
       <label class="proj-arch" id="projArch" hidden><input type="checkbox" /> <span></span></label>
       <div class="plan-tree proj-tree" id="projTree" role="tree" aria-label="${t("pt.treeLabel")}"></div>
       ${
-        isAdmin
+        navAdmin(me).isStaff
           ? `<section class="proj-storage"><h2>${icon("download", 16)} ${t("admin.storage")}</h2>
               ${
                 storage.length
@@ -229,15 +229,14 @@ async function renderProject(app: HTMLElement, me: Me, id: string, tabIn?: strin
     return;
   }
   rememberProject(id);
-  const isAdmin = me.role === "admin";
   const ctx: ProjCtx = {
     id,
     project,
     me,
     role: project.role,
-    canEdit: isAdmin || project.role === "editor" || project.role === "owner",
-    isOwner: isAdmin || project.role === "owner",
-    isBuilder: !!project.is_builder || isAdmin,
+    canEdit: project.role === "editor" || project.role === "owner",
+    isOwner: project.role === "owner",
+    isBuilder: !!project.is_builder,
   };
   const tabs = TABS.filter((x) => x.id !== "builder" || ctx.isBuilder);
   let tab: Tab = (tabs.find((x) => x.id === tabIn)?.id ?? "overview") as Tab;
