@@ -12,7 +12,7 @@ import { openAclEditor } from "./acl";
 import { openHelp } from "./help";
 import { t } from "./i18n";
 import { icon } from "./icons";
-import { iconBtn, themeSwitch, wireTopbarMenu } from "./ui";
+import { iconBtn, logoutAndReload, themeSwitch, wireTopbarMenu } from "./ui";
 import { PlanSocket } from "./ws";
 import { esc } from "./esc";
 import { shotOptsMarkup } from "./screenshot";
@@ -455,11 +455,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
 
   root.querySelector("#acl")?.addEventListener("click", () => openAclEditor(planId, snap.plan.name, undefined, isMB));
   root.querySelector("#help")!.addEventListener("click", openHelp);
-  root.querySelector("#logoutBtn")!.addEventListener("click", async () => {
-    await api.logout().catch(() => {});
-    location.hash = "#/";
-    location.reload();
-  });
+  root.querySelector("#logoutBtn")!.addEventListener("click", logoutAndReload);
   root.querySelector("#present")!.addEventListener("click", () => ctx.ui.startPresent());
 
 

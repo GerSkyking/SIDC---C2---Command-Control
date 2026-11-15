@@ -15,6 +15,7 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   const staff = !!me && navAdmin(me).isStaff;
   const fullAdmin = me?.role === "admin";
   const canGrant = !!me?.can_grant_rights;
+  const canMaps = !!me?.can_manage_maps_effective; // Admin oder Recht „Karten verwalten“ — Techniker allein nicht
   // Ansichten je Rolle: Benutzer/Speicher = Staff, Log = Admin, Konfiguration (Karten) = Kartenverwalter
   if ((section === "users" || section === "storage") && !staff) section = "config";
   if (section === "log" && !fullAdmin) section = staff ? "users" : "config";
@@ -40,13 +41,13 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   if (section === "config") {
     const [maps, sources, catStatus, imprint, privacy] = await Promise.all([
       api.maps().catch(() => []),
-      api.mapSources().catch(() => []),
+      canMaps ? api.mapSources().catch(() => []) : Promise.resolve([]),
       api.catalogStatus().catch(() => ({}) as Record<string, boolean>),
       api.legal("imprint").catch(() => ({ content: null })),
       api.legal("privacy").catch(() => ({ content: null })),
     ]);
     const legalStatus = { imprint: !!imprint.content, privacy: !!privacy.content };
-    app.innerHTML = shell(configHtml(maps, sources, catStatus, legalStatus, staff), t("admin.config"));
+    app.innerHTML = shell(configHtml(maps, sources, catStatus, legalStatus, staff, canMaps), t("admin.config"));
     postShell(app);
     wireConfig(app.querySelector<HTMLElement>(".list")!, reload);
     const brg = document.createElement("div");
@@ -152,14 +153,16 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
   }
 
   // section === "users"
-  const [users, groups, discordIds] = await Promise.all([
+  const [users, groups, discordIds, oidcInfo] = await Promise.all([
     api.adminUsers(),
     api.adminGroups(),
     api.bridgeAdminIdentities().catch(() => ({}) as Record<string, string>),
+    api.oidcEnabled().catch(() => ({ enabled: false })),
   ]);
+  const oidcOn = oidcInfo.enabled;
   app.innerHTML = shell(
     `<h2>${t("admin.users")}</h2>
-     <table><tbody>${users.map((u) => userRow(u, canGrant, discordIds[u.id])).join("")}</tbody></table>
+     <table><tbody>${users.map((u) => userRow(u, canGrant, discordIds[u.id], oidcOn)).join("")}</tbody></table>
      <div class="row">
        <input id="nu-name" placeholder="${t("auth.username")}" />
        <input id="nu-pw" type="password" placeholder="${t("auth.password")} (min. 12)" />
@@ -233,6 +236,15 @@ export async function renderAdmin(app: HTMLElement, section: AdminSection = "use
       if (!clean && cur) guard(() => api.bridgeAdminClearIdentity(id));
       else if (clean) guard(() => api.bridgeAdminSetIdentity(id, clean));
     });
+    el.querySelector("[data-oidclink]")?.addEventListener("click", async () => {
+      // AUTH-R-014: Einmal-Link erzeugen; die Person öffnet ihn und meldet sich über den Anmeldedienst an.
+      try {
+        const link = await api.adminOidcLink(id);
+        await promptDialog(t("admin.oidcLinkDialog"), { value: location.origin + link.path });
+      } catch (e) {
+        toastError(e);
+      }
+    });
     el.querySelector("[data-reset]")?.addEventListener("click", async () => {
       const pw = await promptDialog(t("admin.newPassword"));
       if (pw) guard(() => api.patchUser(id, { password: pw }));
@@ -301,24 +313,32 @@ function postShell(app: HTMLElement): void {
   wireSidebar(app);
 }
 
-function userRow(u: AdminUser, canGrant: boolean, discordId?: string): string {
+function userRow(u: AdminUser, canGrant: boolean, discordId?: string, oidcOn = false): string {
   const lock = u.protected ? "disabled" : "";
   const rlock = u.protected || !canGrant ? "disabled" : ""; // Rechte vergibt nur ein lokaler Admin
+  const hasOidc = u.has_oidc ?? !u.is_local;
+  // AUTH-R-008: Rechte, die aus der Anmeldung kommen, sind hier gesperrt.
+  const managed = new Set(u.managed_fields ?? []);
+  const right = (key: string, field: string, checked: boolean | undefined, tip: string, label: string): string =>
+    managed.has(field)
+      ? `<label class="chk" title="${t("tip.admin.managed")}"><input type="checkbox" ${checked ? "checked" : ""} disabled/> ${label} <span class="badge">${t("admin.managed")}</span></label>`
+      : `<label class="chk" title="${tip}"><input type="checkbox" data-ur="${key}" ${rlock} ${checked ? "checked" : ""}/> ${label}</label>`;
   return `<tr data-u="${u.id}">
     <td><strong>${esc(u.username)}</strong>
         ${u.display_name ? `<div class="muted" style="font-size:.8rem">${esc(u.display_name)}</div>` : ""}</td>
-    <td style="width:5.5rem"><span class="badge" title="${t("tip.admin.role")}">${esc(u.role)}</span></td>
-    <td style="width:11rem">${u.is_local ? "" : `<span class="badge" title="${t("tip.admin.oidc")}">OIDC</span> `}${u.protected ? `<span class="badge" title="${t("admin.protectedHint")}">${icon("lock", 11)} ${t("admin.protected")}</span> ` : ""}${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}</td>
+    <td style="width:5.5rem"><span class="badge" title="${managed.has("role") ? t("tip.admin.managed") : t("tip.admin.role")}">${esc(u.role)}</span></td>
+    <td style="width:11rem">${hasOidc ? `<span class="badge" title="${t("tip.admin.oidc")}">OIDC</span> ` : ""}${u.protected ? `<span class="badge" title="${t("admin.protectedHint")}">${icon("lock", 11)} ${t("admin.protected")}</span> ` : ""}${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}</td>
     <td>
       <details class="admin-drop">
         <summary title="${t("tip.admin.rights")}">${t("admin.rights")}</summary>
         <div class="drop-body">
           <label class="chk" title="${t("tip.admin.active")}"><input type="checkbox" data-ur="active" ${canGrant ? lock : "disabled"} ${u.is_active ? "checked" : ""}/> ${t("admin.active")}</label>
-          <label class="chk" title="${t("tip.admin.ccp")}"><input type="checkbox" data-ur="ccp" ${rlock} ${u.can_create_plans ? "checked" : ""}/> ${t("admin.canCreatePlans")}</label>
-          <label class="chk" title="${t("tip.admin.mb")}"><input type="checkbox" data-ur="mb" ${rlock} ${u.is_mission_builder ? "checked" : ""}/> ${t("admin.missionBuilder")}</label>
-          <label class="chk" title="${t("tip.admin.zeus")}"><input type="checkbox" data-ur="zeus" ${rlock} ${u.is_zeus ? "checked" : ""}/> ${t("admin.zeus")}</label>
-          <label class="chk" title="${t("tip.admin.technician")}"><input type="checkbox" data-ur="technician" ${rlock} ${u.is_technician ? "checked" : ""}/> ${t("admin.technician")}</label>
-          <label class="chk" title="${t("tip.admin.mapManager")}"><input type="checkbox" data-ur="maps" ${rlock} ${u.can_manage_maps ? "checked" : ""}/> ${t("admin.mapManager")}</label>
+          ${right("ccp", "can_create_plans", u.can_create_plans, t("tip.admin.ccp"), t("admin.canCreatePlans"))}
+          ${right("mb", "is_mission_builder", u.is_mission_builder, t("tip.admin.mb"), t("admin.missionBuilder"))}
+          ${right("zeus", "is_zeus", u.is_zeus, t("tip.admin.zeus"), t("admin.zeus"))}
+          ${right("technician", "is_technician", u.is_technician, t("tip.admin.technician"), t("admin.technician"))}
+          ${right("maps", "can_manage_maps", u.can_manage_maps, t("tip.admin.mapManager"), t("admin.mapManager"))}
+          ${managed.size ? `<p class="muted" style="font-size:.78rem;margin:.2rem 0">${t("admin.managedHint")}</p>` : ""}
           <label class="chk-lbl">${t("settings.displayName")}
             <input data-uname maxlength="64" value="${esc(u.display_name ?? "")}" ${canGrant && !u.protected ? "" : "disabled"} /></label>
         </div>
@@ -326,6 +346,7 @@ function userRow(u: AdminUser, canGrant: boolean, discordId?: string): string {
     </td>
     <td><button data-dc title="${discordId ? esc(t("tip.admin.discordOn").replace("{id}", discordId)) : t("tip.admin.discordOff")}">Discord${discordId ? " ✓" : ""}</button>
         ${u.is_local && !u.protected ? `<button data-reset title="${t("tip.admin.pwReset")}">${t("admin.passwordShort")}</button>` : ""}
+        ${oidcOn && !hasOidc && !u.is_bootstrap && !u.protected ? `<button data-oidclink title="${t("tip.admin.oidcLink")}">${t("admin.oidcLink")}</button>` : ""}
         ${u.protected ? "" : `<button class="icon-btn" data-del title="${t("common.delete")}">${icon("x", 16)}</button>`}</td>
   </tr>`;
 }

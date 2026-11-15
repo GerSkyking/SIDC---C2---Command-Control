@@ -8,7 +8,7 @@ from sqlalchemy import inspect, select, text
 
 from .config import get_settings
 from .db import Base, SessionLocal, engine
-from .models import User
+from .models import OidcIdentity, User
 from .security import MIN_PASSWORD_LEN, hash_password
 
 log = logging.getLogger("sidc.bootstrap")
@@ -93,8 +93,34 @@ def ensure_public_group() -> None:
             db.commit()
 
 
+def _mark_bootstrap_admin() -> bool:
+    """Das feste Merkmal ``is_bootstrap`` pflegen (AUTH-R-010): Es gehört genau dem lokalen
+    Konto mit dem Namen aus ``BOOTSTRAP_ADMIN_USER``. Ein Konto, das über OIDC entstanden oder
+    verbunden ist, bekommt es nie, auch wenn es so heißt. Gibt zurück, ob das Konto dieses
+    Namens der Start-Admin ist (oder noch keines existiert)."""
+    s = get_settings()
+    with SessionLocal() as db:
+        for other in db.scalars(select(User).where(User.is_bootstrap.is_(True), User.username != s.bootstrap_admin_user)):
+            other.is_bootstrap = False  # BOOTSTRAP_ADMIN_USER wurde geändert
+        user = db.scalar(select(User).where(User.username == s.bootstrap_admin_user))
+        ok = True
+        if user is not None and not user.is_bootstrap:
+            has_identity = db.scalar(select(OidcIdentity.id).where(OidcIdentity.user_id == user.id)) is not None
+            if has_identity or not user.password_hash:
+                log.error(
+                    "Konto '%s' heißt wie BOOTSTRAP_ADMIN_USER, ist aber kein lokales Konto — "
+                    "es wird nicht als Start-Admin behandelt", s.bootstrap_admin_user,
+                )
+                ok = False
+            else:
+                user.is_bootstrap = True
+        db.commit()
+        return ok
+
+
 def ensure_bootstrap_admin() -> None:
     s = get_settings()
+    is_ours = _mark_bootstrap_admin()
     if not s.bootstrap_admin_password:
         log.warning("BOOTSTRAP_ADMIN_PASSWORD leer — kein lokaler Admin angelegt")
         return
@@ -116,11 +142,12 @@ def ensure_bootstrap_admin() -> None:
                     role="admin",
                     can_create_plans=True,
                     is_mission_builder=True,  # das lokale Konto ist gesperrt (Rechte nur per Konfiguration) → Rechte hier festlegen
+                    is_bootstrap=True,
                 )
             )
             db.commit()
             log.info("Bootstrap-Admin '%s' angelegt", s.bootstrap_admin_user)
-        elif user.role != "admin":
+        elif is_ours and user.role != "admin":
             user.role = "admin"
             db.commit()
             log.info("Bootstrap-User '%s' auf Adminrolle gehoben", s.bootstrap_admin_user)

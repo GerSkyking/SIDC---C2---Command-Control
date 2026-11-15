@@ -55,6 +55,21 @@ export function wireThemeSwitch(root: ParentNode): void {
 
 // Zuletzt geöffnetes Projekt (pro Nutzer im Server gespeichert, me.ui_settings.last_project)
 let lastProject = "";
+/** sessionStorage-Merker: gerade abgemeldet (die Anmeldeseite zeigt dann den Hinweis zu AUTH-R-012). */
+export const LOGGED_OUT_KEY = "sidc_logged_out";
+
+/** Sitzung im Tool beenden und zur Anmeldeseite. */
+export async function logoutAndReload(): Promise<void> {
+  await api.logout().catch(() => {});
+  try {
+    sessionStorage.setItem(LOGGED_OUT_KEY, "1");
+  } catch {
+    /* sessionStorage gesperrt */
+  }
+  location.hash = "#/";
+  location.reload();
+}
+
 export function setLastProject(id: unknown): void {
   lastProject = typeof id === "string" && /^[0-9a-f]{32}$/.test(id) ? id : "";
 }
@@ -170,9 +185,5 @@ export function wireSidebar(root: ParentNode): void {
     window.addEventListener("chat-unread-changed", tick);
     void tick();
   }
-  root.querySelector("#sbLogout")?.addEventListener("click", async () => {
-    await api.logout().catch(() => {});
-    location.hash = "#/";
-    location.reload();
-  });
+  root.querySelector("#sbLogout")?.addEventListener("click", logoutAndReload);
 }

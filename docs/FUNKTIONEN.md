@@ -7,6 +7,8 @@ Kompakte Übersicht, **was das Tool heute kann** (Stand 2026-11-11). Details und
 - Browser-Tool für gemeinsame Einsatzplanung in **Echtzeit** (WebSocket, autoritativer Server, Redis-Backplane).
 - FastAPI + PostgreSQL, Frontend TypeScript/Vite/MapLibre, Docker-Stack; UI **Deutsch/Englisch**, Kartenlabels in 13 Sprachen.
 - Login lokal (Bootstrap-Admin) und optional **OIDC**; Sessions per HttpOnly-Cookie.
+- Optional per Einstellung: Zugang nur mit einer **Zugangsgruppe** aus dem OIDC-Token (sonst Ablehnungsseite, kein Konto), **Rechte aus Gruppen** (Admin, Missionsbau, Zeus, Pläne erstellen, Techniker, Karten verwalten; Abgleich bei jedem Login), Anzeigename aus dem Token, Anmeldung ohne E-Mail-Scope, lokale Anmeldung nur noch als **Notfallzugang** des Start-Admins (`/?local=1`), Sitzungsdauer in Stunden, Name des Anmeldedienstes auf dem Anmeldeknopf (`OIDC_PROVIDER_NAME`). Ohne diese Einstellungen bleibt alles wie bisher.
+- Bestehende Konten lassen sich über einen Einmal-Link mit der Anmeldung beim OIDC-Provider **verbinden** (Admin-Bereich). Konten mit OIDC-Identität melden sich nicht lokal an; der Start-Admin bleibt lokal und ist nicht verbindbar.
 
 ## 2. Rollen & Rechte
 | Rolle / Recht | Bedeutung |

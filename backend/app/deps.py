@@ -81,7 +81,7 @@ def require_staff(user: CurrentUser, db: DbDep) -> User:
 
 
 def require_map_manager(user: CurrentUser, db: DbDep) -> User:
-    """Karten verwalten: Admin, Techniker oder das Recht „Karten verwalten“."""
+    """Karten verwalten: Admin oder das Recht „Karten verwalten“ (Techniker allein nicht)."""
     from .permissions import effective_map_manager
 
     if not effective_map_manager(db, user):

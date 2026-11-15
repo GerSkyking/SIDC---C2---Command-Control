@@ -46,6 +46,12 @@ class User(Base):
     # Karten importieren/aktualisieren/löschen, ohne Admin zu sein
     can_manage_maps: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # True = der Abgleich beim OIDC-Login hat das Konto deaktiviert (Zugangsgruppe fehlte) und darf
+    # es wieder aktivieren. Ein Admin, der "aktiv" von Hand setzt, löscht die Markierung (AUTH-R-009).
+    deactivated_by_sync: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # True = das Konto des Start-Admins (Notfallzugang, AUTH-R-002/-010). Setzt nur
+    # ``ensure_bootstrap_admin`` beim Start; nie aus einem Benutzernamen abgeleitet.
+    is_bootstrap: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     # Bei Passwortwechsel / "überall abmelden" hochgezählt -> alte Session-Cookies ungültig.
     session_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     ui_settings: Mapped[dict] = mapped_column(JSON, default=dict)  # Keybinds, Theme … (pro Nutzer)
@@ -71,6 +77,21 @@ class OidcIdentity(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     issuer: Mapped[str] = mapped_column(String(255))
     subject: Mapped[str] = mapped_column(String(255))
+
+
+class OidcLinkCode(Base):
+    """Einmaliger Code, mit dem eine Person ihre OIDC-Identität an ein bestehendes Konto hängt
+    (AUTH-R-014). Gespeichert wird nur der SHA-256-Hash; der Klartext geht einmal an den Admin."""
+
+    __tablename__ = "oidc_link_codes"
+
+    id: Mapped[str] = mapped_column(UuidPk, primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Group(Base):

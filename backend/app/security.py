@@ -32,7 +32,7 @@ def issue_session(user_id: str, epoch: int = 0) -> str:
 
 def read_session(token: str) -> tuple[str, int] | None:
     """(user_id, session_epoch) oder None. Epoch fehlt bei Alt-Cookies -> 0."""
-    max_age = _settings.session_ttl_days * 86400
+    max_age = _settings.session_ttl_seconds()
     try:
         data = _serializer.loads(token, max_age=max_age)
     except (BadSignature, SignatureExpired):

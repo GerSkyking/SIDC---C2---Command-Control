@@ -145,6 +145,12 @@ export interface AdminUser {
   is_active: boolean;
   is_local: boolean;
   protected?: boolean;
+  /** Mit einer Identität des Anmeldedienstes (OIDC) verbunden. */
+  has_oidc?: boolean;
+  /** Start-Admin: lokaler Notfallzugang, lässt sich nicht verbinden. */
+  is_bootstrap?: boolean;
+  /** Rechte, die bei diesem Konto aus der Anmeldung kommen und hier gesperrt sind (AUTH-R-008). */
+  managed_fields?: string[];
 }
 export interface PlanImage {
   id: string;
@@ -538,7 +544,12 @@ export const api = {
     req<Me>("POST", "/auth/login", { username, password }),
   logout: () => req<void>("POST", "/auth/logout"),
   uiDefaults: () => req<{ road_colors: { main: string; secondary: string; path: string } }>("GET", "/api/ui-defaults"),
-  oidcEnabled: () => req<{ enabled: boolean }>("GET", "/auth/oidc/enabled"),
+  /** `provider_name`: Name des Anmeldedienstes für die Anmeldeseite; fehlt, wenn nicht eingestellt (AUTH-R-001). */
+  oidcEnabled: () =>
+    req<{ enabled: boolean; local_login?: "all" | "bootstrap-admin"; provider_name?: string }>("GET", "/auth/oidc/enabled"),
+  /** Verknüpfungscode für den folgenden OIDC-Login vormerken (AUTH-R-014). */
+  oidcLinkStart: (code: string) =>
+    req<{ ok: boolean; valid: boolean; account: string | null; owner_session: boolean }>("POST", "/auth/oidc/link", { code }),
 
   maps: () => req<MapItem[]>("GET", "/api/maps"),
   importMap: (id: string, name: string, url: string) =>
@@ -642,6 +653,8 @@ export const api = {
   patchUser: (id: string, b: Partial<{ role: string; can_create_plans: boolean; is_mission_builder: boolean; is_zeus: boolean; is_technician: boolean; can_manage_maps: boolean; is_active: boolean; password: string; display_name: string }>) =>
     req<AdminUser>("PATCH", `/api/admin/users/${id}`, b),
   deleteUser: (id: string) => req<void>("DELETE", `/api/admin/users/${id}`),
+  adminOidcLink: (id: string) =>
+    req<{ code: string; path: string; expires_at: string }>("POST", `/api/admin/users/${id}/oidc-link`),
   adminGroups: () => req<AdminGroup[]>("GET", "/api/admin/groups"),
   createGroup: (b: { name: string; can_create_plans: boolean; is_mission_builder?: boolean; is_zeus?: boolean; is_technician?: boolean; can_manage_maps?: boolean }) => req<AdminGroup>("POST", "/api/admin/groups", b),
   patchGroup: (id: string, b: { name: string; can_create_plans: boolean; is_mission_builder: boolean; is_zeus?: boolean; is_technician?: boolean; can_manage_maps?: boolean }) =>

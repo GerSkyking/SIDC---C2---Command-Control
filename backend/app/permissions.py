@@ -2,7 +2,8 @@
 
 Rollenmodell (Admin ist reine Verwaltung, kein Missionsbau/Zeus):
 - admin        Nutzer anlegen/deaktivieren, Log, Discord-Brücke; sieht/verwaltet die normalen (nicht projektbezogenen) Pläne
-- technician   Speicher + Einstellungen, Nutzer/Rechte nur lesen, Gruppen anlegen; Pläne wie Admin
+- technician   Speicher + Einstellungen (Kataloge, Rechtstexte, Neustart), Nutzer/Rechte nur lesen,
+               Gruppen anlegen; Pläne wie Admin. KEINE Kartenverwaltung — dafür can_manage_maps.
 - mission_builder / zeus / can_create_plans / can_manage_maps: eigene Flags am Nutzer oder an einer Gruppe
 - Projektbezogene Pläne und Projekte sehen nur Mitglieder (bzw. wer per ACL/„public“ Zugriff bekam) — auch Admins nicht.
 - Rechte vergeben darf nur ein lokaler Admin (``is_local_admin``); Rechte aus Gruppen/Projekten lassen sich nicht weitergeben.
@@ -54,7 +55,8 @@ def is_staff(db: Session, user: User) -> bool:
 
 
 def effective_map_manager(db: Session, user: User) -> bool:
-    return is_staff(db, user) or _flag(db, user, "can_manage_maps")
+    """Karten verwalten: Admin oder das eigene Recht. Techniker allein reicht NICHT."""
+    return user.is_admin or _flag(db, user, "can_manage_maps")
 
 
 def is_local_admin(db: Session, user: User) -> bool:

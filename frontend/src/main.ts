@@ -14,7 +14,7 @@ import { esc } from "./esc";
 import { icon } from "./icons";
 import { initTheme } from "./theme";
 import { installIconFallback } from "./sidc/symbol";
-import { navAdmin, setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
+import { LOGGED_OUT_KEY, navAdmin, setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
 initTheme();
 installIconFallback();
@@ -58,6 +58,10 @@ async function route(): Promise<void> {
   // Impressum/Datenschutz müssen ohne Login erreichbar sein.
   if (location.hash === "#/impressum") return renderLegal(app, "imprint");
   if (location.hash === "#/datenschutz") return renderLegal(app, "privacy");
+
+  // #/link/<code> — bestehendes Konto mit dem Anmeldedienst verbinden (AUTH-R-014)
+  const linkMatch = location.hash.match(/^#\/link\/([A-Za-z0-9_-]{16,128})$/);
+  if (linkMatch) return renderLink(linkMatch[1]);
 
   try {
     me = await api.me();
@@ -108,21 +112,90 @@ async function route(): Promise<void> {
 
 // ─── Login ────────────────────────────────────────────────────────────────
 
+/**
+ * Platzhalter für einen Text, der den Anmeldedienst nennen kann (AUTH-R-001). Der Text selbst
+ * kommt erst mit `fillProviderTexts` hinein, und zwar als `textContent`: Der eingestellte Name
+ * wird nie als HTML gelesen.
+ */
+function providerText(key: string, tag = "span", attrs = ""): string {
+  return `<${tag} ${attrs} data-provider-text="${key}"></${tag}>`;
+}
+
+/** Ohne eingestellten Namen der bisherige Text, sonst die Fassung `<key>Named` mit dem Namen. */
+function fillProviderTexts(root: ParentNode, providerName: string): void {
+  root.querySelectorAll<HTMLElement>("[data-provider-text]").forEach((el) => {
+    const key = el.dataset.providerText!;
+    el.textContent = providerName ? t(`${key}Named`).replace("{provider}", () => providerName) : t(key);
+  });
+}
+
+/** Hinweis nach einem abgebrochenen OIDC-Login (?auth=…) bzw. nach dem Abmelden. */
+function loginNotice(oidc: boolean): string {
+  const params = new URLSearchParams(location.search);
+  const reason = params.get("auth");
+  let loggedOut = false;
+  try {
+    loggedOut = sessionStorage.getItem(LOGGED_OUT_KEY) === "1";
+    sessionStorage.removeItem(LOGGED_OUT_KEY);
+  } catch {
+    /* sessionStorage gesperrt */
+  }
+  const texts: Record<string, string> = {
+    denied: `<strong>${t("auth.deniedTitle")}</strong><br>${providerText("auth.deniedText")}`,
+    failed: t("auth.failedText"),
+    "link-failed": t("auth.linkFailedText"),
+    "link-login-first": t("auth.linkLoginFirst"),
+  };
+  if (reason) {
+    // Grund nur einmal zeigen: aus der Adresse nehmen, damit er nach dem nächsten Login nicht stehen bleibt
+    params.delete("auth");
+    const rest = params.toString();
+    history.replaceState(null, "", location.pathname + (rest ? `?${rest}` : "") + location.hash);
+  }
+  if (reason && texts[reason]) return `<div class="error" role="alert">${texts[reason]}</div>`;
+  // AUTH-R-012: Abmelden beendet nur die Sitzung im Tool.
+  if (loggedOut && oidc) return providerText("auth.loggedOutOidc", "p", 'class="muted"');
+  return "";
+}
+
 async function renderLogin(): Promise<void> {
-  const { enabled: oidc } = await api.oidcEnabled().catch(() => ({ enabled: false }));
+  const {
+    enabled: oidc,
+    local_login: localLogin,
+    provider_name: providerName = "",
+  } = await api
+    .oidcEnabled()
+    .catch(() => ({ enabled: false, local_login: "all" as const, provider_name: "" }));
+  // AUTH-R-001/-002: Ist die lokale Anmeldung auf den Notfallzugang begrenzt, zeigt die normale
+  // Anmeldeseite nur den Weg über den Anmeldedienst; das lokale Formular liegt unter /?local=1.
+  const params = new URLSearchParams(location.search);
+  const emergencyOnly = oidc && localLogin === "bootstrap-admin";
+  const showLocal = !emergencyOnly || params.has("local");
+  const localForm = `
+      ${emergencyOnly ? providerText("auth.emergencyHint", "p", 'class="muted"') : ""}
+      <input id="u" placeholder="${t("auth.username")}" autocomplete="username" />
+      <input id="p" type="password" placeholder="${t("auth.password")}" autocomplete="current-password" />
+      <button class="primary" id="go">${t("auth.login")}</button>`;
+  const oidcLink = emergencyOnly
+    ? showLocal
+      ? `<a href="/">${t("auth.backToOidc")}</a>`
+      : providerText("auth.oidc", "button", 'class="primary" id="oidcGo"')
+    : oidc
+      ? providerText("auth.oidc", "a", 'href="/auth/oidc/login"')
+      : "";
   app.innerHTML = `
     <div class="center"><div class="card stack">
       <div class="row"><h1 style="flex:1">${t("app.title")}</h1>${themeSwitch()}${langSelect()}</div>
-      <input id="u" placeholder="${t("auth.username")}" autocomplete="username" />
-      <input id="p" type="password" placeholder="${t("auth.password")}" autocomplete="current-password" />
-      <button class="primary" id="go">${t("auth.login")}</button>
-      ${oidc ? `<a href="/auth/oidc/login">${t("auth.oidc")}</a>` : ""}
+      ${loginNotice(oidc)}
+      ${showLocal ? localForm : ""}
+      ${oidcLink}
       <div class="error" id="err"></div>
       <div class="sb-legal" style="justify-content:center">
         <a href="#/impressum">${t("legal.imprint")}</a>
         <a href="#/datenschutz">${t("legal.privacy")}</a>
       </div>
     </div></div>`;
+  fillProviderTexts(app, providerName);
   wireLangSelect(app);
   wireThemeSwitch(app);
 
@@ -140,9 +213,57 @@ async function renderLogin(): Promise<void> {
       err.textContent = e instanceof ApiError ? e.message : t("auth.error");
     }
   };
-  app.querySelector("#go")!.addEventListener("click", submit);
-  app.querySelector("#p")!.addEventListener("keydown", (e) => {
+  app.querySelector("#oidcGo")?.addEventListener("click", () => {
+    location.href = "/auth/oidc/login";
+  });
+  app.querySelector("#go")?.addEventListener("click", submit);
+  app.querySelector("#p")?.addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") submit();
+  });
+}
+
+// ─── Konto mit dem Anmeldedienst verbinden (AUTH-R-014) ───────────────────
+
+async function renderLink(code: string): Promise<void> {
+  // Der Server merkt den Code für den folgenden Login vor und sagt, zu welchem Konto er gehört
+  // und ob der Besitznachweis vorliegt (in diesem Browser als dieses Konto angemeldet).
+  let info: { valid: boolean; account: string | null; owner_session: boolean } | null = null;
+  let failure = "";
+  const providerName = await api
+    .oidcEnabled()
+    .then((o) => o.provider_name ?? "")
+    .catch(() => "");
+  try {
+    info = await api.oidcLinkStart(code);
+  } catch (e) {
+    failure = e instanceof ApiError ? e.message : t("auth.error");
+  }
+  const account = `<strong>${esc(info?.account ?? "")}</strong>`;
+  let body: string;
+  if (!info) body = `<div class="error" role="alert">${esc(failure)}</div>`;
+  else if (!info.valid) body = `<div class="error" role="alert">${t("auth.linkFailedText")}</div><a href="/">${t("nav.back")}</a>`;
+  else if (!info.owner_session)
+    body = `<p>${t("auth.linkAccount").replace("{name}", account)}</p>
+      <div class="error" role="alert">${t("auth.linkLoginFirst")}</div>
+      <a href="/?local=1" target="_blank" rel="noopener">${t("auth.linkLocalLogin")}</a>
+      <button id="linkRetry">${t("auth.linkRetry")}</button>`;
+  else
+    body = `<p>${t("auth.linkAccount").replace("{name}", account)}</p>
+      ${providerText("auth.linkText", "p")}
+      ${providerText("auth.linkGo", "button", 'class="primary" id="linkGo"')}`;
+  app.innerHTML = `
+    <div class="center"><div class="card stack">
+      <div class="row"><h1 style="flex:1">${t("auth.linkTitle")}</h1>${themeSwitch()}${langSelect()}</div>
+      ${body}
+    </div></div>`;
+  fillProviderTexts(app, providerName);
+  wireLangSelect(app);
+  wireThemeSwitch(app);
+  app.querySelector("#linkRetry")?.addEventListener("click", () => void renderLink(code));
+  app.querySelector("#linkGo")?.addEventListener("click", () => {
+    // Code aus der Adresse nehmen, bevor es zum Anmeldedienst geht
+    history.replaceState(null, "", "/");
+    location.href = "/auth/oidc/login";
   });
 }
 
@@ -184,7 +305,7 @@ async function renderPlanList(): Promise<void> {
       ${themeSwitch()}
       ${langSelect()}
       <button class="icon-btn" id="settingsBtn" title="${t("settings.open")}" aria-label="${t("settings.open")}">${icon("settings")}</button>
-      <span class="muted">${esc(me!.username)} (${esc(me!.role)})</span>
+      <span class="muted">${esc(me!.display_name || me!.username)} (${esc(me!.role)})</span>
     </div>
     <div class="list stack">
       ${

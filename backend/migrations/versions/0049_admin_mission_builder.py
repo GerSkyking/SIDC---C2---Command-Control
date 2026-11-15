@@ -8,7 +8,9 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0049_admin_mission_builder"
-down_revision = "0048_stroke_ai_text"
+# Kette für beide Varianten gleich: 0048 → 0049_oidc_access → diese Migration. Datenbanken, die schon
+# weiter sind (ohne 0049_oidc_access), holen dessen Inhalt mit 0054_oidc_access_catchup nach.
+down_revision = "0049_oidc_access"
 branch_labels = None
 depends_on = None
 

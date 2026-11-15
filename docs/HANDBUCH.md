@@ -216,7 +216,7 @@ Missionsbau-Ansicht ist *Nur Missionsbau* vorausgewählt), alle anderen setzen n
 | Recht | Bedeutung |
 |---|---|
 | Rolle `admin` / `user` | Admin hat den Admin-Bereich und verwaltet normale (Nicht-Projekt-)Pläne; **kein** automatisches Zeus/Missionsbau und kein Zugriff auf Projekte/Projektpläne ohne Mitgliedschaft |
-| **Techniker** | Speicher + Einstellungen (alles für Karten), Benutzer und Rechte nur lesen, Gruppen anlegen, Mitglieder rechtefreier Gruppen setzen; normale Pläne wie ein Admin |
+| **Techniker** | Speicher + Einstellungen (Kataloge, Rechtstexte, Neustart; Karten nur ansehen – verwalten braucht zusätzlich *Karten verwalten*), Benutzer und Rechte nur lesen, Gruppen anlegen, Mitglieder rechtefreier Gruppen setzen; normale Pläne wie ein Admin |
 | **Karten verwalten** | Karten importieren/aktualisieren/löschen, ohne Admin zu sein |
 | Gruppe **public** | Systemgruppe, jeder Nutzer ist implizit Mitglied — z. B. um einen Projektplan für alle freizugeben |
 | Missionsbau im Projekt | Häkchen am Projektmitglied: Missionsbau-Recht nur in diesem Projekt und seinen Plänen; vergeben kann es nur ein globaler Missionsbauer (Rechte aus Projekt/Gruppe sind nicht weitergebbar) |
@@ -312,6 +312,16 @@ Sidebar: **Benutzer & Gruppen**, **Log**, **Speicher**, **Einstellungen**.
 
 - **Rechte vergeben** (Rollen, Häkchen an Nutzern/Gruppen) dürfen nur **lokale Admins** (ohne OIDC-Identität); Gruppenrechte nur, wer selbst Mitglied der Gruppe ist.
   Mitglieder von Gruppen mit Rechten setzt nur ein lokaler Admin. Mit OIDC kommen die Rechte aus dem Identity-Provider.
+- **Rechte aus OIDC-Gruppen** (optional, per `.env`): Mit `OIDC_REQUIRED_GROUPS` kommt nur hinein, wer eine der Zugangsgruppen im Token hat
+  (sonst Ablehnungsseite, kein Konto; verliert jemand die Gruppe, wird das Konto beim nächsten Login deaktiviert und bei Rückkehr wieder aktiviert).
+  `OIDC_ADMIN_GROUPS`, `OIDC_MISSION_BUILDER_GROUPS`, `OIDC_ZEUS_GROUPS`, `OIDC_CREATE_PLANS_GROUPS`, `OIDC_TECHNICIAN_GROUPS` und
+  `OIDC_MANAGE_MAPS_GROUPS` binden je ein Recht an Gruppen: Jeder Login setzt es genau nach den Gruppen, der Admin-Bereich zeigt es bei
+  OIDC-Konten gesperrt („aus der Anmeldung“). Jede Gruppe gibt nur ihr eigenes Recht. Lokale Konten bleiben von Hand pflegbar, der Start-Admin bleibt immer Admin.
+  Ohne diese Einstellungen bleibt alles wie bisher.
+- **Konto verbinden**: Ein Admin erzeugt bei einem lokalen Konto einen Einmal-Link (24 h gültig). Die Person öffnet ihn angemeldet und hängt damit ihre
+  OIDC-Anmeldung an das bestehende Konto; danach gelten Passwort, alte Sitzungen und API-Tokens des Kontos nicht mehr. Der Start-Admin ist nicht verbindbar.
+- **Weitere Schalter**: `LOCAL_LOGIN=bootstrap-admin` lässt lokal nur noch den Start-Admin als Notfallzugang zu (Formular unter `/?local=1`),
+  `SESSION_TTL_HOURS` verkürzt die Sitzung, `OIDC_PROVIDER_NAME` setzt den Namen auf dem Anmeldeknopf, `OIDC_SCOPES`/`OIDC_GROUPS_CLAIM` passen Scopes und Gruppen-Claim an.
 - **Benutzer & Gruppen** (Admin + Techniker, Techniker nur lesen): anlegen, Rolle, *Pläne erstellen*, *Missionsbau*, *Zeus*, aktiv/deaktiviert, Passwort-Reset,
   Discord-ID, löschen; Gruppen mit Mitgliedern und denselben Häkchen.
 - **Log** (nur Admin): Login-Versuche und alle wichtigen Aktionen, filterbar.

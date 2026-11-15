@@ -66,6 +66,17 @@ def test_map_manager_without_admin(admin):
     assert plain.post("/api/maps", json={"id": "mm2", "name": "M", "url": "http://x.invalid/a.zip"}).status_code == 403
 
 
+def test_technician_is_not_map_manager(admin):
+    """Techniker schließt „Karten verwalten“ nicht ein; erst mit dem eigenen Recht."""
+    t, _ = _user(admin, is_technician=True)
+    assert t.get("/auth/me").json()["can_manage_maps_effective"] is False
+    assert t.post("/api/maps", json={"id": "tm1", "name": "M", "url": "http://x.invalid/a.zip"}).status_code == 403
+    assert t.get("/api/map-sources").status_code == 403
+    both, _ = _user(admin, is_technician=True, can_manage_maps=True)
+    r = both.post("/api/maps", json={"id": "tm2", "name": "M", "url": "http://x.invalid/a.zip"})
+    assert r.status_code in (200, 201, 202), r.text
+
+
 def test_group_rights_rules(admin):
     t, tid = _user(admin, is_technician=True)
     r = t.post("/api/admin/groups", json={"name": _name("g")})

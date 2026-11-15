@@ -2,6 +2,9 @@
 
 Vorbild: Arma-Reforger-Mod-Manager — lokaler Login bleibt aktiv, auch wenn OIDC an
 ist; unbekannte OIDC-User werden als Rolle 'user' angelegt.
+
+Regeln: docs/specs/anmeldung-und-zugriff.md (AUTH-R-…). Zugangsgruppe, Rechte aus Gruppen,
+Notfallzugang und Sitzungsdauer sind Einstellungen; ohne sie gilt das Verhalten oben.
 """
 from __future__ import annotations
 
@@ -11,19 +14,21 @@ import tempfile
 import zipfile
 from datetime import datetime
 
-from authlib.integrations.starlette_client import OAuth
+from authlib.integrations.starlette_client import OAuth, OAuthError
+from authlib.jose.errors import JoseError
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import RedirectResponse, StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import defer
 
-from .. import audit
+from .. import audit, oidc_access
 from ..config import get_settings
 from ..deps import CurrentUser, DbDep
 from ..models import (
     Annotation,
+    ApiToken,
     AuditLog,
     Favorite,
     Marker,
@@ -35,6 +40,7 @@ from ..models import (
     PublicShare,
     Stroke,
     User,
+    now,
 )
 from ..permissions import can_create_plans
 from ..ratelimit import check_and_hit, reset
@@ -44,6 +50,7 @@ from ..security import (
     cookie_is_secure,
     hash_password,
     issue_session,
+    read_session,
     verify_password,
 )
 
@@ -54,16 +61,29 @@ _settings = get_settings()
 # Fester Hash für den Timing-Ausgleich bei unbekanntem Benutzer (siehe login()).
 _DUMMY_HASH = hash_password("sidc-timing-equalizer-not-a-real-password")
 
+def _register_oidc(oauth: OAuth, settings) -> None:
+    """Den Provider aus den Einstellungen registrieren. Angefordert werden genau die Scopes
+    aus ``OIDC_SCOPES`` (AUTH-R-006); ``state`` und ``nonce`` setzt und prüft authlib (AUTH-R-011)."""
+    oauth.register(
+        name="oidc",
+        client_id=settings.oidc_client_id,
+        client_secret=settings.oidc_client_secret,
+        server_metadata_url=f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration",
+        client_kwargs={"scope": " ".join(settings.oidc_scopes.split())},
+    )
+
+
 _oauth = OAuth()
 _OIDC_READY = bool(_settings.oidc_enabled and _settings.oidc_issuer)
 if _OIDC_READY:
-    _oauth.register(
-        name="oidc",
-        client_id=_settings.oidc_client_id,
-        client_secret=_settings.oidc_client_secret,
-        server_metadata_url=f"{_settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid email profile"},
-    )
+    _register_oidc(_oauth, _settings)
+
+# Kurzlebige Sitzung des OIDC-Ablaufs (SessionMiddleware): Verknüpfungscode (AUTH-R-014).
+_LINK_SESSION_KEY = "oidc_link"
+
+
+def oidc_ready() -> bool:
+    return _OIDC_READY
 
 
 def _client_ip(request: Request) -> str:
@@ -74,7 +94,7 @@ def _set_session_cookie(request: Request, response: Response, user: User) -> Non
     response.set_cookie(
         SESSION_COOKIE,
         issue_session(user.id, user.session_epoch or 0),
-        max_age=_settings.session_ttl_days * 86400,
+        max_age=_settings.session_ttl_seconds(),
         httponly=True,
         samesite="lax",
         secure=cookie_is_secure(request.url.scheme, request.headers.get("x-forwarded-proto")),
@@ -97,21 +117,29 @@ def login(body: LoginIn, request: Request, response: Response, db: DbDep) -> MeO
     else:
         verify_password(body.password, _DUMMY_HASH)
         ok = False
+    # AUTH-R-002: Als Notfallzugang nimmt der lokale Login nur den Start-Admin an. Die Prüfung
+    # steht nach dem Argon2-Verify, damit Antwort und Antwortzeit für alle anderen gleich bleiben.
+    is_bootstrap = user is not None and oidc_access.is_bootstrap_admin(user)
+    if _settings.local_login == "bootstrap-admin" and not is_bootstrap:
+        ok = False
+    # Ein Konto mit OIDC-Identität meldet sich nur über den Provider an; sonst gingen
+    # Zugangsprüfung und Abgleich (AUTH-R-003, -008) am lokalen Passwort vorbei. Ausnahme
+    # ist der Start-Admin als Notfallzugang.
+    if user is not None and not is_bootstrap and oidc_access.has_identity(db, user.id):
+        ok = False
     if user is None or not user.is_active or not ok:
         audit.record(db, "login.fail", request=request, username=body.username)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login fehlgeschlagen")
 
     reset(key)
     _set_session_cookie(request, response, user)
-    audit.record(db, "login.ok", user_id=user.id, request=request)
+    audit.record(db, "login.ok", user_id=user.id, request=request, method="local")
     return _me(db, user)
 
 
 @router.post("/logout")
 def logout(request: Request, response: Response, db: DbDep) -> dict:
     token = request.cookies.get(SESSION_COOKIE)
-    from ..security import read_session
-
     sess = read_session(token) if token else None
     response.delete_cookie(SESSION_COOKIE, path="/")
     if sess:
@@ -345,7 +373,66 @@ def _me(db: DbDep, user: User) -> MeOut:
 
 @router.get("/oidc/enabled")
 def oidc_enabled() -> dict:
-    return {"enabled": _OIDC_READY}
+    """Was die Anmeldeseite wissen muss (ohne Login lesbar, keine Geheimnisse)."""
+    info: dict = {"enabled": _OIDC_READY, "local_login": _settings.local_login}
+    # AUTH-R-001: Name des Anmeldedienstes für Knopf und Hinweise; fehlt, wenn nicht eingestellt.
+    provider_name = _settings.oidc_provider_label()
+    if provider_name:
+        info["provider_name"] = provider_name
+    return info
+
+
+class LinkStartIn(BaseModel):
+    code: str = Field(min_length=1, max_length=128)
+
+
+def _session_user_id(request: Request, db: DbDep) -> str | None:
+    """ID des Kontos, für das dieser Browser eine gültige Sitzung im Tool hat (sonst None)."""
+    token = request.cookies.get(SESSION_COOKIE)
+    sess = read_session(token) if token else None
+    user = db.get(User, sess[0]) if sess else None
+    if user is None or not user.is_active or sess[1] != (user.session_epoch or 0):
+        return None
+    return user.id
+
+
+def _link_problem(db: DbDep, row, target: User | None, session_uid: str | None, identity) -> str | None:
+    """Warum sich dieser Code jetzt nicht einlösen lässt (None = geht). ``identity`` ist die
+    schon bekannte Identität der Person beim Provider, falls es eine gibt."""
+    if row is None or target is None:
+        return "invalid_code"
+    if oidc_access.is_bootstrap_admin(target):
+        return "bootstrap_account"  # der Start-Admin bleibt der lokale Notfallzugang
+    if oidc_access.has_identity(db, target.id):
+        return "account_already_linked"
+    if not target.is_active:
+        return "account_inactive"
+    # Besitznachweis: Der Code des Admins ist nur die Freigabe. Einlösen kann ihn nur, wer in
+    # diesem Browser als das Zielkonto angemeldet ist; sonst bände ein weitergegebener Link
+    # eine fremde Person (und ihre Gruppen) an das Konto.
+    if session_uid != target.id:
+        return "not_owner"
+    if identity is not None:
+        return "identity_in_use"
+    return None
+
+
+@router.post("/oidc/link")
+def oidc_link_start(body: LinkStartIn, request: Request, db: DbDep) -> dict:
+    """AUTH-R-014: Verknüpfungscode für den folgenden OIDC-Login vormerken. Der Code kommt im
+    Rumpf (nicht in der Adresse, damit er in keinem Zugriffsprotokoll steht) und reist in der
+    kurzlebigen Sitzung des Ablaufs mit. Eingelöst wird er erst im Rückruf, nach erneuter Prüfung.
+    Die Antwort sagt der Link-Seite, zu welchem Konto der Code gehört und ob der Besitznachweis
+    (lokale Sitzung dieses Kontos) vorliegt."""
+    if not _OIDC_READY:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "OIDC ist nicht konfiguriert")
+    request.session[_LINK_SESSION_KEY] = body.code
+    row = oidc_access.find_link_code(db, body.code)
+    target = db.get(User, row.user_id) if row is not None else None
+    problem = _link_problem(db, row, target, _session_user_id(request, db), None)
+    if problem not in (None, "not_owner"):
+        return {"ok": True, "valid": False, "account": None, "owner_session": False}
+    return {"ok": True, "valid": True, "account": target.label, "owner_session": problem is None}
 
 
 @router.get("/oidc/login")
@@ -356,36 +443,101 @@ async def oidc_login(request: Request):
     return await _oauth.oidc.authorize_redirect(request, redirect_uri)
 
 
+def _back_to_login(reason: str) -> RedirectResponse:
+    """Zurück zur Anmeldeseite; sie zeigt den Grund zweisprachig an (kein Konto, keine Sitzung)."""
+    return RedirectResponse(f"/?auth={reason}", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.get("/oidc/callback", name="oidc_callback")
 async def oidc_callback(request: Request, response: Response, db: DbDep):
     if not _OIDC_READY:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "OIDC ist nicht konfiguriert")
-    token = await _oauth.oidc.authorize_access_token(request)
+    link_code = request.session.pop(_LINK_SESSION_KEY, None)
+    session_uid = await run_in_threadpool(_session_user_id, request, db) if link_code else None
+    try:
+        # authlib prüft hier `state` gegen die Sitzung und `nonce` im ID-Token (AUTH-R-011).
+        token = await _oauth.oidc.authorize_access_token(request)
+    except (OAuthError, JoseError) as exc:
+        log.warning("OIDC-Rückruf abgelehnt (%s)", type(exc).__name__)
+        await run_in_threadpool(audit.record, db, "oidc.fail", request=request, reason=type(exc).__name__)
+        return _back_to_login("failed")
     claims = token.get("userinfo") or {}
     issuer = claims.get("iss") or _settings.oidc_issuer
     subject = claims.get("sub")
     if not subject:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "OIDC-Token ohne 'sub'")
+    if not isinstance(subject, str) or not isinstance(issuer, str):
+        # Ein Provider, der `sub` nicht als Text liefert, hält sich nicht an OIDC: sauber ablehnen.
+        await run_in_threadpool(audit.record, db, "oidc.fail", request=request, reason="invalid_sub")
+        return _back_to_login("failed")
 
-    user = await run_in_threadpool(_oidc_get_or_create_user, db, claims, issuer, subject)
+    result = await run_in_threadpool(
+        _oidc_sign_in, db, request, claims, issuer, subject, link_code, session_uid
+    )
+    if isinstance(result, str):
+        return _back_to_login(result)
 
-    _set_session_cookie(request, response, user)
+    _set_session_cookie(request, response, result)
     # Nach dem Login zurück auf die App
     response.status_code = status.HTTP_303_SEE_OTHER
     response.headers["location"] = "/"
     return response
 
 
-def _oidc_get_or_create_user(db: DbDep, claims: dict, issuer: str, subject: str) -> User:
+def _oidc_sign_in(
+    db: DbDep, request: Request, claims: dict, issuer: str, subject: str, link_code: str | None,
+    session_uid: str | None = None,
+) -> User | str:
+    """Person aus dem geprüften Token anmelden. Gibt den Nutzer zurück oder den Grund der
+    Ablehnung (``denied``, ``link-failed``, ``link-login-first``) für die Anmeldeseite. Ins Audit-Protokoll kommen
+    nur Vorgang und Grund, nie Token oder Claims (AUTH-R-013)."""
+    groups = oidc_access.token_groups(claims)
     identity = db.scalar(
         select(OidcIdentity).where(
             OidcIdentity.issuer == issuer, OidcIdentity.subject == subject
         )
     )
-    if identity is not None:
-        user = db.get(User, identity.user_id)
-    else:
-        username = _unique_username(db, claims.get("preferred_username") or claims.get("email") or f"oidc-{subject[:8]}")
+    user = db.get(User, identity.user_id) if identity is not None else None
+
+    # AUTH-R-003: ohne Zugangsgruppe kein Zugang und kein Konto.
+    if not oidc_access.has_access(groups):
+        if user is not None and user.is_active and not oidc_access.is_bootstrap_admin(user):
+            # AUTH-R-009: bekanntes Konto deaktivieren; laufende Sitzungen enden damit sofort.
+            user.is_active = False
+            user.deactivated_by_sync = True
+            user.session_epoch = (user.session_epoch or 0) + 1
+            db.commit()
+            audit.record(db, "oidc.deactivate", user_id=user.id, target_type="user", target_id=user.id,
+                         request=request, reason="missing_group")
+        audit.record(db, "oidc.denied", user_id=user.id if user is not None else None, request=request,
+                     reason="missing_group", known=user is not None)
+        return "denied"
+
+    if link_code:
+        # AUTH-R-014: Identität an das bestehende Konto hängen, für das der Admin den Code erzeugt
+        # hat und als das die Person in diesem Browser angemeldet ist.
+        row = oidc_access.find_link_code(db, link_code)
+        target = db.get(User, row.user_id) if row is not None else None
+        reason = _link_problem(db, row, target, session_uid, identity)
+        if reason is None and not oidc_access.consume_link_code(db, row):
+            db.rollback()
+            reason = "invalid_code"  # gleichzeitig von einer anderen Anfrage eingelöst
+        if reason:
+            audit.record(db, "oidc.link_fail", target_type="user" if target is not None else None,
+                         target_id=target.id if target is not None else None, request=request, reason=reason)
+            return "link-login-first" if reason == "not_owner" else "link-failed"
+        db.add(OidcIdentity(user_id=target.id, issuer=issuer, subject=subject))
+        # Ab jetzt gibt es für dieses Konto nur noch den Weg über den Provider: alte Sitzungen
+        # enden, das lokale Passwort entfällt, API-Tokens werden widerrufen.
+        target.session_epoch = (target.session_epoch or 0) + 1
+        target.password_hash = None
+        for tok in db.scalars(select(ApiToken).where(ApiToken.user_id == target.id, ApiToken.revoked_at.is_(None))):
+            tok.revoked_at = now()
+        db.commit()
+        audit.record(db, "oidc.link", user_id=target.id, target_type="user", target_id=target.id, request=request)
+        user = target
+    elif identity is None:
+        username = _unique_username(db, oidc_access.username_base(claims, subject))
         user = User(username=username, role="user", can_create_plans=False)
         db.add(user)
         db.flush()
@@ -395,15 +547,30 @@ def _oidc_get_or_create_user(db: DbDep, claims: dict, issuer: str, subject: str)
         assign_default_group(db, user.id)
         db.commit()
         log.info("OIDC-User '%s' angelegt", username)
+        audit.record(db, "oidc.user_create", user_id=user.id, target_type="user", target_id=user.id, request=request)
 
-    if user is None or not user.is_active:
+    if user is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Konto deaktiviert")
+    if not user.is_active:
+        if not user.deactivated_by_sync:  # vom Admin deaktiviert: bleibt es
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Konto deaktiviert")
+        # AUTH-R-009: Der Abgleich hatte deaktiviert, die Zugangsgruppe ist wieder da.
+        user.is_active = True
+        user.deactivated_by_sync = False
+        db.commit()
+        audit.record(db, "oidc.reactivate", user_id=user.id, target_type="user", target_id=user.id, request=request)
+
+    # AUTH-R-005: Anzeigename aus dem Token, wenn eingeschaltet.
     if _settings.oidc_sync_display_name:
-        raw = claims.get("name") or claims.get("preferred_username") or ""
-        name = "".join(c for c in str(raw).strip() if c.isprintable() and c not in _NAME_FORBIDDEN)[:64]
+        name = oidc_access.display_name_from(claims)
         if name and name != user.display_name:
             user.display_name = name
-            db.commit()
+    # AUTH-R-007/-008/-010: angebundene Rechte genau nach den Gruppen setzen.
+    changes = oidc_access.sync_rights(user, groups)
+    db.commit()
+    if changes:
+        audit.record(db, "oidc.rights_sync", user_id=user.id, target_type="user", target_id=user.id,
+                     request=request, changes=changes)
     return user
 
 
@@ -419,7 +586,10 @@ def _unique_username(db: DbDep, base: str) -> str:
     base = base.split("@")[0][:56] or "user"
     name = base
     i = 1
-    while db.scalar(select(User.id).where(User.username == name)):
+    # Der Name des Start-Admins (ohne Groß-/Kleinschreibung) wird nie vergeben, auch wenn es
+    # das Konto noch nicht gibt: Sonst würde ein späterer Start es mit dem Start-Admin verwechseln.
+    reserved = _settings.bootstrap_admin_user.lower()
+    while name.lower() == reserved or db.scalar(select(User.id).where(User.username == name)):
         i += 1
         name = f"{base}-{i}"
     return name

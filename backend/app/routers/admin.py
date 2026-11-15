@@ -11,7 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, select
 
-from .. import audit
+from .. import audit, oidc_access
 from ..deps import AdminUser, DbDep, StaffUser
 from ..permissions import is_local_admin
 from ..config import get_settings
@@ -79,12 +79,16 @@ class UserRow(BaseModel):
     is_active: bool
     is_local: bool  # hat ein Passwort (kein reiner OIDC-User)
     protected: bool = False  # lokaler Bootstrap-Admin: nicht löschbar, Rechte/Passwort nur über die Server-Konfiguration
+    has_oidc: bool = False  # mit einer OIDC-Identität verbunden
+    is_bootstrap: bool = False  # Start-Admin (lokaler Notfallzugang, nicht verknüpfbar)
+    # Rechte, die bei diesem Konto aus der Anmeldung kommen und hier gesperrt sind (AUTH-R-008).
+    managed_fields: list[str] = []
 
 
 def is_protected_admin(u: User) -> bool:
     """Das lokale Bootstrap-Admin-Konto (BOOTSTRAP_ADMIN_USER). Es wird nur über die Server-Konfiguration
     verwaltet — nicht löschbar, Rechte/Aktivstatus/Passwort per Web-UI/API unveränderlich."""
-    return bool(u.password_hash) and u.username == get_settings().bootstrap_admin_user
+    return bool(u.is_bootstrap) or (bool(u.password_hash) and u.username == get_settings().bootstrap_admin_user)
 
 
 # Rechte-Felder: nur lokale Admins dürfen sie vergeben (OIDC-Admins/Techniker nie).
@@ -100,19 +104,27 @@ def _require_local_admin(db, actor: User) -> None:
 _PROTECTED_MSG = "Lokales Admin-Konto ist geschützt (Verwaltung nur über die Server-Konfiguration)"
 
 
-def _row(u: User) -> UserRow:
+_MANAGED_MSG = (
+    "Dieses Recht kommt aus der Anmeldung (Gruppen des Anmeldedienstes) "
+    "und kann hier nicht geändert werden."
+)
+
+
+def _row(u: User, has_oidc: bool) -> UserRow:
     return UserRow(
         id=u.id, username=u.username, display_name=u.display_name, role=u.role,
         can_create_plans=u.can_create_plans, is_mission_builder=u.is_mission_builder,
         is_zeus=u.is_zeus, is_technician=u.is_technician, can_manage_maps=u.can_manage_maps,
         is_active=u.is_active, is_local=bool(u.password_hash),
         protected=is_protected_admin(u),
+        has_oidc=has_oidc, is_bootstrap=bool(u.is_bootstrap), managed_fields=oidc_access.managed_fields() if has_oidc else [],
     )
 
 
 @router.get("/users", response_model=list[UserRow])
 def list_users(admin: StaffUser, db: DbDep) -> list[UserRow]:
-    return [_row(u) for u in db.scalars(select(User).order_by(User.username))]
+    linked = oidc_access.user_ids_with_identity(db)
+    return [_row(u, u.id in linked) for u in db.scalars(select(User).order_by(User.username))]
 
 
 @router.post("/users", response_model=UserRow, status_code=status.HTTP_201_CREATED)
@@ -138,7 +150,7 @@ def create_user(body: UserCreate, request: Request, admin: AdminUser, db: DbDep)
     db.commit()
     audit.record(db, "user.create", user_id=admin.id, target_type="user", target_id=u.id,
                  request=request, username=u.username, role=u.role)
-    return _row(u)
+    return _row(u, False)
 
 
 @router.patch("/users/{user_id}", response_model=UserRow)
@@ -153,6 +165,13 @@ def patch_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbDep) -> Us
         for f in ("password", "is_active", *RIGHT_FIELDS)
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, _PROTECTED_MSG)
+    has_oidc = oidc_access.has_identity(db, u.id)
+    if has_oidc:
+        # AUTH-R-008: Angebundene Rechte setzt der Abgleich beim Login, nicht die Verwaltung.
+        for field in oidc_access.managed_fields():
+            wanted = getattr(body, field)
+            if wanted is not None and wanted != getattr(u, field):
+                raise HTTPException(status.HTTP_409_CONFLICT, _MANAGED_MSG)
     if body.password is not None:
         if len(body.password) < MIN_PASSWORD_LEN:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Passwort min. {MIN_PASSWORD_LEN} Zeichen")
@@ -183,9 +202,40 @@ def patch_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbDep) -> Us
     if body.is_active is not None:
         if u.id == admin.id and not body.is_active:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Eigenes Konto nicht deaktivierbar")
+        if body.is_active != u.is_active:
+            # Entscheidung des Admins; der Abgleich hebt sie nicht auf (AUTH-R-009). Ein mitgeschickter,
+            # unveränderter Wert ist keine Entscheidung und lässt die Markierung stehen.
+            u.deactivated_by_sync = False
         u.is_active = body.is_active
     db.commit()
-    return _row(u)
+    return _row(u, has_oidc)
+
+
+class LinkCodeOut(BaseModel):
+    code: str
+    path: str  # an den eigenen Origin anhängen und der Person geben; der Code steht im Fragment
+    expires_at: str
+
+
+@router.post("/users/{user_id}/oidc-link", response_model=LinkCodeOut, status_code=status.HTTP_201_CREATED)
+def create_oidc_link(user_id: str, request: Request, admin: AdminUser, db: DbDep) -> LinkCodeOut:
+    """AUTH-R-014: Einmal-Link, mit dem die Person ihre Anmeldung über den Provider an dieses
+    bestehende Konto hängt. Der Code steht nur in dieser Antwort, nie im Protokoll."""
+    from .auth import oidc_ready
+
+    u = db.get(User, user_id)
+    if u is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if not oidc_ready():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "OIDC ist nicht konfiguriert")
+    if oidc_access.is_bootstrap_admin(u):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Der Start-Admin bleibt der lokale Notfallzugang und wird nicht verbunden")
+    if oidc_access.has_identity(db, u.id):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Konto ist bereits mit einer Anmeldung verbunden")
+    code, expires = oidc_access.create_link_code(db, u, admin.id)
+    audit.record(db, "oidc.link_code", user_id=admin.id, target_type="user", target_id=u.id,
+                 request=request, username=u.username)
+    return LinkCodeOut(code=code, path=f"/#/link/{code}", expires_at=expires.isoformat())
 
 
 @router.delete("/users/{user_id}")

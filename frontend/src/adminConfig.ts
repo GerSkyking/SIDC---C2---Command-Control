@@ -25,7 +25,9 @@ export function configHtml(
   catStatus: Record<string, boolean>,
   legalStatus: Record<string, boolean>,
   staff = true,
+  canMaps = true,
 ): string {
+  // Techniker ohne „Karten verwalten“ sieht die Kartenliste nur zum Lesen (kein Import, keine Quellen).
   return `
     <div class="row"><h2 style="margin:0">${t("admin.maps")}</h2><span class="grow"></span>
       ${staff ? `<button id="restart" title="${t("tip.cfg.restart")}">${t("admin.restart")}</button>` : ""}</div>
@@ -36,17 +38,17 @@ export function configHtml(
             <td>${esc(m.name)} <span class="muted">${esc(m.id)}</span></td>
             <td><span class="badge" title="${t("tip.cfg.mapStatus")}">${esc(m.status)}</span></td>
             <td class="muted">${esc(m.error ?? "")}</td>
-            <td>
+            ${canMaps ? `<td>
               <input type="file" accept=".zip" data-upd="${esc(m.id)}" style="display:none" />
               <button data-updbtn="${esc(m.id)}" title="${t("tip.cfg.mapUpdate")}">${t("admin.update")}</button>
               <button data-reimport="${esc(m.id)}" title="${t("tip.cfg.mapReimport")}">${t("admin.fromLink")}</button>
               <button class="icon-btn" data-delmap="${esc(m.id)}" title="${t("common.delete")}">${icon("trash", 16)}</button>
-            </td>
+            </td>` : ""}
           </tr>`,
         )
         .join("")}
     </tbody></table>
-    <div class="row">
+    ${canMaps ? `<div class="row">
       <input id="mid" placeholder="${t("admin.mapId")}" />
       <input id="mname" placeholder="${t("admin.displayName")}" />
     </div>
@@ -77,7 +79,7 @@ export function configHtml(
         <input id="src-token" type="password" placeholder="${t("src.token")}" title="${t("tip.cfg.srcTokenIn")}" style="width:11rem" />
         <button id="src-add">${t("src.add")}</button>
       </div>
-    </div>
+    </div>` : ""}
 
     ${staff ? `<h2>${t("admin.catalog")}</h2>
     <p class="muted">${t("admin.catalogHint")}</p>
