@@ -184,6 +184,8 @@ def export_my_data(user: CurrentUser, db: DbDep) -> StreamingResponse:
         "can_create_plans": user.can_create_plans,
         "is_mission_builder": user.is_mission_builder,
         "is_zeus": user.is_zeus,
+        "is_technician": user.is_technician,
+        "can_manage_maps": user.can_manage_maps,
         "is_active": user.is_active,
         "created_at": _iso(user.created_at),
         "ui_settings": user.ui_settings or {},
@@ -311,7 +313,9 @@ def delete_my_account(request: Request, response: Response, user: CurrentUser, d
 
 
 def _me(db: DbDep, user: User) -> MeOut:
-    from ..permissions import effective_mission_builder, effective_zeus
+    from ..permissions import (
+        effective_map_manager, effective_mission_builder, effective_technician, effective_zeus, is_local_admin, is_staff,
+    )
 
     return MeOut(
         id=user.id,
@@ -321,6 +325,12 @@ def _me(db: DbDep, user: User) -> MeOut:
         can_create_plans=user.can_create_plans,
         is_mission_builder=user.is_mission_builder,
         is_zeus=user.is_zeus,
+        is_technician=user.is_technician,
+        can_manage_maps=user.can_manage_maps,
+        is_staff=is_staff(db, user),
+        is_technician_effective=effective_technician(db, user),
+        can_manage_maps_effective=effective_map_manager(db, user),
+        can_grant_rights=is_local_admin(db, user),
         can_create_plans_effective=can_create_plans(db, user),
         is_mission_builder_effective=effective_mission_builder(db, user),
         is_zeus_effective=effective_zeus(db, user),

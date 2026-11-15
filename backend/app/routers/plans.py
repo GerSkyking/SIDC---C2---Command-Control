@@ -578,7 +578,7 @@ def get_thumbnail(plan: ViewerPlan) -> Response:
 
 @router.get("/{plan_id}/snapshot")
 def get_snapshot(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> dict:
-    builder = effective_mission_builder(db, user)
+    builder = effective_mission_builder(db, user, plan.project_id)
     phase_rows = list(db.scalars(select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering)))
     if not phase_rows:  # Altbestand: fehlende Standard-Phase nachziehen
         base = Phase(plan_id=plan.id, name="Base", ordering=0, locked=True)
@@ -790,7 +790,7 @@ def _ensure_builder_pairs(db: Session, plan_id: str) -> None:
 
 @router.get("/{plan_id}/phases")
 def list_phases(plan: ViewerPlan, user: CurrentUser, db: DbDep) -> list[dict]:
-    builder = effective_mission_builder(db, user)
+    builder = effective_mission_builder(db, user, plan.project_id)
     if builder:
         _ensure_builder_pairs(db, plan.id)
     q = select(Phase).where(Phase.plan_id == plan.id).order_by(Phase.ordering, Phase.sub_ordering)
@@ -809,7 +809,7 @@ def create_phase(body: PhaseBody, plan: EditorPlan, user: CurrentUser, db: DbDep
 
     # Missionsbau-Zwischenphase (1.1, 1.2 …) unter einer Spieler-Phase
     if body.plane == "builder" and body.parent_id:
-        if not effective_mission_builder(db, user):
+        if not effective_mission_builder(db, user, plan.project_id):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Missionsbau-Rolle erforderlich")
         parent = db.get(Phase, body.parent_id)
         if parent is None or parent.plan_id != plan.id or parent.plane != "player":
@@ -840,7 +840,7 @@ def patch_phase(phase_id: str, body: PhaseBody, plan: EditorPlan, user: CurrentU
     p = db.get(Phase, phase_id)
     if p is None or p.plan_id != plan.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    if p.plane == "builder" and not effective_mission_builder(db, user):
+    if p.plane == "builder" and not effective_mission_builder(db, user, plan.project_id):
         raise HTTPException(status.HTTP_403_FORBIDDEN)
     if body.name is not None and body.name.strip():
         p.name = body.name.strip()
@@ -884,7 +884,7 @@ def delete_phase(phase_id: str, plan: EditorPlan, user: CurrentUser, db: DbDep) 
     p = db.get(Phase, phase_id)
     if p is None or p.plan_id != plan.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    if p.plane == "builder" and not effective_mission_builder(db, user):
+    if p.plane == "builder" and not effective_mission_builder(db, user, plan.project_id):
         raise HTTPException(status.HTTP_403_FORBIDDEN)
     if p.locked:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Phase ist gesperrt und kann nicht gelöscht werden")
@@ -1033,7 +1033,7 @@ def create_share(
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Zu viele Links erstellt, kurz warten")
 
     s = PublicShare(token=secrets.token_urlsafe(24), plan_id=plan.id, created_by=user.id)
-    _apply_share_body(s, body, is_mb=effective_mission_builder(db, user))
+    _apply_share_body(s, body, is_mb=effective_mission_builder(db, user, plan.project_id))
     db.add(s)
     db.commit()
     audit.record(db, "plan.share.create", user_id=user.id, target_type="plan", target_id=plan.id,
@@ -1050,7 +1050,7 @@ def patch_share(
     s = db.get(PublicShare, token)
     if s is None or s.plan_id != plan.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    _apply_share_body(s, body, is_mb=effective_mission_builder(db, user))
+    _apply_share_body(s, body, is_mb=effective_mission_builder(db, user, plan.project_id))
     db.commit()
     audit.record(db, "plan.share.update", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request)
@@ -1096,7 +1096,7 @@ def clone_plan(
     # Missionsbau-Ebene nur für Missionsbauer klonen (sonst bekäme jeder Betrachter
     # die verborgenen Inhalte in seinen eigenen Klon).
     skip_ids: set[str] = set()
-    if not effective_mission_builder(db, user):
+    if not effective_mission_builder(db, user, plan.project_id):
         skip_ids = {p.id for p in src_phases if p.plane == "builder"}
         src_phases = [p for p in src_phases if p.id not in skip_ids]
     # Spieler-Phasen zuerst klonen, damit die parent_id der Builder-Phasen gemappt werden kann

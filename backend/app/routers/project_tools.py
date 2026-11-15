@@ -111,7 +111,7 @@ def _missing(typ: str, tid: str) -> dict:
 
 def resolve_refs(db: Session, user: User, pid: str, refs: list[tuple[str, str]]) -> list[dict]:
     """Ein Ergebnis je Eingabe (gleiche Reihenfolge). Prüft Projektzugehörigkeit, Bereich und Plan-Rechte."""
-    is_b = effective_mission_builder(db, user)
+    is_b = effective_mission_builder(db, user, pid)
     ids: dict[str, set[str]] = {t: set() for t in ("doc", "task", "plan", "note", "img", "annotation")}
     for typ, tid in refs:
         if typ in ids and _HEX32.match(tid):
@@ -251,7 +251,7 @@ def search(
     want = [x for x in (types or "").split(",") if x] or list(_SEARCH_TYPES)
     if any(x not in _SEARCH_TYPES for x in want):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unbekannter Typ")
-    is_b = effective_mission_builder(db, user)
+    is_b = effective_mission_builder(db, user, pid)
     if space == "builder" and not is_b:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Nicht gefunden")
     pat = _like(q)
@@ -343,7 +343,7 @@ def map_notes(pid: str, user: CurrentUser, db: DbDep) -> list[dict]:
     """Liste "Auf der Karte": alle Kartennotizen und Stern-Pins aller Pläne des Projekts
     (nur Missionsbauer; nur Pläne mit Zugriff). ``mb`` = liegt auf dem Layer "Missionsbau-Notizen"."""
     _ctx(db, user, pid)
-    if not effective_mission_builder(db, user):
+    if not effective_mission_builder(db, user, pid):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Nicht gefunden")
     plans = {
         p.id: p for p in db.scalars(select(Plan).where(Plan.project_id == pid, Plan.deleted_at.is_(None)))
@@ -383,7 +383,7 @@ def timeline(pid: str, user: CurrentUser, db: DbDep) -> list[dict]:
     nur für Missionsbauer."""
     _ctx(db, user, pid)
     q = select(ProjectTimelineEntry).where(ProjectTimelineEntry.project_id == pid)
-    if not effective_mission_builder(db, user):
+    if not effective_mission_builder(db, user, pid):
         q = q.where(ProjectTimelineEntry.space == "public")
     rows = list(db.scalars(q))
     names = {d.id: d.name for d in db.scalars(select(ProjectDoc).where(

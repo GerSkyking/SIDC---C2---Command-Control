@@ -79,7 +79,7 @@ def _sniff(raw: bytes) -> tuple[str, int, int] | None:
 
 
 def _builder_phase_forbidden(db, user, plan_id: str, pid: str) -> bool:
-    return not effective_mission_builder(db, user) and _phase_is_builder(plan_id, pid)
+    return not effective_mission_builder(db, user, _plan_project(db, plan_id)) and _phase_is_builder(plan_id, pid)
 
 
 @router.post("/{plan_id}/images", status_code=status.HTTP_201_CREATED)
@@ -124,9 +124,13 @@ async def upload_image(
     return out
 
 
+def _plan_project(db, plan_id: str) -> str | None:
+    return db.scalar(select(Plan.project_id).where(Plan.id == plan_id))
+
+
 def _hidden_phase_ids(db, user, plan_id: str) -> set[str]:
     """Missionsbau-Phasen, die dieser Nutzer nicht sehen darf (wie get_snapshot)."""
-    if effective_mission_builder(db, user):
+    if effective_mission_builder(db, user, _plan_project(db, plan_id)):
         return set()
     hide = _builder_phase_ids(db, plan_id) - _released_builder_phase_ids(db, plan_id)
     if effective_zeus(db, user):

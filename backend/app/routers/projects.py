@@ -43,7 +43,7 @@ from ..models import (
     User,
     now,
 )
-from ..permissions import effective_level, effective_mission_builder, project_role, rank
+from ..permissions import effective_level, effective_mission_builder, project_role, rank, subjects_of
 from ..schemas import (
     CommentIn,
     DocCreateIn,
@@ -116,8 +116,8 @@ def _ctx(db: Session, user: User, pid: str, need: str = "viewer", write: bool = 
     return proj, role
 
 
-def _require_space(db: Session, user: User, space: str) -> None:
-    if space == "builder" and not effective_mission_builder(db, user):
+def _require_space(db: Session, user: User, space: str, pid: str | None = None) -> None:
+    if space == "builder" and not effective_mission_builder(db, user, pid):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Nicht gefunden")
 
 
@@ -125,7 +125,7 @@ def _get_doc(db: Session, user: User, pid: str, doc_id: str) -> ProjectDoc:
     d = db.get(ProjectDoc, doc_id)
     if d is None or d.project_id != pid:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Dokument nicht gefunden")
-    _require_space(db, user, d.space)
+    _require_space(db, user, d.space, pid)
     return d
 
 
@@ -159,7 +159,7 @@ def _act(db: Session, user: User, pid: str, kind: str, ttype: str, tid: str | No
 def _project_out(db: Session, p: Project, role: str, user: User) -> dict:
     return {
         "id": p.id, "name": p.name, "description": p.description, "archived": bool(p.archived),
-        "role": role, "stage": p.stage or "draft", "is_builder": effective_mission_builder(db, user),
+        "role": role, "stage": p.stage or "draft", "is_builder": effective_mission_builder(db, user, p.id),
         "folder_id": p.folder_id,
         "created_by": p.created_by, "created_at": _iso(p.created_at), "updated_at": _iso(p.updated_at),
     }
@@ -171,14 +171,10 @@ def _project_out(db: Session, p: Project, role: str, user: User) -> dict:
 def list_projects(user: CurrentUser, db: DbDep) -> list[dict]:
     projects = list(db.scalars(select(Project).order_by(Project.updated_at.desc())))
     roles: dict[str, str] = {}
-    if user.is_admin:
-        roles = {p.id: "owner" for p in projects}
-    else:
-        gids = list(db.scalars(select(GroupMember.group_id).where(GroupMember.user_id == user.id)))
-        subj = {("user", user.id), *(("group", g) for g in gids)}
-        for m in db.scalars(select(ProjectMember)):
-            if (m.subject_type, m.subject_id) in subj and rank(m.role) > rank(roles.get(m.project_id)):
-                roles[m.project_id] = m.role
+    subj = subjects_of(db, user)
+    for m in db.scalars(select(ProjectMember)):
+        if (m.subject_type, m.subject_id) in subj and rank(m.role) > rank(roles.get(m.project_id)):
+            roles[m.project_id] = m.role
     plan_cnt: dict[str, int] = {}  # nur Pläne, die der Nutzer per Plan-ACL sehen darf
     if roles:
         for pl in db.scalars(select(Plan).where(Plan.project_id.in_(list(roles)), Plan.deleted_at.is_(None))):
@@ -298,7 +294,8 @@ def _member_rows(db: Session, pid: str) -> list[dict]:
         else:
             g = groups.get(r.subject_id)
             name = f"Gruppe: {g.name}" if g else "—"
-        out.append({"subject_type": r.subject_type, "subject_id": r.subject_id, "role": r.role, "name": name})
+        out.append({"subject_type": r.subject_type, "subject_id": r.subject_id, "role": r.role, "name": name,
+                    "is_builder": bool(r.is_builder)})
     out.sort(key=lambda x: (-rank(x["role"]), x["name"].lower()))
     return out
 
@@ -343,9 +340,16 @@ def put_members(
     if not any(m.role == "owner" for m in body):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Mindestens ein Eigentümer (owner) nötig")
     before = notify.subject_user_ids(db, [(m.subject_type, m.subject_id) for m in db.scalars(select(ProjectMember).where(ProjectMember.project_id == pid))])
+    # Projekt-Missionsbau darf nur setzen, wer selbst global Missionsbauer ist — Rechte aus Projekt/Gruppe
+    # (z. B. Projekt-MB) lassen sich nicht weitergeben; sonst bleibt der bisherige Stand erhalten.
+    can_grant = effective_mission_builder(db, user)
+    old_builder = {(m.subject_type, m.subject_id): bool(m.is_builder)
+                   for m in db.scalars(select(ProjectMember).where(ProjectMember.project_id == pid))}
     db.execute(sa_delete(ProjectMember).where(ProjectMember.project_id == pid))
     for m in body:
-        db.add(ProjectMember(project_id=pid, subject_type=m.subject_type, subject_id=m.subject_id, role=m.role))
+        flag = m.is_builder if can_grant else old_builder.get((m.subject_type, m.subject_id), False)
+        db.add(ProjectMember(project_id=pid, subject_type=m.subject_type, subject_id=m.subject_id, role=m.role,
+                             is_builder=flag))
     _act(db, user, pid, "project.members", "project", pid, "", count=len(body))
     added = notify.subject_user_ids(db, [(m.subject_type, m.subject_id) for m in body]) - before
     proj = db.get(Project, pid)
@@ -389,7 +393,7 @@ def list_docs(
     type_: Annotated[str | None, Query(alias="type", pattern=_DOC_TYPE_RE)] = None,
 ) -> list[dict]:
     _ctx(db, user, pid)
-    _require_space(db, user, space)
+    _require_space(db, user, space, pid)
     q = select(ProjectDoc).where(ProjectDoc.project_id == pid, ProjectDoc.space == space)
     if type_:
         q = q.where(ProjectDoc.doc_type == type_)
@@ -409,7 +413,7 @@ def _check_parent(db: Session, pid: str, space: str, parent_id: str | None) -> N
 @router.post("/{pid}/docs", status_code=status.HTTP_201_CREATED)
 def create_doc(pid: str, body: DocCreateIn, request: Request, user: CurrentUser, db: DbDep) -> dict:
     _ctx(db, user, pid, "editor", write=True)
-    _require_space(db, user, body.space)
+    _require_space(db, user, body.space, pid)
     name = body.name.strip()
     if not name:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Name fehlt")
@@ -537,14 +541,14 @@ def _project_image(db: Session, user: User, pid: str, image_id: str) -> tuple[Pl
     if i is None or i.project_id != pid:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Bild nicht gefunden")
     space = _image_spaces(db, [i])[i.id]
-    _require_space(db, user, space)
+    _require_space(db, user, space, pid)
     return i, space
 
 
 @router.get("/{pid}/images")
 def list_project_images(pid: str, user: CurrentUser, db: DbDep, space: _SPACE_Q = "public") -> list[dict]:
     _ctx(db, user, pid)
-    _require_space(db, user, space)
+    _require_space(db, user, space, pid)
     rows = list(db.scalars(
         select(PlanImage).join(Plan, Plan.id == PlanImage.plan_id)
         .where(PlanImage.project_id == pid, Plan.deleted_at.is_(None))
@@ -777,7 +781,7 @@ def _tasks_out(db: Session, user: User, tasks: list[ProjectTask]) -> list[dict]:
     dc = {i for t in tasks if (i := t.doc_id)}
     plan_names = {p.id: p.name for p in db.scalars(select(Plan).where(Plan.id.in_(pl)))} if pl else {}
     doc_names = {d.id: (d.name, d.space) for d in db.scalars(select(ProjectDoc).where(ProjectDoc.id.in_(dc)))} if dc else {}
-    b = effective_mission_builder(db, user)
+    b = effective_mission_builder(db, user, tasks[0].project_id if tasks else None)
     return [_task_out(t, labels, plan_names, doc_names, b) for t in tasks]
 
 
@@ -806,7 +810,7 @@ def _validate_task_refs(db: Session, user: User, pid: str, fields: dict) -> None
         d = db.get(ProjectDoc, doc_id)
         if d is None or d.project_id != pid or d.kind != "doc":
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Dokument gehört nicht zum Projekt")
-        if d.space == "builder" and not effective_mission_builder(db, user):
+        if d.space == "builder" and not effective_mission_builder(db, user, pid):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Dokument gehört nicht zum Projekt")
 
 
@@ -1043,7 +1047,7 @@ def delete_comment(pid: str, tid: str, cid: str, user: CurrentUser, db: DbDep) -
 
 def _visible_activity(db: Session, user: User, pid: str):
     q = select(ProjectActivity).where(ProjectActivity.project_id == pid)
-    if not effective_mission_builder(db, user):
+    if not effective_mission_builder(db, user, pid):
         q = q.where(ProjectActivity.space.is_(None) | (ProjectActivity.space != "builder"))
     return q
 
@@ -1114,7 +1118,7 @@ def project_plans(pid: str, user: CurrentUser, db: DbDep) -> list[PlanListItem]:
 @router.get("/{pid}/overview")
 def overview(pid: str, user: CurrentUser, db: DbDep) -> dict:
     p, _ = _ctx(db, user, pid)
-    is_b = effective_mission_builder(db, user)
+    is_b = effective_mission_builder(db, user, pid)
     tasks = list(db.scalars(select(ProjectTask).where(ProjectTask.project_id == pid)))
     open_t = [t for t in tasks if t.status != "done"]
 

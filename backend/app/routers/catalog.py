@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from .. import audit
 from ..config import get_settings
-from ..deps import AdminUser, CurrentUser, DbDep
+from ..deps import StaffUser, CurrentUser, DbDep
 
 router = APIRouter(prefix="/api", tags=["catalog"])
 _settings = get_settings()
@@ -138,7 +138,7 @@ def get_catalog(name: str, user: CurrentUser) -> JSONResponse:
 
 
 @router.post("/admin/catalog/{name}")
-async def upload_catalog(name: str, request: Request, admin: AdminUser, db: DbDep) -> dict:
+async def upload_catalog(name: str, request: Request, admin: StaffUser, db: DbDep) -> dict:
     """Roher JSON-Body (kein Multipart) — schlanker durch den Reverse Proxy."""
     if name not in CATALOGS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unbekannter Katalog")
@@ -159,7 +159,7 @@ async def upload_catalog(name: str, request: Request, admin: AdminUser, db: DbDe
 
 
 @router.delete("/admin/catalog/{name}")
-def delete_catalog(name: str, request: Request, admin: AdminUser, db: DbDep) -> dict:
+def delete_catalog(name: str, request: Request, admin: StaffUser, db: DbDep) -> dict:
     if name not in CATALOGS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unbekannter Katalog")
     (_dir() / CATALOGS[name]).unlink(missing_ok=True)

@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, select
 
 from .. import audit
-from ..deps import AdminUser, DbDep
+from ..deps import AdminUser, DbDep, StaffUser
+from ..permissions import is_local_admin
 from ..config import get_settings
 from ..models import ApiToken, AuditLog, Group, GroupMember, Map, Plan, PlanImage, Project, ProjectDoc, User
 from ..models import now as _now
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 @router.post("/restart")
-async def restart_backend(request: Request, admin: AdminUser, db: DbDep) -> dict:
+async def restart_backend(request: Request, admin: StaffUser, db: DbDep) -> dict:
     """Beendet den Backend-Prozess; Docker (`restart: unless-stopped`) startet den
     Container neu. db/redis laufen weiter. ~2 s Ausfall."""
     log.warning("Neustart durch Admin '%s' ausgelöst", admin.username)
@@ -49,6 +50,8 @@ class UserCreate(BaseModel):
     can_create_plans: bool = False
     is_mission_builder: bool = False
     is_zeus: bool = False
+    is_technician: bool = False
+    can_manage_maps: bool = False
 
 
 class UserPatch(BaseModel):
@@ -56,6 +59,8 @@ class UserPatch(BaseModel):
     can_create_plans: bool | None = None
     is_mission_builder: bool | None = None
     is_zeus: bool | None = None
+    is_technician: bool | None = None
+    can_manage_maps: bool | None = None
     is_active: bool | None = None
     password: str | None = Field(default=None, max_length=256)
     display_name: str | None = Field(default=None, max_length=64)
@@ -69,6 +74,8 @@ class UserRow(BaseModel):
     can_create_plans: bool
     is_mission_builder: bool = False
     is_zeus: bool = False
+    is_technician: bool = False
+    can_manage_maps: bool = False
     is_active: bool
     is_local: bool  # hat ein Passwort (kein reiner OIDC-User)
     protected: bool = False  # lokaler Bootstrap-Admin: nicht löschbar, Rechte/Passwort nur über die Server-Konfiguration
@@ -80,6 +87,16 @@ def is_protected_admin(u: User) -> bool:
     return bool(u.password_hash) and u.username == get_settings().bootstrap_admin_user
 
 
+# Rechte-Felder: nur lokale Admins dürfen sie vergeben (OIDC-Admins/Techniker nie).
+RIGHT_FIELDS = ("role", "can_create_plans", "is_mission_builder", "is_zeus", "is_technician", "can_manage_maps")
+_RIGHTS_MSG = "Rechte und Rollen darf nur ein lokaler Admin vergeben"
+
+
+def _require_local_admin(db, actor: User) -> None:
+    if not is_local_admin(db, actor):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, _RIGHTS_MSG)
+
+
 _PROTECTED_MSG = "Lokales Admin-Konto ist geschützt (Verwaltung nur über die Server-Konfiguration)"
 
 
@@ -87,13 +104,14 @@ def _row(u: User) -> UserRow:
     return UserRow(
         id=u.id, username=u.username, display_name=u.display_name, role=u.role,
         can_create_plans=u.can_create_plans, is_mission_builder=u.is_mission_builder,
-        is_zeus=u.is_zeus, is_active=u.is_active, is_local=bool(u.password_hash),
+        is_zeus=u.is_zeus, is_technician=u.is_technician, can_manage_maps=u.can_manage_maps,
+        is_active=u.is_active, is_local=bool(u.password_hash),
         protected=is_protected_admin(u),
     )
 
 
 @router.get("/users", response_model=list[UserRow])
-def list_users(admin: AdminUser, db: DbDep) -> list[UserRow]:
+def list_users(admin: StaffUser, db: DbDep) -> list[UserRow]:
     return [_row(u) for u in db.scalars(select(User).order_by(User.username))]
 
 
@@ -101,6 +119,8 @@ def list_users(admin: AdminUser, db: DbDep) -> list[UserRow]:
 def create_user(body: UserCreate, request: Request, admin: AdminUser, db: DbDep) -> UserRow:
     if len(body.password) < MIN_PASSWORD_LEN:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Passwort min. {MIN_PASSWORD_LEN} Zeichen")
+    if body.role != "user" or any(getattr(body, f) for f in RIGHT_FIELDS if f != "role"):
+        _require_local_admin(db, admin)
     if db.scalar(select(User.id).where(User.username == body.username)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Benutzername vergeben")
     u = User(
@@ -108,6 +128,7 @@ def create_user(body: UserCreate, request: Request, admin: AdminUser, db: DbDep)
         display_name=body.display_name.strip()[:64],
         role=body.role, can_create_plans=body.can_create_plans,
         is_mission_builder=body.is_mission_builder, is_zeus=body.is_zeus,
+        is_technician=body.is_technician, can_manage_maps=body.can_manage_maps,
     )
     db.add(u)
     db.flush()
@@ -125,9 +146,11 @@ def patch_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbDep) -> Us
     u = db.get(User, user_id)
     if u is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if any(getattr(body, f, None) is not None for f in RIGHT_FIELDS):
+        _require_local_admin(db, admin)
     if is_protected_admin(u) and any(
         getattr(body, f, None) is not None
-        for f in ("password", "role", "can_create_plans", "is_mission_builder", "is_zeus", "is_active")
+        for f in ("password", "is_active", *RIGHT_FIELDS)
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, _PROTECTED_MSG)
     if body.password is not None:
@@ -147,6 +170,10 @@ def patch_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbDep) -> Us
         u.is_mission_builder = body.is_mission_builder
     if body.is_zeus is not None:
         u.is_zeus = body.is_zeus
+    if body.is_technician is not None:
+        u.is_technician = body.is_technician
+    if body.can_manage_maps is not None:
+        u.can_manage_maps = body.can_manage_maps
     if body.display_name is not None:
         u.display_name = "".join(c for c in body.display_name.strip() if c.isprintable())[:64]
     if body.is_active is not None:
@@ -214,7 +241,7 @@ def list_audit(
 # ─── Speicherauswertung pro Projekt ────────────────────────────────────────
 
 @router.get("/projects/storage")
-def projects_storage(admin: AdminUser, db: DbDep) -> list[dict]:
+def projects_storage(admin: StaffUser, db: DbDep) -> list[dict]:
     img = dict(db.execute(
         select(PlanImage.project_id, func.coalesce(func.sum(PlanImage.byte_size), 0))
         .where(PlanImage.project_id.is_not(None)).group_by(PlanImage.project_id)
@@ -239,7 +266,7 @@ def projects_storage(admin: AdminUser, db: DbDep) -> list[dict]:
 
 
 @router.get("/maps/storage")
-async def maps_storage(admin: AdminUser, db: DbDep) -> list[dict]:
+async def maps_storage(admin: StaffUser, db: DbDep) -> list[dict]:
     """Plattenverbrauch je Karte, größte zuerst. Die Größe wird beim Import in ``Map.meta['bytes']``
     festgehalten; für ältere Karten wird sie einmalig nachgemessen und gespeichert."""
     base = get_settings().maps_dir
@@ -263,6 +290,8 @@ class GroupIn(BaseModel):
     can_create_plans: bool = False
     is_mission_builder: bool = False
     is_zeus: bool = False
+    is_technician: bool = False
+    can_manage_maps: bool = False
 
 
 class GroupRow(BaseModel):
@@ -271,15 +300,40 @@ class GroupRow(BaseModel):
     can_create_plans: bool
     is_mission_builder: bool = False
     is_zeus: bool = False
+    is_technician: bool = False
+    can_manage_maps: bool = False
+    is_system: bool = False
     member_ids: list[str]
 
 
+GROUP_RIGHTS = ("can_create_plans", "is_mission_builder", "is_zeus", "is_technician", "can_manage_maps")
+
+
 def _grow(g: Group, member_ids: list[str]) -> GroupRow:
-    return GroupRow(id=g.id, name=g.name, can_create_plans=g.can_create_plans, is_mission_builder=g.is_mission_builder, is_zeus=g.is_zeus, member_ids=member_ids)
+    return GroupRow(
+        id=g.id, name=g.name, can_create_plans=g.can_create_plans, is_mission_builder=g.is_mission_builder,
+        is_zeus=g.is_zeus, is_technician=g.is_technician, can_manage_maps=g.can_manage_maps,
+        is_system=g.is_system, member_ids=member_ids,
+    )
+
+
+def _has_rights(g: Group) -> bool:
+    return any(getattr(g, f) for f in GROUP_RIGHTS)
+
+
+def _no_system(g: Group) -> None:
+    if g.is_system:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Systemgruppe ist nicht änderbar")
+
+
+def _guard_members(db, actor: User, g: Group) -> None:
+    """Mitglieder von Gruppen mit Rechten ändern nur lokale Admins (sonst Selbst-Eskalation); rechtelose Gruppen: Staff."""
+    if _has_rights(g):
+        _require_local_admin(db, actor)
 
 
 @router.get("/groups", response_model=list[GroupRow])
-def list_groups(admin: AdminUser, db: DbDep) -> list[GroupRow]:
+def list_groups(admin: StaffUser, db: DbDep) -> list[GroupRow]:
     out = []
     for g in db.scalars(select(Group).order_by(Group.name)):
         mids = list(db.scalars(select(GroupMember.user_id).where(GroupMember.group_id == g.id)))
@@ -288,11 +342,14 @@ def list_groups(admin: AdminUser, db: DbDep) -> list[GroupRow]:
 
 
 @router.post("/groups", response_model=GroupRow, status_code=status.HTTP_201_CREATED)
-def create_group(body: GroupIn, request: Request, admin: AdminUser, db: DbDep) -> GroupRow:
+def create_group(body: GroupIn, request: Request, admin: StaffUser, db: DbDep) -> GroupRow:
+    if any(getattr(body, f) for f in GROUP_RIGHTS):
+        _require_local_admin(db, admin)
     if db.scalar(select(Group.id).where(Group.name == body.name)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Gruppenname vergeben")
     g = Group(name=body.name, can_create_plans=body.can_create_plans, is_mission_builder=body.is_mission_builder,
-              is_zeus=body.is_zeus)
+              is_zeus=body.is_zeus,
+              is_technician=body.is_technician, can_manage_maps=body.can_manage_maps)
     db.add(g)
     db.commit()
     audit.record(db, "group.create", user_id=admin.id, target_type="group", target_id=g.id,
@@ -301,26 +358,36 @@ def create_group(body: GroupIn, request: Request, admin: AdminUser, db: DbDep) -
 
 
 @router.patch("/groups/{group_id}", response_model=GroupRow)
-def patch_group(group_id: str, body: GroupIn, admin: AdminUser, db: DbDep) -> GroupRow:
+def patch_group(group_id: str, body: GroupIn, admin: StaffUser, db: DbDep) -> GroupRow:
     g = db.get(Group, group_id)
     if g is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    _no_system(g)
+    if any(getattr(body, f) != getattr(g, f) for f in GROUP_RIGHTS):
+        # Gruppenrechte: nur lokaler Admin, der selbst Mitglied der Gruppe ist
+        _require_local_admin(db, admin)
+        if not db.scalar(select(GroupMember.user_id).where(GroupMember.group_id == g.id, GroupMember.user_id == admin.id)):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Gruppenrechte setzt nur ein Mitglied der Gruppe")
     if db.scalar(select(Group.id).where(Group.name == body.name, Group.id != group_id)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Gruppenname vergeben")
     g.name = body.name
     g.can_create_plans = body.can_create_plans
     g.is_mission_builder = body.is_mission_builder
     g.is_zeus = body.is_zeus
+    g.is_technician = body.is_technician
+    g.can_manage_maps = body.can_manage_maps
     db.commit()
     mids = list(db.scalars(select(GroupMember.user_id).where(GroupMember.group_id == g.id)))
     return _grow(g, mids)
 
 
 @router.put("/groups/{group_id}/members", response_model=GroupRow)
-def set_members(group_id: str, user_ids: list[str], admin: AdminUser, db: DbDep) -> GroupRow:
+def set_members(group_id: str, user_ids: list[str], admin: StaffUser, db: DbDep) -> GroupRow:
     g = db.get(Group, group_id)
     if g is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    _no_system(g)
+    _guard_members(db, admin, g)
     db.query(GroupMember).filter(GroupMember.group_id == group_id).delete()
     valid = set(db.scalars(select(User.id).where(User.id.in_(user_ids))))
     for uid in valid:
@@ -330,9 +397,11 @@ def set_members(group_id: str, user_ids: list[str], admin: AdminUser, db: DbDep)
 
 
 @router.delete("/groups/{group_id}")
-def delete_group(group_id: str, admin: AdminUser, db: DbDep) -> dict:
+def delete_group(group_id: str, admin: StaffUser, db: DbDep) -> dict:
     g = db.get(Group, group_id)
     if g is not None:
+        _no_system(g)
+        _guard_members(db, admin, g)
         db.delete(g)
         db.commit()
     return {"ok": True}

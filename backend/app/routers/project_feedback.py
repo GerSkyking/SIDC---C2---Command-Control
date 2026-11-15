@@ -92,7 +92,7 @@ class FeedbackPatchIn(BaseModel):
 
 def _feedback_out(db, user: User, rows: list[ProjectFeedback]) -> list[dict]:
     """Bezüge auf Missionsbau-Dateien und nicht sichtbare Pläne werden für den Nutzer ausgeblendet."""
-    is_b = effective_mission_builder(db, user)
+    is_b = effective_mission_builder(db, user, rows[0].project_id if rows else None)
     labels = _labels(db, [r.handled_by for r in rows])
     plan_ids = {r.plan_id for r in rows if r.plan_id}
     doc_ids = {r.doc_id for r in rows if r.doc_id}
@@ -142,7 +142,7 @@ def _notify_doc_mentions(db, pid: str, doc: ProjectDoc, actor: User, mentions: l
     try:
         rec = mentions_svc.mention_recipients(db, pid, mentions, exclude=actor.id)
         if rec and doc.space == "builder":
-            rec = {u.id for u in db.scalars(select(User).where(User.id.in_(rec))) if effective_mission_builder(db, u)}
+            rec = {u.id for u in db.scalars(select(User).where(User.id.in_(rec))) if effective_mission_builder(db, u, pid)}
         notify.send(db, rec, "doc_mention", actor=actor, title=doc.name, text=text, project_id=pid, plan_id=doc.id)
         db.commit()
     except Exception:  # noqa: BLE001

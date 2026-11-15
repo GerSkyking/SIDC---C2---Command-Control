@@ -448,7 +448,7 @@ def list_plan_orbats(plan_id: Annotated[str, Path()], user: CurrentUser, db: DbD
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     if effective_level(db, user, plan) is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN)
-    mb = effective_mission_builder(db, user)
+    mb = effective_mission_builder(db, user, plan.project_id)
     ids = list(db.scalars(select(PlanOrbat.orbat_id).where(PlanOrbat.plan_id == plan_id)))
     out = []
     for oid in ids:

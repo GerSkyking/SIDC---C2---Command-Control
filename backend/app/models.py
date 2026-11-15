@@ -41,6 +41,10 @@ class User(Base):
     is_mission_builder: Mapped[bool] = mapped_column(Boolean, default=False)
     # Zeus: Unterrolle des Missionsbaus — sieht/bearbeitet nur dafür freigegebene Missionsbau-Phasen.
     is_zeus: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Techniker: Speicher + Einstellungen, Nutzer/Rechte nur lesen (siehe permissions.py)
+    is_technician: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Karten importieren/aktualisieren/löschen, ohne Admin zu sein
+    can_manage_maps: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # Bei Passwortwechsel / "überall abmelden" hochgezählt -> alte Session-Cookies ungültig.
     session_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
@@ -77,6 +81,10 @@ class Group(Base):
     can_create_plans: Mapped[bool] = mapped_column(Boolean, default=False)
     is_mission_builder: Mapped[bool] = mapped_column(Boolean, default=False)
     is_zeus: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    is_technician: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    can_manage_maps: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Systemgruppe ("public"): enthält implizit jeden Nutzer; nicht umbenenn-/löschbar, ohne Rechte
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
     members: Mapped[list[User]] = relationship(secondary="group_members", back_populates="groups")
@@ -573,6 +581,8 @@ class ProjectMember(Base):
     subject_type: Mapped[str] = mapped_column(String(8), primary_key=True)  # 'user' | 'group'
     subject_id: Mapped[str] = mapped_column(UuidPk, primary_key=True)
     role: Mapped[str] = mapped_column(String(8))  # viewer | editor | owner
+    # Missionsbau nur in diesem Projekt (und seinen verknüpften Plänen); gibt nur der Projekt-Owner
+    is_builder: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 class ProjectDoc(Base):

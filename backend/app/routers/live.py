@@ -74,7 +74,7 @@ def _auth(cookies: dict[str, str], plan_id: str) -> tuple[User, Plan, str, dict,
             return None
         return (
             user, plan, level, effective_caps(db, user, plan),
-            effective_mission_builder(db, user), effective_zeus(db, user),
+            effective_mission_builder(db, user, plan.project_id), effective_zeus(db, user),
         )
 
 

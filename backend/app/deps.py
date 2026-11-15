@@ -71,6 +71,38 @@ def require_admin(user: CurrentUser) -> User:
 AdminUser = Annotated[User, Depends(require_admin)]
 
 
+def require_staff(user: CurrentUser, db: DbDep) -> User:
+    """Admin oder Techniker (Speicher, Einstellungen, Nutzerliste lesen)."""
+    from .permissions import is_staff
+
+    if not is_staff(db, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin- oder Techniker-Rechte erforderlich")
+    return user
+
+
+def require_map_manager(user: CurrentUser, db: DbDep) -> User:
+    """Karten verwalten: Admin, Techniker oder das Recht „Karten verwalten“."""
+    from .permissions import effective_map_manager
+
+    if not effective_map_manager(db, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Recht „Karten verwalten“ erforderlich")
+    return user
+
+
+def require_local_admin(user: CurrentUser, db: DbDep) -> User:
+    """Rechte vergeben darf nur ein lokaler Admin (bei OIDC kommen Rechte aus der Anmeldung)."""
+    from .permissions import is_local_admin
+
+    if not is_local_admin(db, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur ein lokaler Admin darf Rechte vergeben")
+    return user
+
+
+StaffUser = Annotated[User, Depends(require_staff)]
+MapManager = Annotated[User, Depends(require_map_manager)]
+LocalAdmin = Annotated[User, Depends(require_local_admin)]
+
+
 def load_plan(plan_id: Annotated[str, Path()], db: DbDep) -> Plan:
     plan = db.get(Plan, plan_id)
     if plan is None or plan.deleted_at is not None:

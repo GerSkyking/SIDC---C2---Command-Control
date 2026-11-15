@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import select
 
 from .. import audit
-from ..deps import AdminUser, DbDep
+from ..deps import MapManager, DbDep
 from ..models import MapSource
 from ..schemas import MapSourceFile, MapSourceIn, MapSourceOut, SourceImportIn
 from .catalog import CATALOGS, store_catalog
@@ -99,12 +99,12 @@ def _fetch_file(s: MapSource, repo_path: str) -> bytes:
 
 
 @router.get("", response_model=list[MapSourceOut])
-def list_sources(admin: AdminUser, db: DbDep) -> list[MapSourceOut]:
+def list_sources(admin: MapManager, db: DbDep) -> list[MapSourceOut]:
     return [_out(s) for s in db.scalars(select(MapSource).order_by(MapSource.created_at))]
 
 
 @router.post("", response_model=MapSourceOut, status_code=status.HTTP_201_CREATED)
-def create_source(body: MapSourceIn, request: Request, admin: AdminUser, db: DbDep) -> MapSourceOut:
+def create_source(body: MapSourceIn, request: Request, admin: MapManager, db: DbDep) -> MapSourceOut:
     base_url, repo = _parse_repo_url(body.url)
     s = MapSource(
         kind="gitea", name=body.name or repo, base_url=base_url, repo=repo,
@@ -119,7 +119,7 @@ def create_source(body: MapSourceIn, request: Request, admin: AdminUser, db: DbD
 
 
 @router.delete("/{source_id}")
-def delete_source(source_id: str, request: Request, admin: AdminUser, db: DbDep) -> dict:
+def delete_source(source_id: str, request: Request, admin: MapManager, db: DbDep) -> dict:
     s = db.get(MapSource, source_id)
     if s is not None:
         db.delete(s)
@@ -130,7 +130,7 @@ def delete_source(source_id: str, request: Request, admin: AdminUser, db: DbDep)
 
 
 @router.get("/{source_id}/files", response_model=list[MapSourceFile])
-def source_files(source_id: str, admin: AdminUser, db: DbDep, all: bool = False) -> list[MapSourceFile]:
+def source_files(source_id: str, admin: MapManager, db: DbDep, all: bool = False) -> list[MapSourceFile]:
     s = db.get(MapSource, source_id)
     if s is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -139,7 +139,7 @@ def source_files(source_id: str, admin: AdminUser, db: DbDep, all: bool = False)
 
 @router.post("/{source_id}/import-catalog")
 def import_catalog_from_source(
-    source_id: str, body: SourceImportIn, request: Request, admin: AdminUser, db: DbDep
+    source_id: str, body: SourceImportIn, request: Request, admin: MapManager, db: DbDep
 ) -> dict:
     s = db.get(MapSource, source_id)
     if s is None:

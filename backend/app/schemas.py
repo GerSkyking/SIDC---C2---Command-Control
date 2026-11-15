@@ -20,12 +20,18 @@ class UserOut(BaseModel):
     can_create_plans: bool
     is_mission_builder: bool = False
     is_zeus: bool = False
+    is_technician: bool = False
+    can_manage_maps: bool = False
 
 
 class MeOut(UserOut):
     can_create_plans_effective: bool
     is_mission_builder_effective: bool = False
     is_zeus_effective: bool = False
+    is_staff: bool = False  # Admin oder Techniker (Speicher/Einstellungen/Benutzer lesen)
+    is_technician_effective: bool = False
+    can_manage_maps_effective: bool = False
+    can_grant_rights: bool = False  # lokaler Admin: darf Rechte/Rollen vergeben
     ui_settings: dict = {}
 
 
@@ -247,6 +253,7 @@ class ProjectMemberIn(BaseModel):
     subject_type: Literal["user", "group"]
     subject_id: str = Field(min_length=1, max_length=32)
     role: ProjectRole
+    is_builder: bool = False  # Missionsbau-Recht nur in diesem Projekt (und seinen Plänen)
 
 
 class DocCreateIn(BaseModel):

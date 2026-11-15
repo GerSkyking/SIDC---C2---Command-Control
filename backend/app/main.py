@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import __version__, audit
-from .bootstrap import ensure_bootstrap_admin, init_db
+from .bootstrap import ensure_bootstrap_admin, ensure_public_group, init_db
 from .config import get_settings
 from .db import SessionLocal
 from .routers import (
@@ -77,6 +77,7 @@ async def lifespan(app: FastAPI):
     _settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     init_db()
     ensure_bootstrap_admin()
+    ensure_public_group()
     await hub.start()
     retention_task = asyncio.create_task(_audit_retention_loop())
     dispatch_task = asyncio.create_task(dispatcher.run())

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..deps import CurrentUser, DbDep
 from ..models import GroupMember, Project, ProjectFolder, ProjectMember, User
-from ..permissions import effective_mission_builder
+from ..permissions import effective_mission_builder, subjects_of
 from ..schemas import ProjectFolderIn, ProjectFolderPatchIn
 
 router = APIRouter(prefix="/project-folders", tags=["projects"])
@@ -20,11 +20,8 @@ def _out(f: ProjectFolder) -> dict:
 
 
 def visible_project_ids(db: Session, user: User) -> set[str]:
-    """Projekte, in denen der Nutzer Mitglied ist (Admin: alle)."""
-    if user.is_admin:
-        return set(db.scalars(select(Project.id)))
-    gids = list(db.scalars(select(GroupMember.group_id).where(GroupMember.user_id == user.id)))
-    subj = {("user", user.id), *(("group", g) for g in gids)}
+    """Projekte, in denen der Nutzer Mitglied ist (auch über Gruppen/„public“). Admins haben keine Sonderrechte."""
+    subj = subjects_of(db, user)
     return {m.project_id for m in db.scalars(select(ProjectMember)) if (m.subject_type, m.subject_id) in subj}
 
 

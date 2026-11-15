@@ -66,7 +66,8 @@ def test_create_and_visibility(world):
     assert w["out"].get(f"/projects/{pid}").status_code == 404
     assert all(p["id"] != pid for p in w["out"].get("/projects").json())
     assert w["vw"].get(f"/projects/{pid}").json()["role"] == "viewer"
-    assert w["admin"].get(f"/projects/{pid}").json()["role"] == "owner"
+    # Admin hat keine implizite Projektsicht mehr (nur Mitglieder)
+    assert w["admin"].get(f"/projects/{pid}").status_code == 404
     assert any(p["id"] == pid for p in w["ed"].get("/projects").json())
     # nur owner ändert
     assert w["ed"].patch(f"/projects/{pid}", json={"name": "neu"}).status_code == 403
@@ -231,7 +232,7 @@ def test_plans_no_implicit_rights_and_scope(world):
     lst = {p["id"]: p for p in w["builder"].get("/projects").json()}
     assert lst[pid]["plan_count"] == 0
     assert {p["id"]: p for p in w["ed"].get("/projects").json()}[pid]["plan_count"] == 1
-    assert {p["id"]: p for p in w["admin"].get("/projects").json()}[pid]["plan_count"] == 1
+    assert all(p["id"] != pid for p in w["admin"].get("/projects").json())  # Admin ohne Mitgliedschaft: kein Projekt
     assert w["builder"].get(f"/projects/{pid}/overview").json()["counts"]["plans"] == 0
     # Plan-ACL fuer die Gruppe/den Nutzer schaltet den Zugriff frei
     acl = w["ed"].get(f"/plans/{plan['id']}/acl")

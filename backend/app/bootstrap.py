@@ -76,6 +76,23 @@ def _add_missing_columns() -> None:
 _PLACEHOLDER_PASSWORDS = {"change-me-min-12-chars", "change-me", "changeme", "password1234", "admin1234567"}
 
 
+PUBLIC_GROUP = "public"
+
+
+def ensure_public_group() -> None:
+    """Systemgruppe "public": jeder Nutzer gehört implizit dazu (Plan-Freigabe an alle)."""
+    from .models import Group
+
+    with SessionLocal() as db:
+        g = db.scalar(select(Group).where(Group.name == PUBLIC_GROUP))
+        if g is None:
+            db.add(Group(name=PUBLIC_GROUP, is_system=True))
+            db.commit()
+        elif not g.is_system:
+            g.is_system = True
+            db.commit()
+
+
 def ensure_bootstrap_admin() -> None:
     s = get_settings()
     if not s.bootstrap_admin_password:

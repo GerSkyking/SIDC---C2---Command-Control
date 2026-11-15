@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 from .. import audit
 from ..config import get_settings
-from ..deps import AdminUser, DbDep, MapsReader
+from ..deps import MapManager, DbDep, MapsReader
 from ..models import Map, MapSource, Plan, now
 from ..schemas import MapImportFromSourceIn, MapImportIn, MapOut
 from .map_sources import _list_files
@@ -33,7 +33,7 @@ def list_maps(auth: MapsReader, db: DbDep) -> list[Map]:
 
 @router.post("", response_model=MapOut, status_code=status.HTTP_202_ACCEPTED)
 def import_map(
-    body: MapImportIn, request: Request, bg: BackgroundTasks, admin: AdminUser, db: DbDep
+    body: MapImportIn, request: Request, bg: BackgroundTasks, admin: MapManager, db: DbDep
 ) -> Map:
     if db.get(Map, body.id) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Karten-ID existiert bereits")
@@ -64,7 +64,7 @@ def _register_upload(db, existing, map_id: str, name: str, admin, request: Reque
 
 @router.post("/{map_id}/upload", response_model=MapOut, status_code=status.HTTP_202_ACCEPTED)
 async def upload_map(
-    map_id: str, request: Request, bg: BackgroundTasks, admin: AdminUser, db: DbDep, name: str = ""
+    map_id: str, request: Request, bg: BackgroundTasks, admin: MapManager, db: DbDep, name: str = ""
 ) -> Map:
     """Rohen ZIP-Body streamen (Direkt-Upload/-Update). `name` als Query-Parameter,
     bei vorhandener Karte optional."""
@@ -99,7 +99,7 @@ async def upload_map(
 
 @router.post("/import-from-source", response_model=MapOut, status_code=status.HTTP_202_ACCEPTED)
 def import_from_source(
-    body: MapImportFromSourceIn, request: Request, bg: BackgroundTasks, admin: AdminUser, db: DbDep
+    body: MapImportFromSourceIn, request: Request, bg: BackgroundTasks, admin: MapManager, db: DbDep
 ) -> Map:
     src = db.get(MapSource, body.source_id)
     if src is None:
@@ -136,7 +136,7 @@ def import_from_source(
 
 
 @router.post("/{map_id}/reimport", response_model=MapOut, status_code=status.HTTP_202_ACCEPTED)
-def reimport_map(map_id: str, bg: BackgroundTasks, admin: AdminUser, db: DbDep) -> Map:
+def reimport_map(map_id: str, bg: BackgroundTasks, admin: MapManager, db: DbDep) -> Map:
     m = db.get(Map, map_id)
     if m is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -156,7 +156,7 @@ def reimport_map(map_id: str, bg: BackgroundTasks, admin: AdminUser, db: DbDep) 
 
 
 @router.delete("/{map_id}")
-def delete_map(map_id: str, request: Request, admin: AdminUser, db: DbDep) -> None:
+def delete_map(map_id: str, request: Request, admin: MapManager, db: DbDep) -> None:
     m = db.get(Map, map_id)
     if m is None:
         return
