@@ -340,6 +340,8 @@ export function setAreaLabels(map: MlMap, id: string, features: GeoJSON.Feature[
 
 /** Stroke-Art des Punkt-Werkzeugs. */
 export const DOT_KIND = "dot";
+/** Lineal: gespeicherte, synchronisierte Messlinie = Stroke mit kind "measure" (Distanz-Labels, gestrichelt). */
+export const MEASURE_KIND = "measure";
 /** Größen des Punkt-Werkzeugs (Radius in px, gespeichert als Stroke-width). */
 export const DOT_SIZES = [5, 8, 12] as const;
 export const DOT_DEFAULT_SIZE = 8;

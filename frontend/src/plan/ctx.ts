@@ -133,15 +133,6 @@ export const TAC_AUTO: TacAuto[] = ["bluefor", "redfor", "civgreen", "unknown"];
 // arrow: Startpunkt des Pfeils, solange diese Person rechts klickt+zieht.
 export type Peer = { name: string; lng: number; lat: number; t: number; color: string; hl: number; arrow: [number, number] | null };
 
-/** Lineal: mehrsegmentige, bleibende Messlinie (nur lokal, je Sitzung). */
-export interface MeasureLine {
-  id: string;
-  pts: [number, number][];
-  phase_id: string | null;
-  extra_phase_ids: string[];
-  layer_id: string | null;
-}
-
 export interface Cmd {
   undo: () => void;
   redo: () => void;
@@ -172,7 +163,6 @@ export interface PlanUi {
   refreshChains: () => void;
   refreshStrokeVerts: () => void;
   setEditStroke: (id: string | null) => void;
-  setEditMeasure: (id: string | null) => void;
   editPts: () => LngLat2[] | undefined;
   refreshPeers: () => void;
   // live.ts
@@ -277,7 +267,6 @@ export function createUi(): PlanUi {
     refreshChains: noop,
     refreshStrokeVerts: noop,
     setEditStroke: noop,
-    setEditMeasure: noop,
     editPts: () => undefined,
     refreshPeers: noop,
     resync: noopAsync,
@@ -418,11 +407,9 @@ export interface PlanCtx {
   hoverLngLat: { lng: number; lat: number } | null;
   hoverMarkerId: string | null;
   // Linien / Lineal
-  measureLines: MeasureLine[];
   measureActive: LngLat2[];
   measureCursor: LngLat2 | null;
   measurePhaseId: string | null;
-  editMeasureId: string | null;
   editStrokeId: string | null;
   linePts: LngLat2[];
   lineCursor: LngLat2 | null; // Mauszeiger für die Vorschau-Linie

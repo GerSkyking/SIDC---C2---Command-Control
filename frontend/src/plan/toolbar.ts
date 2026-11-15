@@ -107,13 +107,12 @@ export function initToolbar(ctx: PlanCtx): void {
       ctx.linePts = [];
       ctx.ui.refreshLineDraft();
     }
-    if (m !== "move" && m !== "markermove" && m !== "line") ctx.ui.setEditStroke(null);
+    if (m !== "move" && m !== "markermove" && m !== "line" && m !== "measure") ctx.ui.setEditStroke(null);
     if (m !== "measure") {
       ctx.measureActive = [];
       ctx.measureCursor = null;
       ctx.ui.redrawMeasure();
     }
-    if (m !== "move" && m !== "markermove" && m !== "measure") ctx.ui.setEditMeasure(null);
     ctx.ui.positionLineDone();
     if (m !== "point") ctx.ui.resetPointer(); // Zeigen beenden (hud.ts)
 

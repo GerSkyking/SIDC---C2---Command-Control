@@ -11,6 +11,7 @@ import {
   areaCentroid,
   areaLabelFeature,
   DOT_KIND,
+  MEASURE_KIND,
   dotFeature,
   ensureAreaLabelLayer,
   ensureAreaLayers,
@@ -174,7 +175,8 @@ export function initRender(ctx: PlanCtx): void {
   const strokeOpacity = (s: Stroke): number => multiPhaseOpacity(s.phase_id, s.extra_phase_ids) * tacOpacity(null, s.layer_id);
   const strokeFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
-    features: [...strokes.values()].map(
+    // Lineal-Strokes zeichnet die Messlinien-Ebene (gestrichelt + Distanzen), nicht die Linien-Ebene
+    features: [...strokes.values()].filter((s) => s.kind !== MEASURE_KIND).map(
       (s): GeoJSON.Feature =>
         // Punkt (Punkt-Werkzeug): Kreis + Text über eigene Layer (stroke-dots)
         isStrokeDot(s)
@@ -423,6 +425,7 @@ export function initRender(ctx: PlanCtx): void {
       layout: { "text-field": ["get", "label"], "text-size": 13, "text-offset": [0, -0.8], "text-allow-overlap": true },
       paint: { "text-color": "#ffd166", "text-halo-color": "#000", "text-halo-width": 1.8 },
     });
+    ctx.ui.redrawMeasure(); // schon geladene Lineal-Strokes jetzt zeichnen (Quelle existierte beim ersten refreshStrokes noch nicht)
 
     // Richtungspfeile (unter den Markern)
     map.addSource("dir-lines", { type: "geojson", data: emptyFC() });
@@ -652,6 +655,7 @@ export function initRender(ctx: PlanCtx): void {
     (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
     refreshStrokeAreas();
     void refreshAreaMarkers();
+    ctx.ui.redrawMeasure(); // Lineal-Strokes (gespeichert + synchronisiert)
   };
   const refreshMarkers = async () => {
     await Promise.all([...markers.values(), ...areaMarkers()].map(ensureIcon));
@@ -662,15 +666,9 @@ export function initRender(ctx: PlanCtx): void {
   };
 
   // ── Linien nachträglich bearbeiten: Stützpunkte ziehen ───────────────
-  // Lineal: mehrsegmentige, bleibende Messlinien (nur lokal, je Sitzung)
-  // builder=true → nur in der Missionsbau-Ebene sichtbar, sonst nur in der Spieler-Ebene
-  // Lineal-Zustand (measureLines/measureActive/…) liegt in ctx
+  // Lineal: bleibende Messlinien sind Strokes (kind "measure"); die laufende Messung liegt in ctx.measureActive
   const editPts = (): [number, number][] | undefined =>
-    ctx.editMeasureId
-      ? ctx.measureLines.find((x) => x.id === ctx.editMeasureId)?.pts
-      : ctx.editStrokeId
-        ? strokes.get(ctx.editStrokeId)?.points
-        : undefined;
+    ctx.editStrokeId ? strokes.get(ctx.editStrokeId)?.points : undefined;
   const refreshStrokeVerts = () => {
     (map.getSource("strokeverts") as GeoJSONSource)?.setData({
       type: "FeatureCollection",
@@ -683,13 +681,6 @@ export function initRender(ctx: PlanCtx): void {
   };
   const setEditStroke = (id: string | null) => {
     ctx.editStrokeId = id;
-    if (id) ctx.editMeasureId = null;
-    refreshStrokeVerts();
-    ctx.ui.positionLineDone();
-  };
-  const setEditMeasure = (id: string | null) => {
-    ctx.editMeasureId = id;
-    if (id) ctx.editStrokeId = null;
     refreshStrokeVerts();
     ctx.ui.positionLineDone();
   };
@@ -697,7 +688,7 @@ export function initRender(ctx: PlanCtx): void {
     (map.getSource("peers") as GeoJSONSource)?.setData(peerFC());
     (map.getSource("peer-arrows") as GeoJSONSource)?.setData(peerArrowFC());
   };
-  Object.assign(ctx.ui, { refreshMarkers, refreshStrokes, refreshDir, refreshStrokeVerts, setEditStroke, setEditMeasure, editPts, refreshPeers });
+  Object.assign(ctx.ui, { refreshMarkers, refreshStrokes, refreshDir, refreshStrokeVerts, setEditStroke, editPts, refreshPeers });
   // Hervorhebung läuft aus / Zeiger verschwindet, auch ohne neue Nachricht
   const peerTick = window.setInterval(() => peers.size && refreshPeers(), 500);
   window.addEventListener("hashchange", () => window.clearInterval(peerTick), { once: true });

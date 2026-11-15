@@ -10,7 +10,8 @@ import { lngLatToWorld } from "../sidc/sidc";
 import { cid } from "../ws";
 import { AREA_CLOSE_PX, type LngLat2, type PlanCtx, type Stroke } from "./ctx";
 import { areaFieldsHtml, openAreaNameDialog, wireAreaFields } from "./strokeArea";
-import { fmtDist, lineDraftFC } from "./geo";
+import { MEASURE_KIND } from "../mapAreas";
+import { fmtDist, hexToPacked, lineDraftFC } from "./geo";
 import { isStrokeDot } from "./render";
 
 export function initStrokes(ctx: PlanCtx): void {
@@ -63,10 +64,6 @@ export function initStrokes(ctx: PlanCtx): void {
       const p = strokes.get(ctx.editStrokeId)?.points;
       if (p && p.length) return p[p.length - 1] as [number, number];
     }
-    if (ctx.editMeasureId) {
-      const p = ctx.measureLines.find((x) => x.id === ctx.editMeasureId)?.pts;
-      if (p && p.length) return p[p.length - 1];
-    }
     return null;
   };
   const positionLineDone = () => {
@@ -74,7 +71,7 @@ export function initStrokes(ctx: PlanCtx): void {
     // Zahnrad nur beim Bearbeiten einer bestehenden Phasenlinie, Papierkorb auch bei Messlinien
     const running = (ctx.mode === "line" && ctx.linePts.length >= 2) || (ctx.mode === "measure" && ctx.measureActive.length >= 2);
     const showGear = !!ctx.editStrokeId && !running;
-    const showDel = !!ctx.editStrokeId || !!ctx.editMeasureId || running; // laufend: Löschen = verwerfen
+    const showDel = !!ctx.editStrokeId || running; // laufend: Löschen = verwerfen
     if (!a) {
       lineDoneBtn.hidden = true;
       strokeGearBtn.hidden = true;
@@ -106,7 +103,6 @@ export function initStrokes(ctx: PlanCtx): void {
     if (ctx.mode === "line" && ctx.linePts.length >= 2) finishLine();
     else if (ctx.mode === "measure" && ctx.measureActive.length >= 2) commitMeasure();
     else if (ctx.editStrokeId) ctx.ui.setEditStroke(null);
-    else if (ctx.editMeasureId) ctx.ui.setEditMeasure(null);
   });
   strokeGearBtn.addEventListener("click", () => {
     if (ctx.editStrokeId) openStrokeSettings(ctx.editStrokeId);
@@ -115,7 +111,7 @@ export function initStrokes(ctx: PlanCtx): void {
     const saved = !(ctx.mode === "line" && ctx.linePts.length >= 2) && !(ctx.mode === "measure" && ctx.measureActive.length >= 2);
     const editDot = !!ctx.editStrokeId && isStrokeDot(strokes.get(ctx.editStrokeId) ?? ({} as Stroke));
     const ask = t(editDot ? "dot.confirmDelete" : "line.confirmDelete");
-    if (saved && (ctx.editStrokeId || ctx.editMeasureId) && !(await confirmDialog(ask, { danger: true, trash: true }))) return;
+    if (saved && ctx.editStrokeId && !(await confirmDialog(ask, { danger: true, trash: true }))) return;
     if (ctx.mode === "line" && ctx.linePts.length >= 2) {
       cancelLine(); // laufende Linie verwerfen
     } else if (ctx.mode === "measure" && ctx.measureActive.length >= 2) {
@@ -125,11 +121,6 @@ export function initStrokes(ctx: PlanCtx): void {
     } else if (ctx.editStrokeId) {
       if (caps.draw) deleteStroke(ctx.editStrokeId);
       ctx.ui.setEditStroke(null);
-    } else if (ctx.editMeasureId) {
-      const mid = ctx.editMeasureId;
-      ctx.measureLines = ctx.measureLines.filter((x) => x.id !== mid);
-      ctx.ui.setEditMeasure(null);
-      redrawMeasure();
     }
   });
   // ── Fläche schließen: Klick nahe am Startpunkt (ab 3 Punkten) schließt die Linie zur Fläche ──
@@ -287,7 +278,9 @@ export function initStrokes(ctx: PlanCtx): void {
           properties: { kind: "label", label: `Σ ${fmtDist(pathLen(pts))}` },
         });
     };
-    for (const ml of ctx.measureLines) if (measureVisible(ml)) addLine(ml.id, ml.pts);
+    for (const st of strokes.values())
+      if (st.kind === MEASURE_KIND && measureVisible(st as { phase_id: string | null; extra_phase_ids: string[]; layer_id: string | null }))
+        addLine(st.id, st.points as [number, number][]);
     if (ctx.measureActive.length) {
       const live = ctx.measureCursor ? [...ctx.measureActive, ctx.measureCursor] : ctx.measureActive;
       addLine("__active", live);
@@ -300,10 +293,13 @@ export function initStrokes(ctx: PlanCtx): void {
     const n = ctx.measureActive.length;
     if (n >= 2 && ctx.measureActive[n - 1][0] === ctx.measureActive[n - 2][0] && ctx.measureActive[n - 1][1] === ctx.measureActive[n - 2][1])
       ctx.measureActive.pop();
-    if (ctx.measureActive.length >= 2)
-      ctx.measureLines.push({
-        id: `m${Date.now()}`,
-        pts: [...ctx.measureActive],
+    if (ctx.measureActive.length >= 2 && caps.draw && !zeusBlocked())
+      commitStroke({
+        kind: MEASURE_KIND, // gespeichert + synchronisiert wie eine Zeichenlinie, mit Distanz-Labels
+        points: ctx.measureActive.map((p) => [p[0], p[1]]),
+        color: hexToPacked("#ffd166"),
+        width: 2,
+        name: "",
         phase_id: ctx.measurePhaseId ?? ctx.currentPhaseId ?? null,
         extra_phase_ids: [...measureExtra],
         layer_id: measureLayerId,
@@ -436,7 +432,13 @@ export function initStrokes(ctx: PlanCtx): void {
       <div class="row" style="margin-top:.6rem"><button class="primary" data-save style="flex:1">${t("common.save")}</button></div>
     </div>`;
     document.body.appendChild(back);
-    const readArea = wireAreaFields(back, { name: s.name ?? "", ai_text: s.ai_text ?? "", sidc: s.sidc ?? "", fill: s.fill !== false }, root, back);
+    if (s.kind === MEASURE_KIND) {
+      // Lineal: nur Phase/Zusatzphasen/Ebene sinnvoll — Farbe, Breite und Fläche ausblenden
+      for (const sel of ["[data-scolor]", "[data-swidth]", "[data-sclosed]"])
+        back.querySelector<HTMLElement>(sel)?.closest("label")?.setAttribute("hidden", "");
+      back.querySelector<HTMLElement>("[data-area-block]")?.setAttribute("hidden", "");
+    }
+    const readArea = wireAreaFields(back,{ name: s.name ?? "", ai_text: s.ai_text ?? "", sidc: s.sidc ?? "", fill: s.fill !== false }, root, back);
     const closedIn = back.querySelector<HTMLInputElement>("[data-sclosed]")!;
     closedIn.addEventListener("change", () => (back.querySelector<HTMLElement>("[data-area-block]")!.hidden = !closedIn.checked));
     const close = () => back.remove();
@@ -475,10 +477,11 @@ export function initStrokes(ctx: PlanCtx): void {
     ctx.ui.setEditStroke((e.features?.[0]?.properties?.id as string) ?? null);
   });
   map.on("click", "measure-line", (e) => {
+    if (!canEdit) return;
     if (ctx.mode !== "move" && ctx.mode !== "markermove" && !(ctx.mode === "measure" && !ctx.measureActive.length)) return;
     e.preventDefault();
     const mid = e.features?.[0]?.properties?.mid as string | undefined;
-    ctx.ui.setEditMeasure(mid && mid !== "__active" ? mid : null);
+    ctx.ui.setEditStroke(mid && mid !== "__active" ? mid : null);
   });
   // Stützpunkte gespeichert → Undo auf die Punkte vor dem Ziehen (Fläche/Schraffur folgt über refreshStrokes)
   const saveVerts = (id: string, before: LngLat2[], pts: LngLat2[]): void => {

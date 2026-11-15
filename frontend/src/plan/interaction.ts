@@ -13,10 +13,9 @@ export function initContextMenu(ctx: PlanCtx): void {
   const { map, caps, sig } = ctx;
   // Rechtsklick bricht ab: Linien-Bearbeiten / laufende Linie / Marker-Linie
   map.on("contextmenu", (e) => {
-    if (ctx.editStrokeId || ctx.editMeasureId) {
+    if (ctx.editStrokeId) {
       e.preventDefault();
-      ctx.ui.setEditStroke(null);
-      ctx.ui.setEditMeasure(null); // Bearbeiten abbrechen
+      ctx.ui.setEditStroke(null); // Bearbeiten abbrechen
     } else if (ctx.mode === "line" && ctx.linePts.length) {
       e.preventDefault();
       ctx.ui.cancelLine(); // laufende Linie verwerfen, NICHT setzen
@@ -159,20 +158,13 @@ export function initMapClicks(ctx: PlanCtx): void {
         !sid && ctx.mode !== "line"
           ? (map.queryRenderedFeatures(box, { layers: ["measure-line"] })[0]?.properties?.mid as string | undefined)
           : undefined;
-      if (sid) {
-        ctx.ui.setEditMeasure(null);
-        ctx.ui.setEditStroke(sid);
-        return;
-      }
-      if (mid && mid !== "__active") {
-        ctx.ui.setEditStroke(null);
-        ctx.ui.setEditMeasure(mid);
+      if (sid || (mid && mid !== "__active")) {
+        ctx.ui.setEditStroke((sid ?? mid)!); // Linie/Punkt/Messlinie (alles Strokes) zum Bearbeiten wählen
         return;
       }
       // Klick ins Leere beendet das Bearbeiten einer Linie/Messlinie
-      if (ctx.editStrokeId || ctx.editMeasureId) {
+      if (ctx.editStrokeId) {
         ctx.ui.setEditStroke(null);
-        ctx.ui.setEditMeasure(null);
         return;
       }
     }
@@ -194,9 +186,8 @@ export function initMapClicks(ctx: PlanCtx): void {
           ctx.measureCursor = null;
           ctx.ui.redrawMeasure();
           ctx.ui.positionLineDone();
-        } else if (ctx.editStrokeId || ctx.editMeasureId) {
+        } else if (ctx.editStrokeId) {
           ctx.ui.setEditStroke(null);
-          ctx.ui.setEditMeasure(null);
         } else ctx.ui.setMode("move");
       }
     },

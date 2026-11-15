@@ -734,6 +734,7 @@ def _clean_stroke_name(v) -> str:
 
 
 STROKE_DOT = "dot"  # einfacher Punkt: genau 1 Punkt, nie geschlossen, Text = name
+STROKE_MEASURE = "measure"  # Lineal: gespeicherte Messlinie (Linie, nie geschlossen)
 
 
 def _create_stroke(plan_id: str, uid: str, data: dict) -> dict:
@@ -749,7 +750,7 @@ def _create_stroke(plan_id: str, uid: str, data: dict) -> dict:
             kind=kind, points=pts,
             channel=str(data.get("channel") or ""),
             color=int(data.get("color", -1)), width=float(data.get("width", -1)),
-            closed=kind != STROKE_DOT and data.get("closed") is True and len(pts) >= 3,
+            closed=kind not in (STROKE_DOT, STROKE_MEASURE) and data.get("closed") is True and len(pts) >= 3,
             name=_clean_stroke_name(data.get("name")),
             sidc=clean_sidc(data.get("sidc")),
             ai_text=_clean_stroke_name(data.get("ai_text")),
@@ -832,7 +833,7 @@ def _update_stroke(plan_id: str, stroke_id: str, data: dict) -> dict | None:
         if "closed" in data:
             s.closed = data["closed"] is True
         # Geschlossen nur mit mindestens 3 Punkten (auch nach Punkt-Änderung)
-        s.closed = not is_dot and bool(s.closed) and len(s.points or []) >= 3
+        s.closed = s.kind not in (STROKE_DOT, STROKE_MEASURE) and bool(s.closed) and len(s.points or []) >= 3
         db.commit()
         return _stroke_out(s)
 

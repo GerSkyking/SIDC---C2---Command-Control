@@ -9,7 +9,7 @@ import { isStrokeArea } from "./render";
 
 export function initEraser(ctx: PlanCtx): void {
   const { map, socket, root, strokes, markers, caps, cal, sig } = ctx;
-  const { multiPhaseOpacity, tacOpacity, phaseOpacity, measureVisible } = ctx.model;
+  const { multiPhaseOpacity, tacOpacity, phaseOpacity } = ctx.model;
   const eraserRing = root.querySelector<HTMLDivElement>("#eraserRing")!;
   // ── Radierer: Kreis mit einstellbarem Radius (Bildschirm-Pixel) ───────
   // Löscht beim Klicken/Ziehen alles im Kreis: Marker, Phasenlinien, Messlinien.
@@ -66,14 +66,6 @@ export function initEraser(ctx: PlanCtx): void {
         const p = map.project([m.world_x, m.world_y]);
         if (Math.hypot(p.x - px, p.y - py) <= eraserR + 8 && once(m.id)) socket.send({ type: "marker.delete", id: m.id });
       }
-    const hitIds = ctx.measureLines
-      .filter((ml) => measureVisible(ml) && polyHit(px, py, ml.pts.map((p) => map.project(p)), eraserR))
-      .map((ml) => ml.id);
-    if (hitIds.length) {
-      ctx.measureLines = ctx.measureLines.filter((x) => !hitIds.includes(x.id));
-      if (ctx.editMeasureId && hitIds.includes(ctx.editMeasureId)) ctx.ui.setEditMeasure(null);
-      ctx.ui.redrawMeasure();
-    }
   };
   map.on("mousedown", (e) => {
     if (ctx.mode !== "erase" || e.originalEvent.button !== 0) return;
