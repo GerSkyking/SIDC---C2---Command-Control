@@ -1877,3 +1877,4 @@ input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color:
 .tl-ctl > .segmented .seg-btn { height: 100%; padding-top: 0; padding-bottom: 0; display: inline-flex; align-items: center; }
 .tl-ctl .tl-zoom button { height: 100%; width: 1.9rem; }
 .tl-ctl #ph-add, .tl-ctl #ph-copy { font-size: 0.8rem; }
+.tl-ctl #ph-add, .tl-ctl #ph-copy { padding-left: 0.7rem; padding-right: 0.7rem; }
