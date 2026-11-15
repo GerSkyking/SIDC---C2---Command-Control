@@ -811,7 +811,7 @@ label.chk input { width: auto; }
 .ir-thumb[draggable="true"]:active { cursor: grabbing; }
 .img-rail-tab { position: absolute; top: calc(var(--topbar-h, 3.2rem) + 0.5rem); right: 0; /* gleiche Höhe wie der Schließen-Knopf in der Leiste */
   z-index: 14; border-radius: var(--r-sm) 0 0 var(--r-sm); border-right: 0;
-  background: var(--surface); width: 1.6rem; height: 2.2rem; padding: 0; display: grid; place-items: center; }
+  background: var(--surface); width: auto; height: 2.2rem; padding: 0 0.6rem 0 0.45rem; display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: var(--fg); }
 .img-rail-tab.hidden { display: none; }
 body.rail-open .hud, body.rail-open .mk-scale { right: calc(var(--rail-w, 300px) + 0.6rem); }
 body.rail-open .navcube { right: calc(var(--rail-w, 300px) + 56px); }

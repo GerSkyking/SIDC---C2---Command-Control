@@ -62,7 +62,7 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
   const tab = document.createElement("button");
   tab.className = "img-rail-tab";
   tab.title = t("imgrail.toggle");
-  tab.innerHTML = icon("back", 16); // "<" = Leiste ausklappen (sie fährt von rechts herein)
+  tab.innerHTML = `${icon("back", 16)}<span>${t("imgrail.title")}</span>`; // "<" = Leiste ausklappen (sie fährt von rechts herein)
   root.appendChild(tab);
 
   const listEl = rail.querySelector<HTMLElement>(".ir-list")!;
@@ -71,6 +71,7 @@ export function mountImageRail(root: HTMLElement, ctx: ImageRailCtx): ImageRail 
     rail.classList.toggle("open", open);
     tab.classList.toggle("hidden", open);
     document.body.classList.toggle("rail-open", open);
+    document.dispatchEvent(new Event("sidc-rail"));
     try {
       localStorage.setItem(OPEN_KEY, open ? "1" : "0");
     } catch {

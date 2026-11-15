@@ -3,7 +3,7 @@
 import { api } from "../api";
 import { t } from "../i18n";
 import { icon } from "../icons";
-import { confirmDialog, promptDialog, toastError } from "../notify";
+import { confirmDialog, promptDialog, toast, toastError } from "../notify";
 import type { ActAs, PhaseT, PlanCtx, Span } from "./ctx";
 import { esc0, fmtInput, parseNaive } from "./geo";
 
@@ -363,6 +363,7 @@ ${t("tip.tl.bar")}${canEdit && (plane === "player" || isMB) && !fixedRole ? " ·
           `</span>`
         : "") +
       (canEdit ? `<button id="ph-add" title="${t("phase.add")}">+ ${t("phase.heading")}</button>` : "") +
+      (isMB ? `<button id="ph-copy" title="${t("phase.copyHint")}">${icon("clone", 14)} ${t("phase.copy")}</button>` : "") +
       `<label class="ph-op" title="${t("phase.outOpacityHint")}">${t("phase.outOpacity")}` +
       `<input type="range" id="ph-op" min="0" max="100" step="5" value="${ctx.outOpacity}" aria-label="${t("phase.outOpacity")}"/><span id="ph-op-v">${ctx.outOpacity}%</span></label>` +
       (isMB
@@ -491,6 +492,7 @@ ${t("tip.tl.bar")}${canEdit && (plane === "player" || isMB) && !fixedRole ? " ·
     });
 
     timelineEl.querySelector("#ph-add")?.addEventListener("click", () => void addPlayerPhase());
+    timelineEl.querySelector("#ph-copy")?.addEventListener("click", () => void openCopyPhase());
     timelineEl.querySelector("#player-add")?.addEventListener("click", () => void addPlayerPhase());
     timelineEl.querySelector("#sub-add")?.addEventListener("click", () => void addSubPhase(apid));
 
@@ -514,6 +516,77 @@ ${t("tip.tl.bar")}${canEdit && (plane === "player" || isMB) && !fixedRole ? " ·
         ctx.ui.renderAnnots();
       });
     }
+  }
+  // ── Inhalt der aktuellen Phase in eine Phase (dieses oder eines anderen Plans) kopieren ──
+  async function openCopyPhase(): Promise<void> {
+    const src = phases.find((p) => p.id === ctx.currentPhaseId);
+    if (!src) return;
+    let plans: { id: string; name: string; level: string; project_name?: string }[] = [];
+    try {
+      const [own, inProj] = await Promise.all([api.plans(), api.plansInProjects()]);
+      plans = [...own, ...inProj];
+    } catch (e) {
+      toastError(e);
+      return;
+    }
+    plans = plans.filter((p) => p.level === "editor" || p.level === "owner");
+    document.querySelector(".copy-phase-dlg")?.remove();
+    const back = document.createElement("div");
+    back.className = "edit-modal copy-phase-dlg";
+    back.innerHTML = `<div class="card" style="width:min(26rem,96vw)">
+      <div class="row"><h1 style="flex:1;margin:0">${t("phase.copy")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
+      <p class="muted" style="margin:.3rem 0 .6rem">${t("phase.copyIntro").replace("{name}", esc0(src.name))}</p>
+      <label class="chk-lbl">${t("phase.copyPlan")}<select data-cp-plan>${plans
+        .map((p) => `<option value="${p.id}" ${p.id === planId ? "selected" : ""}>${esc0(p.project_name ? p.project_name + " / " : "")}${esc0(p.name)}${p.id === planId ? " (" + t("phase.copyThisPlan") + ")" : ""}</option>`)
+        .join("")}</select></label>
+      <label class="chk-lbl">${t("phase.copyTarget")}<select data-cp-phase></select></label>
+      <label class="chk-lbl" data-cp-namewrap>${t("phase.copyNewName")}<input data-cp-name value="${esc0(src.name)}" /></label>
+      <div class="row" style="margin-top:.6rem"><button class="primary" data-cp-go style="flex:1">${t("phase.copy")}</button></div>
+    </div>`;
+    document.body.appendChild(back);
+    const q = <T extends HTMLElement>(s: string): T => back.querySelector<T>(s)!;
+    const planSel = q<HTMLSelectElement>("[data-cp-plan]");
+    const phSel = q<HTMLSelectElement>("[data-cp-phase]");
+    const nameWrap = q<HTMLElement>("[data-cp-namewrap]");
+    const loadPhases = async () => {
+      phSel.innerHTML = `<option value="">${t("phase.copyNew")}</option>`;
+      try {
+        const list = await api.phases(planSel.value);
+        const nameOf = (id: string | null) => list.find((p) => p.id === id)?.name ?? "";
+        phSel.innerHTML +=
+          list
+            .filter((p) => !(planSel.value === planId && p.id === src.id))
+            .map((p) => `<option value="${p.id}">${p.plane === "builder" ? "⚑ " : ""}${esc0(p.name)}${p.plane === "builder" ? " (" + esc0(nameOf(p.parent_id)) + ")" : ""}</option>`)
+            .join("");
+      } catch {
+        /* nur "neue Phase" */
+      }
+      nameWrap.hidden = !!phSel.value;
+    };
+    planSel.addEventListener("change", () => void loadPhases());
+    phSel.addEventListener("change", () => (nameWrap.hidden = !!phSel.value));
+    void loadPhases();
+    const close = () => back.remove();
+    back.addEventListener("mousedown", (e) => e.target === back && close());
+    q("[data-x]").addEventListener("click", close);
+    q<HTMLButtonElement>("[data-cp-go]").addEventListener("click", async (e) => {
+      const btn = e.currentTarget as HTMLButtonElement;
+      btn.disabled = true;
+      try {
+        const r = await api.copyPhase(planId, src.id, {
+          target_plan_id: planSel.value,
+          target_phase_id: phSel.value || null,
+          new_phase_name: q<HTMLInputElement>("[data-cp-name]").value.trim() || src.name,
+        });
+        close();
+        const n = r.markers + r.strokes + r.annotations + r.images;
+        toast(t("phase.copyDone").replace("{n}", String(n)));
+        if (r.plan_id === planId) setTimeout(() => location.reload(), 600); // anderer Teilnehmer-/Live-Stand: neu laden
+      } catch (err) {
+        btn.disabled = false;
+        toastError(err);
+      }
+    });
   }
   renderTimeline();
   // Fensterbreite geändert → Zeitachse neu auf die volle Breite ziehen

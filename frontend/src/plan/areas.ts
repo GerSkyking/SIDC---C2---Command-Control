@@ -207,6 +207,7 @@ export function initAreas(ctx: PlanCtx): void {
     }
     updateAreaSizes();
     positionAreaBar();
+    ctx.ui.refreshMapDim();
   }
   map.on("load", () => refreshAreas());
   map.on("style.load", () => refreshAreas());

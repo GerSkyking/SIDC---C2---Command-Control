@@ -138,7 +138,10 @@ export function makeMovable(
     el.style.top = `${cy}px`;
     el.style.right = "auto";
     el.style.bottom = "auto";
-    if (persist) savePos(cx, cy);
+    if (persist) {
+      delete el.dataset.mvOrigLeft;
+      savePos(cx, cy);
+    }
   };
 
   const applyPos = () => {
@@ -150,6 +153,28 @@ export function makeMovable(
     }
   };
   applyPos();
+
+  // Rechte Bilder-Leiste offen: verschobene Fenster weichen nach links aus (nur Anzeige, gespeicherte Position bleibt)
+  const avoidRail = () => {
+    if (!el.isConnected || el.hidden || !el.style.left) return;
+    const rail = document.querySelector<HTMLElement>(".img-rail.open");
+    const rw = rail ? rail.offsetWidth : 0;
+    const r = el.getBoundingClientRect();
+    if (rw && r.right > window.innerWidth - rw - 6) {
+      if (el.dataset.mvOrigLeft === undefined) el.dataset.mvOrigLeft = el.style.left;
+      el.style.left = `${Math.max(4, window.innerWidth - rw - 6 - r.width)}px`;
+    } else if (el.dataset.mvOrigLeft !== undefined) {
+      const orig = parseInt(el.dataset.mvOrigLeft);
+      // zurück an den alten Platz, solange er die offene Leiste nicht berührt
+      if (!rw || orig + r.width <= window.innerWidth - rw - 6) {
+        el.style.left = el.dataset.mvOrigLeft;
+        delete el.dataset.mvOrigLeft;
+      }
+    }
+  };
+  document.addEventListener("sidc-rail", avoidRail);
+  window.addEventListener("resize", avoidRail);
+  setTimeout(avoidRail, 0);
 
   bar.querySelector(".mv-pin")?.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -240,7 +265,8 @@ export function makeMovable(
         r.left > window.innerWidth - 60 ||
         r.top > window.innerHeight - 40;
       if (offscreen) place(24, 72, true);
-      else place(r.left, r.top, true);
+      else place(el.dataset.mvOrigLeft !== undefined ? parseInt(el.dataset.mvOrigLeft) : r.left, r.top, true);
+      avoidRail();
     },
   };
 }

@@ -99,6 +99,9 @@ export async function initLayers(ctx: PlanCtx): Promise<void> {
       /* ignore */
     }
     const has = (id: string) => !!map.getLayer(id);
+    queueMicrotask(() => {
+      for (const b of Object.keys(DIM_LAYERS)) syncDimOpacity(b);
+    });
     if ((name === "sat" || name === "satsimple" || name === "grid") && has(name)) {
       map.setPaintProperty(name, "raster-opacity", f);
     } else if (name === "contours") {
@@ -121,6 +124,79 @@ export async function initLayers(ctx: PlanCtx): Promise<void> {
       if (has("locations-labels")) map.setPaintProperty("locations-labels", "text-opacity", f);
     }
   }
+
+  // ── Unter markierten Flächen (Sternbereiche, Marker-Bereiche, geschlossene Linien) nur noch halbe Sichtbarkeit
+  // für Ortsnamen, Höhenpunkte und Höhenlinien (nicht für die Satellitenkarte). Pro Ebene ein "-dim"-Zwilling,
+  // der nur innerhalb der Flächen zeichnet (``within``), das Original zeichnet nur außerhalb.
+  const DIM_FACTOR = 0.5;
+  const DIM_LAYERS: Record<string, string[]> = {
+    "contours-line": ["line-opacity"],
+    "contours-label": ["text-opacity"],
+    "peaks-sym": ["text-opacity"],
+    "locations-dots": ["circle-opacity", "circle-stroke-opacity"],
+    "locations-labels": ["text-opacity"],
+  };
+  const baseFilters = new Map<string, unknown>();
+  const dimPolygons = (): number[][][][] => {
+    const polys: number[][][][] = [];
+    const ring = (pts: [number, number][]): number[][] => {
+      const r = pts.map((p) => [p[0], p[1]]);
+      r.push(r[0]);
+      return r;
+    };
+    for (const o of [...ctx.annots.values(), ...ctx.markers.values()]) {
+      const ar = o.area;
+      if (!ar?.closed || ar.pts.length < 3 || ar.fill === false) continue;
+      const op = "text" in o ? ctx.model.annotOpacity(o) : ctx.model.phaseOpacity(o);
+      if (op > 0.05) polys.push([ring(ar.pts)]);
+    }
+    for (const s of ctx.strokes.values()) {
+      if (!s.closed || s.points.length < 3 || s.fill === false || s.kind === "dot" || s.kind === "measure") continue;
+      const op = Math.max(ctx.model.phaseOpacityOf(s.phase_id), ...(s.extra_phase_ids ?? []).map((x) => ctx.model.phaseOpacityOf(x)));
+      if (op > 0.05) polys.push([ring(s.points)]);
+    }
+    return polys;
+  };
+  let lastDimKey = "";
+  function syncDimOpacity(base: string): void {
+    const twin = `${base}-dim`;
+    if (!map.getLayer(twin)) return;
+    for (const prop of DIM_LAYERS[base]) {
+      const v = map.getPaintProperty(base, prop);
+      map.setPaintProperty(twin, prop, ["*", DIM_FACTOR, v ?? 1]);
+    }
+  }
+  function refreshMapDim(): void {
+    if (!map.isStyleLoaded() && !map.getLayer("contours-line") && !map.getLayer("locations-labels")) return;
+    const polys = dimPolygons();
+    const key = JSON.stringify(polys);
+    if (key === lastDimKey) return;
+    lastDimKey = key;
+    const within = polys.length ? ({ type: "MultiPolygon", coordinates: polys } as const) : null;
+    for (const base of Object.keys(DIM_LAYERS)) {
+      const def = map.getLayer(base);
+      if (!def) continue;
+      if (!baseFilters.has(base)) baseFilters.set(base, map.getFilter(base) ?? null);
+      const orig = baseFilters.get(base) as unknown[] | null;
+      const twin = `${base}-dim`;
+      if (!within) {
+        map.setFilter(base, (orig ?? null) as never);
+        if (map.getLayer(twin)) map.setLayoutProperty(twin, "visibility", "none");
+        continue;
+      }
+      map.setFilter(base, (orig ? ["all", orig, ["!", ["within", within]]] : ["!", ["within", within]]) as never);
+      if (!map.getLayer(twin)) {
+        const layers = map.getStyle().layers;
+        const at = layers.findIndex((l) => l.id === base);
+        if (at < 0) continue;
+        map.addLayer({ ...(layers[at] as object), id: twin } as never, layers[at + 1]?.id);
+      }
+      map.setLayoutProperty(twin, "visibility", map.getLayoutProperty(base, "visibility") ?? "visible");
+      map.setFilter(twin, (orig ? ["all", orig, ["within", within]] : ["within", within]) as never);
+      syncDimOpacity(base);
+    }
+  }
+  ctx.ui.refreshMapDim = refreshMapDim;
 
   const locFC = (): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
@@ -217,6 +293,8 @@ export async function initLayers(ctx: PlanCtx): Promise<void> {
     }
     for (const n of ["sat", "satsimple", "grid", "contours", "peaks", "locations", ...enfusionPresent])
       if (layerOpacity[n] != null) setLayerOpacity(n, layerOpacity[n]);
+    lastDimKey = "";
+    refreshMapDim();
     applySatAdjust();
     if (enfusionPresent.includes("roads")) setRoadColors(map, roadColors);
     buildLayersPanel();
@@ -364,8 +442,10 @@ export async function initLayers(ctx: PlanCtx): Promise<void> {
         const name = cb.dataset.base!;
         baseLayerVisible[name] = cb.checked;
         const targets = overlayLayers[name] ?? [name];
-        for (const id of targets)
+        for (const id of targets) {
           if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", cb.checked ? "visible" : "none");
+          if (map.getLayer(`${id}-dim`)) map.setLayoutProperty(`${id}-dim`, "visibility", cb.checked ? "visible" : "none");
+        }
         if (name === "grid") ctx.ui.updateGrid();
       }),
     );

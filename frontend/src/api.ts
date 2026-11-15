@@ -735,6 +735,14 @@ export const api = {
   ) => req<Phase>("PATCH", `/plans/${planId}/phases/${phaseId}`, body),
   patchPlan: (planId: string, body: { name?: string; h_hour?: string | null }) =>
     req<PlanItem>("PATCH", `/plans/${planId}`, body),
+  phases: (planId: string) =>
+    req<{ id: string; name: string; plane: string; parent_id: string | null; ordering: number }[]>("GET", `/plans/${planId}/phases`),
+  copyPhase: (planId: string, phaseId: string, body: { target_plan_id: string; target_phase_id?: string | null; new_phase_name?: string }) =>
+    req<{ plan_id: string; phase_id: string; markers: number; strokes: number; annotations: number; images: number }>(
+      "POST",
+      `/plans/${planId}/phases/${phaseId}/copy`,
+      body,
+    ),
   deletePhase: (planId: string, phaseId: string) =>
     req<void>("DELETE", `/plans/${planId}/phases/${phaseId}`),
   planAcl: (planId: string) => req<AclEntry[]>("GET", `/plans/${planId}/acl`),

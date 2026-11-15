@@ -681,6 +681,7 @@ export function initRender(ctx: PlanCtx): void {
     (map.getSource("strokes") as GeoJSONSource)?.setData(strokeFC());
     refreshStrokeAreas();
     void refreshAreaMarkers();
+    ctx.ui.refreshMapDim();
     ctx.ui.redrawMeasure(); // Lineal-Strokes (gespeichert + synchronisiert)
   };
   const refreshMarkers = async () => {

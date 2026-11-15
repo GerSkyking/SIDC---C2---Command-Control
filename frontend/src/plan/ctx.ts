@@ -170,6 +170,8 @@ export interface PlanUi {
   // render.ts
   refreshMarkers: () => Promise<void>;
   refreshStrokes: () => void;
+  /** Karten-Beschriftungen/Höhenlinien unter markierten Flächen abdunkeln (layers.ts) */
+  refreshMapDim: () => void;
   refreshDir: () => void;
   redrawMarkersOnly: () => void;
   refreshChains: () => void;
@@ -275,6 +277,7 @@ export function createUi(): PlanUi {
   return {
     refreshMarkers: noopAsync,
     refreshStrokes: noop,
+    refreshMapDim: noop,
     refreshDir: noop,
     redrawMarkersOnly: noop,
     refreshChains: noop,

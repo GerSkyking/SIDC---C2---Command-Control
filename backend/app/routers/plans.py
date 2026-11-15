@@ -1192,6 +1192,118 @@ def clone_plan(
     return clone
 
 
+class PhaseCopyIn(BaseModel):
+    target_plan_id: str
+    target_phase_id: str | None = None   # vorhandene Phase im Zielplan …
+    new_phase_name: str | None = None    # … oder neue Phase anlegen
+
+
+@router.post("/{plan_id}/phases/{phase_id}/copy")
+def copy_phase_content(
+    phase_id: str, body: PhaseCopyIn, request: Request, plan: ViewerPlan, user: CurrentUser, db: DbDep
+) -> dict:
+    """Inhalt einer Phase (Marker, Linien/Flächen, Sterne, Bilder) in eine Phase desselben oder eines
+    anderen Plans kopieren. Nur für Missionsbauer; im Zielplan ist Bearbeiten-Recht nötig."""
+    from ..deps import load_plan as _load_plan
+    from ..permissions import effective_level as _eff, rank as _rank
+
+    if not effective_mission_builder(db, user, plan.project_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Missionsbau-Rolle erforderlich")
+    src = db.get(Phase, phase_id)
+    if src is None or src.plan_id != plan.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Phase nicht gefunden")
+    target = _load_plan(body.target_plan_id, db)
+    if _rank(_eff(db, user, target)) < _rank("editor"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Im Zielplan ist Bearbeiten-Recht erforderlich")
+    if not effective_mission_builder(db, user, target.project_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Missionsbau-Rolle im Zielplan erforderlich")
+    same = target.id == plan.id
+
+    # Zielphase bestimmen / anlegen
+    if body.target_phase_id:
+        dst = db.get(Phase, body.target_phase_id)
+        if dst is None or dst.plan_id != target.id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Zielphase nicht gefunden")
+    else:
+        name = (body.new_phase_name or "").strip() or src.name
+        nxt = db.scalar(select(func.coalesce(func.max(Phase.ordering), -1)).where(Phase.plan_id == target.id))
+        pp = Phase(plan_id=target.id, name=name, ordering=int(nxt) + 1)
+        db.add(pp)
+        db.flush()
+        bp = Phase(plan_id=target.id, name=name, ordering=pp.ordering, plane="builder", parent_id=pp.id)
+        db.add(bp)
+        db.flush()
+        dst = bp if (src.plane or "player") == "builder" else pp
+
+    # Ebenen per Name zuordnen
+    tl = {ly.name: ly.id for ly in db.scalars(select(Layer).where(Layer.plan_id == target.id))}
+    sl = {ly.id: ly.name for ly in db.scalars(select(Layer).where(Layer.plan_id == plan.id))}
+    lid = lambda x: tl.get(sl.get(x or "", ""))  # noqa: E731
+
+    # Ketten-Gruppen neu nummerieren (sonst würden Ketten im Zielplan verschmelzen)
+    top = db.scalar(select(func.coalesce(func.max(Marker.linked_group_id), 0)).where(Marker.plan_id == target.id))
+    gmap: dict[int, int] = {}
+    n_m = n_s = n_a = n_i = 0
+    for m in db.scalars(select(Marker).where(Marker.plan_id == plan.id, Marker.phase_id == src.id)):
+        d = _marker_dict(m)
+        d.pop("id")
+        d["phase_id"] = dst.id
+        d["extra_phase_ids"] = []
+        d["layer_id"] = lid(m.layer_id)
+        if not same:
+            d["orbat_node_id"] = None
+        g = m.linked_group_id
+        if g is not None and g >= 0:
+            if g not in gmap:
+                gmap[g] = int(top) + 1 + len(gmap)
+            d["linked_group_id"] = gmap[g]
+        db.add(Marker(plan_id=target.id, created_by=user.id, **d))
+        n_m += 1
+    for st in db.scalars(select(Stroke).where(Stroke.plan_id == plan.id, Stroke.phase_id == src.id)):
+        d = _stroke_dict(st)
+        d.pop("id")
+        d["phase_id"] = dst.id
+        d["extra_phase_ids"] = []
+        d["layer_id"] = lid(st.layer_id)
+        db.add(Stroke(plan_id=target.id, created_by=user.id, **d))
+        n_s += 1
+    for a in db.scalars(select(Annotation).where(Annotation.plan_id == plan.id, Annotation.phase_id == src.id)):
+        d = _annotation_dict(a)
+        d.pop("id")
+        d["phase_id"] = dst.id
+        d["extra_phase_ids"] = []
+        db.add(Annotation(plan_id=target.id, created_by=user.id, updated_by=user.id, **d))
+        n_a += 1
+    img_map: dict[str, str] = {}
+    for pl in db.scalars(select(ImagePlacement).where(ImagePlacement.plan_id == plan.id, ImagePlacement.phase_id == src.id)):
+        img = db.get(PlanImage, pl.image_id)
+        if img is None:
+            continue
+        if same:
+            nid = img.id  # gleicher Plan: Bild wiederverwenden
+        elif img.id in img_map:
+            nid = img_map[img.id]
+        else:
+            nimg = PlanImage(
+                plan_id=target.id, created_by=user.id, updated_by=user.id, project_id=target.project_id,
+                phase_id=dst.id, filename=img.filename, content_type=img.content_type, byte_size=img.byte_size,
+                natural_w=img.natural_w, natural_h=img.natural_h, caption=img.caption, note=img.note, data=img.data,
+            )
+            db.add(nimg)
+            db.flush()
+            nid = img_map[img.id] = nimg.id
+        db.add(ImagePlacement(
+            plan_id=target.id, image_id=nid, created_by=user.id, updated_by=user.id, phase_id=dst.id,
+            world_x=pl.world_x, world_y=pl.world_y, map_width=pl.map_width,
+            scale_fixed=pl.scale_fixed, ref_zoom=pl.ref_zoom,
+        ))
+        n_i += 1
+    db.commit()
+    audit.record(db, "phase.copy", user_id=user.id, target_type="plan", target_id=target.id,
+                 request=request, source=plan.id, phase=src.id)
+    return {"plan_id": target.id, "phase_id": dst.id, "markers": n_m, "strokes": n_s, "annotations": n_a, "images": n_i}
+
+
 # ─── Versionen ─────────────────────────────────────────────────────────────
 
 @router.get("/{plan_id}/versions")
