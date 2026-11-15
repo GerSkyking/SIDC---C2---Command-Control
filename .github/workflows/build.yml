@@ -58,6 +58,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
             type=raw,value=${{ needs.version.outputs.minor }},enable=${{ needs.version.outputs.release == 'true' }}
+            type=raw,value=latest,enable=${{ needs.version.outputs.release == 'true' }}
             type=sha
 
       - uses: docker/setup-buildx-action@v3

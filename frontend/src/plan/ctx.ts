@@ -40,6 +40,8 @@ export interface Marker {
   point_index: number;
   line_color: number;
   line_width: number;
+  /** Bereich um den Marker (Linie/Fläche) */
+  area?: AnnotArea | null;
 }
 export interface Stroke {
   id: string;
@@ -56,6 +58,9 @@ export interface Stroke {
   sidc?: string;
   /** Schraffur-Füllung (Standard an) */
   fill?: boolean;
+  /** Füllmuster ("diag" | "vert" | "horiz" | "cross" | "solid") und Stärke in % */
+  fill_pattern?: string;
+  fill_strength?: number;
   /** Art: "phaseline" (Linie/Fläche) oder "dot" (einfacher Punkt: 1 Punkt, width = Größe, name = Text) */
   kind?: string;
   /** Zusatztext zum Flächen-Symbol */
@@ -93,6 +98,10 @@ export interface Annot {
 export interface AnnotArea {
   pts: [number, number][];
   closed: boolean;
+  /** optionaler Stil: Farbe "#rrggbb", Füllmuster, Stärke in % */
+  color?: string;
+  pattern?: string;
+  strength?: number;
 }
 /** Farben der Bereiche: wie die Sterne (gelb = alle, pink = nur Missionsbau). */
 export const AREA_COL = { mb: "#ff2d95", all: "#ffc21a" };
@@ -248,7 +257,8 @@ export interface PlanUi {
   renderAreaBar: () => void;
   startAreaDraw: (aid: string) => void;
   setEditArea: (id: string | null) => void;
-  canEditArea: (a: Annot | undefined) => boolean;
+  canEditArea: (a: Annot | Marker | undefined) => boolean;
+  shiftMarkerArea: (m: Marker, lng: number, lat: number) => void;
   // images.ts
   renderMapImages: () => void;
   positionImages: () => void;
@@ -332,6 +342,7 @@ export function createUi(): PlanUi {
     startAreaDraw: noop,
     setEditArea: noop,
     canEditArea: () => false,
+    shiftMarkerArea: noop,
     renderMapImages: noop,
     positionImages: noop,
     refreshImageRail: noop,
@@ -384,6 +395,8 @@ export interface PlanCtx {
   /** Stern-Dialog: Zeus-Freigabe bzw. „Danach Bereich zeichnen“ je cid, bis der Server den Pin bestätigt. */
   pendingStarZeus: Map<string, Record<string, unknown>>;
   pendingStarArea: Set<string>;
+  /** Marker-Anlege-cids, nach denen gleich ein Bereich gezeichnet werden soll */
+  pendingMarkerArea: Set<string>;
   model: PlanModel;
   ui: PlanUi;
   tools: Partial<Record<Mode, ToolHandlers>>;
@@ -418,6 +431,8 @@ export interface PlanCtx {
   // Marker setzen: erst Position klicken, dann Wizard (awaitingPos = warte auf den Positions-Klick)
   chainGroup: number | null;
   chainIndex: number;
+  /** Position des zuletzt gesetzten Marker-Kettenpunkts (Anker für Haken/Papierkorb) */
+  chainLast: LngLat2 | null;
   awaitingPos: boolean;
   pendingPos: LngLat2 | null;
   /** Marker wird gerade gezogen */

@@ -42,6 +42,7 @@ from ..permissions import (
     effective_level,
     effective_mission_builder,
     effective_zeus,
+    is_staff,
     project_role,
     rank,
 )
@@ -244,7 +245,7 @@ def _marker_dict(m: Marker) -> dict:
         "unit_text": m.unit_text, "ai_text": m.ai_text, "channel": m.channel,
         "locked": m.locked, "timestamp_visible": m.timestamp_visible,
         "linked_group_id": m.linked_group_id, "point_index": m.point_index,
-        "line_color": m.line_color, "line_width": m.line_width, "tint": m.tint or "",
+        "line_color": m.line_color, "line_width": m.line_width, "tint": m.tint or "", "area": m.area,
     }
 
 
@@ -255,6 +256,7 @@ def _stroke_dict(s: Stroke) -> dict:
         "extra_phase_ids": list(s.extra_phase_ids or []),
         "closed": bool(s.closed), "name": s.name or "", "sidc": s.sidc or "", "ai_text": s.ai_text or "",
         "fill": s.fill is not False,
+        "fill_pattern": s.fill_pattern or "diag", "fill_strength": s.fill_strength or 25,
     }
 
 
@@ -294,21 +296,28 @@ def list_plans_in_projects(user: CurrentUser, db: DbDep) -> list[PlanProjectList
 
 @router.get("/trash", response_model=list[PlanListItem])
 def list_trash(user: CurrentUser, db: DbDep) -> list[PlanListItem]:
-    """Gelöschte Pläne, die man wiederherstellen darf (Owner/Admin)."""
+    """Papierkorb: Admin/Techniker sehen alles, alle anderen nur, was sie selbst gelöscht haben."""
     out: list[PlanListItem] = []
     for plan in db.scalars(select(Plan).where(Plan.deleted_at.is_not(None)).order_by(Plan.deleted_at.desc())):
-        level = effective_level(db, user, plan)
-        if rank(level) >= rank("owner"):
-            out.append(PlanListItem(**PlanOut.model_validate(plan).model_dump(), level=level))
+        if _may_restore(db, user, plan):
+            out.append(PlanListItem(**PlanOut.model_validate(plan).model_dump(),
+                                    level=effective_level(db, user, plan) or "owner"))
     return out
+
+
+def _may_restore(db, user, plan: Plan) -> bool:
+    if is_staff(db, user) or plan.deleted_by == user.id:
+        return True
+    # Altbestand ohne Löscher (vor Einführung von deleted_by): wie bisher nur Owner
+    return plan.deleted_by is None and rank(effective_level(db, user, plan)) >= rank("owner")
 
 
 def _deleted_plan_owned(plan_id: str, user, db) -> Plan:
     plan = db.get(Plan, plan_id)
     if plan is None or plan.deleted_at is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Nicht im Papierkorb")
-    if rank(effective_level(db, user, plan)) < rank("owner"):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Recht 'owner' erforderlich")
+    if not _may_restore(db, user, plan):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur Admin/Techniker oder wer den Plan gelöscht hat")
     return plan
 
 
@@ -316,6 +325,7 @@ def _deleted_plan_owned(plan_id: str, user, db) -> Plan:
 def undelete_plan(plan_id: str, request: Request, user: CurrentUser, db: DbDep) -> Plan:
     plan = _deleted_plan_owned(plan_id, user, db)
     plan.deleted_at = None
+    plan.deleted_by = None
     db.commit()
     audit.record(db, "plan.restore", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request, name=plan.name)
@@ -540,6 +550,7 @@ def delete_folder(folder_id: str, user: CurrentUser, db: DbDep) -> dict:
 @router.delete("/{plan_id}")
 def delete_plan(plan: OwnerPlan, request: Request, user: CurrentUser, db: DbDep) -> None:
     plan.deleted_at = now()
+    plan.deleted_by = user.id
     db.commit()
     audit.record(db, "plan.delete", user_id=user.id, target_type="plan", target_id=plan.id,
                  request=request, name=plan.name)

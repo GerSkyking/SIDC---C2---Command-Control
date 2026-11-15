@@ -7,6 +7,7 @@ import { t } from "../i18n";
 import { icon } from "../icons";
 import { iconSrc } from "../sidc/symbol";
 import { openWizard } from "../sidc/wizard";
+import { DEFAULT_FILL_STRENGTH, FILL_PATTERNS, normPattern, normStrength, type FillPattern } from "../mapAreas";
 
 export interface AreaFields {
   name: string;
@@ -14,7 +15,17 @@ export interface AreaFields {
   ai_text: string;
   sidc: string;
   fill: boolean;
+  fill_pattern: FillPattern;
+  /** Füllstärke in Prozent (5–100) */
+  fill_strength: number;
 }
+
+/** Standardwerte für eine neue Fläche. */
+export const defaultAreaFill = (): Pick<AreaFields, "fill" | "fill_pattern" | "fill_strength"> => ({
+  fill: true,
+  fill_pattern: "diag",
+  fill_strength: DEFAULT_FILL_STRENGTH,
+});
 
 /** HTML der Flächen-Felder (Name, Symbol, Füllung). */
 export function areaFieldsHtml(f: AreaFields): string {
@@ -26,7 +37,14 @@ export function areaFieldsHtml(f: AreaFields): string {
     // Rückfall/Profi-Eingabe: SIDC direkt (z. B. ohne hochgeladenen Marker-Katalog)
     `<details class="area-sidc-raw"><summary class="muted" style="font-size:.75rem" title="${t("tip.area.sidcRaw")}">${t("areaName.sidcRaw")}</summary>` +
     `<input data-area-sidc-in maxlength="30" spellcheck="false" aria-label="${t("areaName.sidcRaw")}" placeholder="10031000001211000000" value="${esc(f.sidc)}" /></details>` +
-    `<label class="chk" style="margin-top:.4rem" title="${t("tip.area.fill")}"><input type="checkbox" data-area-fill ${f.fill ? "checked" : ""}/> <span>${t("areaName.fill")}</span></label>`
+    `<label class="chk" style="margin-top:.4rem" title="${t("tip.area.fill")}"><input type="checkbox" data-area-fill ${f.fill ? "checked" : ""}/> <span>${t("areaName.fill")}</span></label>` +
+    `<div data-area-fillopts>` +
+    `<label class="chk-lbl" title="${t("tip.area.pattern")}">${t("areaName.pattern")}<select data-area-pattern>${FILL_PATTERNS.map(
+      (p) => `<option value="${p}" ${normPattern(f.fill_pattern) === p ? "selected" : ""}>${t("areaName.pat." + p)}</option>`,
+    ).join("")}</select></label>` +
+    `<label class="chk-lbl ph-op" title="${t("tip.area.strength")}">${t("areaName.strength")}` +
+    `<input type="range" min="5" max="100" step="5" data-area-strength value="${normStrength(f.fill_strength)}" /> <span data-area-strengthv>${normStrength(f.fill_strength)}%</span></label>` +
+    `</div>`
   );
 }
 
@@ -85,11 +103,25 @@ export function wireAreaFields(host: HTMLElement, f: AreaFields, wizardHost: HTM
     }
   });
   drawSym();
+  const fillIn = host.querySelector<HTMLInputElement>("[data-area-fill]");
+  const strIn = host.querySelector<HTMLInputElement>("[data-area-strength]");
+  const syncFill = () => {
+    const opts = host.querySelector<HTMLElement>("[data-area-fillopts]");
+    if (opts) opts.hidden = !(fillIn?.checked ?? true);
+  };
+  fillIn?.addEventListener("change", syncFill);
+  strIn?.addEventListener("input", () => {
+    const v = host.querySelector<HTMLElement>("[data-area-strengthv]");
+    if (v) v.textContent = `${strIn.value}%`;
+  });
+  syncFill();
   return () => ({
     name: (host.querySelector<HTMLInputElement>("[data-area-name]")?.value ?? "").trim(),
     ai_text: (host.querySelector<HTMLInputElement>("[data-area-ai]")?.value ?? "").trim(),
     sidc,
     fill: host.querySelector<HTMLInputElement>("[data-area-fill]")?.checked ?? true,
+    fill_pattern: normPattern(host.querySelector<HTMLSelectElement>("[data-area-pattern]")?.value),
+    fill_strength: normStrength(host.querySelector<HTMLInputElement>("[data-area-strength]")?.value),
   });
 }
 
@@ -103,14 +135,14 @@ export function openAreaNameDialog(wizardHost: HTMLElement, sig: AbortSignal, do
   back.innerHTML = `<div class="card" style="width:min(24rem,96vw)">
     <div class="row"><h1 style="flex:1;margin:0">${t("areaName.title")}</h1></div>
     <p class="muted" style="margin:.2rem 0 .3rem;font-size:.8rem">${t("areaName.intro")}</p>
-    ${areaFieldsHtml({ name: "", ai_text: "", sidc: "", fill: true })}
+    ${areaFieldsHtml({ name: "", ai_text: "", sidc: "", ...defaultAreaFill() })}
     <div class="row" style="margin-top:.6rem">
       <button class="primary" data-area-ok style="flex:1">${t("areaName.apply")}</button>
       <button data-area-skip>${t("areaName.skip")}</button>
     </div>
   </div>`;
   document.body.appendChild(back);
-  const read = wireAreaFields(back, { name: "", ai_text: "", sidc: "", fill: true }, wizardHost, back);
+  const read = wireAreaFields(back, { name: "", ai_text: "", sidc: "", ...defaultAreaFill() }, wizardHost, back);
   const opened = Date.now();
   let finished = false;
   const ac = new AbortController();
@@ -122,7 +154,7 @@ export function openAreaNameDialog(wizardHost: HTMLElement, sig: AbortSignal, do
     back.remove();
     done(f);
   };
-  const skip = () => finish({ name: "", ai_text: "", sidc: "", fill: true });
+  const skip = () => finish({ name: "", ai_text: "", sidc: "", ...defaultAreaFill() });
   back.querySelector("[data-area-ok]")!.addEventListener("click", () => finish(read()));
   back.querySelector("[data-area-skip]")!.addEventListener("click", skip);
   // Klick daneben = ohne Namen (nicht sofort: der zweite Klick eines Doppelklicks landet sonst hier)

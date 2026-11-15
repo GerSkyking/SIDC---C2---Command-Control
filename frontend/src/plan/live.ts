@@ -72,6 +72,11 @@ export function initLive(ctx: PlanCtx): void {
       case "marker.upsert":
         markers.set(msg.marker.id, msg.marker);
         void ctx.ui.refreshMarkers();
+        ctx.ui.refreshAreas();
+        if (msg.cid && ctx.pendingMarkerArea.has(msg.cid)) {
+          ctx.pendingMarkerArea.delete(msg.cid);
+          ctx.ui.startAreaDraw(msg.marker.id);
+        }
         break;
       case "marker.delete":
         markers.delete(msg.id);

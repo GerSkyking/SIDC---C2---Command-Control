@@ -16,6 +16,8 @@ import {
   ensureAreaLabelLayer,
   ensureAreaLayers,
   hatchId,
+  normPattern,
+  normStrength,
   NOT_DOT_FILTER,
   ringOf,
   setAreaData,
@@ -203,7 +205,9 @@ export function initRender(ctx: PlanCtx): void {
       const op = strokeOpacity(s);
       if (op <= 0.001) continue;
       const color = packedToHex(s.color);
-      out.push(...areaFeatures(s.points, true, { sid: s.id, color, pat: hatchId(color), op }).filter((f) => f.geometry.type === "Polygon"));
+      const pk = normPattern(s.fill_pattern);
+      const fo = normStrength(s.fill_strength) / 100;
+      out.push(...areaFeatures(s.points, true, { sid: s.id, color, pat: hatchId(color, pk), pk, fo, op }).filter((f) => f.geometry.type === "Polygon"));
     }
     return out;
   };
@@ -361,6 +365,7 @@ export function initRender(ctx: PlanCtx): void {
       id: "strokeverts",
       type: "circle",
       source: "strokeverts",
+      filter: ["!", ["has", "mid"]],
       paint: {
         "circle-radius": IS_MOBILE ? 11 : 8,
         "circle-color": "#ffc720",
@@ -373,7 +378,28 @@ export function initRender(ctx: PlanCtx): void {
       id: "strokeverts-hit",
       type: "circle",
       source: "strokeverts",
+      filter: ["!", ["has", "mid"]],
       paint: { "circle-radius": IS_MOBILE ? 28 : 18, "circle-color": "#000", "circle-opacity": 0 },
+    });
+    // Mittelpunkte der Segmente: halb so große orange Punkte — Ziehen fügt einen neuen Stützpunkt ein
+    map.addLayer({
+      id: "strokemids",
+      type: "circle",
+      source: "strokeverts",
+      filter: ["has", "mid"],
+      paint: {
+        "circle-radius": IS_MOBILE ? 5.5 : 4,
+        "circle-color": "#ffc720",
+        "circle-stroke-color": "#fff",
+        "circle-stroke-width": 1.5,
+      },
+    });
+    map.addLayer({
+      id: "strokemids-hit",
+      type: "circle",
+      source: "strokeverts",
+      filter: ["has", "mid"],
+      paint: { "circle-radius": IS_MOBILE ? 20 : 12, "circle-color": "#000", "circle-opacity": 0 },
     });
 
     map.addSource("linedraft", { type: "geojson", data: emptyFC() });
@@ -670,14 +696,25 @@ export function initRender(ctx: PlanCtx): void {
   const editPts = (): [number, number][] | undefined =>
     ctx.editStrokeId ? strokes.get(ctx.editStrokeId)?.points : undefined;
   const refreshStrokeVerts = () => {
-    (map.getSource("strokeverts") as GeoJSONSource)?.setData({
-      type: "FeatureCollection",
-      features: (editPts() ?? []).map((pt, i) => ({
+    const pts = editPts() ?? [];
+    const closed = !!(ctx.editStrokeId && strokes.get(ctx.editStrokeId)?.closed) && pts.length >= 3;
+    const feats: GeoJSON.Feature[] = pts.map((pt, i) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: pt },
+      properties: { i },
+    }));
+    // Mittelpunkte (i = Index des Segmentstarts; geschlossene Fläche hat zusätzlich Segment letzter → erster)
+    const segs = pts.length < 2 ? 0 : closed ? pts.length : pts.length - 1;
+    for (let i = 0; i < segs; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      feats.push({
         type: "Feature",
-        geometry: { type: "Point", coordinates: pt },
-        properties: { i },
-      })),
-    });
+        geometry: { type: "Point", coordinates: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] },
+        properties: { mid: 1, i },
+      });
+    }
+    (map.getSource("strokeverts") as GeoJSONSource)?.setData({ type: "FeatureCollection", features: feats });
   };
   const setEditStroke = (id: string | null) => {
     ctx.editStrokeId = id;

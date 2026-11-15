@@ -190,6 +190,7 @@ class Plan(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    deleted_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     h_hour: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # Operationsbeginn (Zeitstrahl)
 
     acl: Mapped[list["PlanACL"]] = relationship(
@@ -302,6 +303,8 @@ class Marker(Base):
     # Eigene Farbe "#rrggbb" ("" = Standard): färbt dunkle Symbolanteile bzw. den Text
     # eines Nur-Text-Markers.
     tint: Mapped[str] = mapped_column(String(9), default="", server_default="")
+    # Bereich um den Marker: {"pts": [[lng, lat], ...], "closed": bool, optional color/pattern/strength}
+    area: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
@@ -412,6 +415,9 @@ class Stroke(Base):
     sidc: Mapped[str] = mapped_column(String(32), default="", server_default="")
     ai_text: Mapped[str] = mapped_column(String(128), default="", server_default="")  # Zusatztext zum Symbol
     fill: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    # Füllung: Muster (diag/vert/horiz/cross/solid) und Stärke in Prozent (Deckkraft der Füllung)
+    fill_pattern: Mapped[str] = mapped_column(String(8), default="diag", server_default="diag")
+    fill_strength: Mapped[int] = mapped_column(Integer, default=25, server_default="25")
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

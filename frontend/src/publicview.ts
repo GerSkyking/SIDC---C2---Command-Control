@@ -31,6 +31,8 @@ import {
   ensureAreaLabelLayer,
   ensureAreaLayers,
   hatchId,
+  normPattern,
+  normStrength,
   NOT_DOT_FILTER,
   ringOf,
   setAreaData,
@@ -64,6 +66,8 @@ interface S {
   name?: string;
   sidc?: string;
   fill?: boolean;
+  fill_pattern?: string;
+  fill_strength?: number;
   /** "dot" = einfacher Punkt (1 Punkt, width = Größe, name = Text) */
   kind?: string;
 }
@@ -300,8 +304,9 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
       const op = opacityOf(s);
       if (op <= 0.001) continue;
       const color = hex(s.color);
+      const pk = normPattern(s.fill_pattern);
       out.push(
-        ...areaFeatures(s.points, true, { sid: s.id, color, pat: hatchId(color), op }).filter(
+        ...areaFeatures(s.points, true, { sid: s.id, color, pat: hatchId(color, pk), pk, fo: normStrength(s.fill_strength) / 100, op }).filter(
           (f) => f.geometry.type === "Polygon",
         ),
       );

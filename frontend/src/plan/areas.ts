@@ -7,12 +7,19 @@ import type { GeoJSONSource } from "maplibre-gl";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import { toast } from "../notify";
-import { areaSizeText, ensureHatch, ringOf } from "../mapAreas";
-import { AREA_CLOSE_PX, AREA_COL, AREA_MAX_POINTS, type Annot, type PlanCtx } from "./ctx";
+import { areaSizeText, DEFAULT_FILL_STRENGTH, ensureHatch, FILL_PATTERNS, normPattern, normStrength, ringOf } from "../mapAreas";
+import { AREA_CLOSE_PX, AREA_COL, AREA_MAX_POINTS, type Annot, type AnnotArea, type Marker, type PlanCtx } from "./ctx";
 
 export function initAreas(ctx: PlanCtx): void {
-  const { map, socket, root, annots, canEdit, caps, isMB, sig } = ctx;
-  const { isNotesAnnot, annotOpacity } = ctx.model;
+  const { map, socket, root, annots, markers, canEdit, caps, isMB, sig } = ctx;
+  const { isNotesAnnot, annotOpacity, phaseOpacity } = ctx.model;
+  // Besitzer eines Bereichs: Missionsbau-Stern (Annotation) oder Marker — beide haben ein Feld ``area``.
+  const ownerOf = (id: string | null | undefined): Annot | Marker | undefined => (id ? annots.get(id) ?? markers.get(id) : undefined);
+  const isAnnotId = (id: string): boolean => annots.has(id);
+  const areaOf = (id: string | null | undefined): AnnotArea | null | undefined => ownerOf(id)?.area;
+  const sendArea = (id: string, area: AnnotArea | null): void => {
+    socket.send({ type: isAnnotId(id) ? "annotation.modify" : "marker.modify", id, data: { area } });
+  };
   // ── Bereich um einen Pin: Linie oder (geschlossen) schraffierte Fläche ──
   // Gehört zur Annotation (Feld ``area``), folgt deren Sichtbarkeit und wandert beim Verschieben des Sterns mit.
   // Zeichnen: Linksklicks setzen Ecken, Klick auf den Startpunkt schließt die Fläche, ✓ / Enter / Rechtsklick
@@ -36,7 +43,7 @@ export function initAreas(ctx: PlanCtx): void {
           filter: ["==", ["geometry-type"], "Polygon"],
           paint: {
             "fill-pattern": ["get", "pat"],
-            "fill-opacity": ["*", 0.25, ["get", "op"]],
+            "fill-opacity": ["*", ["coalesce", ["get", "fo"], 0.25], ["get", "op"]],
           },
         },
         before,
@@ -79,17 +86,33 @@ export function initAreas(ctx: PlanCtx): void {
       });
     }
   }
-  const areaColorOf = (a: Annot | undefined): string => (a?.color || (a && isNotesAnnot(a) ? AREA_COL.mb : AREA_COL.all));
+  // Farbe: eigene Bereichsfarbe, sonst Sternfarbe, sonst gelb (pink bei Missionsbau-Notizen)
+  const areaColorOf = (o: Annot | Marker | undefined): string => {
+    if (!o) return AREA_COL.all;
+    if (o.area?.color) return o.area.color;
+    if ("text" in o) return o.color || (isNotesAnnot(o) ? AREA_COL.mb : AREA_COL.all);
+    return AREA_COL.all;
+  };
+  const ownerOpacity = (o: Annot | Marker): number => ("text" in o ? annotOpacity(o) : phaseOpacity(o));
 
   function areaFC(): GeoJSON.FeatureCollection {
     const feats: GeoJSON.Feature[] = [];
-    for (const a of annots.values()) {
+    for (const a of [...annots.values(), ...markers.values()]) {
       const ar = a.area;
       if (!ar || ar.pts.length < 2) continue;
-      const op = annotOpacity(a);
+      const op = ownerOpacity(a);
       if (op <= 0) continue;
       const col = areaColorOf(a);
-      const props = { aid: a.id, mb: isNotesAnnot(a), op, sel: a.id === ctx.editAreaId, color: col, pat: ensureHatch(map, col) };
+      const pk = normPattern(ar.pattern);
+      const props = {
+        aid: a.id,
+        mb: "text" in a && isNotesAnnot(a),
+        op,
+        sel: a.id === ctx.editAreaId,
+        color: col,
+        pat: ensureHatch(map, col, pk),
+        fo: normStrength(ar.strength ?? DEFAULT_FILL_STRENGTH) / 100,
+      };
       if (ar.closed && ar.pts.length >= 3) {
         feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [ringOf(ar.pts)] }, properties: props });
         feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: ringOf(ar.pts) }, properties: props });
@@ -109,7 +132,7 @@ export function initAreas(ctx: PlanCtx): void {
   function areaEditFC(): GeoJSON.FeatureCollection {
     const feats: GeoJSON.Feature[] = [];
     if (ctx.areaDraft) {
-      const color = areaColorOf(annots.get(ctx.areaDraft.aid));
+      const color = areaColorOf(ownerOf(ctx.areaDraft.aid));
       const hot = nearFirst(ctx.areaDraft.pts, ctx.areaCursor);
       const line = [...ctx.areaDraft.pts, ...(ctx.areaCursor ? [hot ? ctx.areaDraft.pts[0] : ctx.areaCursor] : [])];
       if (line.length >= 2) feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: line }, properties: { color } });
@@ -117,7 +140,7 @@ export function initAreas(ctx: PlanCtx): void {
         feats.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: { color, i, first: i === 0, hot: i === 0 && hot } }),
       );
     } else if (ctx.editAreaId) {
-      const a = annots.get(ctx.editAreaId);
+      const a = ownerOf(ctx.editAreaId);
       const color = areaColorOf(a);
       (a?.area?.pts ?? []).forEach((p, i) =>
         feats.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: { color, i, first: false, hot: false } }),
@@ -133,7 +156,7 @@ export function initAreas(ctx: PlanCtx): void {
       const hot = nearFirst(d.pts, ctx.areaCursor);
       return hot ? areaSizeText(d.pts, true, ctx.cal) : areaSizeText(ctx.areaCursor ? [...d.pts, ctx.areaCursor] : d.pts, false, ctx.cal);
     }
-    const ar = annots.get(aid)?.area;
+    const ar = areaOf(aid);
     return ar && ar.pts.length >= 2 ? areaSizeText(ar.pts, ar.closed, ctx.cal) : "";
   }
   function updateAreaSizes(): void {
@@ -158,7 +181,7 @@ export function initAreas(ctx: PlanCtx): void {
   map.on("style.load", () => refreshAreas());
   // Leiste (✓ übernehmen / neu zeichnen / entfernen) am letzten bzw. ersten Punkt
   function positionAreaBar(): void {
-    const pts = ctx.areaDraft ? ctx.areaDraft.pts : ctx.editAreaId ? annots.get(ctx.editAreaId)?.area?.pts ?? [] : [];
+    const pts = ctx.areaDraft ? ctx.areaDraft.pts : ctx.editAreaId ? areaOf(ctx.editAreaId)?.pts ?? [] : [];
     const anchor = ctx.areaDraft ? pts[pts.length - 1] : pts[0];
     if (!anchor || (ctx.areaDraft && pts.length < 2)) {
       areaBar.hidden = true;
@@ -182,6 +205,7 @@ export function initAreas(ctx: PlanCtx): void {
     } else if (ctx.editAreaId) {
       areaBar.innerHTML =
         `<button class="area-ok" data-area-done title="${t("area.done")}">${icon("check", 16)}</button>` +
+        `<button data-area-style title="${t("area.style")}">${icon("settings", 16)}</button>` +
         `<button data-area-redraw title="${t("area.redraw")}">${icon("line", 16)}</button>` +
         `<button class="area-del" data-area-del title="${t("area.remove")}">${icon("trash", 16)}</button>`;
     } else areaBar.innerHTML = "";
@@ -192,16 +216,72 @@ export function initAreas(ctx: PlanCtx): void {
       const id = ctx.editAreaId;
       if (id) startAreaDraw(id);
     });
+    areaBar.querySelector("[data-area-style]")?.addEventListener("click", () => toggleStylePanel());
     areaBar.querySelector("[data-area-del]")?.addEventListener("click", () => {
       const id = ctx.editAreaId;
       if (!id) return;
       setEditArea(null);
-      socket.send({ type: "annotation.modify", id, data: { area: null } });
+      const o = ownerOf(id);
+      if (o) o.area = null;
+      sendArea(id, null);
+      refreshAreas();
     });
   }
-  const canEditArea = (a: Annot | undefined): boolean => !!a && canEdit && !!caps.move && (isMB || !isNotesAnnot(a));
+  // ── Stil des Bereichs bearbeiten: Farbe, Füllmuster, Stärke (Stern und Marker) ──
+  const stylePanel = document.createElement("div");
+  stylePanel.className = "area-style card";
+  stylePanel.hidden = true;
+  areaBar.appendChild(stylePanel);
+  function toggleStylePanel(): void {
+    if (!stylePanel.hidden) {
+      stylePanel.hidden = true;
+      return;
+    }
+    const id = ctx.editAreaId;
+    const o = ownerOf(id);
+    if (!id || !o?.area) return;
+    const ar = o.area;
+    const closed = ar.closed && ar.pts.length >= 3;
+    const strength0 = normStrength(ar.strength ?? DEFAULT_FILL_STRENGTH);
+    stylePanel.innerHTML =
+      `<label class="chk-lbl">${t("area.color")}<input type="color" data-as-color value="${areaColorOf(o)}" /></label>` +
+      (closed
+        ? `<label class="chk-lbl">${t("areaName.pattern")}<select data-as-pattern>${FILL_PATTERNS.map(
+            (p) => `<option value="${p}" ${normPattern(ar.pattern) === p ? "selected" : ""}>${t("areaName.pat." + p)}</option>`,
+          ).join("")}</select></label>` +
+          `<label class="chk-lbl">${t("areaName.strength")}<input type="range" min="5" max="100" step="5" data-as-strength value="${strength0}" /> <span data-as-strengthv>${strength0}%</span></label>`
+        : "");
+    stylePanel.hidden = false;
+    const apply = (save: boolean): void => {
+      const cur = ownerOf(id);
+      if (!cur?.area) return;
+      cur.area = {
+        ...cur.area,
+        color: stylePanel.querySelector<HTMLInputElement>("[data-as-color]")!.value,
+        ...(closed
+          ? {
+              pattern: normPattern(stylePanel.querySelector<HTMLSelectElement>("[data-as-pattern]")?.value),
+              strength: normStrength(stylePanel.querySelector<HTMLInputElement>("[data-as-strength]")?.value),
+            }
+          : {}),
+      };
+      const sv = stylePanel.querySelector<HTMLElement>("[data-as-strengthv]");
+      if (sv) sv.textContent = `${cur.area.strength}%`;
+      refreshAreas();
+      if (save) sendArea(id, cur.area);
+    };
+    stylePanel.querySelectorAll<HTMLElement>("input,select").forEach((el) => {
+      el.addEventListener("input", () => apply(false)); // live anzeigen
+      el.addEventListener("change", () => apply(true)); // beim Loslassen speichern
+    });
+  }
+  const canEditArea = (o: Annot | Marker | undefined): boolean => {
+    if (!o || !canEdit || !caps.move) return false;
+    if ("text" in o) return isMB || !isNotesAnnot(o);
+    return !o.locked;
+  };
   function startAreaDraw(aid: string): void {
-    if (!canEditArea(annots.get(aid))) return;
+    if (!canEditArea(ownerOf(aid))) return;
     ctx.editAreaId = null;
     ctx.ui.setMode("area");
     ctx.areaDraft = { aid, pts: [] };
@@ -219,13 +299,22 @@ export function initAreas(ctx: PlanCtx): void {
     ctx.ui.setMode("move");
     if (pts.length < 2) return;
     const area = { pts, closed: closed && pts.length >= 3 };
-    const a = annots.get(d.aid);
-    if (a) a.area = area; // sofort zeigen, Server bestätigt per upsert
-    socket.send({ type: "annotation.modify", id: d.aid, data: { area } });
+    const a = ownerOf(d.aid);
+    // Stil eines bestehenden Bereichs beim Neuzeichnen behalten
+    const old = a?.area;
+    const styled: AnnotArea = {
+      ...area,
+      ...(old?.color ? { color: old.color } : {}),
+      ...(old?.pattern ? { pattern: old.pattern } : {}),
+      ...(old?.strength != null ? { strength: old.strength } : {}),
+    };
+    if (a) a.area = styled; // sofort zeigen, Server bestätigt per upsert
+    sendArea(d.aid, styled);
     refreshAreas();
   }
   function setEditArea(id: string | null): void {
     ctx.editAreaId = id;
+    stylePanel.hidden = true;
     renderAreaBar();
     refreshAreas();
   }
@@ -276,7 +365,7 @@ export function initAreas(ctx: PlanCtx): void {
   const pickArea = (e: maplibregl.MapLayerMouseEvent): void => {
     if (ctx.mode !== "move" && ctx.mode !== "markermove") return;
     const aid = e.features?.[0]?.properties?.aid as string | undefined;
-    if (!aid || !canEditArea(annots.get(aid))) return;
+    if (!aid || !canEditArea(ownerOf(aid))) return;
     e.preventDefault();
     setEditArea(aid);
   };
@@ -287,7 +376,7 @@ export function initAreas(ctx: PlanCtx): void {
   });
   map.on("mouseleave", "pin-area-verts", () => (map.getCanvas().style.cursor = ctx.ui.modeCursor()));
   map.on("mousedown", "pin-area-verts", (e) => {
-    const a = ctx.editAreaId ? annots.get(ctx.editAreaId) : undefined;
+    const a = ctx.editAreaId ? ownerOf(ctx.editAreaId) : undefined;
     const idx = e.features?.[0]?.properties?.i as number | undefined;
     if (!a?.area || idx == null || ctx.areaDraft) return;
     e.preventDefault();
@@ -302,11 +391,19 @@ export function initAreas(ctx: PlanCtx): void {
       map.off("mousemove", onMove);
       ctx.ui.syncDragPan();
       map.getCanvas().style.cursor = ctx.ui.modeCursor();
-      socket.send({ type: "annotation.modify", id: a.id, data: { area: a.area } });
+      sendArea(a.id, a.area ?? null);
     };
     map.on("mousemove", onMove);
     document.addEventListener("mouseup", onUp, { once: true, signal: sig });
   });
+  // Marker wird gezogen: sein Bereich folgt live (der Server verschiebt ihn beim Speichern um dasselbe Delta)
+  const shiftMarkerArea = (m: Marker, lng: number, lat: number): void => {
+    if (!m.area) return;
+    const dx = lng - m.world_x;
+    const dy = lat - m.world_y;
+    m.area = { ...m.area, pts: m.area.pts.map((p) => [p[0] + dx, p[1] + dy] as [number, number]) };
+    refreshAreas();
+  };
   ctx.tools.area = { click: (e) => areaClick([e.lngLat.lng, e.lngLat.lat]) };
-  Object.assign(ctx.ui, { refreshAreas, renderAreaBar, startAreaDraw, setEditArea, canEditArea });
+  Object.assign(ctx.ui, { refreshAreas, renderAreaBar, startAreaDraw, setEditArea, canEditArea, shiftMarkerArea });
 }

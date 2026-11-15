@@ -210,6 +210,8 @@ class StrokeOut(BaseModel):
     name: str = ""
     sidc: str = ""
     fill: bool = True
+    fill_pattern: str = "diag"
+    fill_strength: int = 25
 
 
 # ─── Missionsbau-Projekte ──────────────────────────────────────────────────

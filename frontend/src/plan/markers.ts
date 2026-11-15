@@ -44,8 +44,12 @@ export function initMarkers(ctx: PlanCtx): void {
         data.line_width = ctx.lineWidth;
       }
       ctx.chainIndex++;
+      ctx.chainLast = [pos[0], pos[1]];
     }
-    socket.send({ type: "marker.create", cid: cid(), data });
+    const createCid = cid();
+    if (tpl.draw_area && ctx.chainGroup == null) ctx.pendingMarkerArea.add(createCid);
+    socket.send({ type: "marker.create", cid: createCid, data });
+    if (ctx.chainGroup != null) ctx.ui.positionLineDone(); // Haken/Papierkorb am letzten Kettenpunkt
   }
   root.querySelector("#tool-marker")!.addEventListener("click", () => {
     ctx.pending = null;
@@ -105,6 +109,7 @@ export function initMarkers(ctx: PlanCtx): void {
     };
     const onMove = (e: MouseEvent) => {
       const ll = toLL(e);
+      ctx.ui.shiftMarkerArea(m, ll.lng, ll.lat);
       m.world_x = ll.lng;
       m.world_y = ll.lat;
       ctx.ui.redrawMarkersOnly();
@@ -121,6 +126,7 @@ export function initMarkers(ctx: PlanCtx): void {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       finish();
+      ctx.ui.shiftMarkerArea(m, fromX, fromY);
       m.world_x = fromX;
       m.world_y = fromY;
       ctx.ui.redrawMarkersOnly();
@@ -241,6 +247,7 @@ export function initMarkers(ctx: PlanCtx): void {
     const onMove = (ev: maplibregl.MapMouseEvent) => {
       const mm = markers.get(ctx.dragId!);
       if (!mm) return;
+      ctx.ui.shiftMarkerArea(mm, ev.lngLat.lng, ev.lngLat.lat);
       mm.world_x = ev.lngLat.lng;
       mm.world_y = ev.lngLat.lat;
       ctx.ui.redrawMarkersOnly();
@@ -396,6 +403,11 @@ export function initMarkers(ctx: PlanCtx): void {
           : ""
       }
       ${advHtml}
+      ${
+        ctx.ui.canEditArea(m)
+          ? `<button type="button" data-area title="${t("area.markerHint")}">${icon("line", 14)} ${t(m.area ? "area.edit" : "area.draw")}</button>`
+          : ""
+      }
       <div class="row">
         <button class="primary" data-apply>${t("common.apply")}</button>
         <button data-fav title="${t("tip.mk.fav")}">${t("fav.add")}</button>
@@ -507,6 +519,11 @@ export function initMarkers(ctx: PlanCtx): void {
         },
       });
       close();
+    });
+    p.querySelector("[data-area]")?.addEventListener("click", () => {
+      close();
+      if (m.area) ctx.ui.setEditArea(m.id);
+      else ctx.ui.startAreaDraw(m.id);
     });
     p.querySelector("[data-del]")!.addEventListener("click", () => {
       socket.send({ type: "marker.delete", id: m.id });

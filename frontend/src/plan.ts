@@ -175,6 +175,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     })(),
     pendingStarZeus: new Map(),
     pendingStarArea: new Set(),
+    pendingMarkerArea: new Set(),
     model: null as unknown as PlanModel, // direkt darunter gesetzt
     ui: createUi(),
     tools: {},
@@ -212,6 +213,7 @@ export async function openPlanView(root: HTMLElement, planId: string, me: Me): P
     vertTouchDrag: false,
     chainGroup: null,
     chainIndex: 0,
+    chainLast: null,
     awaitingPos: false,
     pendingPos: null,
     dragId: null,

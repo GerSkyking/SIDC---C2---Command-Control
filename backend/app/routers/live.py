@@ -39,7 +39,7 @@ MARKER_FIELDS = (
     "phase_id", "extra_phase_ids", "layer_id", "orbat_node_id", "orbat_strength", "sidc", "world_x", "world_y",
     "rotation_degrees", "icon_rotation", "scale",
     "unit_text", "ai_text", "channel", "timestamp_visible",
-    "linked_group_id", "point_index", "line_color", "line_width", "tint",
+    "linked_group_id", "point_index", "line_color", "line_width", "tint", "area",
 )
 
 _TINT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -53,6 +53,8 @@ def _clean_marker_fields(fields: dict) -> dict:
     if "tint" in fields:
         v = fields["tint"]
         fields["tint"] = v.lower() if isinstance(v, str) and _TINT_RE.match(v) else ""
+    if "area" in fields:
+        fields["area"] = _clean_area(fields["area"])
     return fields
 
 
@@ -161,7 +163,7 @@ def _marker_out(m: Marker, author: str | None = None) -> dict:
         "author": author,
         "locked": m.locked, "timestamp_visible": m.timestamp_visible,
         "linked_group_id": m.linked_group_id, "point_index": m.point_index,
-        "line_color": m.line_color, "line_width": m.line_width, "tint": m.tint or "",
+        "line_color": m.line_color, "line_width": m.line_width, "tint": m.tint or "", "area": m.area,
     }
 
 
@@ -625,7 +627,16 @@ def _clean_area(v) -> dict | None:
             pts.append([_num(p[0]), _num(p[1])])
     if len(pts) < 2:
         return None
-    return {"pts": pts, "closed": bool(v.get("closed")) and len(pts) >= 3}
+    out: dict = {"pts": pts, "closed": bool(v.get("closed")) and len(pts) >= 3}
+    # optionaler Stil: Farbe "#rrggbb", Füllmuster, Stärke in % (wie bei benannten Flächen)
+    col = v.get("color")
+    if isinstance(col, str) and _TINT_RE.match(col):
+        out["color"] = col.lower()
+    if v.get("pattern") in FILL_PATTERNS:
+        out["pattern"] = v["pattern"]
+    if v.get("strength") is not None:
+        out["strength"] = _clean_strength(v["strength"])
+    return out
 
 
 def _plan_node(db, plan_id: str, node_id: str | None) -> str | None:
@@ -665,6 +676,11 @@ def _update_marker(plan_id: str, marker_id: str, uid: str, is_owner: bool, field
             fields["phase_id"] = _need_phase(db, plan_id, fields["phase_id"])
         if fields.get("orbat_node_id"):
             fields["orbat_node_id"] = _plan_node(db, plan_id, fields["orbat_node_id"])
+        if m.area and "area" not in fields and ("world_x" in fields or "world_y" in fields):
+            dx = float(fields.get("world_x", m.world_x)) - m.world_x
+            dy = float(fields.get("world_y", m.world_y)) - m.world_y
+            if dx or dy:  # Bereich wandert mit dem Marker (Client schickt ihn beim Verschieben nicht mit)
+                m.area = {**m.area, "pts": [[p[0] + dx, p[1] + dy] for p in m.area.get("pts", [])]}
         for k, v in _clean_marker_fields(fields).items():
             setattr(m, k, v)
         m.updated_by = uid
@@ -733,6 +749,20 @@ def _clean_stroke_name(v) -> str:
     return " ".join(v.split())[:STROKE_NAME_MAX]
 
 
+FILL_PATTERNS = ("diag", "vert", "horiz", "cross", "solid")
+
+
+def _clean_pattern(v) -> str:
+    return v if v in FILL_PATTERNS else "diag"
+
+
+def _clean_strength(v) -> int:
+    try:
+        return max(5, min(100, int(v)))
+    except (TypeError, ValueError):
+        return 25
+
+
 STROKE_DOT = "dot"  # einfacher Punkt: genau 1 Punkt, nie geschlossen, Text = name
 STROKE_MEASURE = "measure"  # Lineal: gespeicherte Messlinie (Linie, nie geschlossen)
 
@@ -755,6 +785,8 @@ def _create_stroke(plan_id: str, uid: str, data: dict) -> dict:
             sidc=clean_sidc(data.get("sidc")),
             ai_text=_clean_stroke_name(data.get("ai_text")),
             fill=data.get("fill") is not False,
+            fill_pattern=_clean_pattern(data.get("fill_pattern")),
+            fill_strength=_clean_strength(data.get("fill_strength", 25)),
         )
         db.add(s)
         db.commit()
@@ -768,6 +800,7 @@ def _stroke_out(s: Stroke) -> dict:
         "extra_phase_ids": list(s.extra_phase_ids or []),
         "closed": bool(s.closed), "name": s.name or "", "sidc": s.sidc or "", "ai_text": s.ai_text or "",
         "fill": s.fill is not False,
+        "fill_pattern": s.fill_pattern or "diag", "fill_strength": s.fill_strength or 25,
     }
 
 
@@ -830,6 +863,10 @@ def _update_stroke(plan_id: str, stroke_id: str, data: dict) -> dict | None:
             s.ai_text = _clean_stroke_name(data["ai_text"])
         if "fill" in data:
             s.fill = data["fill"] is not False
+        if "fill_pattern" in data:
+            s.fill_pattern = _clean_pattern(data["fill_pattern"])
+        if "fill_strength" in data:
+            s.fill_strength = _clean_strength(data["fill_strength"])
         if "closed" in data:
             s.closed = data["closed"] is True
         # Geschlossen nur mit mindestens 3 Punkten (auch nach Punkt-Änderung)

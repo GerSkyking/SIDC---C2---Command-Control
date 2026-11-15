@@ -47,9 +47,39 @@ export interface MarkerTemplate {
   orbat_node_id?: string | null;
   orbat_strength?: number;
   tint?: string;
+  /** nach dem Platzieren gleich einen Bereich um den Marker zeichnen */
+  draw_area?: boolean;
 }
 
 type Done = (t: MarkerTemplate) => void;
+
+// Zuletzt gesetzte Einstellungen (nur für mich, pro Browser): werden beim nächsten Marker vorausgewählt.
+const LAST_KEY = "sidc_wiz_last";
+interface LastWiz {
+  tab?: "quick" | "builder";
+  aff?: string;
+  echelon?: string;
+  dir?: number;
+  tint?: string;
+  locked?: boolean;
+  timestamp?: boolean;
+  advOpen?: boolean;
+}
+function loadLast(): LastWiz {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAST_KEY) ?? "{}");
+    return v && typeof v === "object" ? (v as LastWiz) : {};
+  } catch {
+    return {};
+  }
+}
+function saveLast(patch: LastWiz): void {
+  try {
+    localStorage.setItem(LAST_KEY, JSON.stringify({ ...loadLast(), ...patch }));
+  } catch {
+    /* Speicher nicht verfügbar → einfach nicht merken */
+  }
+}
 
 export async function openWizard(
   host: HTMLElement,
@@ -97,10 +127,13 @@ export async function openWizard(
     pickedAff = IDENTITY_TO_AFFILIATION[identity] ?? pickedAff;
   };
 
-  let tab: "quick" | "builder" = "quick";
+  const last = loadLast();
+  let tab: "quick" | "builder" = last.tab === "builder" ? "builder" : "quick";
+  wrap.querySelectorAll("[data-tab]").forEach((x) => x.classList.toggle("active", (x as HTMLElement).dataset.tab === tab));
   wrap.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach((b) =>
     b.addEventListener("click", () => {
       tab = b.dataset.tab as "quick" | "builder";
+      saveLast({ tab });
       wrap.querySelectorAll("[data-tab]").forEach((x) => x.classList.toggle("active", x === b));
       render();
     }),
@@ -108,13 +141,17 @@ export async function openWizard(
 
   // ── Konfig-Panel für einen gewählten Eintrag ────────────────────────────
   function configure(entry: CatalogEntry, identity: string | null, btn?: QuickMenuButton): void {
-    let aff = identity ? IDENTITY_TO_AFFILIATION[identity] ?? "1" : "1";
-    let echelon = "00";
-    let dir = -1;
+    // Zugehörigkeit aus dem QuickMenü hat Vorrang, sonst gilt der zuletzt gesetzte Marker
+    let aff = identity ? IDENTITY_TO_AFFILIATION[identity] ?? "1" : last.aff ?? "1";
+    let echelon = last.echelon ?? "00";
+    let dir = typeof last.dir === "number" ? last.dir : -1;
+    let lockV = last.locked ?? !!entry.defaultLocked;
+    let tsV = last.timestamp ?? entry.defaultTimestampVisible !== false;
+    let drawAreaV = false; // Bereich zeichnen gilt nur für diesen Marker (wird nicht gemerkt)
     const modDefs: Record<string, import("./catalog").ModifierOption[]> | null =
       (mods && entry.subCategory && (mods as ModifierCatalog)[entry.subCategory]) || null;
-    let advOpen = false;
-    let tint = ""; // eigene Markerfarbe (leer = Standard)
+    let advOpen = !!last.advOpen;
+    let tint = last.tint ?? ""; // eigene Markerfarbe (leer = Standard)
     const modSel: SidcModifiers = {};
 
     const buildSidc = () => {
@@ -198,9 +235,10 @@ export async function openWizard(
         <div class="row"><input type="color" data-tint value="${tint || "#000000"}" aria-label="${t("marker.color")}" />
           <button type="button" data-tint-reset title="${t("tip.mk.colorReset")}">${t("marker.colorReset")}</button></div>
         <div class="wiz-flags">
-          <label title="${t("tip.wiz.lock")}"><input type="checkbox" data-lock ${entry.defaultLocked ? "checked" : ""}/> ${t("wiz.locked")}</label>
-          <label title="${t("tip.wiz.ts")}"><input type="checkbox" data-ts ${entry.defaultTimestampVisible !== false ? "checked" : ""}/> ${t("wiz.timestamp")}</label>
+          <label title="${t("tip.wiz.lock")}"><input type="checkbox" data-lock ${lockV ? "checked" : ""}/> ${t("wiz.locked")}</label>
+          <label title="${t("tip.wiz.ts")}"><input type="checkbox" data-ts ${tsV ? "checked" : ""}/> ${t("wiz.timestamp")}</label>
         </div>
+        <label class="chk" title="${t("area.markerHint")}"><input type="checkbox" data-draw-area ${drawAreaV ? "checked" : ""}/> <span>${t("area.afterCreateMarker")}</span></label>
         ${modDefs ? `<button class="wiz-adv-toggle">${advOpen ? "▾" : "▸"} ${t("wiz.advanced")}</button>` : ""}
         <button class="primary wiz-place">${t("wiz.place")}</button>
        </div>
@@ -234,6 +272,9 @@ export async function openWizard(
         }),
       );
       config.querySelectorAll<HTMLSelectElement>("[data-mod]").forEach(enhanceSelect);
+      config.querySelector<HTMLInputElement>("[data-draw-area]")?.addEventListener("change", (e) => (drawAreaV = (e.target as HTMLInputElement).checked));
+      config.querySelector<HTMLInputElement>("[data-lock]")?.addEventListener("change", (e) => (lockV = (e.target as HTMLInputElement).checked));
+      config.querySelector<HTMLInputElement>("[data-ts]")?.addEventListener("change", (e) => (tsV = (e.target as HTMLInputElement).checked));
       config.querySelector<HTMLInputElement>("[data-tint]")?.addEventListener("input", (e) => {
         tint = (e.target as HTMLInputElement).value; // ohne draw(): Farbwähler bleibt offen
       });
@@ -243,6 +284,16 @@ export async function openWizard(
       });
       const place = () => {
         const sidc = buildSidc();
+        saveLast({
+          tab: "quick",
+          aff,
+          echelon,
+          dir,
+          tint,
+          locked: config.querySelector<HTMLInputElement>("[data-lock]")!.checked,
+          timestamp: config.querySelector<HTMLInputElement>("[data-ts]")!.checked,
+          advOpen,
+        });
         onPick({
           sidc,
           unit_text: config.querySelector<HTMLInputElement>("[data-unit]")!.value,
@@ -255,6 +306,7 @@ export async function openWizard(
           tint,
           is_multipoint: !!entry.isMultiPointLine,
           max_line_points: entry.maxLinePoints ?? 0,
+          draw_area: drawAreaV && !entry.isMultiPointLine,
         });
         close();
       };
@@ -283,9 +335,10 @@ export async function openWizard(
         renderMarkerBuilder(body, {
           templateFields: true,
           ctx,
-          defaultAffiliation: pickedAff ?? "3",
+          defaultAffiliation: pickedAff ?? last.aff ?? "3",
           submitLabel: t("wiz.place"),
           onTemplate: (tpl) => {
+            saveLast({ tab: "builder", aff: tpl.sidc[3] });
             onPick(tpl);
             close();
           },

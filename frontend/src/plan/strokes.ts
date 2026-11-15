@@ -10,7 +10,7 @@ import { lngLatToWorld } from "../sidc/sidc";
 import { cid } from "../ws";
 import { AREA_CLOSE_PX, type LngLat2, type PlanCtx, type Stroke } from "./ctx";
 import { areaFieldsHtml, openAreaNameDialog, wireAreaFields } from "./strokeArea";
-import { MEASURE_KIND } from "../mapAreas";
+import { MEASURE_KIND, normPattern, normStrength } from "../mapAreas";
 import { fmtDist, hexToPacked, lineDraftFC } from "./geo";
 import { isStrokeDot } from "./render";
 
@@ -57,7 +57,10 @@ export function initStrokes(ctx: PlanCtx): void {
   const strokeDelBtn = root.querySelector<HTMLButtonElement>("#strokeDel")!;
   // Anker für den grünen Haken (und das Zahnrad): letzter Punkt der laufenden
   // Linie bzw. der gerade bearbeiteten Linie/Messlinie.
+  // Marker-Kette (Phasenlinie aus Markern) läuft: Haken/Papierkorb am letzten gesetzten Punkt
+  const chainRunning = (): boolean => ctx.mode === "place" && ctx.chainGroup != null && ctx.chainIndex >= 1 && !!ctx.chainLast;
   const doneAnchor = (): [number, number] | null => {
+    if (chainRunning()) return ctx.chainLast;
     if (ctx.mode === "line" && ctx.linePts.length >= 2) return ctx.linePts[ctx.linePts.length - 1];
     if (ctx.mode === "measure" && ctx.measureActive.length >= 2) return ctx.measureActive[ctx.measureActive.length - 1];
     if (ctx.editStrokeId) {
@@ -71,7 +74,7 @@ export function initStrokes(ctx: PlanCtx): void {
     // Zahnrad nur beim Bearbeiten einer bestehenden Phasenlinie, Papierkorb auch bei Messlinien
     const running = (ctx.mode === "line" && ctx.linePts.length >= 2) || (ctx.mode === "measure" && ctx.measureActive.length >= 2);
     const showGear = !!ctx.editStrokeId && !running;
-    const showDel = !!ctx.editStrokeId || running; // laufend: Löschen = verwerfen
+    const showDel = !!ctx.editStrokeId || running || chainRunning(); // laufend: Löschen = verwerfen
     if (!a) {
       lineDoneBtn.hidden = true;
       strokeGearBtn.hidden = true;
@@ -100,7 +103,8 @@ export function initStrokes(ctx: PlanCtx): void {
     }
   };
   lineDoneBtn.addEventListener("click", () => {
-    if (ctx.mode === "line" && ctx.linePts.length >= 2) finishLine();
+    if (chainRunning()) ctx.ui.setMode("move"); // Kette fertig
+    else if (ctx.mode === "line" && ctx.linePts.length >= 2) finishLine();
     else if (ctx.mode === "measure" && ctx.measureActive.length >= 2) commitMeasure();
     else if (ctx.editStrokeId) ctx.ui.setEditStroke(null);
   });
@@ -108,6 +112,12 @@ export function initStrokes(ctx: PlanCtx): void {
     if (ctx.editStrokeId) openStrokeSettings(ctx.editStrokeId);
   });
   strokeDelBtn.addEventListener("click", async () => {
+    if (chainRunning()) {
+      // laufende Marker-Kette verwerfen: alle Punkte dieser Kette löschen
+      for (const m of [...ctx.markers.values()]) if (m.linked_group_id === ctx.chainGroup) socket.send({ type: "marker.delete", id: m.id });
+      ctx.ui.setMode("move");
+      return;
+    }
     const saved = !(ctx.mode === "line" && ctx.linePts.length >= 2) && !(ctx.mode === "measure" && ctx.measureActive.length >= 2);
     const editDot = !!ctx.editStrokeId && isStrokeDot(strokes.get(ctx.editStrokeId) ?? ({} as Stroke));
     const ask = t(editDot ? "dot.confirmDelete" : "line.confirmDelete");
@@ -192,6 +202,8 @@ export function initStrokes(ctx: PlanCtx): void {
     sidc: s.sidc ?? "",
     ai_text: s.ai_text ?? "",
     fill: s.fill !== false,
+    fill_pattern: normPattern(s.fill_pattern),
+    fill_strength: normStrength(s.fill_strength),
   });
   const deleteStroke = (id: string): void => {
     const s = strokes.get(id);
@@ -382,7 +394,7 @@ export function initStrokes(ctx: PlanCtx): void {
     openAreaNameDialog(root, sig, (f) => {
       closingPts = null;
       refreshLineDraft();
-      commitStroke({ ...base, closed: true, name: f.name, ai_text: f.ai_text, sidc: f.sidc, fill: f.fill });
+      commitStroke({ ...base, closed: true, name: f.name, ai_text: f.ai_text, sidc: f.sidc, fill: f.fill, fill_pattern: f.fill_pattern, fill_strength: f.fill_strength });
     });
   };
   root.querySelector("#lineFinish")!.addEventListener("click", finishLine);
@@ -428,7 +440,7 @@ export function initStrokes(ctx: PlanCtx): void {
       <label class="chk" style="margin-top:.5rem" title="${t("areaName.closedHint")}"><input type="checkbox" data-sclosed ${isClosed ? "checked" : ""} ${
         s.points.length < 3 ? "disabled" : ""
       }/> <span>${t("areaName.closed")}</span></label>
-      <div data-area-block ${isClosed ? "" : "hidden"}>${areaFieldsHtml({ name: s.name ?? "", ai_text: s.ai_text ?? "", sidc: s.sidc ?? "", fill: s.fill !== false })}</div>
+      <div data-area-block ${isClosed ? "" : "hidden"}>${areaFieldsHtml({ name: s.name ?? "", ai_text: s.ai_text ?? "", sidc: s.sidc ?? "", fill: s.fill !== false, fill_pattern: normPattern(s.fill_pattern), fill_strength: normStrength(s.fill_strength) })}</div>
       <div class="row" style="margin-top:.6rem"><button class="primary" data-save style="flex:1">${t("common.save")}</button></div>
     </div>`;
     document.body.appendChild(back);
@@ -438,7 +450,7 @@ export function initStrokes(ctx: PlanCtx): void {
         back.querySelector<HTMLElement>(sel)?.closest("label")?.setAttribute("hidden", "");
       back.querySelector<HTMLElement>("[data-area-block]")?.setAttribute("hidden", "");
     }
-    const readArea = wireAreaFields(back,{ name: s.name ?? "", ai_text: s.ai_text ?? "", sidc: s.sidc ?? "", fill: s.fill !== false }, root, back);
+    const readArea = wireAreaFields(back,{ name: s.name ?? "", ai_text: s.ai_text ?? "", sidc: s.sidc ?? "", fill: s.fill !== false, fill_pattern: normPattern(s.fill_pattern), fill_strength: normStrength(s.fill_strength) }, root, back);
     const closedIn = back.querySelector<HTMLInputElement>("[data-sclosed]")!;
     closedIn.addEventListener("change", () => (back.querySelector<HTMLElement>("[data-area-block]")!.hidden = !closedIn.checked));
     const close = () => back.remove();
@@ -495,14 +507,36 @@ export function initStrokes(ctx: PlanCtx): void {
   };
   map.on("mouseenter", "strokeverts-hit", () => (map.getCanvas().style.cursor = "grab"));
   map.on("mouseleave", "strokeverts-hit", () => (map.getCanvas().style.cursor = ctx.ui.modeCursor()));
+  // Mittelpunkt eines Segments greifen: fügt dort einen neuen Stützpunkt ein, der sofort gezogen werden kann
+  const insertAtMid = (seg: number): { idx: number; before: LngLat2[] } | null => {
+    const pts = ctx.ui.editPts();
+    if (!pts || seg == null || seg < 0 || seg >= pts.length) return null;
+    const before = pts.map((p) => [p[0], p[1]] as LngLat2);
+    const a = pts[seg];
+    const b = pts[(seg + 1) % pts.length];
+    const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const idx = seg + 1; // geschlossen: Segment letzter→erster → idx == length → hinten anhängen
+    pts.splice(idx, 0, mid);
+    return { idx, before };
+  };
+  map.on("mouseenter", "strokemids-hit", () => (map.getCanvas().style.cursor = "copy"));
+  map.on("mouseleave", "strokemids-hit", () => (map.getCanvas().style.cursor = ctx.ui.modeCursor()));
+  map.on("mousedown", "strokemids-hit", (e) => {
+    const ins = insertAtMid(e.features?.[0]?.properties?.i as number);
+    if (ins) startVertDrag(e, ins.idx, ins.before);
+  });
   map.on("mousedown", "strokeverts-hit", (e) => {
     const idx = e.features?.[0]?.properties?.i as number;
     const pts = ctx.ui.editPts();
     if (!pts || idx == null) return;
+    startVertDrag(e, idx, pts.map((p) => [p[0], p[1]] as LngLat2));
+  });
+  function startVertDrag(e: maplibregl.MapMouseEvent, idx: number, before: LngLat2[]): void {
+    const pts = ctx.ui.editPts();
+    if (!pts) return;
     e.preventDefault();
     map.dragPan.disable();
     map.getCanvas().style.cursor = "grabbing";
-    const before = pts.map((p) => [p[0], p[1]] as LngLat2);
     const onMove = (ev: maplibregl.MapMouseEvent) => {
       pts[idx] = [ev.lngLat.lng, ev.lngLat.lat];
       if (ctx.editStrokeId) ctx.ui.refreshStrokes();
@@ -519,18 +553,29 @@ export function initStrokes(ctx: PlanCtx): void {
     map.on("mousemove", onMove);
     // document statt map: Loslassen außerhalb der Karte darf den Drag nicht hängen lassen
     document.addEventListener("mouseup", onUp, { once: true, signal: sig });
-  });
+    ctx.ui.refreshStrokes();
+    ctx.ui.refreshStrokeVerts();
+  }
 
   // Touch: Stützpunkt mit einem Finger ziehen (zweiter Finger = Karte navigieren)
+  map.on("touchstart", "strokemids-hit", (e) => {
+    if (e.points.length !== 1) return;
+    const ins = insertAtMid(e.features?.[0]?.properties?.i as number);
+    if (ins) startVertTouch(e, ins.idx, ins.before);
+  });
   map.on("touchstart", "strokeverts-hit", (e) => {
     if (e.points.length !== 1) return;
     const idx = e.features?.[0]?.properties?.i as number;
     const pts = ctx.ui.editPts();
     if (!pts || idx == null) return;
+    startVertTouch(e, idx, pts.map((p) => [p[0], p[1]] as LngLat2));
+  });
+  function startVertTouch(e: maplibregl.MapTouchEvent, idx: number, before: LngLat2[]): void {
+    const pts = ctx.ui.editPts();
+    if (!pts) return;
     e.preventDefault();
     ctx.vertTouchDrag = true;
     map.dragPan.disable();
-    const before = pts.map((p) => [p[0], p[1]] as LngLat2);
     const onMove = (ev: maplibregl.MapTouchEvent) => {
       if (ev.points.length !== 1) return;
       pts[idx] = [ev.lngLat.lng, ev.lngLat.lat];
@@ -551,7 +596,9 @@ export function initStrokes(ctx: PlanCtx): void {
     };
     document.addEventListener("touchend", end, { signal: sig });
     document.addEventListener("touchcancel", end, { signal: sig });
-  });
+    ctx.ui.refreshStrokes();
+    ctx.ui.refreshStrokeVerts();
+  }
   // Punkte (Punkt-Werkzeug) wie Marker behandeln: im Karten-Modus mit gehaltener mittlerer Maustaste
   // (bzw. im Modus "Marker verschieben" mit links) direkt ziehen — ohne vorher auswählen zu müssen.
   // Die Bestätigungs-Symbole (Haken/Zahnrad/Papierkorb) folgen dem Punkt.

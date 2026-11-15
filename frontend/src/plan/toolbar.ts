@@ -119,9 +119,11 @@ export function initToolbar(ctx: PlanCtx): void {
     if (m !== "place") {
       ctx.pending = null;
       ctx.chainGroup = null;
+      ctx.chainLast = null;
       ctx.awaitingPos = false;
       ctx.pendingPos = null;
     }
+    ctx.ui.positionLineDone(); // nach dem Zurücksetzen der Kette: Haken ausblenden
   };
   toolbar.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => setMode(b.dataset.mode as Mode)),

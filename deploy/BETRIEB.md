@@ -20,6 +20,12 @@ Die DB-Migrationen (Alembic) laufen beim Start des Backends automatisch. Rollbac
 Tag setzen und Schritt 3 wiederholen; nach Migrationen mit Schemaänderung ggf. das Backup einspielen.
 Es wird nichts gebaut. Für lokale Entwicklung: `docker-compose.dev.yml` (siehe Kopf der Compose-Datei).
 
+## Automatisch aktuell bleiben?
+In der `.env` geht auch `SIDC_IMAGE_TAG=latest` (neuestes Release) oder `1.2` (nur Patch-Releases 1.2.x). Es zieht aber
+nichts von selbst: Docker lädt erst bei `docker compose pull && docker compose up -d` (z. B. per Cron) oder mit einem Tool
+wie Watchtower nach. Migrationen laufen dabei automatisch. Für Produktion empfiehlt sich ein fester Tag (kontrolliertes
+Update, einfacher Rollback); `latest` nur, wenn automatische Sprünge in Kauf genommen werden und Backups laufen.
+
 ## Bootstrap-Admin und Passwort-Reset
 `BOOTSTRAP_ADMIN_*` in der `.env` wirkt nur beim Anlegen: Existiert das Konto, bleibt sein Passwort
 (Hash in der DB) unberührt. Nach dem ersten Start `BOOTSTRAP_ADMIN_PASSWORD` aus der `.env` entfernen.

@@ -305,9 +305,10 @@ function userRow(u: AdminUser, canGrant: boolean, discordId?: string): string {
   const lock = u.protected ? "disabled" : "";
   const rlock = u.protected || !canGrant ? "disabled" : ""; // Rechte vergibt nur ein lokaler Admin
   return `<tr data-u="${u.id}">
-    <td><strong>${esc(u.username)}</strong> ${u.is_local ? "" : '<span class="badge" title="${t("tip.admin.oidc")}">OIDC</span>'}
-        <span class="badge" title="${t("tip.admin.role")}">${esc(u.role)}</span> ${u.protected ? `<span class="badge" title="${t("admin.protectedHint")}">${icon("lock", 11)} ${t("admin.protected")}</span>` : ""} ${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}
+    <td><strong>${esc(u.username)}</strong>
         ${u.display_name ? `<div class="muted" style="font-size:.8rem">${esc(u.display_name)}</div>` : ""}</td>
+    <td style="width:5.5rem"><span class="badge" title="${t("tip.admin.role")}">${esc(u.role)}</span></td>
+    <td style="width:11rem">${u.is_local ? "" : `<span class="badge" title="${t("tip.admin.oidc")}">OIDC</span> `}${u.protected ? `<span class="badge" title="${t("admin.protectedHint")}">${icon("lock", 11)} ${t("admin.protected")}</span> ` : ""}${u.is_active ? "" : `<span class="badge">${t("admin.inactive")}</span>`}</td>
     <td>
       <details class="admin-drop">
         <summary title="${t("tip.admin.rights")}">${t("admin.rights")}</summary>

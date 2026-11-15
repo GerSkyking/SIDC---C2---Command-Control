@@ -15,31 +15,59 @@ export const AREA_COLORS = { mb: "#ff2d95", all: "#ffc21a" } as const;
 export const AREA_FILL_OPACITY = 0.25;
 export const AREA_LINE_OPACITY = 0.5;
 
-/** Diagonale Schraffur (16×16 px, nahtlos kachelbar) in der gegebenen Farbe. */
-export function hatchImage(color: string, n = 16, lineWidth = 2.2): ImageData {
+/** Füllmuster einer Fläche: schräg (Standard), senkrecht, waagerecht, Gitter (beides) oder vollflächig. */
+export type FillPattern = "diag" | "vert" | "horiz" | "cross" | "solid";
+export const FILL_PATTERNS: FillPattern[] = ["diag", "vert", "horiz", "cross", "solid"];
+export const normPattern = (p: unknown): FillPattern => (FILL_PATTERNS.includes(p as FillPattern) ? (p as FillPattern) : "diag");
+/** Füllstärke in Prozent (= Deckkraft der Füllung); Standard entspricht AREA_FILL_OPACITY. */
+export const DEFAULT_FILL_STRENGTH = Math.round(AREA_FILL_OPACITY * 100);
+export const normStrength = (v: unknown): number => {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.max(5, Math.min(100, n)) : DEFAULT_FILL_STRENGTH;
+};
+
+/** Schraffur-Muster (nahtlos kachelbar) in der gegebenen Farbe. */
+export function hatchImage(color: string, kind: FillPattern = "diag", lineWidth = 2.2): ImageData {
+  const n = kind === "diag" ? 16 : 8;
   const cv = document.createElement("canvas");
   cv.width = cv.height = n;
   const g = cv.getContext("2d")!;
   g.strokeStyle = color;
+  g.fillStyle = color;
   g.lineWidth = lineWidth;
-  g.beginPath();
-  for (const o of [-n, 0, n]) {
-    g.moveTo(o, n);
-    g.lineTo(o + n, 0);
+  if (kind === "solid") {
+    g.fillRect(0, 0, n, n);
+  } else if (kind === "diag") {
+    g.beginPath();
+    for (const o of [-n, 0, n]) {
+      g.moveTo(o, n);
+      g.lineTo(o + n, 0);
+    }
+    g.stroke();
+  } else {
+    g.beginPath();
+    if (kind === "vert" || kind === "cross") {
+      g.moveTo(n / 2, 0);
+      g.lineTo(n / 2, n);
+    }
+    if (kind === "horiz" || kind === "cross") {
+      g.moveTo(0, n / 2);
+      g.lineTo(n, n / 2);
+    }
+    g.stroke();
   }
-  g.stroke();
   return g.getImageData(0, 0, n, n);
 }
 
-/** Bild-ID des Schraffur-Musters einer Farbe ("#rrggbb" → "hatch-rrggbb"). */
-export function hatchId(color: string): string {
-  return "hatch-" + color.replace(/[^0-9a-zA-Z]/g, "").toLowerCase();
+/** Bild-ID des Schraffur-Musters einer Farbe ("#rrggbb" → "hatch-rrggbb"; andere Muster mit Zusatz). */
+export function hatchId(color: string, kind: FillPattern = "diag"): string {
+  return "hatch-" + (kind === "diag" ? "" : kind + "-") + color.replace(/[^0-9a-zA-Z]/g, "").toLowerCase();
 }
 
 /** Schraffur-Muster für eine Farbe registrieren (idempotent; auch nach Stilwechsel erneut aufrufen). */
-export function ensureHatch(map: MlMap, color: string): string {
-  const id = hatchId(color);
-  if (!map.hasImage(id)) map.addImage(id, hatchImage(color));
+export function ensureHatch(map: MlMap, color: string, kind: FillPattern = "diag"): string {
+  const id = hatchId(color, kind);
+  if (!map.hasImage(id)) map.addImage(id, hatchImage(color, kind));
   return id;
 }
 
@@ -101,7 +129,7 @@ export function ensureAreaLayers(map: MlMap, id: string, opts: AreaLayerOpts = {
       filter: ["all", ["==", ["geometry-type"], "Polygon"], ["!=", ["get", "fill"], false]],
       paint: {
         "fill-pattern": ["get", "pat"],
-        "fill-opacity": ["*", AREA_FILL_OPACITY, ["coalesce", ["get", "op"], 1]],
+        "fill-opacity": ["*", ["coalesce", ["get", "fo"], AREA_FILL_OPACITY], ["coalesce", ["get", "op"], 1]],
       },
     },
     before,
@@ -127,7 +155,7 @@ export function ensureAreaLayers(map: MlMap, id: string, opts: AreaLayerOpts = {
 export function setAreaData(map: MlMap, id: string, features: GeoJSON.Feature[]): void {
   for (const f of features) {
     const c = f.properties?.color;
-    if (typeof c === "string" && f.geometry.type === "Polygon") ensureHatch(map, c);
+    if (typeof c === "string" && f.geometry.type === "Polygon") ensureHatch(map, c, normPattern(f.properties?.pk));
   }
   (map.getSource(id) as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features });
 }
