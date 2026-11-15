@@ -1,6 +1,6 @@
 # SIDC – C2 – Funktionsübersicht
 
-Kompakte Übersicht, **was das Tool heute kann** (Stand 2026-11-11). Details und Bedienung: [`HANDBUCH.md`](HANDBUCH.md),
+Kompakte Übersicht, **was das Tool heute kann** (Stand 2026-11-15). Details und Bedienung: [`HANDBUCH.md`](HANDBUCH.md),
 Änderungen: [`../CHANGELOG.md`](../CHANGELOG.md).
 
 ## 1. Plattform
@@ -24,6 +24,7 @@ Alle Rechte werden serverseitig je Operation geprüft.
 
 ## 3. Pläne
 - Ordner/Unterordner mit Drag & Drop, klonen (inkl. Phasen, Layer, Marker, Linien), Papierkorb.
+- Der Papierkorb merkt sich, wer einen Plan gelöscht hat.
 - **Versionsverlauf** mit Wiederherstellen, **öffentliche Nur-Ansehen-Links** (Token, Ablauf, widerrufbar, Phasen/Zeit-Eingrenzung).
 - ACL-Editor, Briefing-**PDF-Export** (je Phase eine Seite inkl. Notizen und Bilder), **Screenshot** (Auflösung/Format wählbar, DTG).
 
@@ -32,6 +33,7 @@ Alle Rechte werden serverseitig je Operation geprüft.
 - Menü **Karte** mit Deckkraft je Ebene: Sat, Sat (vereinfacht), Gitter, Gebäude, Straßen, Gewässer, Stromleitungen, Bäume, Orte (Karten-Einstellungen pro Nutzer im Zahnrad).
 - **ViewCube** unten rechts (TOP + N/S/O/W + Ecken, Ziehen dreht/kippt, Home).
 - Karten-Import per Link, Upload oder Gitea-Quelle; DLC-Zoomstufen; Kartenserver für den lokalen ATAKmaps-Client.
+- Karten-Beschriftungen bleiben unter Flächen halb sichtbar; die Kartengröße wird beim Import gespeichert.
 - **Suche im Plan** (Lupe, `Strg+F` / `/`): Marker, Notizen/Sterne, benannte Linien/Flächen, Punkte (Text), Kartenbilder, Ortsnamen, Phasen; umlaut-tolerant, Wortanfang vor Teiltreffer. Auswahl fliegt hin und hebt ~3 s hervor (Ring bzw. leuchtender Umriss), wechselt bei Bedarf die Phase und blendet ausgeblendete Layer ein; respektiert die Sichtbarkeit der aktuellen Ansicht.
 
 ## 5. Marker
@@ -39,6 +41,7 @@ Alle Rechte werden serverseitig je Operation geprüft.
 - Symbole über milsymbol.js; Nur-Text-Marker; eigene Farbe; Icon-Größe je Marker + persönlicher Größenregler („UI Scale", einklappbar).
 - **Hover**: Info + Icons Löschen (mit Bestätigung) · Verschieben · Bearbeiten.
 - Favoriten (inkl. Farbe), Kopieren/Ausschneiden/Einfügen, Undo/Redo.
+- Marker per **Rechtsklick-Ziehen drehen**; **Bereich um einen Marker** (Linie/Fläche mit Farbe, Muster, Stärke; Zahnrad-Dialog); der Wizard merkt sich die letzten Einstellungen; Volltextsuche für Modifikatoren; PNG-Icons aus dem Export werden bevorzugt.
 - **ORBAT**-Verknüpfung (Stärke, Verluste, Freigabe von Feindmarkern für Spieler).
 
 ## 6. Layer
@@ -51,6 +54,7 @@ Alle Rechte werden serverseitig je Operation geprüft.
 - Spieler-Phasen und parallele **Missionsbau-Phasen** (Zwischenphasen), Zeiten ziehbar, H-Hour, Base-Phase gesperrt.
 - **Jedes Element gehört zu mindestens einer Phase** (Standard: aktuelle); **Mehrfach-Phasen** für Marker, Linien, Lineal, Notizen.
 - Fremdphasen mit einstellbarer Transparenz; Präsentationsmodus; Phasen für Spieler oder Zeus freigeben.
+- **Phase kopieren** in einen anderen Plan oder eine andere Phase (ORBAT-Verknüpfung bleibt erhalten); Zeitstrahl über die volle Breite.
 - **Phasen-Notizen** (Markdown, Bilder einbettbar), Doppelklick auf eine Phase öffnet sie.
 - **Markdown-Toolbar** (Tastatur-Icon) in allen Markdown-Feldern: Formatierung per Klick – fett/kursiv/durchgestrichen/hervorheben, Listen, Aufgaben, Tabellen, Hinweise, Code, Mathe, Kommentare, Trennlinie.
 
@@ -70,6 +74,9 @@ Alle Rechte werden serverseitig je Operation geprüft.
 | Ort markieren | – | nur Projekt-Pläne: Klick setzt einen **Stern**, danach „Was ist hier?“ → Aufgabe, Haftnotiz, Verknüpfung oder Kartennotiz; gelb = alle, pink = nur Missionsbau; optionaler Bereich (Linie/Fläche) mit Größe unter dem Stern |
 
 - Mittlere Maustaste pannt in allen Werkzeugen; Rechtsklick-Menü im Karten-Werkzeug; Panels frei verschiebbar + fixierbar.
+- Linien und Flächen: **Zwischenpunkte** einfügen, **Füllmuster** (schräg/senkrecht/waagerecht/gekreuzt/voll) und Füllstärke, Farbe aus Palette oder frei auch beim Bearbeiten.
+- **Messlinien des Lineals werden gespeichert** und für alle synchronisiert (Phase, weitere Phasen, Layer; Undo, Radierer, Stützpunkte bearbeiten wie bei Zeichenlinien).
+- Öffentliche Ansicht zeigt Bereiche um Marker und den Stil der Sternbereiche.
 - Tasten sind im Zahnrad pro Nutzer änderbar; dort auch *Marker-Texte* und *Marker-Info* (Marker-Anzeige).
 
 ## 9. Bilder
@@ -84,3 +91,5 @@ Alle Rechte werden serverseitig je Operation geprüft.
 ## 11. Admin
 - Nutzer/Gruppen (Rollen, Missionsbau, **Zeus**, Passwort-Reset), Log, Config (SIDC-Kataloge, Übersetzungen, Karten, Quellen), Service-Neustart.
 - Persönliche API-Tokens für den lokalen Client.
+- **Speicher**: belegter Platz je Projekt und je Karte.
+- Der Start-Admin ist geschützt (nicht löschbar, Rechte und Passwort nur über die Server-Konfiguration); Passwort-Reset auch per Kommandozeile (`python -m app.cli reset-password`).
