@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
     oidc_redirect_url: str = ""
+    # Anzeigename aus dem OIDC-Claim (name/preferred_username) übernehmen und in C2 sperren
+    oidc_sync_display_name: bool = False
 
     def resolved_secret_key(self) -> str:
         """SECRET_KEY aus der Env, sonst ein persistenter, beim ersten Start generierter Wert."""

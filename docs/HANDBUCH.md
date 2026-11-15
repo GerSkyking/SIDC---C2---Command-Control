@@ -215,7 +215,11 @@ Missionsbau-Ansicht ist *Nur Missionsbau* vorausgewählt), alle anderen setzen n
 
 | Recht | Bedeutung |
 |---|---|
-| Rolle `admin` / `user` | Admin hat Vollzugriff und den Admin-Bereich |
+| Rolle `admin` / `user` | Admin hat den Admin-Bereich und verwaltet normale (Nicht-Projekt-)Pläne; **kein** automatisches Zeus/Missionsbau und kein Zugriff auf Projekte/Projektpläne ohne Mitgliedschaft |
+| **Techniker** | Speicher + Einstellungen (alles für Karten), Benutzer und Rechte nur lesen, Gruppen anlegen, Mitglieder rechtefreier Gruppen setzen; normale Pläne wie ein Admin |
+| **Karten verwalten** | Karten importieren/aktualisieren/löschen, ohne Admin zu sein |
+| Gruppe **public** | Systemgruppe, jeder Nutzer ist implizit Mitglied — z. B. um einen Projektplan für alle freizugeben |
+| Missionsbau im Projekt | Häkchen am Projektmitglied: Missionsbau-Recht nur in diesem Projekt und seinen Plänen; vergeben kann es nur ein globaler Missionsbauer (Rechte aus Projekt/Gruppe sind nicht weitergebbar) |
 | **Pläne erstellen** | Häkchen an Nutzer oder Gruppe |
 | **Missionsbau** / **Zeus** | Häkchen an Nutzer oder Gruppe (siehe A1) |
 | Plan `viewer` | ansehen |
@@ -306,10 +310,12 @@ curl -X POST https://c2.example.org/api/public/feedback/<TOKEN> -H "Content-Type
 
 Sidebar: **Benutzer & Gruppen**, **Log**, **Speicher**, **Einstellungen**.
 
-- **Benutzer & Gruppen:** anlegen, Rolle, *Pläne erstellen*, *Missionsbau*, *Zeus*, aktiv/deaktiviert, Passwort-Reset,
+- **Rechte vergeben** (Rollen, Häkchen an Nutzern/Gruppen) dürfen nur **lokale Admins** (ohne OIDC-Identität); Gruppenrechte nur, wer selbst Mitglied der Gruppe ist.
+  Mitglieder von Gruppen mit Rechten setzt nur ein lokaler Admin. Mit OIDC kommen die Rechte aus dem Identity-Provider.
+- **Benutzer & Gruppen** (Admin + Techniker, Techniker nur lesen): anlegen, Rolle, *Pläne erstellen*, *Missionsbau*, *Zeus*, aktiv/deaktiviert, Passwort-Reset,
   Discord-ID, löschen; Gruppen mit Mitgliedern und denselben Häkchen.
-- **Log:** Login-Versuche und alle wichtigen Aktionen, filterbar.
-- **Speicher:** belegter Platz je Projekt (Bilder, Dateien).
+- **Log** (nur Admin): Login-Versuche und alle wichtigen Aktionen, filterbar.
+- **Speicher** (Admin + Techniker): belegter Platz je Projekt (Bilder, Dateien) und je Karte.
 - **Einstellungen:** SIDC-Kataloge hochladen (`SIDC_AllMarkersCatalog.json`, `SIDC_QuickMarkerMenuCatalog.json`,
   `SIDC_PhaseLineStyleCatalog.json`, `SIDC_ModifierCatalog.json`, Übersetzungen `SIDC_Translations.xlsx`),
   **Karten** importieren (Download-Link, Direkt-Upload oder Gitea-Quelle; *Aktualisieren* lädt eine neue ZIP),

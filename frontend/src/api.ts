@@ -38,6 +38,7 @@ export interface Me {
   is_technician_effective?: boolean;
   can_manage_maps_effective?: boolean;
   can_grant_rights?: boolean; // lokaler Admin
+  name_locked?: boolean; // Anzeigename kommt aus OIDC
   ui_settings?: Record<string, unknown>;
 }
 export interface MapItem {

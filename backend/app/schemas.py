@@ -32,6 +32,7 @@ class MeOut(UserOut):
     is_technician_effective: bool = False
     can_manage_maps_effective: bool = False
     can_grant_rights: bool = False  # lokaler Admin: darf Rechte/Rollen vergeben
+    name_locked: bool = False  # Anzeigename kommt aus OIDC
     ui_settings: dict = {}
 
 

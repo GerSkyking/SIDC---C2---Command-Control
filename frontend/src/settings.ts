@@ -266,7 +266,7 @@ export function openSettings(): void {
       <button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
     <h4>${t("settings.displayName")}</h4>
     <input id="set-dname" maxlength="64" value="${esc(currentMe?.display_name ?? "")}"
-      placeholder="${esc(currentMe?.username ?? "")}" style="width:100%" />
+      placeholder="${esc(currentMe?.username ?? "")}" style="width:100%" ${currentMe?.name_locked ? 'disabled title="' + t("settings.displayNameLocked") + '"' : ""} />
     <p class="muted" style="font-size:.78rem;margin:.2rem 0 0">${t("settings.displayNameHint")}</p>
     <h4>${t("theme.label")}</h4>
     ${themeSwitch()}

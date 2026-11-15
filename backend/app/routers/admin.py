@@ -175,6 +175,10 @@ def patch_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbDep) -> Us
     if body.can_manage_maps is not None:
         u.can_manage_maps = body.can_manage_maps
     if body.display_name is not None:
+        from .auth import name_locked
+
+        if name_locked(db, u):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Anzeigename kommt aus dem Identity-Provider")
         u.display_name = "".join(c for c in body.display_name.strip() if c.isprintable())[:64]
     if body.is_active is not None:
         if u.id == admin.id and not body.is_active:

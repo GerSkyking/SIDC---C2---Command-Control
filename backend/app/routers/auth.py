@@ -135,6 +135,8 @@ class ProfileIn(BaseModel):
 
 @router.patch("/me", response_model=MeOut)
 def patch_my_profile(body: ProfileIn, user: CurrentUser, db: DbDep) -> MeOut:
+    if name_locked(db, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Anzeigename kommt aus dem Identity-Provider")
     name = "".join(c for c in (body.display_name or "").strip() if c.isprintable() and c not in _NAME_FORBIDDEN)[:64]
     user.display_name = name
     db.commit()
@@ -331,6 +333,7 @@ def _me(db: DbDep, user: User) -> MeOut:
         is_technician_effective=effective_technician(db, user),
         can_manage_maps_effective=effective_map_manager(db, user),
         can_grant_rights=is_local_admin(db, user),
+        name_locked=name_locked(db, user),
         can_create_plans_effective=can_create_plans(db, user),
         is_mission_builder_effective=effective_mission_builder(db, user),
         is_zeus_effective=effective_zeus(db, user),
@@ -395,7 +398,21 @@ def _oidc_get_or_create_user(db: DbDep, claims: dict, issuer: str, subject: str)
 
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Konto deaktiviert")
+    if _settings.oidc_sync_display_name:
+        raw = claims.get("name") or claims.get("preferred_username") or ""
+        name = "".join(c for c in str(raw).strip() if c.isprintable() and c not in _NAME_FORBIDDEN)[:64]
+        if name and name != user.display_name:
+            user.display_name = name
+            db.commit()
     return user
+
+
+def name_locked(db, user: User) -> bool:
+    """Anzeigename kommt aus OIDC → in C2 nicht änderbar."""
+    return bool(
+        _settings.oidc_sync_display_name
+        and db.scalar(select(OidcIdentity.user_id).where(OidcIdentity.user_id == user.id))
+    )
 
 
 def _unique_username(db: DbDep, base: str) -> str:
