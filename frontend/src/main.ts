@@ -13,9 +13,11 @@ import { renderLegal } from "./legal";
 import { esc } from "./esc";
 import { icon } from "./icons";
 import { initTheme } from "./theme";
+import { installIconFallback } from "./sidc/symbol";
 import { navAdmin, setLastProject, sidebar, themeSwitch, wireSidebar, wireThemeSwitch } from "./ui";
 
 initTheme();
+installIconFallback();
 
 // Ersatz für inline-Handler (von der Content-Security-Policy verboten):
 //   <img data-hide-on-error>     -> bei Ladefehler ausblenden

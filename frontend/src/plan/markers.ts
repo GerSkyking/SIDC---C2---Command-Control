@@ -279,6 +279,57 @@ export function initMarkers(ctx: PlanCtx): void {
   map.on("mousedown", "marker-icon", onMarkerMouseDown);
   map.on("mousedown", "marker-dot", onMarkerMouseDown);
   map.on("mousedown", "marker-textmark", onMarkerMouseDown);
+  // Rechte Taste auf einem Marker halten und die Maus bewegen: Marker dreht sich um sich selbst
+  // (ein eventueller Bereich bleibt stehen). Funktioniert für alle Marker, auch Text-Marker.
+  const onMarkerRotateDown = (e: maplibregl.MapLayerMouseEvent) => {
+    if (e.originalEvent.button !== 2 || !caps.move || ctx.mode !== "move") return;
+    const id = e.features?.[0]?.properties?.id as string;
+    const m = id ? markers.get(id) : undefined;
+    if (!m || m.locked) return;
+    e.preventDefault();
+    const c = map.project([m.world_x, m.world_y]);
+    const rect = map.getCanvas().getBoundingClientRect();
+    const angleAt = (ev: MouseEvent): number =>
+      (Math.atan2(ev.clientX - rect.left - c.x, -(ev.clientY - rect.top - c.y)) * 180) / Math.PI;
+    const start = angleAt(e.originalEvent);
+    const from = m.icon_rotation || 0;
+    const sx = e.originalEvent.clientX;
+    const sy = e.originalEvent.clientY;
+    let moved = false;
+    let cur = from;
+    map.dragRotate.disable();
+    map.dragPan.disable();
+    map.getCanvas().style.cursor = "alias";
+    hoverPopup.remove();
+    const onMove = (ev: MouseEvent) => {
+      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+      moved = true;
+      let d = angleAt(ev) - start;
+      d = ((((from + d) % 360) + 540) % 360) - 180; // -180..180
+      cur = ev.shiftKey ? Math.round(d / 15) * 15 : Math.round(d);
+      m.icon_rotation = cur;
+      ctx.ui.redrawMarkersOnly();
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      map.dragRotate.enable();
+      if (ctx.mode === "move") map.dragPan.enable();
+      map.getCanvas().style.cursor = ctx.ui.modeCursor();
+      if (!moved) return;
+      suppressCtx = true;
+      setTimeout(() => (suppressCtx = false), 0);
+      socket.send({ type: "marker.modify", id, data: { icon_rotation: cur } });
+      ctx.ui.pushCmd({
+        undo: () => socket.send({ type: "marker.modify", id, data: { icon_rotation: from } }),
+        redo: () => socket.send({ type: "marker.modify", id, data: { icon_rotation: cur } }),
+      });
+    };
+    document.addEventListener("mousemove", onMove, { signal: sig });
+    document.addEventListener("mouseup", onUp, { once: true, signal: sig });
+  };
+  let suppressCtx = false;
+  for (const ly of ["marker-icon", "marker-dot", "marker-textmark"]) map.on("mousedown", ly, onMarkerRotateDown);
+  map.getCanvas().addEventListener("contextmenu", (ev) => suppressCtx && ev.preventDefault());
   // Mittelklick auf dem Canvas nie als Browser-Autoscroll interpretieren
   map.getCanvas().addEventListener("mousedown", (ev) => {
     if (ev.button === 1) ev.preventDefault();

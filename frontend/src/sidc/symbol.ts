@@ -79,6 +79,10 @@ export function iconSrc(sidc: string, size = 28, tint?: string): string {
   const hit = srcCache.get(key);
   if (hit !== undefined) return hit;
   let src = iconUrl(sidc);
+  if (!tint) {
+    srcCache.set(key, src);
+    return src; // <img> fällt bei Fehler über fallbackIcons() auf milsymbol zurück
+  }
   try {
     const sym = new ms.Symbol(sidc, { size, standard: "APP6" });
     if (sym.isValid()) {
@@ -105,16 +109,12 @@ export function iconSrc(sidc: string, size = 28, tint?: string): string {
 export async function ensureMapIcon(map: MlMap, sidc: string, tint?: string): Promise<boolean> {
   const id = mapIconId(sidc, tint);
   if (map.hasImage(id)) return true;
-  const live = milsymbolImage(sidc, 32);
-  if (live) {
-    if (!map.hasImage(id)) map.addImage(id, tint ? recolorDark(live, tint) : live);
-    return true;
-  }
+  // 1. Vorgerendertes PNG (sieht besser aus als das live gezeichnete Symbol)
   try {
     const img = await map.loadImage(iconUrl(sidc));
+    const src = img.data as CanvasImageSource & { width: number; height: number };
     let out: Parameters<MlMap["addImage"]>[1] = img.data;
     if (tint) {
-      const src = img.data as CanvasImageSource & { width: number; height: number };
       const c = document.createElement("canvas");
       c.width = src.width;
       c.height = src.height;
@@ -123,12 +123,22 @@ export async function ensureMapIcon(map: MlMap, sidc: string, tint?: string): Pr
       const d = ctx.getImageData(0, 0, c.width, c.height);
       out = recolorDark({ width: d.width, height: d.height, data: d.data }, tint);
     }
-    if (!map.hasImage(id)) map.addImage(id, out);
+    // PNGs sind ~2x so groß wie die milsymbol-Canvas → pixelRatio 2 hält die Kartengröße gleich
+    if (!map.hasImage(id)) map.addImage(id, out, { pixelRatio: PNG_PIXEL_RATIO });
+    symCache.set(sidc, { width: src.width / PNG_PIXEL_RATIO, height: src.height / PNG_PIXEL_RATIO, data: new Uint8ClampedArray(0) });
     return true;
   } catch {
-    return false;
+    /* kein PNG vorhanden → live zeichnen */
   }
+  // 2. milsymbol (nur für SIDCs ohne vorgerendertes Bild)
+  const live = milsymbolImage(sidc, 32);
+  if (live) {
+    if (!map.hasImage(id)) map.addImage(id, tint ? recolorDark(live, tint) : live);
+    return true;
+  }
+  return false;
 }
+const PNG_PIXEL_RATIO = 2;
 
 /** Natürliche Pixelgröße des zuletzt für diese SIDC geladenen Icons (milsymbol-
  * Canvas oder PNG), oder null solange noch nichts geladen wurde. */
@@ -176,4 +186,25 @@ export function markerLabelOffsets(
   // Default (Land Unit u. a.): Zusatztext rechts/mittig, Einheitstext links,
   // mittig zwischen Icon-Mitte und -Unterkante.
   return { unit: [-halfXem, halfYem * 0.5], ai: [halfXem, 0] };
+}
+
+/** Globaler Rückfall: lädt ein vorgerendertes Icon-PNG nicht, zeichnet milsymbol das Symbol in das <img>. */
+export function installIconFallback(): void {
+  document.addEventListener(
+    "error",
+    (ev) => {
+      const el = ev.target;
+      if (!(el instanceof HTMLImageElement) || el.dataset.msFallback) return;
+      const m = /\/assets\/app6d-icons\/(\d+)\.png/.exec(el.src);
+      if (!m) return;
+      el.dataset.msFallback = "1";
+      try {
+        const sym = new ms.Symbol(m[1], { size: 28, standard: "APP6" });
+        if (sym.isValid()) el.src = (sym.asCanvas() as HTMLCanvasElement).toDataURL("image/png");
+      } catch {
+        /* bleibt kaputt */
+      }
+    },
+    true,
+  );
 }

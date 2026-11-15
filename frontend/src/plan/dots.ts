@@ -24,7 +24,7 @@ const nearestSize = (w: number): number =>
   DOT_SIZES.reduce((a, b) => (Math.abs(b - w) < Math.abs(a - w) ? b : a), DOT_DEFAULT_SIZE as number);
 
 /** Farbfeld: Linienpalette als Knöpfe + freie Farbwahl; ``data-pc`` = gepackte Farbe. */
-function colorBoxHtml(colors: LineColor[], cur: number): string {
+export function colorBoxHtml(colors: LineColor[], cur: number): string {
   const inPalette = colors.some((c) => c.packedColor === cur);
   return (
     colors
@@ -39,7 +39,7 @@ function colorBoxHtml(colors: LineColor[], cur: number): string {
   );
 }
 /** Farbfeld verdrahten; ``onPick`` erhält die gepackte Farbe. */
-function wireColorBox(box: HTMLElement, colors: LineColor[], get: () => number, onPick: (c: number) => void): void {
+export function wireColorBox(box: HTMLElement, colors: LineColor[], get: () => number, onPick: (c: number) => void): void {
   const redraw = () => (box.innerHTML = colorBoxHtml(colors, get()));
   redraw();
   box.addEventListener("click", (e) => {

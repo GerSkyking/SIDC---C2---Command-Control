@@ -9,6 +9,8 @@ import { icon } from "../icons";
 import { toast } from "../notify";
 import { areaSizeText, DEFAULT_FILL_STRENGTH, ensureHatch, normPattern, normStrength, ringOf } from "../mapAreas";
 import { patternPickerHtml, wirePatternPicker } from "./strokeArea";
+import { wireColorBox } from "./dots";
+import { hexToPacked, packedToHex } from "./geo";
 import { AREA_CLOSE_PX, AREA_COL, AREA_MAX_POINTS, type Annot, type AnnotArea, type Marker, type PlanCtx } from "./ctx";
 
 export function initAreas(ctx: PlanCtx): void {
@@ -273,7 +275,7 @@ export function initAreas(ctx: PlanCtx): void {
     back.className = "edit-modal area-settings-dlg";
     back.innerHTML = `<div class="card" style="width:min(24rem,96vw)">
       <div class="row"><h1 style="flex:1;margin:0">${t("area.settings")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
-      <label class="chk-lbl">${t("area.color")}<input type="color" data-as-color value="${areaColorOf(o)}" /></label>
+      <div class="chk-lbl">${t("area.color")}<div class="line-colors" data-as-colorbox></div></div>
       <label class="chk-lbl">${t("line.width")}<select data-as-width>${widths
         .map((w) => `<option value="${w}" ${w === (before.width ?? 2.5) ? "selected" : ""}>${w}</option>`)
         .join("")}</select></label>
@@ -290,6 +292,8 @@ export function initAreas(ctx: PlanCtx): void {
     </div>`;
     document.body.appendChild(back);
     const q = <T extends HTMLElement>(sel: string): T | null => back.querySelector<T>(sel);
+    let pickedColor = hexToPacked(areaColorOf(o));
+    wireColorBox(q("[data-as-colorbox]")!, ctx.lineColors, () => pickedColor, (c) => (pickedColor = c));
     const readPattern = wirePatternPicker(back, "data-as-pattern");
     const closedIn = q<HTMLInputElement>("[data-as-closed]")!;
     const fillIn = q<HTMLInputElement>("[data-as-fill]")!;
@@ -311,7 +315,7 @@ export function initAreas(ctx: PlanCtx): void {
       const after: AnnotArea = {
         pts: cur.area.pts,
         closed: closedIn.checked && canClose,
-        color: q<HTMLInputElement>("[data-as-color]")!.value,
+        color: packedToHex(pickedColor),
         width: Number(q<HTMLSelectElement>("[data-as-width]")!.value) || 2.5,
         pattern: readPattern(),
         strength: normStrength(q<HTMLInputElement>("[data-as-strength]")!.value),

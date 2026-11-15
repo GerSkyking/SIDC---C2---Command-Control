@@ -9,6 +9,7 @@ import { layerSelectHtml, phaseMultiHtml, readPhaseMulti } from "../sidc/layerui
 import { lngLatToWorld } from "../sidc/sidc";
 import { cid } from "../ws";
 import { AREA_CLOSE_PX, type LngLat2, type PlanCtx, type Stroke } from "./ctx";
+import { wireColorBox } from "./dots";
 import { areaFieldsHtml, openAreaNameDialog, wireAreaFields } from "./strokeArea";
 import { MEASURE_KIND, normPattern, normStrength } from "../mapAreas";
 import { fmtDist, hexToPacked, lineDraftFC } from "./geo";
@@ -429,10 +430,7 @@ export function initStrokes(ctx: PlanCtx): void {
       ${
         `<label class="chk-lbl">${t("wiz.layer")}${layerSelectHtml("data-slayer", ctx.tacLayers, s.layer_id)}</label>`
       }
-      <label class="chk-lbl">${t("line.color")}
-        <select data-scolor>${lineColors
-          .map((c) => `<option value="${c.packedColor}" ${c.packedColor === s.color ? "selected" : ""}>${esc(c.name)}</option>`)
-          .join("")}</select></label>
+      <div class="chk-lbl" data-scolor-wrap>${t("line.color")}<div class="line-colors" data-scolorbox></div></div>
       <label class="chk-lbl">${t("line.width")}
         <select data-swidth>${lineWidths
           .map((w) => `<option value="${w.width}" ${w.width === s.width ? "selected" : ""}>${w.width}</option>`)
@@ -444,9 +442,12 @@ export function initStrokes(ctx: PlanCtx): void {
       <div class="row" style="margin-top:.6rem"><button class="primary" data-save style="flex:1">${t("common.save")}</button></div>
     </div>`;
     document.body.appendChild(back);
+    let pickedColor = s.color;
+    wireColorBox(back.querySelector<HTMLElement>("[data-scolorbox]")!, lineColors, () => pickedColor, (c) => (pickedColor = c));
     if (s.kind === MEASURE_KIND) {
       // Lineal: nur Phase/Zusatzphasen/Ebene sinnvoll — Farbe, Breite und Fläche ausblenden
-      for (const sel of ["[data-scolor]", "[data-swidth]", "[data-sclosed]"])
+      back.querySelector<HTMLElement>("[data-scolor-wrap]")?.setAttribute("hidden", "");
+      for (const sel of ["[data-swidth]", "[data-sclosed]"])
         back.querySelector<HTMLElement>(sel)?.closest("label")?.setAttribute("hidden", "");
       back.querySelector<HTMLElement>("[data-area-block]")?.setAttribute("hidden", "");
     }
@@ -470,7 +471,7 @@ export function initStrokes(ctx: PlanCtx): void {
         layer_id: back.querySelector<HTMLSelectElement>("[data-slayer]")
           ? back.querySelector<HTMLSelectElement>("[data-slayer]")!.value || null
           : (s.layer_id ?? null),
-        color: Number(back.querySelector<HTMLSelectElement>("[data-scolor]")!.value),
+        color: pickedColor,
         width: Number(back.querySelector<HTMLSelectElement>("[data-swidth]")!.value),
         closed: closedIn.checked && s.points.length >= 3,
       };
