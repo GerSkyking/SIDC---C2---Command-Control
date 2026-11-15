@@ -40,8 +40,11 @@ export function withModifiers(base: string, m: SidcModifiers): string {
   return s;
 }
 
+/** Revision des PNG-Satzes: bei neuen/geänderten Icons erhöhen — Browser und CDN haben fehlende Icons
+ *  (404) bis zu 4 h gecacht, die geänderte URL umgeht das. */
+const ICON_REV = "2";
 export function iconUrl(sidc: string): string {
-  return `/assets/app6d-icons/${sidc}.png`;
+  return `/assets/app6d-icons/${sidc}.png?r=${ICON_REV}`;
 }
 export function arrowUrl(icon: string): string {
   return `/assets/arrows/${icon}`;

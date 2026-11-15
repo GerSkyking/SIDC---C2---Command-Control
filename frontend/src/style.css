@@ -1797,6 +1797,10 @@ button.stg-b:hover:not(:disabled) { border-color: var(--accent); }
 .area-bar { position: absolute; z-index: 6; display: flex; gap: 0.2rem; padding: 0.15rem; background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--r-sm); box-shadow: var(--shadow); }
 .area-bar button { width: 2rem; height: 2rem; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.pat-pick { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.2rem; }
+.pat-opt { display: flex; align-items: center; justify-content: flex-start; gap: 0.6rem; text-align: left; padding: 0.25rem 0.5rem; color: var(--fg); }
+.pat-opt img { width: 44px; height: 28px; flex: none; border: 1px solid var(--border); border-radius: 3px; background: var(--bg); }
+.pat-opt.active { border-color: var(--accent); background: var(--elevated); box-shadow: inset 0 0 0 1px var(--accent); }
 .area-style { position: absolute; top: calc(100% + 0.3rem); left: 0; width: 14rem; padding: 0.5rem 0.6rem; display: flex; flex-direction: column; gap: 0.4rem; }
 .area-style[hidden] { display: none; }
 .area-style label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; color: var(--muted); }

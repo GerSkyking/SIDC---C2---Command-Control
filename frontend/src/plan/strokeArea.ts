@@ -7,7 +7,34 @@ import { t } from "../i18n";
 import { icon } from "../icons";
 import { iconSrc } from "../sidc/symbol";
 import { openWizard } from "../sidc/wizard";
-import { DEFAULT_FILL_STRENGTH, FILL_PATTERNS, normPattern, normStrength, type FillPattern } from "../mapAreas";
+import { DEFAULT_FILL_STRENGTH, FILL_PATTERNS, normPattern, normStrength, patternSwatchUrl, type FillPattern } from "../mapAreas";
+
+/** Musterauswahl: pro Muster ein Knopf mit kleinem Vorschaubild vor dem Namen. */
+export function patternPickerHtml(current: unknown, attr = "data-area-pattern"): string {
+  const cur = normPattern(current);
+  return (
+    `<div class="pat-pick" ${attr} role="radiogroup" aria-label="${t("areaName.pattern")}" title="${t("tip.area.pattern")}">` +
+    FILL_PATTERNS.map(
+      (p) =>
+        `<button type="button" class="pat-opt ${p === cur ? "active" : ""}" data-pat="${p}" role="radio" aria-checked="${p === cur}">` +
+        `<img src="${patternSwatchUrl(p)}" alt="" width="44" height="28" /><span>${t("areaName.pat." + p)}</span></button>`,
+    ).join("") +
+    `</div>`
+  );
+}
+export function wirePatternPicker(host: HTMLElement, attr = "data-area-pattern", onChange?: () => void): () => FillPattern {
+  const box = host.querySelector<HTMLElement>(`[${attr}]`);
+  box?.querySelectorAll<HTMLButtonElement>("[data-pat]").forEach((b) =>
+    b.addEventListener("click", () => {
+      box.querySelectorAll<HTMLButtonElement>("[data-pat]").forEach((x) => {
+        x.classList.toggle("active", x === b);
+        x.setAttribute("aria-checked", String(x === b));
+      });
+      onChange?.();
+    }),
+  );
+  return () => normPattern(box?.querySelector<HTMLElement>("[data-pat].active")?.dataset.pat);
+}
 
 export interface AreaFields {
   name: string;
@@ -39,9 +66,7 @@ export function areaFieldsHtml(f: AreaFields): string {
     `<input data-area-sidc-in maxlength="30" spellcheck="false" aria-label="${t("areaName.sidcRaw")}" placeholder="10031000001211000000" value="${esc(f.sidc)}" /></details>` +
     `<label class="chk" style="margin-top:.4rem" title="${t("tip.area.fill")}"><input type="checkbox" data-area-fill ${f.fill ? "checked" : ""}/> <span>${t("areaName.fill")}</span></label>` +
     `<div data-area-fillopts>` +
-    `<label class="chk-lbl" title="${t("tip.area.pattern")}">${t("areaName.pattern")}<select data-area-pattern>${FILL_PATTERNS.map(
-      (p) => `<option value="${p}" ${normPattern(f.fill_pattern) === p ? "selected" : ""}>${t("areaName.pat." + p)}</option>`,
-    ).join("")}</select></label>` +
+    `<div class="chk-lbl">${t("areaName.pattern")}${patternPickerHtml(f.fill_pattern)}</div>` +
     `<label class="chk-lbl ph-op" title="${t("tip.area.strength")}">${t("areaName.strength")}` +
     `<input type="range" min="5" max="100" step="5" data-area-strength value="${normStrength(f.fill_strength)}" /> <span data-area-strengthv>${normStrength(f.fill_strength)}%</span></label>` +
     `</div>`
@@ -115,12 +140,13 @@ export function wireAreaFields(host: HTMLElement, f: AreaFields, wizardHost: HTM
     if (v) v.textContent = `${strIn.value}%`;
   });
   syncFill();
+  const readPattern = wirePatternPicker(host);
   return () => ({
     name: (host.querySelector<HTMLInputElement>("[data-area-name]")?.value ?? "").trim(),
     ai_text: (host.querySelector<HTMLInputElement>("[data-area-ai]")?.value ?? "").trim(),
     sidc,
     fill: host.querySelector<HTMLInputElement>("[data-area-fill]")?.checked ?? true,
-    fill_pattern: normPattern(host.querySelector<HTMLSelectElement>("[data-area-pattern]")?.value),
+    fill_pattern: readPattern(),
     fill_strength: normStrength(host.querySelector<HTMLInputElement>("[data-area-strength]")?.value),
   });
 }

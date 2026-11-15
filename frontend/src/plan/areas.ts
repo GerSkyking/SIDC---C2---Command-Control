@@ -7,7 +7,8 @@ import type { GeoJSONSource } from "maplibre-gl";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import { toast } from "../notify";
-import { areaSizeText, DEFAULT_FILL_STRENGTH, ensureHatch, FILL_PATTERNS, normPattern, normStrength, ringOf } from "../mapAreas";
+import { areaSizeText, DEFAULT_FILL_STRENGTH, ensureHatch, normPattern, normStrength, ringOf } from "../mapAreas";
+import { patternPickerHtml, wirePatternPicker } from "./strokeArea";
 import { AREA_CLOSE_PX, AREA_COL, AREA_MAX_POINTS, type Annot, type AnnotArea, type Marker, type PlanCtx } from "./ctx";
 
 export function initAreas(ctx: PlanCtx): void {
@@ -56,7 +57,7 @@ export function initAreas(ctx: PlanCtx): void {
           layout: { "line-join": "round", "line-cap": "round" },
           paint: {
             "line-color": ["get", "color"],
-            "line-width": ["case", ["get", "sel"], 3.5, 2.5],
+            "line-width": ["+", ["coalesce", ["get", "w"], 2.5], ["case", ["get", "sel"], 1, 0]],
             "line-opacity": ["*", 0.5, ["get", "op"]],
           },
         },
@@ -73,10 +74,24 @@ export function initAreas(ctx: PlanCtx): void {
         paint: { "line-color": ["get", "color"], "line-width": 2.5, "line-dasharray": [2, 1.5] },
       });
       map.addLayer({
+        id: "pin-area-mids",
+        type: "circle",
+        source: "pin-area-edit",
+        filter: ["has", "mid"],
+        paint: { "circle-radius": 3.5, "circle-color": "#ffffff", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 1.5 },
+      });
+      map.addLayer({
+        id: "pin-area-mids-hit",
+        type: "circle",
+        source: "pin-area-edit",
+        filter: ["has", "mid"],
+        paint: { "circle-radius": 11, "circle-color": "#000", "circle-opacity": 0 },
+      });
+      map.addLayer({
         id: "pin-area-verts",
         type: "circle",
         source: "pin-area-edit",
-        filter: ["==", ["geometry-type"], "Point"],
+        filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "mid"]]],
         paint: {
           "circle-radius": ["case", ["get", "hot"], 9, ["get", "first"], 7, 5.5],
           "circle-color": ["case", ["get", "hot"], "#3ddc84", "#ffffff"],
@@ -112,9 +127,10 @@ export function initAreas(ctx: PlanCtx): void {
         color: col,
         pat: ensureHatch(map, col, pk),
         fo: normStrength(ar.strength ?? DEFAULT_FILL_STRENGTH) / 100,
+        w: ar.width ?? 2.5,
       };
       if (ar.closed && ar.pts.length >= 3) {
-        feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [ringOf(ar.pts)] }, properties: props });
+        if (ar.fill !== false) feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [ringOf(ar.pts)] }, properties: props });
         feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: ringOf(ar.pts) }, properties: props });
       } else {
         feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: ar.pts }, properties: props });
@@ -142,9 +158,22 @@ export function initAreas(ctx: PlanCtx): void {
     } else if (ctx.editAreaId) {
       const a = ownerOf(ctx.editAreaId);
       const color = areaColorOf(a);
-      (a?.area?.pts ?? []).forEach((p, i) =>
+      const pts = a?.area?.pts ?? [];
+      pts.forEach((p, i) =>
         feats.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: { color, i, first: false, hot: false } }),
       );
+      // Mittelpunkte der Segmente: Ziehen fügt dort eine neue Ecke ein
+      const closed = !!a?.area?.closed && pts.length >= 3;
+      const segs = pts.length < 2 ? 0 : closed ? pts.length : pts.length - 1;
+      for (let i = 0; i < segs; i++) {
+        const p = pts[i];
+        const q = pts[(i + 1) % pts.length];
+        feats.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2] },
+          properties: { color, i, mid: 1 },
+        });
+      }
     }
     return { type: "FeatureCollection", features: feats };
   }
@@ -227,52 +256,72 @@ export function initAreas(ctx: PlanCtx): void {
       refreshAreas();
     });
   }
-  // ── Stil des Bereichs bearbeiten: Farbe, Füllmuster, Stärke (Stern und Marker) ──
-  const stylePanel = document.createElement("div");
-  stylePanel.className = "area-style card";
-  stylePanel.hidden = true;
-  areaBar.appendChild(stylePanel);
+  // ── Einstellungen des Bereichs (Zahnrad): Farbe, Linienbreite, offen/geschlossen, Füllung, Muster, Stärke ──
   function toggleStylePanel(): void {
-    if (!stylePanel.hidden) {
-      stylePanel.hidden = true;
-      return;
-    }
     const id = ctx.editAreaId;
     const o = ownerOf(id);
     if (!id || !o?.area) return;
-    const ar = o.area;
-    const closed = ar.closed && ar.pts.length >= 3;
-    const strength0 = normStrength(ar.strength ?? DEFAULT_FILL_STRENGTH);
-    stylePanel.innerHTML =
-      `<label class="chk-lbl">${t("area.color")}<input type="color" data-as-color value="${areaColorOf(o)}" /></label>` +
-      (closed
-        ? `<label class="chk-lbl">${t("areaName.pattern")}<select data-as-pattern>${FILL_PATTERNS.map(
-            (p) => `<option value="${p}" ${normPattern(ar.pattern) === p ? "selected" : ""}>${t("areaName.pat." + p)}</option>`,
-          ).join("")}</select></label>` +
-          `<label class="chk-lbl">${t("areaName.strength")}<input type="range" min="5" max="100" step="5" data-as-strength value="${strength0}" /> <span data-as-strengthv>${strength0}%</span></label>`
-        : "");
-    stylePanel.hidden = false;
-    const apply = (save: boolean): void => {
-      const cur = ownerOf(id);
-      if (!cur?.area) return;
-      cur.area = {
-        ...cur.area,
-        color: stylePanel.querySelector<HTMLInputElement>("[data-as-color]")!.value,
-        ...(closed
-          ? {
-              pattern: normPattern(stylePanel.querySelector<HTMLSelectElement>("[data-as-pattern]")?.value),
-              strength: normStrength(stylePanel.querySelector<HTMLInputElement>("[data-as-strength]")?.value),
-            }
-          : {}),
-      };
-      const sv = stylePanel.querySelector<HTMLElement>("[data-as-strengthv]");
-      if (sv) sv.textContent = `${cur.area.strength}%`;
-      refreshAreas();
-      if (save) sendArea(id, cur.area);
+    document.querySelector(".area-settings-dlg")?.remove();
+    const before = cloneArea(o.area)!;
+    const canClose = before.pts.length >= 3;
+    const closed0 = before.closed && canClose;
+    const strength0 = normStrength(before.strength ?? DEFAULT_FILL_STRENGTH);
+    const widths = ctx.lineWidths.map((w) => w.width);
+    if (!widths.includes(before.width ?? 2.5)) widths.push(before.width ?? 2.5);
+    widths.sort((x, y) => x - y);
+    const back = document.createElement("div");
+    back.className = "edit-modal area-settings-dlg";
+    back.innerHTML = `<div class="card" style="width:min(24rem,96vw)">
+      <div class="row"><h1 style="flex:1;margin:0">${t("area.settings")}</h1><button class="icon-btn" data-x title="${t("common.close")}">${icon("x")}</button></div>
+      <label class="chk-lbl">${t("area.color")}<input type="color" data-as-color value="${areaColorOf(o)}" /></label>
+      <label class="chk-lbl">${t("line.width")}<select data-as-width>${widths
+        .map((w) => `<option value="${w}" ${w === (before.width ?? 2.5) ? "selected" : ""}>${w}</option>`)
+        .join("")}</select></label>
+      <label class="chk" style="margin-top:.5rem" title="${t("areaName.closedHint")}"><input type="checkbox" data-as-closed ${closed0 ? "checked" : ""} ${canClose ? "" : "disabled"}/> <span>${t("areaName.closed")}</span></label>
+      <div data-as-fillblock ${closed0 ? "" : "hidden"}>
+        <label class="chk" style="margin-top:.4rem" title="${t("tip.area.fill")}"><input type="checkbox" data-as-fill ${before.fill === false ? "" : "checked"}/> <span>${t("areaName.fill")}</span></label>
+        <div data-as-fillopts ${before.fill === false ? "hidden" : ""}>
+          <div class="chk-lbl">${t("areaName.pattern")}${patternPickerHtml(before.pattern, "data-as-pattern")}</div>
+          <label class="chk-lbl ph-op" title="${t("tip.area.strength")}">${t("areaName.strength")}
+            <input type="range" min="5" max="100" step="5" data-as-strength value="${strength0}" /> <span data-as-strengthv>${strength0}%</span></label>
+        </div>
+      </div>
+      <div class="row" style="margin-top:.6rem"><button class="primary" data-as-save style="flex:1">${t("common.save")}</button></div>
+    </div>`;
+    document.body.appendChild(back);
+    const q = <T extends HTMLElement>(sel: string): T | null => back.querySelector<T>(sel);
+    const readPattern = wirePatternPicker(back, "data-as-pattern");
+    const closedIn = q<HTMLInputElement>("[data-as-closed]")!;
+    const fillIn = q<HTMLInputElement>("[data-as-fill]")!;
+    const sync = (): void => {
+      q("[data-as-fillblock]")!.hidden = !closedIn.checked;
+      q("[data-as-fillopts]")!.hidden = !fillIn.checked;
     };
-    stylePanel.querySelectorAll<HTMLElement>("input,select").forEach((el) => {
-      el.addEventListener("input", () => apply(false)); // live anzeigen
-      el.addEventListener("change", () => apply(true)); // beim Loslassen speichern
+    closedIn.addEventListener("change", sync);
+    fillIn.addEventListener("change", sync);
+    q<HTMLInputElement>("[data-as-strength]")!.addEventListener("input", (e) => {
+      q("[data-as-strengthv]")!.textContent = `${(e.target as HTMLInputElement).value}%`;
+    });
+    const close = (): void => back.remove();
+    back.addEventListener("mousedown", (e) => e.target === back && close());
+    q("[data-x]")!.addEventListener("click", close);
+    q("[data-as-save]")!.addEventListener("click", () => {
+      const cur = ownerOf(id);
+      if (!cur?.area) return close();
+      const after: AnnotArea = {
+        pts: cur.area.pts,
+        closed: closedIn.checked && canClose,
+        color: q<HTMLInputElement>("[data-as-color]")!.value,
+        width: Number(q<HTMLSelectElement>("[data-as-width]")!.value) || 2.5,
+        pattern: readPattern(),
+        strength: normStrength(q<HTMLInputElement>("[data-as-strength]")!.value),
+        ...(fillIn.checked ? {} : { fill: false }),
+      };
+      cur.area = after;
+      sendArea(id, after);
+      refreshAreas();
+      if (JSON.stringify(before) !== JSON.stringify(after)) pushAreaCmd(id, before, cloneArea(after));
+      close();
     });
   }
   const canEditArea = (o: Annot | Marker | undefined): boolean => {
@@ -314,7 +363,6 @@ export function initAreas(ctx: PlanCtx): void {
   }
   function setEditArea(id: string | null): void {
     ctx.editAreaId = id;
-    stylePanel.hidden = true;
     renderAreaBar();
     refreshAreas();
   }
@@ -375,11 +423,28 @@ export function initAreas(ctx: PlanCtx): void {
     if (ctx.editAreaId) map.getCanvas().style.cursor = "grab";
   });
   map.on("mouseleave", "pin-area-verts", () => (map.getCanvas().style.cursor = ctx.ui.modeCursor()));
-  map.on("mousedown", "pin-area-verts", (e) => {
-    const a = ctx.editAreaId ? ownerOf(ctx.editAreaId) : undefined;
-    const idx = e.features?.[0]?.properties?.i as number | undefined;
-    if (!a?.area || idx == null || ctx.areaDraft) return;
-    e.preventDefault();
+  // Rückgängig/Wiederholen für Änderungen am Bereich (Ecken, Einstellungen)
+  const cloneArea = (ar: AnnotArea | null | undefined): AnnotArea | null =>
+    ar ? { ...ar, pts: ar.pts.map((p) => [p[0], p[1]] as [number, number]) } : null;
+  const pushAreaCmd = (id: string, before: AnnotArea | null, after: AnnotArea | null): void => {
+    ctx.ui.pushCmd({
+      undo: () => {
+        const o = ownerOf(id);
+        if (o) o.area = cloneArea(before);
+        sendArea(id, cloneArea(before));
+        refreshAreas();
+      },
+      redo: () => {
+        const o = ownerOf(id);
+        if (o) o.area = cloneArea(after);
+        sendArea(id, cloneArea(after));
+        refreshAreas();
+      },
+    });
+  };
+  const startVertDrag = (id: string, idx: number, before: AnnotArea | null): void => {
+    const a = ownerOf(id);
+    if (!a?.area) return;
     const pts = a.area.pts;
     map.dragPan.disable();
     map.getCanvas().style.cursor = "grabbing";
@@ -392,9 +457,33 @@ export function initAreas(ctx: PlanCtx): void {
       ctx.ui.syncDragPan();
       map.getCanvas().style.cursor = ctx.ui.modeCursor();
       sendArea(a.id, a.area ?? null);
+      if (JSON.stringify(before) !== JSON.stringify(a.area)) pushAreaCmd(a.id, before, cloneArea(a.area));
     };
     map.on("mousemove", onMove);
     document.addEventListener("mouseup", onUp, { once: true, signal: sig });
+    refreshAreas();
+  };
+  map.on("mousedown", "pin-area-verts", (e) => {
+    const a = ctx.editAreaId ? ownerOf(ctx.editAreaId) : undefined;
+    const idx = e.features?.[0]?.properties?.i as number | undefined;
+    if (!a?.area || idx == null || ctx.areaDraft) return;
+    e.preventDefault();
+    startVertDrag(a.id, idx, cloneArea(a.area));
+  });
+  map.on("mouseenter", "pin-area-mids-hit", () => {
+    if (ctx.editAreaId) map.getCanvas().style.cursor = "copy";
+  });
+  map.on("mouseleave", "pin-area-mids-hit", () => (map.getCanvas().style.cursor = ctx.ui.modeCursor()));
+  map.on("mousedown", "pin-area-mids-hit", (e) => {
+    const a = ctx.editAreaId ? ownerOf(ctx.editAreaId) : undefined;
+    const seg = e.features?.[0]?.properties?.i as number | undefined;
+    if (!a?.area || seg == null || ctx.areaDraft || a.area.pts.length >= AREA_MAX_POINTS) return;
+    e.preventDefault();
+    const before = cloneArea(a.area);
+    const p = a.area.pts[seg];
+    const q = a.area.pts[(seg + 1) % a.area.pts.length];
+    a.area.pts.splice(seg + 1, 0, [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]);
+    startVertDrag(a.id, seg + 1, before);
   });
   // Marker wird gezogen: sein Bereich folgt live (der Server verschiebt ihn beim Speichern um dasselbe Delta)
   const shiftMarkerArea = (m: Marker, lng: number, lat: number): void => {

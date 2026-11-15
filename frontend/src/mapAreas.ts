@@ -59,6 +59,29 @@ export function hatchImage(color: string, kind: FillPattern = "diag", lineWidth 
   return g.getImageData(0, 0, n, n);
 }
 
+const swatchCache = new Map<string, string>();
+/** Kleines Vorschaubild (data-URL) eines Füllmusters — für die Auswahl vor dem Namen. */
+export function patternSwatchUrl(kind: FillPattern, color = "#8a8f98", w = 44, h = 28): string {
+  const key = `${kind}|${color}|${w}x${h}`;
+  const hit = swatchCache.get(key);
+  if (hit) return hit;
+  const tile = hatchImage(color, kind);
+  const tc = document.createElement("canvas");
+  tc.width = tile.width;
+  tc.height = tile.height;
+  tc.getContext("2d")!.putImageData(tile, 0, 0);
+  const cv = document.createElement("canvas");
+  cv.width = w;
+  cv.height = h;
+  const g = cv.getContext("2d")!;
+  g.globalAlpha = 0.9;
+  g.fillStyle = g.createPattern(tc, "repeat")!;
+  g.fillRect(0, 0, w, h);
+  const url = cv.toDataURL("image/png");
+  swatchCache.set(key, url);
+  return url;
+}
+
 /** Bild-ID des Schraffur-Musters einer Farbe ("#rrggbb" → "hatch-rrggbb"; andere Muster mit Zusatz). */
 export function hatchId(color: string, kind: FillPattern = "diag"): string {
   return "hatch-" + (kind === "diag" ? "" : kind + "-") + color.replace(/[^0-9a-zA-Z]/g, "").toLowerCase();

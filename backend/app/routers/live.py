@@ -636,6 +636,14 @@ def _clean_area(v) -> dict | None:
         out["pattern"] = v["pattern"]
     if v.get("strength") is not None:
         out["strength"] = _clean_strength(v["strength"])
+    try:
+        w = float(v["width"]) if v.get("width") is not None else None
+    except (TypeError, ValueError):
+        w = None
+    if w is not None and 0.5 <= w <= 20:
+        out["width"] = w
+    if v.get("fill") is False:
+        out["fill"] = False
     return out
 
 

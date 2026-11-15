@@ -102,6 +102,9 @@ export interface AnnotArea {
   color?: string;
   pattern?: string;
   strength?: number;
+  /** Linienbreite (Standard 2,5) und Füllung an/aus (Standard an) */
+  width?: number;
+  fill?: boolean;
 }
 /** Farben der Bereiche: wie die Sterne (gelb = alle, pink = nur Missionsbau). */
 export const AREA_COL = { mb: "#ff2d95", all: "#ffc21a" };

@@ -46,6 +46,8 @@ interface PArea {
   color?: string;
   pattern?: string;
   strength?: number;
+  width?: number;
+  fill?: boolean;
 }
 interface M {
   id: string;
@@ -317,6 +319,8 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
           pk,
           fo: normStrength(ar.strength ?? 25) / 100,
           op,
+          fill: ar.fill !== false,
+          ...(ar.width ? { width: ar.width } : {}),
         }),
       );
     }
@@ -336,6 +340,8 @@ export async function renderPublicView(root: HTMLElement, token: string): Promis
           pk,
           fo: normStrength(ar.strength ?? 25) / 100,
           op,
+          fill: ar.fill !== false,
+          ...(ar.width ? { width: ar.width } : {}),
         }),
       );
     }
