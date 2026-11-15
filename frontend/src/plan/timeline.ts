@@ -516,6 +516,19 @@ ${t("tip.tl.bar")}${canEdit && (plane === "player" || isMB) && !fixedRole ? " ·
     }
   }
   renderTimeline();
+  // Fensterbreite geändert → Zeitachse neu auf die volle Breite ziehen
+  {
+    let lastW = timelineEl.clientWidth;
+    let rt = 0;
+    const ro = new ResizeObserver(() => {
+      if (Math.abs(timelineEl.clientWidth - lastW) < 8) return;
+      lastW = timelineEl.clientWidth;
+      window.clearTimeout(rt);
+      rt = window.setTimeout(renderTimeline, 120);
+    });
+    ro.observe(timelineEl);
+    sig.addEventListener("abort", () => ro.disconnect());
+  }
   // Doppelklick auf eine Phase öffnet das Phasen-Notizen-Fenster (die erste Klickhälfte hat die Phase gewählt)
   timelineEl.addEventListener("dblclick", (e) => {
     if (!(e.target as HTMLElement).closest(".tl-bar") || (e.target as HTMLElement).closest(".tl-edge, .tl-del")) return;

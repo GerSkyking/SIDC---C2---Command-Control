@@ -16,13 +16,13 @@
   --border: #424242;
   --muted: #9a9a9a;
   --fg: #f2f2f2;
-  --accent: #ffc720;
+  --accent: #c99900;
   --accent-fg: #141414;
-  --accent-weak: rgba(255, 199, 32, 0.16);
+  --accent-weak: rgba(201, 153, 0, 0.18);
   --danger: #ef4444;
   --ok: #46c26a;
   --warn: #ffce3a;
-  --focus: #ffc720;
+  --focus: #e3ac00;
   --shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
   --panel: var(--surface);
 
@@ -38,13 +38,13 @@
   --border: #d7d7da;
   --muted: #6b6b6f;
   --fg: #1c1c1e;
-  --accent: #c99900;
-  --accent-fg: #141414;
-  --accent-weak: rgba(201, 153, 0, 0.16);
+  --accent: #a67c00;
+  --accent-fg: #ffffff;
+  --accent-weak: rgba(166, 124, 0, 0.14);
   --danger: #d63b3b;
   --ok: #2f9e51;
   --warn: #b9791a;
-  --focus: #c99900;
+  --focus: #a67c00;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
@@ -1844,3 +1844,14 @@ button.stg-b:hover:not(:disabled) { border-color: var(--accent); }
 .presence { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
 .presence .badge { white-space: nowrap; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; flex: none; }
 .presence .presence-more { display: inline-flex; align-items: center; gap: 0.25rem; }
+
+/* Plan-Zeitstrahl: volle Breite (die allgemeine .tl-Regel weiter oben begrenzt auf 56rem) */
+#timeline { min-width: 0; max-width: 100%; }
+#timeline .tl { max-width: none; width: 100%; min-width: 0; gap: 0.2rem; }
+#timeline .tl-scroll { min-width: 0; max-width: 100%; }
+
+/* Eingeklappte Seitenleisten (translateX) dürfen keine Seiten-Scrollbar erzeugen */
+html, body { overflow-x: hidden; }
+:root { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
