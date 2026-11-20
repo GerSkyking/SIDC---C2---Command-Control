@@ -1,7 +1,7 @@
 // ORBAT-Bibliothek (Missionsbau): globale Kräfteübersichten mit Baumstruktur.
 import { api, type Me, type Orbat, type OrbatNode } from "./api";
 import { langSelect, t, wireLangSelect } from "./i18n";
-import { a11yModal, confirmDialog, toastError } from "./notify";
+import { a11yModal, confirmDialog, toast, toastError } from "./notify";
 import { icon } from "./icons";
 import { esc } from "./esc";
 import { iconSrc } from "./sidc/symbol";
@@ -51,6 +51,10 @@ export async function renderOrbatLibrary(app: HTMLElement, me: Me, selectedId?: 
           <select id="o-aff" title="${t("tip.orb.aff")}" aria-label="${t("tip.orb.aff")}">${AFFIL.map((a) => `<option value="${a}">${t("orbat.aff." + a)}</option>`).join("")}</select>
           <button class="primary" id="o-add">${t("common.create")}</button>
         </div>
+        <div class="orbat-new">
+          <button id="o-import" class="grow" title="${t("tip.orb.import")}">${icon("upload", 14)} ${t("orbat.import")}</button>
+          <input id="o-import-file" type="file" accept=".json,application/json" hidden />
+        </div>
       </aside>
       <section class="orbat-main">${detail ? "" : `<p class="muted">${t("orbat.pickOne")}</p>`}</section>
     </div>
@@ -74,7 +78,41 @@ export async function renderOrbatLibrary(app: HTMLElement, me: Me, selectedId?: 
     }
   });
 
+  const pick = app.querySelector<HTMLInputElement>("#o-import-file")!;
+  app.querySelector("#o-import")!.addEventListener("click", () => pick.click());
+  pick.addEventListener("change", async () => {
+    const f = pick.files?.[0];
+    pick.value = "";
+    if (!f) return;
+    try {
+      let data: unknown;
+      try {
+        data = JSON.parse(await f.text());
+      } catch {
+        throw new Error(t("orbat.importInvalid"));
+      }
+      const o = await api.importOrbat(data);
+      toast(`${t("orbat.imported")}: ${o.name}`, { kind: "success" });
+      location.hash = `#/orbat/${o.id}`;
+    } catch (e) {
+      toastError(e);
+    }
+  });
+
   if (detail) renderDetail(app.querySelector<HTMLElement>(".orbat-main")!, detail);
+}
+
+function downloadJson(name: string, data: unknown): void {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${name.replace(/[^\p{L}\p{N}._-]+/gu, "_").slice(0, 80) || "orbat"}.orbat.json`;
+  a.rel = "noopener";
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function renderDetail(host: HTMLElement, o: Orbat): void {
@@ -144,6 +182,7 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
       <select class="orb-aff" ${canEdit ? "" : "disabled"} title="${t("tip.orb.aff")}" aria-label="${t("tip.orb.aff")}">
         ${AFFIL.map((a) => `<option value="${a}" ${a === o.affiliation ? "selected" : ""}>${t("orbat.aff." + a)}</option>`).join("")}
       </select>
+      <button data-export title="${t("tip.orb.export")}">${icon("download", 14)} ${t("orbat.export")}</button>
       ${o.is_owner ? `<button data-acl title="${t("tip.orb.acl")}">${t("plans.shares")}</button>` : ""}
       ${o.is_owner ? `<button class="danger" data-delo>${icon("trash", 14)} ${t("common.delete")}</button>` : ""}
     </div>
@@ -167,6 +206,13 @@ function renderDetail(host: HTMLElement, o: Orbat): void {
     if (!(await confirmDialog(t("orbat.confirmDelete"), { danger: true, trash: true }))) return;
     await api.deleteOrbat(o.id).catch(fail);
     location.hash = "#/orbat";
+  });
+  host.querySelector("[data-export]")?.addEventListener("click", async () => {
+    try {
+      downloadJson(o.name, await api.exportOrbat(o.id));
+    } catch (e) {
+      fail(e);
+    }
   });
   host.querySelector("[data-acl]")?.addEventListener("click", () => openOrbatAcl(o.id));
 

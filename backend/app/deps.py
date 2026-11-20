@@ -3,25 +3,28 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Path, Request, status
+from fastapi import Depends, HTTPException, Path, Request, Response, status
 from sqlalchemy.orm import Session
 
 from .db import get_db
 from .models import ApiToken, Plan, User
 from .permissions import effective_level, rank
-from .security import SESSION_COOKIE, read_session
+from .security import SESSION_COOKIE, needs_renewal, read_session_aged, set_session_cookie
 from .ratelimit import hit_limit
 from .tokens import SCOPE_MAPS_READ, resolve_token
 
 DbDep = Annotated[Session, Depends(get_db)]
 
 
-def get_current_user(request: Request, db: DbDep) -> User:
+def get_current_user(request: Request, response: Response, db: DbDep) -> User:
     token = request.cookies.get(SESSION_COOKIE)
-    sess = read_session(token) if token else None
+    sess = read_session_aged(token) if token else None
     user = db.get(User, sess[0]) if sess else None
     if user is None or not user.is_active or sess[1] != (user.session_epoch or 0):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Nicht angemeldet")
+    # Gleitende Sitzung: aktive Nutzer bekommen das Cookie regelmäßig neu ausgestellt.
+    if needs_renewal(sess[2]):
+        set_session_cookie(request, response, user.id, user.session_epoch or 0)
     return user
 
 
@@ -40,7 +43,7 @@ class ClientAuth:
         return self.token is None or scope in (self.token.scopes or [])
 
 
-def get_client_auth(request: Request, db: DbDep) -> ClientAuth:
+def get_client_auth(request: Request, response: Response, db: DbDep) -> ClientAuth:
     """Für die Client-API (/api/client/*): ``Authorization: Bearer <token>`` ODER die
     normale Cookie-Session. Alle *anderen* Routen bleiben Cookie-only (``CurrentUser``) —
     ein API-Token kommt dort nie durch."""
@@ -50,7 +53,7 @@ def get_client_auth(request: Request, db: DbDep) -> ClientAuth:
         if found is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Ungültiger oder abgelaufener Token")
         return ClientAuth(found[1], found[0])
-    return ClientAuth(get_current_user(request, db), None)
+    return ClientAuth(get_current_user(request, response, db), None)
 
 
 def require_client_scope(scope: str):

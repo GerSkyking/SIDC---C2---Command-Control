@@ -297,13 +297,13 @@ a { color: var(--accent); }
 .layers-panel { position: fixed; right: 0.6rem; top: calc(var(--topbar-h, 3.2rem) + 0.4rem); width: auto;
   min-width: 16rem; max-width: min(24rem, 90vw); min-height: 2.5rem; z-index: 9;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem;
-  max-height: 75vh; overflow-y: auto; }
+  max-height: calc(100dvh - var(--topbar-h, 3.2rem) - 1.5rem); overflow-y: auto; }
 .layers-panel label { display: block; font-size: 0.85rem; margin: 0.2rem 0; }
 .maplibregl-popup-content { background: #000; color: #fff; border-radius: 6px; padding: 0.4rem 0.55rem;
   box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
 .maplibregl-popup-tip { border-top-color: #000 !important; border-bottom-color: #000 !important; }
 .mk-tip { font-size: 0.78rem; line-height: 1.35; white-space: nowrap; }
-.mk-tip b { font-size: 0.82rem; }
+.mk-tip b { font-size: 0.82rem; white-space: normal; overflow-wrap: anywhere; }
 .mk-tip-info { margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px solid var(--border);
   white-space: normal; max-width: 22rem; color: var(--muted); }
 .layers-panel .layer-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.28rem 0; flex-wrap: wrap; }
@@ -314,7 +314,7 @@ a { color: var(--accent); }
 
 .line-style { position: absolute; left: 3.4rem; top: calc(var(--topbar-h, 3.2rem) + 0.7rem); width: 13rem; z-index: 9;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem;
-  max-height: 78vh; overflow-y: auto; }
+  max-height: calc(100dvh - var(--topbar-h, 3.2rem) - 1.5rem); overflow-y: auto; }
 .line-style label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.4rem 0 0.2rem; }
 .line-style select { width: 100%; }
 .line-style button.primary { width: 100%; margin-top: 0.5rem; }
@@ -328,12 +328,12 @@ a { color: var(--accent); }
 .line-style input[type="text"] { width: 100%; box-sizing: border-box; }
 
 .fav-panel, .edit-panel { position: absolute; left: 3.4rem; top: calc(var(--topbar-h, 3.2rem) + 0.7rem); width: 15rem; z-index: 9;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; max-height: 70vh; overflow-y: auto; }
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; max-height: calc(100dvh - var(--topbar-h, 3.2rem) - 1.5rem); overflow-y: auto; }
 /* Marker-Bearbeiten: zentriertes Fenster mit Backdrop */
 .edit-modal { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,0.45); display: grid; place-items: center; padding: 1rem; }
 .edit-modal .edit-panel {
   position: static; left: auto; right: auto; top: auto;
-  width: min(27rem, 96vw); max-height: 88vh;
+  width: min(27rem, 96vw); max-height: calc(100dvh - 2rem);
   overflow-y: auto; overflow-x: hidden;
   padding: 1rem; font-size: 1.05rem;
 }
@@ -349,7 +349,7 @@ a { color: var(--accent); }
 .edit-adv select { width: 100%; }
 
 /* Hilfe / Versionsverlauf (im .edit-modal-Backdrop) */
-.help-card, .ver-card { width: min(42rem, 96vw); max-height: 88vh; overflow-y: auto; }
+.help-card, .ver-card { width: min(42rem, 96vw); max-height: calc(100dvh - 2rem); overflow-y: auto; }
 .help-card h1, .ver-card h1 { font-size: 1.1rem; }
 .help-body { font-size: 0.9rem; line-height: 1.5; }
 .help-body h4 { margin: 0.9rem 0 0.3rem; font-size: 0.98rem; }
@@ -370,12 +370,12 @@ a { color: var(--accent); }
 .fav button { padding: 0.1rem 0.35rem; font-size: 0.75rem; }
 
 .wiz-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 20; display: grid; place-items: center; }
-.wiz { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: min(46rem, 94vw); max-height: 88vh; display: flex; flex-direction: column; }
+.wiz { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: min(46rem, 94vw); max-height: calc(100dvh - 2rem); display: flex; flex-direction: column; }
 .wiz-head { display: flex; gap: 0.4rem; padding: 0.6rem; border-bottom: 1px solid var(--border); align-items: center; }
 .wiz-head button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .wiz-search { flex: 1; max-width: 14rem; }
 .wiz-body { padding: 0.6rem; overflow-y: auto; flex: 1; }
-.wiz-config { padding: 0.6rem 0.9rem; border-top: 1px solid var(--border); overflow-y: auto; max-height: 44vh; }
+.wiz-config { padding: 0.6rem 0.9rem; border-top: 1px solid var(--border); overflow-y: auto; flex: 0 1 auto; min-height: 0; }
 .wiz-config.adv { display: flex; gap: 1rem; align-items: flex-start; }
 .wiz-config.adv .wiz-cfg-main { flex: 1; min-width: 0; }
 .wiz-adv { width: 15rem; flex-shrink: 0; border-left: 1px solid var(--border); padding-left: 1rem; }
@@ -452,7 +452,7 @@ a { color: var(--accent); }
 .src-file input { padding: 0.35rem 0.5rem; }
 
 /* ── Redesign: Einstellungs-Menü ─────────────────────────────────────── */
-.set-card { width: min(30rem, 96vw); max-height: 88vh; overflow-y: auto; }
+.set-card { width: min(30rem, 96vw); max-height: calc(100dvh - 2rem); overflow-y: auto; }
 .set-card > .row:first-child { position: sticky; top: -1.5rem; margin: -1.5rem -1.5rem 0; padding: 1.5rem 1.5rem 0.6rem;
   background: var(--panel); z-index: 1; }
 .set-card h4 { margin: 1rem 0 0.4rem; font-size: 0.95rem; }
@@ -819,7 +819,7 @@ body.rail-open .layers-panel:not(.mv-pinned) { right: calc(var(--rail-w, 300px) 
 
 /* ── Bild-Wähler (für "Bild in Notiz einfügen") ───────────────────── */
 .ir-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
-  gap: 0.5rem; max-height: 60vh; overflow-y: auto; }
+  gap: 0.5rem; max-height: calc(100dvh - 14rem); overflow-y: auto; }
 .ir-pick-item { display: flex; flex-direction: column; align-items: stretch; gap: 0.25rem;
   padding: 0.35rem; text-align: left; cursor: pointer; }
 .ir-pick-item img { width: 100%; height: 5rem; object-fit: cover;
@@ -1016,18 +1016,18 @@ li.md-task input { margin-right: 0.45rem; vertical-align: middle; }
   .line-style, .fav-panel, .eraser-panel, .layers-panel, .layers-panel:not(.mv-pinned), body.rail-open .layers-panel:not(.mv-pinned) {
     position: fixed; left: 0.4rem !important; right: 0.4rem !important; top: auto !important;
     bottom: calc(3.9rem + env(safe-area-inset-bottom)) !important; width: auto !important;
-    min-width: 0; max-width: none; max-height: 55dvh; z-index: 12; box-shadow: var(--shadow); }
+    min-width: 0; max-width: none; max-height: calc(100dvh - var(--topbar-h, 3.2rem) - 3.9rem - env(safe-area-inset-bottom) - 1rem); z-index: 12; box-shadow: var(--shadow); }
   .mv-bar .mv-grip, .mv-bar .mv-pin, .mv-resize { display: none; }
   .line-done { z-index: 13; }
 
   /* Fenster */
   .notes-win { left: 0.4rem !important; right: 0.4rem !important; top: auto !important;
     bottom: calc(3.9rem + env(safe-area-inset-bottom)) !important; width: auto !important; max-width: none;
-    min-width: 0; max-height: 65dvh; resize: none; }
+    min-width: 0; max-height: calc(100dvh - 3.9rem - env(safe-area-inset-bottom) - 1rem); resize: none; }
   .notes-head { cursor: default; }
   .edit-modal { padding: 0.4rem; align-items: end; }
-  .edit-modal .edit-panel { width: 100%; max-height: 92dvh; font-size: 1rem; }
-  .wiz { width: 100vw; max-height: 94dvh; border-radius: 12px 12px 0 0; }
+  .edit-modal .edit-panel { width: 100%; max-height: calc(100dvh - 0.8rem); font-size: 1rem; }
+  .wiz { width: 100vw; max-height: 100dvh; border-radius: 12px 12px 0 0; }
   .wiz-backdrop { align-items: end; }
   .annot { max-width: 80vw; }
   .ctx-menu { max-width: 92vw; }
@@ -1568,7 +1568,7 @@ html:has(.wb-wrap), body:has(.wb-wrap) { overflow: hidden; height: 100%; }
 .rp-status, .rp-foot { margin: 0; font-size: .78rem; min-height: 1rem; }
 @media (max-width: 800px) {
   .rp-back { align-items: stretch; }
-  .rp-card { width: 100%; max-height: 96dvh; }
+  .rp-card { width: 100%; max-height: 100dvh; }
   .rp-kind { display: none; }
   .pj-find-lbl { display: none; }
   .pj-find kbd { display: none; }
@@ -1750,9 +1750,9 @@ button.stg-b:hover:not(:disabled) { border-color: var(--accent); }
 .dx-vh { display: flex; flex-direction: column; font-size: .85rem; }
 .dx-v .row { gap: .4rem; flex-wrap: wrap; }
 .dx-v button { display: inline-flex; align-items: center; gap: .25rem; font-size: .78rem; padding: .2rem .5rem; }
-.dx-view { width: min(46rem, 94vw); max-height: 90dvh; }
+.dx-view { width: min(46rem, 94vw); max-height: calc(100dvh - 2rem); }
 .dx-view .row button { display: inline-flex; align-items: center; gap: .3rem; }
-.dx-view-body { overflow: auto; max-height: 60dvh; border: 1px solid var(--border); border-radius: var(--r-sm); padding: .6rem .9rem; font-size: .92rem; line-height: 1.5; }
+.dx-view-body { overflow: auto; max-height: calc(100dvh - 12rem); border: 1px solid var(--border); border-radius: var(--r-sm); padding: .6rem .9rem; font-size: .92rem; line-height: 1.5; }
 @media (max-width: 800px) {
   .fb-list { grid-template-columns: minmax(0, 1fr); }
   .pd-side { width: 100%; }
@@ -1878,3 +1878,20 @@ input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color:
 .tl-ctl .tl-zoom button { height: 100%; width: 1.9rem; }
 .tl-ctl #ph-add, .tl-ctl #ph-copy { font-size: 0.8rem; }
 .tl-ctl #ph-add, .tl-ctl #ph-copy { padding-left: 0.7rem; padding-right: 0.7rem; }
+
+/* ── Scrollbarkeit: Oberflächen, die größer als der Bildschirm sind, scrollen selbst ── */
+/* Dialoge: jedes Fenster im Backdrop ist auf die Bildschirmhöhe begrenzt (auch .card ohne eigenes max-height) */
+.edit-modal { overflow-y: auto; overscroll-behavior: contain; }
+.edit-modal > * { max-height: calc(100dvh - 2rem); overflow-y: auto; overscroll-behavior: contain; }
+.wiz { max-height: calc(100dvh - 2rem); min-height: 0; }
+.wiz-backdrop { overflow-y: auto; }
+/* Schwebende Panels, Popover und Menüs */
+.eraser-panel { max-height: calc(100dvh - var(--topbar-h, 3.2rem) - 1.5rem); overflow-y: auto; }
+.img-popover, .ref-pop, .ctx-menu { max-height: calc(100dvh - 2rem); overflow-y: auto; overscroll-behavior: contain; }
+.notes-win { max-height: calc(100dvh - 1rem); overflow-y: auto; }
+
+/* Marker-Info-Fenster (Hotkey I) */
+.mk-info-meaning { font-size: 0.95rem; line-height: 1.45; overflow-wrap: anywhere; }
+.mk-info-rows { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.8rem; margin: 0; font-size: 0.88rem; }
+.mk-info-rows dt { color: var(--muted); }
+.mk-info-rows dd { margin: 0; overflow-wrap: anywhere; }

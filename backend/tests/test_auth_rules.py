@@ -522,6 +522,20 @@ def test_auth_r_008_abgelaufene_sitzung_gilt_nicht(cfg, monkeypatch):
     assert security.read_session(token) is None
 
 
+def test_auth_r_008_sitzung_gleitet_bei_aktivitaet(client, cfg, monkeypatch):
+    cfg(session_ttl_hours=8)
+    client.post("/auth/login", json={"username": "admin", "password": ADMIN_PW})
+    # Frisches Cookie: keine Erneuerung
+    r = client.get("/auth/me")
+    assert r.status_code == 200 and "set-cookie" not in r.headers
+    # Nach > 1/4 der Laufzeit (2 h) wird das Cookie neu ausgestellt
+    real = time.time
+    monkeypatch.setattr(time, "time", lambda: real() + 3 * 3600)
+    r = client.get("/auth/me")
+    assert r.status_code == 200
+    assert "sidc_session=" in r.headers["set-cookie"] and "max-age=28800" in r.headers["set-cookie"].lower()
+
+
 def test_auth_r_010_start_admin_bleibt_admin(admin, cfg, oidc):
     from app import oidc_access
 

@@ -28,7 +28,8 @@ export type HotAction =
   | "cut"
   | "copy"
   | "paste"
-  | "north";
+  | "north"
+  | "info";
 
 export const HOT_ORDER: HotAction[] = [
   "mapMove",
@@ -50,6 +51,7 @@ export const HOT_ORDER: HotAction[] = [
   "phaseNext",
   "notes",
   "north",
+  "info",
 ];
 
 const DEFAULTS: Record<HotAction, string> = {
@@ -72,6 +74,7 @@ const DEFAULTS: Record<HotAction, string> = {
   phaseNext: "arrowright",
   notes: "y",
   north: "n",
+  info: "i",
 };
 
 const ALLOWED_SPECIAL = [" ", "arrowup", "arrowdown", "arrowleft", "arrowright"];
@@ -239,6 +242,7 @@ function hotLabels(): Record<HotAction, string> {
     phaseNext: t("hot.phaseNext"),
     notes: t("hot.notes"),
     north: t("hot.north"),
+    info: t("hot.info"),
   };
 }
 

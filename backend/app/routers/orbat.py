@@ -223,6 +223,112 @@ def delete_orbat(orbat_id: str, request: Request, user: CurrentUser, db: DbDep) 
     return {"ok": True}
 
 
+# ─── Export / Import (JSON) ────────────────────────────────────────────────
+
+EXPORT_FORMAT = "sidc-orbat"
+EXPORT_VERSION = 1
+_IMPORT_MAX_NODES = 5000
+
+
+class OrbatImportNode(BaseModel):
+    ref: str = Field(max_length=64)  # Schlüssel innerhalb der Datei (nicht die DB-ID)
+    parent: str | None = Field(default=None, max_length=64)
+    name: str = Field(default="Einheit", max_length=128)
+    sidc: str = Field(default="", max_length=64)
+    qty_planned: int = Field(default=1, ge=0, le=_QTY_MAX)
+    qty_current: int | None = Field(default=None, ge=0, le=_QTY_MAX)
+    status: str = Field(default="active", max_length=12)
+    ordering: int | None = Field(default=None, ge=-_QTY_MAX, le=_QTY_MAX)
+    notes: str = Field(default="", max_length=20000)
+    rel_visible: bool = False
+    rel_show_type: bool = False
+    rel_strength: int = Field(default=50, ge=-1, le=100)
+
+
+class OrbatImportIn(BaseModel):
+    format: str
+    version: int = 1
+    name: str = Field(default="ORBAT", max_length=128)
+    affiliation: str = Field(default="friend", max_length=12)
+    notes: str = Field(default="", max_length=20000)
+    nodes: list[OrbatImportNode] = Field(default_factory=list, max_length=_IMPORT_MAX_NODES)
+
+
+@router.get("/{orbat_id}/export")
+def export_orbat(orbat_id: str, user: CurrentUser, db: DbDep) -> dict:
+    """ORBAT samt Baum als portable Datei. Enthält bewusst weder IDs der Datenbank noch Rechte (ACL)."""
+    o = _load(orbat_id, db, user, "viewer")
+    nodes = list(db.scalars(select(OrbatNode).where(OrbatNode.orbat_id == o.id).order_by(OrbatNode.ordering)))
+    ids = {n.id for n in nodes}
+    return {
+        "format": EXPORT_FORMAT,
+        "version": EXPORT_VERSION,
+        "name": o.name,
+        "affiliation": o.affiliation,
+        "notes": o.notes or "",
+        "nodes": [
+            {
+                "ref": n.id,
+                "parent": n.parent_id if n.parent_id in ids else None,
+                "name": n.name, "sidc": n.sidc, "qty_planned": n.qty_planned,
+                "qty_current": n.qty_current, "status": n.status, "ordering": n.ordering,
+                "notes": n.notes or "", "rel_visible": n.rel_visible,
+                "rel_show_type": n.rel_show_type, "rel_strength": n.rel_strength,
+            }
+            for n in nodes
+        ],
+    }
+
+
+@router.post("/import", status_code=status.HTTP_201_CREATED)
+def import_orbat(body: OrbatImportIn, request: Request, user: CurrentUser, db: DbDep) -> dict:
+    """Legt aus einer Exportdatei ein NEUES ORBAT an (neue IDs, Ersteller = importierende Person)."""
+    if not effective_mission_builder(db, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Missionsbau-Rolle erforderlich")
+    if body.format != EXPORT_FORMAT:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Keine ORBAT-Datei")
+    if body.version > EXPORT_VERSION:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Datei stammt aus einer neueren Version")
+    refs = {n.ref for n in body.nodes}
+    if len(refs) != len(body.nodes):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Doppelte Einheiten-Schlüssel in der Datei")
+    children: dict[str | None, list[OrbatImportNode]] = {}
+    for n in body.nodes:
+        parent = n.parent if n.parent in refs and n.parent != n.ref else None
+        children.setdefault(parent, []).append(n)
+
+    aff = body.affiliation if body.affiliation in _AFFIL else "friend"
+    o = Orbat(name=body.name.strip() or "ORBAT", affiliation=aff, notes=body.notes, created_by=user.id)
+    db.add(o)
+    db.flush()
+
+    created = 0
+    queue: list[tuple[str | None, str | None]] = [(None, None)]  # (Datei-Schlüssel des Elters, neue DB-ID)
+    while queue:
+        parent_ref, parent_id = queue.pop(0)
+        for i, n in enumerate(sorted(children.get(parent_ref, []), key=lambda x: (x.ordering or 0))):
+            row = OrbatNode(
+                orbat_id=o.id, parent_id=parent_id, name=n.name.strip() or "Einheit",
+                sidc=sidc_with_affiliation(n.sidc, aff) if n.sidc else "",
+                qty_planned=n.qty_planned,
+                qty_current=n.qty_current if n.qty_current is not None else n.qty_planned,
+                status=n.status if n.status in _STATUS else "active", ordering=i, notes=n.notes,
+                rel_visible=n.rel_visible, rel_show_type=n.rel_show_type, rel_strength=n.rel_strength,
+            )
+            db.add(row)
+            db.flush()
+            created += 1
+            queue.append((n.ref, row.id))
+    # Einheiten in einem Zyklus (Elter-Kette ohne Wurzel) sind von der Wurzel aus nicht erreichbar
+    if created != len(body.nodes):
+        db.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Zyklus in der Hierarchie der Datei")
+    db.commit()
+    audit.record(db, "orbat.import", user_id=user.id, target_type="orbat", target_id=o.id,
+                 request=request, name=o.name, nodes=created)
+    return _orbat_out(db, user, o, with_nodes=True)
+
+
 # ─── Knoten ────────────────────────────────────────────────────────────────
 
 @router.post("/{orbat_id}/nodes", status_code=status.HTTP_201_CREATED)

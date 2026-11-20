@@ -47,10 +47,9 @@ from ..ratelimit import check_and_hit, reset
 from ..schemas import LoginIn, MeOut
 from ..security import (
     SESSION_COOKIE,
-    cookie_is_secure,
     hash_password,
-    issue_session,
     read_session,
+    set_session_cookie,
     verify_password,
 )
 
@@ -91,15 +90,7 @@ def _client_ip(request: Request) -> str:
 
 
 def _set_session_cookie(request: Request, response: Response, user: User) -> None:
-    response.set_cookie(
-        SESSION_COOKIE,
-        issue_session(user.id, user.session_epoch or 0),
-        max_age=_settings.session_ttl_seconds(),
-        httponly=True,
-        samesite="lax",
-        secure=cookie_is_secure(request.url.scheme, request.headers.get("x-forwarded-proto")),
-        path="/",
-    )
+    set_session_cookie(request, response, user.id, user.session_epoch or 0)
 
 
 @router.post("/login", response_model=MeOut)

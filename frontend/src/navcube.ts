@@ -1,6 +1,6 @@
 // Navigations-Würfel (ViewCube), unten rechts (2D und 3D). Zeigt die aktuelle
 // Orientierung und schwenkt die Kamera bei Klick:
-//   Oben-Fläche  -> Top-Down (Pitch 0)
+//   Oben-Fläche  -> Top-Down (Pitch 0) und Ausrichtung nach Norden (Bearing 0)
 //   N/O/S/W      -> Blick aus der Richtung, Pitch 45°
 //   Ecken NO/NW/SO/SW -> isometrischer Schrägblick (Bearing 45/135/225/315, Pitch 45°)
 //   Home         -> Standardansicht (Norden, von oben)
@@ -62,7 +62,7 @@ export function initNavCube(
         return;
       }
       const f = b.dataset.face!;
-      if (f === "top") map.easeTo({ pitch: 0, duration: 500 });
+      if (f === "top") map.easeTo({ bearing: 0, pitch: 0, duration: 500 });
       else map.easeTo({ bearing: FACE_BEARING[f], pitch: map.getMaxPitch() > 0 ? 45 : 0, duration: 500 });
     }),
   );

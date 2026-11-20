@@ -1,6 +1,8 @@
 """Passwort-Hashing (argon2) und signierte Session-Cookies (stateless, itsdangerous)."""
 from __future__ import annotations
 
+import time
+
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pwdlib import PasswordHash
 
@@ -30,17 +32,41 @@ def issue_session(user_id: str, epoch: int = 0) -> str:
     return _serializer.dumps({"uid": user_id, "e": epoch})
 
 
-def read_session(token: str) -> tuple[str, int] | None:
-    """(user_id, session_epoch) oder None. Epoch fehlt bei Alt-Cookies -> 0."""
+def read_session_aged(token: str) -> tuple[str, int, float] | None:
+    """(user_id, session_epoch, alter_in_sekunden) oder None. Epoch fehlt bei Alt-Cookies -> 0."""
     max_age = _settings.session_ttl_seconds()
     try:
-        data = _serializer.loads(token, max_age=max_age)
+        data, issued = _serializer.loads(token, max_age=max_age, return_timestamp=True)
     except (BadSignature, SignatureExpired):
         return None
     uid = data.get("uid")
     if not uid:
         return None
-    return uid, int(data.get("e", 0))
+    return uid, int(data.get("e", 0)), max(0.0, time.time() - issued.timestamp())
+
+
+def read_session(token: str) -> tuple[str, int] | None:
+    """(user_id, session_epoch) oder None. Epoch fehlt bei Alt-Cookies -> 0."""
+    sess = read_session_aged(token)
+    return (sess[0], sess[1]) if sess else None
+
+
+def set_session_cookie(request, response, user_id: str, epoch: int = 0) -> None:
+    """Setzt das Sitzungs-Cookie neu (Login und gleitende Verlängerung)."""
+    response.set_cookie(
+        SESSION_COOKIE,
+        issue_session(user_id, epoch),
+        max_age=_settings.session_ttl_seconds(),
+        httponly=True,
+        samesite="lax",
+        secure=cookie_is_secure(request.url.scheme, request.headers.get("x-forwarded-proto")),
+        path="/",
+    )
+
+
+def needs_renewal(age_seconds: float) -> bool:
+    """Gleitende Sitzung: nach einem Viertel der Laufzeit wird das Cookie erneuert."""
+    return age_seconds >= _settings.session_ttl_seconds() / 4
 
 
 def origin_allowed(origin: str | None, host: str | None) -> bool:

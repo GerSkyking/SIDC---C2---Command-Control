@@ -131,6 +131,27 @@ export function makeMovable(
       /* ignore */
     }
   };
+  // Ragt das Panel unten aus dem Fenster, wird es auf den freien Platz begrenzt und scrollbar.
+  // Passt es komplett hinein, bleibt es unverändert (Höhe = Inhalt bzw. gespeicherte Größe).
+  // Mobil sitzen die Panels als Blatt unten (CSS), dort gilt die CSS-Grenze.
+  const fit = () => {
+    if (!el.isConnected || el.hidden) return;
+    const set = (mh: string, oy: string) => {
+      if (el.style.maxHeight !== mh) el.style.maxHeight = mh;
+      if (el.style.overflowY !== oy) el.style.overflowY = oy;
+    };
+    const sized = !!resizeHandle && !!el.style.height;
+    const free = sized ? "none" : "";
+    if (window.matchMedia("(max-width: 760px)").matches || !el.style.top) return set(free, "");
+    const top = el.getBoundingClientRect().top;
+    const avail = Math.max(120, window.innerHeight - top - 8);
+    const natural = el.scrollHeight + (el.offsetHeight - el.clientHeight);
+    if (natural > avail + 1) set(`${avail}px`, "auto");
+    else set(free, "");
+  };
+  new ResizeObserver(fit).observe(el);
+  window.addEventListener("resize", fit);
+
   const place = (x: number, y: number, persist = false) => {
     const cx = clampX(x);
     const cy = clampY(y);
@@ -138,6 +159,7 @@ export function makeMovable(
     el.style.top = `${cy}px`;
     el.style.right = "auto";
     el.style.bottom = "auto";
+    fit();
     if (persist) {
       delete el.dataset.mvOrigLeft;
       savePos(cx, cy);
@@ -213,6 +235,7 @@ export function makeMovable(
       el.style.top = `${ev.clientY - dy}px`;
       el.style.right = "auto";
       el.style.bottom = "auto";
+      fit();
     };
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
@@ -244,6 +267,8 @@ export function makeMovable(
       el.style.width = el.style.height = "";
       el.style.maxWidth = el.style.maxHeight = "";
     }
+    el.style.maxHeight = "";
+    el.style.overflowY = "";
   };
 
   return {

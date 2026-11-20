@@ -89,7 +89,8 @@ export function initMarkers(ctx: PlanCtx): void {
   });
 
   // Hover: Channel / Ersteller / Phase des Markers
-  const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+  // maxWidth: Der Standard (240px) schneidet lange Titel ab; das Fenster darf mit dem Titel wachsen
+  const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10, maxWidth: "min(36rem, 92vw)" });
   let hoverHideTimer = 0;
   // Marker per Aktions-Icon verschieben: folgt der Maus (Dokument-Listener, weil das Popup
   // mit dem Marker wandert und unter dem Zeiger liegt), loslassen setzt ihn ab.

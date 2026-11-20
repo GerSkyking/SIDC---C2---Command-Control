@@ -667,6 +667,8 @@ export const api = {
   patchOrbat: (id: string, b: Partial<{ name: string; affiliation: string; notes: string }>) =>
     req<Orbat>("PATCH", `/api/orbats/${id}`, b),
   deleteOrbat: (id: string) => req<void>("DELETE", `/api/orbats/${id}`),
+  exportOrbat: (id: string) => req<Record<string, unknown>>("GET", `/api/orbats/${id}/export`),
+  importOrbat: (file: unknown) => req<Orbat>("POST", "/api/orbats/import", file),
   createNode: (oid: string, b: Partial<OrbatNode> & { parent_id?: string | null }) =>
     req<OrbatNode>("POST", `/api/orbats/${oid}/nodes`, b),
   patchNode: (oid: string, nid: string, b: Partial<OrbatNode>) =>

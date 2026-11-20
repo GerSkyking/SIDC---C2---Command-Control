@@ -42,7 +42,20 @@ export function initPhaseNotes(ctx: PlanCtx): void {
     const y = Math.max(0, Math.min(pos.y, window.innerHeight - 80));
     notesWin.style.left = `${x}px`;
     notesWin.style.top = `${y}px`;
+    fitNotesWin();
   };
+  // Höhe an den Platz unterhalb der aktuellen Position anpassen: nur wenn das Fenster
+  // sonst unten abgeschnitten würde, wird es kleiner und scrollbar. Mobil sitzt es
+  // als Blatt unten (CSS), dort bleibt die CSS-Grenze maßgeblich.
+  const fitNotesWin = () => {
+    if (window.matchMedia("(max-width: 760px)").matches) {
+      notesWin.style.maxHeight = "";
+      return;
+    }
+    const top = Math.max(0, parseInt(notesWin.style.top) || 0);
+    notesWin.style.maxHeight = `${Math.max(140, window.innerHeight - top - 8)}px`;
+  };
+  window.addEventListener("resize", fitNotesWin, { signal: sig });
   placeNotesWin();
   const nTabs = notesWin.querySelector<HTMLDivElement>(".notes-tabs")!;
   const nTimes = notesWin.querySelector<HTMLDivElement>(".notes-times")!;
@@ -239,7 +252,8 @@ export function initPhaseNotes(ctx: PlanCtx): void {
     let dy = 0;
     const onMove = (e: MouseEvent) => {
       notesWin.style.left = `${e.clientX - dx}px`;
-      notesWin.style.top = `${e.clientY - dy}px`;
+      notesWin.style.top = `${Math.max(0, e.clientY - dy)}px`;
+      fitNotesWin();
     };
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);

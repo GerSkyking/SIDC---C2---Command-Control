@@ -6,6 +6,7 @@ import { toast } from "../notify";
 import { actionForKey, openSettings } from "../settings";
 import type { MarkerTemplate } from "../sidc/wizard";
 import type { Marker, Mode, PlanCtx } from "./ctx";
+import { openMarkerInfo } from "./markerInfo";
 
 export function initToolbar(ctx: PlanCtx): void {
   const { map, socket, root, planId, markers, canEdit, caps, projectId, sig } = ctx;
@@ -194,7 +195,15 @@ export function initToolbar(ctx: PlanCtx): void {
       case "point": setModeBtn("point"); break;
       case "line": if (canEdit) setModeBtn("line"); break;
       case "dot": if (canEdit) setModeBtn("dot"); break;
-      case "markermove": if (canEdit) setModeBtn("markermove"); break;
+      case "markermove":
+        // Am Desktop gibt es dafür keinen Werkzeugleisten-Knopf (nur mobil), daher direkt den Modus
+        // setzen; erneutes Drücken kehrt zum Karten-Werkzeug zurück.
+        if (canEdit && caps.move) {
+          const on = ctx.mode !== "markermove";
+          setMode(on ? "markermove" : "move");
+          if (on) toast(t("tool.markermove"), { timeout: 1200 });
+        }
+        break;
       case "measure": setModeBtn("measure"); break;
       case "erase": setModeBtn("erase"); break;
       case "text": if (canEdit) setModeBtn("text"); break;
@@ -207,6 +216,12 @@ export function initToolbar(ctx: PlanCtx): void {
       case "phaseNext": ev.preventDefault(); ctx.ui.stepPhase(1); break;
       case "notes": ctx.ui.toggleNotesWin(); break;
       case "north": map.easeTo({ bearing: 0, duration: 400 }); break;
+      case "info": {
+        const hm = ctx.hoverMarkerId ? markers.get(ctx.hoverMarkerId) : undefined;
+        if (hm) openMarkerInfo(ctx, hm);
+        else toast(t("hot.infoNone"), { timeout: 2500 });
+        break;
+      }
       case "copy":
       case "cut": {
         if (!ctx.hoverMarkerId) return;
